@@ -1,0 +1,6 @@
+{
+  "name": "FutVerse",
+  "description": "Football Academy Management and Tactical Planning",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

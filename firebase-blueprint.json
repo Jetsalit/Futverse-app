@@ -1,0 +1,20 @@
+{
+  "collections": [
+    {
+      "name": "users",
+      "description": "User profiles",
+      "schema": {
+        "email": "string",
+        "name": "string",
+        "role": "string",
+        "createdAt": "timestamp"
+      },
+      "permissions": {
+        "read": "auth != null",
+        "create": "auth != null",
+        "update": "auth != null && auth.uid == docId",
+        "delete": "auth != null && auth.uid == docId"
+      }
+    }
+  ]
+}
