@@ -551,40 +551,70 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
                 <div className="absolute inset-4 lg:inset-8 ring-[1.5px] ring-slate-800 pointer-events-none z-0">
                   {fieldType === "full" ? (
                     <>
+                      {/* Center line */}
                       <div className="absolute top-0 bottom-0 left-1/2 w-[1.5px] bg-slate-800 -translate-x-1/2"></div>
-                      <div className="absolute top-1/2 left-1/2 w-[22%] max-w-[200px] aspect-square border-[1.5px] border-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
+                      
+                      {/* Center circle */}
+                      <div className="absolute top-1/2 left-1/2 w-[18%] aspect-square border-[1.5px] border-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
+                      
+                      {/* Center mark */}
                       <div className="absolute top-1/2 left-1/2 w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
 
-                      <div className="absolute top-1/2 left-0 w-[16%] h-[55%] border-[1.5px] border-slate-800 -translate-y-1/2 border-l-0"></div>
-                      <div className="absolute top-1/2 left-0 w-[5%] h-[24%] border-[1.5px] border-slate-800 -translate-y-1/2 border-l-0"></div>
+                      {/* Left Penalty Area */}
+                      <div className="absolute top-1/2 left-0 w-[16%] h-[60%] border-[1.5px] border-slate-800 -translate-y-1/2 border-l-0 bg-white"></div>
+                      
+                      {/* Left Goal Area */}
+                      <div className="absolute top-1/2 left-0 w-[5.5%] h-[27%] border-[1.5px] border-slate-800 -translate-y-1/2 border-l-0 bg-white"></div>
+                      
+                      {/* Left Penalty Mark */}
                       <div className="absolute top-1/2 left-[11%] w-1.5 h-1.5 bg-slate-800 rounded-full -translate-y-1/2"></div>
-                      <div className="absolute top-1/2 left-[16%] w-[8%] max-w-[80px] h-[20%] border-[1.5px] border-slate-800 border-l-0 rounded-r-full -translate-y-1/2"></div>
-                      <div className="absolute top-1/2 left-0 w-[2.5%] h-[12%] border-[1.5px] border-slate-800 -translate-y-1/2 -translate-x-full border-r-0"></div>
+                      
+                      {/* Left Penalty Arc (only half outside penalty area) */}
+                      <div className="absolute top-1/2 left-[11%] w-[15%] aspect-square border-[1.5px] border-slate-800 rounded-full -translate-y-1/2 -z-10 clip-half-right"></div>
+                      <div className="absolute top-1/2 left-[16%] w-[7%] h-[20%] border-[1.5px] border-slate-800 border-l-0 rounded-r-full -translate-y-1/2 z-0"></div>
 
-                      <div className="absolute top-1/2 right-0 w-[16%] h-[55%] border-[1.5px] border-slate-800 -translate-y-1/2 border-r-0"></div>
-                      <div className="absolute top-1/2 right-0 w-[5%] h-[24%] border-[1.5px] border-slate-800 -translate-y-1/2 border-r-0"></div>
-                      <div className="absolute top-1/2 right-[11%] w-1.5 h-1.5 bg-slate-800 rounded-full -translate-y-1/2"></div>
-                      <div className="absolute top-1/2 right-[16%] w-[8%] max-w-[80px] h-[20%] border-[1.5px] border-slate-800 border-r-0 rounded-l-full -translate-y-1/2"></div>
-                      <div className="absolute top-1/2 right-0 w-[2.5%] h-[12%] border-[1.5px] border-slate-800 -translate-y-1/2 translate-x-full border-l-0"></div>
+                      {/* Right Penalty Area */}
+                      <div className="absolute top-1/2 right-0 w-[16%] h-[60%] border-[1.5px] border-slate-800 -translate-y-1/2 border-r-0 bg-white z-10"></div>
+                      
+                      {/* Right Goal Area */}
+                      <div className="absolute top-1/2 right-0 w-[5.5%] h-[27%] border-[1.5px] border-slate-800 -translate-y-1/2 border-r-0 bg-white z-20"></div>
+                      
+                      {/* Right Penalty Mark */}
+                      <div className="absolute top-1/2 right-[11%] w-1.5 h-1.5 bg-slate-800 rounded-full -translate-y-1/2 z-20"></div>
+                      
+                      {/* Right Penalty Arc */}
+                      <div className="absolute top-1/2 right-[16%] w-[7%] h-[20%] border-[1.5px] border-slate-800 border-r-0 rounded-l-full -translate-y-1/2 z-0"></div>
 
-                      <div className="absolute top-0 left-0 w-4 h-4 border-b-[1.5px] border-r-[1.5px] border-slate-800 rounded-br-full"></div>
-                      <div className="absolute bottom-0 left-0 w-4 h-4 border-t-[1.5px] border-r-[1.5px] border-slate-800 rounded-tr-full"></div>
-                      <div className="absolute top-0 right-0 w-4 h-4 border-b-[1.5px] border-l-[1.5px] border-slate-800 rounded-bl-full"></div>
-                      <div className="absolute bottom-0 right-0 w-4 h-4 border-t-[1.5px] border-l-[1.5px] border-slate-800 rounded-tl-full"></div>
+                      {/* Goal nets (optional visual detail outside pitch) */}
+                      <div className="absolute top-1/2 left-0 w-[2%] h-[12%] border-[1.5px] border-slate-800 -translate-y-1/2 -translate-x-full border-r-0"></div>
+                      <div className="absolute top-1/2 right-0 w-[2%] h-[12%] border-[1.5px] border-slate-800 -translate-y-1/2 translate-x-full border-l-0"></div>
+
+                      {/* Corner Arcs */}
+                      <div className="absolute top-0 left-0 w-4 h-4 border-b-[1.5px] border-r-[1.5px] border-slate-800 rounded-br-full z-10"></div>
+                      <div className="absolute bottom-0 left-0 w-4 h-4 border-t-[1.5px] border-r-[1.5px] border-slate-800 rounded-tr-full z-10"></div>
+                      <div className="absolute top-0 right-0 w-4 h-4 border-b-[1.5px] border-l-[1.5px] border-slate-800 rounded-bl-full z-10"></div>
+                      <div className="absolute bottom-0 right-0 w-4 h-4 border-t-[1.5px] border-l-[1.5px] border-slate-800 rounded-tl-full z-10"></div>
                     </>
                   ) : (
                     <>
-                      <div className="absolute top-0 left-1/2 w-[55%] h-[35%] border-[1.5px] border-slate-800 border-t-0 -translate-x-1/2"></div>
-                      <div className="absolute top-0 left-1/2 w-[24%] h-[12%] border-[1.5px] border-slate-800 border-t-0 -translate-x-1/2"></div>
-                      <div className="absolute top-[24%] left-1/2 w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2"></div>
-                      <div className="absolute top-[35%] left-1/2 w-[20%] max-w-[200px] h-[15%] border-[1.5px] border-slate-800 border-t-0 rounded-b-full -translate-x-1/2"></div>
+                      {/* Half Field Markings (Vertical) */}
+                      <div className="absolute top-0 left-1/2 w-[60%] h-[32%] border-[1.5px] border-slate-800 border-t-0 -translate-x-1/2 bg-white z-10"></div>
+                      <div className="absolute top-0 left-1/2 w-[27%] h-[11%] border-[1.5px] border-slate-800 border-t-0 -translate-x-1/2 bg-white z-20"></div>
+                      <div className="absolute top-[22%] left-1/2 w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 z-20"></div>
+                      
+                      {/* Penalty Arc */}
+                      <div className="absolute top-[32%] left-1/2 w-[20%] h-[10%] border-[1.5px] border-slate-800 border-t-0 rounded-b-full -translate-x-1/2 z-0"></div>
 
-                      <div className="absolute top-0 left-1/2 w-[12%] h-[5%] border-[1.5px] border-slate-800 border-b-0 -translate-y-full -translate-x-1/2"></div>
+                      {/* Goal Net */}
+                      <div className="absolute top-0 left-1/2 w-[12%] h-[4%] border-[1.5px] border-slate-800 border-b-0 -translate-y-full -translate-x-1/2"></div>
 
+                      {/* Corners */}
                       <div className="absolute top-0 left-0 w-6 h-6 border-b-[1.5px] border-r-[1.5px] border-slate-800 rounded-br-full"></div>
                       <div className="absolute top-0 right-0 w-6 h-6 border-b-[1.5px] border-l-[1.5px] border-slate-800 rounded-bl-full"></div>
 
-                      <div className="absolute bottom-0 left-1/2 w-[35%] max-w-[300px] aspect-square border-[1.5px] border-slate-800 border-b-0 rounded-t-full -translate-x-1/2 translate-y-[50%]"></div>
+                      {/* Center Line and Circle (at bottom) */}
+                      <div className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-slate-800"></div>
+                      <div className="absolute bottom-0 left-1/2 w-[36%] max-w-[300px] aspect-square border-[1.5px] border-slate-800 border-b-0 rounded-t-full -translate-x-1/2 translate-y-[50%]"></div>
                       <div className="absolute bottom-0 left-1/2 w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 translate-y-1/2"></div>
                     </>
                   )}
