@@ -87,12 +87,13 @@ export default function Login() {
       const user = result.user;
 
       // Save or update user data to Firestore
+      const assignedRole = user.email === "jetsalween@gmail.com" ? "SUPERADMIN" : "USER";
       await setDoc(
         doc(db, "users", user.uid),
         {
           name: user.displayName || "User",
           email: user.email,
-          role: "USER", // Default role
+          role: assignedRole,
           updatedAt: new Date(),
           // Keep createdAt if it exists, use merge to not overwrite
         },
@@ -130,10 +131,11 @@ export default function Login() {
         await updateProfile(user, { displayName: name });
 
         // Save user data to Firestore
+        const assignedRole = email === "jetsalween@gmail.com" ? "SUPERADMIN" : "USER";
         await setDoc(doc(db, "users", user.uid), {
           name: name,
           email: email,
-          role: "USER", // Default role
+          role: assignedRole,
           createdAt: new Date(),
         });
       } else {

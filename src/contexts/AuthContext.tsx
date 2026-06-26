@@ -68,6 +68,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
           if (userDoc.exists()) {
             const userData = userDoc.data() as User;
+            
+            // Auto-promote jetsalween@gmail.com to SUPERADMIN
+            if (firebaseUser.email === "jetsalween@gmail.com" && userData.role !== "SUPERADMIN") {
+              userData.role = "SUPERADMIN";
+              try {
+                const { updateDoc } = await import("firebase/firestore");
+                await updateDoc(doc(db, "users", firebaseUser.uid), { role: "SUPERADMIN" });
+              } catch (e) {
+                console.error("Failed to auto-promote:", e);
+              }
+            }
+
             const fullUser = {
               ...userData,
               id: firebaseUser.uid,
