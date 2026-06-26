@@ -984,7 +984,10 @@ export default function WeeklyPeriodization({
                     <div className="flex items-center gap-3 mb-3 pb-3 border-b border-slate-100">
                       <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 overflow-hidden shrink-0">
                         <img
-                          src={player.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${player.name}`}
+                          src={
+                            player.avatar ||
+                            `https://api.dicebear.com/7.x/avataaars/svg?seed=${player.name}`
+                          }
                           alt={player.name}
                           className="w-full h-full object-cover"
                         />
