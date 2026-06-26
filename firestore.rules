@@ -13,5 +13,10 @@ service cloud.firestore {
       allow update: if isSignedIn() && request.auth.uid == userId;
       allow delete: if false;
     }
+
+    match /settings/{document=**} {
+      allow read: if true;
+      allow write: if isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['SUPERADMIN', 'ADMIN'];
+    }
   }
 }

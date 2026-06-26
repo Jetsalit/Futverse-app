@@ -13,6 +13,7 @@ import {
   Plus,
 } from "lucide-react";
 import { useLanguage } from "../contexts/LanguageContext";
+import { useAcademy } from "../contexts/AcademyContext";
 
 type TabId = "profile" | "fitness" | "privacy" | "system";
 
@@ -30,13 +31,21 @@ export default function Settings({
   pendingSyncs,
 }: SettingsProps) {
   const { t, language, setLanguage } = useLanguage();
+  const { settings, updateSettings } = useAcademy();
   const [activeTab, setActiveTab] = useState<TabId>("profile");
 
   // Profile State
-  const [academyName, setAcademyName] = useState("Buriram United Academy");
-  const [squads, setSquads] = useState<string[]>(["U11", "U13", "U15", "PRO"]);
+  const [academyName, setAcademyName] = useState(settings.name);
+  const [squads, setSquads] = useState<string[]>(settings.squads || ["U11", "U13", "U15", "PRO"]);
   const [newSquadInput, setNewSquadInput] = useState("");
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [logoUrl, setLogoUrl] = useState<string | null>(settings.logoUrl);
+
+  // Update local state if settings load from Firestore
+  React.useEffect(() => {
+    setAcademyName(settings.name);
+    setSquads(settings.squads || ["U11", "U13", "U15", "PRO"]);
+    setLogoUrl(settings.logoUrl);
+  }, [settings]);
 
   // Privacy State
   const [medicalPrivacy, setMedicalPrivacy] = useState(true);
@@ -60,15 +69,58 @@ export default function Settings({
     );
   };
 
-  const handleSave = () => {
-    alert(`Settings saved successfully for ${activeTab}!`);
+  const handleSave = async () => {
+    try {
+      if (activeTab === "profile") {
+        await updateSettings({
+          name: academyName,
+          shortName: academyName,
+          logoUrl: logoUrl,
+          squads: squads,
+        });
+      }
+      alert(`Settings saved successfully for ${activeTab}!`);
+    } catch (e) {
+      alert("Error saving settings.");
+      console.error(e);
+    }
   };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const url = URL.createObjectURL(file);
-      setLogoUrl(url);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const MAX_WIDTH = 256;
+          const MAX_HEIGHT = 256;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx?.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL("image/webp", 0.8);
+          setLogoUrl(dataUrl);
+        };
+        img.src = reader.result as string;
+      };
+      reader.readAsDataURL(file);
     }
   };
 

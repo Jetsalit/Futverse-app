@@ -35,6 +35,7 @@ import { useLanguage } from "./contexts/LanguageContext";
 import PostMatchStatsEntry from "./components/PostMatchStatsEntry";
 import StartingXIBuilder from "./components/StartingXIBuilder";
 import { useAuth } from "./contexts/AuthContext";
+import { useAcademy } from "./contexts/AcademyContext";
 import AccessDenied from "./components/AccessDenied";
 import Login from "./components/Login";
 import SuperadminPortal from "./components/SuperadminPortal";
@@ -54,10 +55,11 @@ export default function App() {
     isImpersonating,
     revertImpersonation,
   } = useAuth();
+  const { settings: academySettings } = useAcademy();
   const [pendingSyncs, setPendingSyncs] = useState(0);
 
   // Global State / Context for Academy Squads
-  const academySquads = [
+  const academySquads = academySettings.squads || [
     "U-17 National Prospects",
     "U-15 Development",
     "U-13 Grassroots",
@@ -338,60 +340,64 @@ export default function App() {
           </button>
 
           <div className="flex items-center gap-3 mt-4 mb-4 w-full px-2">
-            <div className="w-10 h-10 flex shrink-0 items-center justify-center">
-              <svg
-                viewBox="0 0 100 100"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                className="w-full h-full drop-shadow-md"
-              >
-                <path
-                  d="M15 90 L35 35 L90 35 L80 15 L15 15 Z"
-                  fill="url(#grad1)"
-                />
-                <path d="M30 65 L45 35 L85 35 L75 15 L20 15 Z" fill="#0f172a" />
-                <path
-                  d="M30 65 L45 35 L80 35 L70 20 L25 20 Z"
-                  fill="url(#grad2)"
-                />
-                <defs>
-                  <linearGradient
-                    id="grad1"
-                    x1="0%"
-                    y1="100%"
-                    x2="100%"
-                    y2="0%"
-                  >
-                    <stop
-                      offset="0%"
-                      style={{ stopColor: "#10b981", stopOpacity: 1 }}
-                    />
-                    <stop
-                      offset="100%"
-                      style={{ stopColor: "#bef264", stopOpacity: 1 }}
-                    />
-                  </linearGradient>
-                  <linearGradient
-                    id="grad2"
-                    x1="0%"
-                    y1="100%"
-                    x2="100%"
-                    y2="0%"
-                  >
-                    <stop
-                      offset="0%"
-                      style={{ stopColor: "#059669", stopOpacity: 1 }}
-                    />
-                    <stop
-                      offset="100%"
-                      style={{ stopColor: "#a3e635", stopOpacity: 1 }}
-                    />
-                  </linearGradient>
-                </defs>
-              </svg>
+            <div className="w-10 h-10 flex shrink-0 items-center justify-center rounded-xl overflow-hidden bg-white/10">
+              {academySettings.logoUrl ? (
+                <img src={academySettings.logoUrl} alt="Logo" className="w-full h-full object-cover" />
+              ) : (
+                <svg
+                  viewBox="0 0 100 100"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="w-full h-full drop-shadow-md"
+                >
+                  <path
+                    d="M15 90 L35 35 L90 35 L80 15 L15 15 Z"
+                    fill="url(#grad1)"
+                  />
+                  <path d="M30 65 L45 35 L85 35 L75 15 L20 15 Z" fill="#0f172a" />
+                  <path
+                    d="M30 65 L45 35 L80 35 L70 20 L25 20 Z"
+                    fill="url(#grad2)"
+                  />
+                  <defs>
+                    <linearGradient
+                      id="grad1"
+                      x1="0%"
+                      y1="100%"
+                      x2="100%"
+                      y2="0%"
+                    >
+                      <stop
+                        offset="0%"
+                        style={{ stopColor: "#10b981", stopOpacity: 1 }}
+                      />
+                      <stop
+                        offset="100%"
+                        style={{ stopColor: "#bef264", stopOpacity: 1 }}
+                      />
+                    </linearGradient>
+                    <linearGradient
+                      id="grad2"
+                      x1="0%"
+                      y1="100%"
+                      x2="100%"
+                      y2="0%"
+                    >
+                      <stop
+                        offset="0%"
+                        style={{ stopColor: "#059669", stopOpacity: 1 }}
+                      />
+                      <stop
+                        offset="100%"
+                        style={{ stopColor: "#a3e635", stopOpacity: 1 }}
+                      />
+                    </linearGradient>
+                  </defs>
+                </svg>
+              )}
             </div>
-            <span className="font-black text-xl text-white tracking-tight">
-              Buriram U.
+            <span className="font-black text-xl text-white tracking-tight truncate max-w-[150px]">
+              {academySettings.shortName || academySettings.name}
             </span>
           </div>
 
@@ -493,7 +499,7 @@ export default function App() {
               <Menu size={20} />
             </button>
             <div className="hidden sm:block text-sm font-semibold text-slate-600">
-              Buriram United Academy
+              {academySettings.name}
             </div>
             <div className="hidden md:block h-4 w-[1px] bg-slate-300"></div>
 
