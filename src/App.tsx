@@ -258,11 +258,7 @@ export default function App() {
       case "/coach/match-evaluation":
         return <PostMatchStatsEntry onBack={() => navigateTo("dashboard")} />;
       case "/player/peer-voting":
-        return currentUser?.role === "PLAYER" ? (
-          <PlayerDashboard onNavigate={navigateTo} />
-        ) : (
-          <Dashboard onNavigate={navigateTo} />
-        );
+        return <PlayerDashboard onNavigate={navigateTo} />;
       case "/report":
         return (
           <YouthDevelopmentReport onBack={() => navigateTo("dashboard")} />

@@ -160,15 +160,7 @@ export default function Dashboard({
   const { hasPermission, currentUser } = useAuth();
   const [showVotingModal, setShowVotingModal] = useState(false);
 
-  useEffect(() => {
-    // Show peer voting modal for USER role (simulating Match Day)
-    if (currentUser?.role === "USER") {
-      const timer = setTimeout(() => {
-        setShowVotingModal(true);
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [currentUser]);
+  // Auto-popup removed to stop the modal from constantly popping up.
 
   // Mock teammates for voting
   const teammates = [
