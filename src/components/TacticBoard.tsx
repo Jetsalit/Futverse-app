@@ -534,11 +534,19 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
                 </div>
               </div>
 
-              {/* Canvas Area (Football Pitch) */}
-              <div
-                className="flex-1 relative w-full overflow-hidden select-none touch-none bg-white"
-                ref={containerRef}
-              >
+              {/* Canvas Area Container */}
+              <div className="flex-1 relative w-full overflow-y-auto overflow-x-hidden bg-slate-50 flex flex-col p-2 lg:p-6">
+                <div
+                  className={`relative bg-white ring-1 ring-slate-300 shadow-sm overflow-hidden select-none touch-none shrink-0 ${
+                    fieldType === "full" ? "aspect-[1.5/1] w-full" : "aspect-[1/1.3] max-w-full"
+                  }`}
+                  style={{
+                     maxHeight: fieldType === "full" ? "none" : "100%",
+                     height: fieldType === "full" ? "auto" : "100%",
+                     margin: "auto"
+                  }}
+                  ref={containerRef}
+                >
                 {/* Pure CSS Pitch Markings */}
                 <div className="absolute inset-4 lg:inset-8 ring-[1.5px] ring-slate-800 pointer-events-none z-0">
                   {fieldType === "full" ? (
@@ -822,6 +830,7 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
                     </Layer>
                   </Stage>
                 </div>
+              </div>
               </div>
             </>
           ) : (
