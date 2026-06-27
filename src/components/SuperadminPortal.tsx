@@ -98,6 +98,30 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     }
   };
 
+  const handleUpdateRole = async (user: User, newRole: string) => {
+    if (!user.id) return;
+    try {
+      await updateDoc(doc(db, "users", user.id), {
+        role: newRole
+      });
+      fetchUsers();
+    } catch (error) {
+      console.error("Error updating role:", error);
+    }
+  };
+
+  const handleUpdateStatus = async (user: User, newStatus: string) => {
+    if (!user.id) return;
+    try {
+      await updateDoc(doc(db, "users", user.id), {
+        status: newStatus
+      });
+      fetchUsers();
+    } catch (error) {
+      console.error("Error updating status:", error);
+    }
+  };
+
   const filteredPendingUsers = pendingUsers.filter(u => {
     const matchesSearch = (u.name?.toLowerCase().includes(searchQuery.toLowerCase()) || u.email?.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesRole = roleFilter === "ALL" || u.requestedRole === roleFilter;
@@ -142,6 +166,18 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                 {pendingUsers.length}
               </span>
             )}
+          </span>
+        </button>
+        <button
+          onClick={() => setActiveTab("users")}
+          className={`py-4 font-bold text-sm border-b-2 transition-colors ${
+            activeTab === "users"
+              ? "border-emerald-500 text-emerald-600"
+              : "border-transparent text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          <span className="flex items-center gap-2">
+            Manage Users
           </span>
         </button>
       </div>
@@ -291,6 +327,90 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
               </div>
             </div>
           </>
+        )}
+
+        {activeTab === "users" && (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4">
+              <div className="relative flex-1 sm:w-64 w-full">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <input
+                  type="text"
+                  placeholder="Search users..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                  <tr>
+                    <th className="p-4">User</th>
+                    <th className="p-4">Contact</th>
+                    <th className="p-4">Status</th>
+                    <th className="p-4">Role</th>
+                    <th className="p-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {users.filter(u => (u.name?.toLowerCase().includes(searchQuery.toLowerCase()) || u.email?.toLowerCase().includes(searchQuery.toLowerCase()))).map((user) => (
+                    <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="p-4 font-bold text-slate-800">{user.name}</td>
+                      <td className="p-4">
+                        <div className="text-slate-800">{user.email}</div>
+                      </td>
+                      <td className="p-4">
+                        <select
+                          value={user.status || "INACTIVE"}
+                          onChange={(e) => handleUpdateStatus(user, e.target.value)}
+                          disabled={user.role === "SUPERADMIN"}
+                          className={`text-xs font-bold rounded-xl px-2 py-1 outline-none cursor-pointer border ${
+                            user.status === "ACTIVE" ? "bg-emerald-100 text-emerald-800 border-emerald-200" :
+                            user.status === "PENDING" ? "bg-amber-100 text-amber-800 border-amber-200" :
+                            user.status === "REJECTED" ? "bg-rose-100 text-rose-800 border-rose-200" :
+                            "bg-slate-100 text-slate-800 border-slate-200"
+                          }`}
+                        >
+                          <option value="ACTIVE">ACTIVE</option>
+                          <option value="PENDING">PENDING</option>
+                          <option value="REJECTED">REJECTED</option>
+                          <option value="INACTIVE">SUSPENDED</option>
+                        </select>
+                      </td>
+                      <td className="p-4">
+                        <select
+                          value={user.role || "USER"}
+                          onChange={(e) => handleUpdateRole(user, e.target.value)}
+                          disabled={user.role === "SUPERADMIN"}
+                          className="text-xs font-bold rounded-xl px-2 py-1 bg-slate-50 border border-slate-200 text-slate-800 outline-none cursor-pointer"
+                        >
+                          <option value="USER">USER</option>
+                          <option value="PLAYER">PLAYER</option>
+                          <option value="COACH">COACH</option>
+                          <option value="SCOUT">SCOUT</option>
+                          <option value="PARENT">PARENT</option>
+                          <option value="ADMIN">ADMIN</option>
+                          <option value="DATA_ADMIN">DATA_ADMIN</option>
+                          <option value="SUPERADMIN" disabled>SUPERADMIN</option>
+                        </select>
+                      </td>
+                      <td className="p-4 text-right space-x-2 whitespace-nowrap">
+                        <button
+                          onClick={() => setSelectedUser(user)}
+                          className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="View Profile"
+                        >
+                          <Eye size={18} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         )}
       </div>
 
