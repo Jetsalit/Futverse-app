@@ -11,38 +11,27 @@ import {
   Search,
   Filter,
   Eye,
+  Loader2,
 } from "lucide-react";
+import { subscribeToUsers, updateUserStatus } from "../lib/firestore/users";
 
 export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
-  const { hasPermission, currentUser } = useAuth();
+  const { hasPermission, impersonate, currentUser: authUser } = useAuth();
   const [activeTab, setActiveTab] = useState<"approvals" | "users">("approvals");
   const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("ALL");
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
   useEffect(() => {
-    fetchUsers();
-  }, []);
-
-  const fetchUsers = async () => {
-    setLoading(true);
-    try {
-      const q = query(collection(db, "users"));
-      const snapshot = await getDocs(q);
-      const fetchedUsers: User[] = [];
-      snapshot.forEach((doc) => {
-        fetchedUsers.push({ id: doc.id, ...doc.data() } as User);
-      });
-      setUsers(fetchedUsers);
-    } catch (error) {
-      console.error("Error fetching users:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const unsubscribe = subscribeToUsers((firestoreUsers) => {
+      setUsers(firestoreUsers.filter((u) => u.id !== authUser?.id));
+      setIsLoadingUsers(false);
+    });
+    return () => unsubscribe();
+  }, [authUser?.id]);
 
   if (!hasPermission(["SUPERADMIN"])) {
     return (
@@ -52,10 +41,10 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     );
   }
 
-  const pendingUsers = users.filter((u) => u.status === "PENDING");
+  const pendingUsers = users.filter((u) => u.status === "PENDING" || u.status === "Inactive");
   const today = new Date().toDateString();
-  const approvedToday = users.filter((u) => u.status === "ACTIVE" && u.approvedAt && new Date(u.approvedAt).toDateString() === today).length;
-  const rejectedCount = users.filter((u) => u.status === "REJECTED").length;
+  const approvedToday = users.filter((u) => (u.status === "ACTIVE" || u.status === "Active") && u.approvedAt && new Date(u.approvedAt).toDateString() === today).length;
+  const rejectedCount = users.filter((u) => u.status === "REJECTED" || u.status === "Inactive").length;
   const coachesCount = users.filter((u) => u.role === "COACH" || u.requestedRole === "COACH").length;
   const playersCount = users.filter((u) => u.role === "PLAYER" || u.requestedRole === "PLAYER").length;
   const scoutsCount = users.filter((u) => u.role === "SCOUT" || u.requestedRole === "SCOUT").length;
@@ -65,22 +54,20 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     if (!user.id) return;
     try {
       const newRole = user.requestedRole || "USER";
-      await updateDoc(doc(db, "users", user.id), {
-        status: "ACTIVE",
+      await updateUserStatus(user.id, "Active", {
         role: newRole,
-        approvedBy: currentUser?.id || "SUPERADMIN",
+        approvedBy: authUser?.id || "SUPERADMIN",
         approvedAt: new Date().toISOString()
       });
       await addDoc(collection(db, "logs"), {
         action: "USER_APPROVED",
-        approvedBy: currentUser?.id || "SUPERADMIN",
+        approvedBy: authUser?.id || "SUPERADMIN",
         targetUser: user.id,
         targetEmail: user.email,
         oldRole: user.role,
         newRole: newRole,
         timestamp: new Date()
       });
-      fetchUsers();
       setSelectedUser(null);
     } catch (error) {
       console.error("Error approving user:", error);
@@ -89,18 +76,16 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
 
   const handleReject = async (user: User) => {
     if (!user.id) return;
+    const rejectReason = "Rejected by admin";
     try {
-      await updateDoc(doc(db, "users", user.id), {
-        status: "REJECTED"
-      });
+      await updateUserStatus(user.id, "Inactive", { rejectionReason: rejectReason });
       await addDoc(collection(db, "logs"), {
         action: "USER_REJECTED",
-        rejectedBy: currentUser?.id || "SUPERADMIN",
+        rejectedBy: authUser?.id || "SUPERADMIN",
         targetUser: user.id,
         targetEmail: user.email,
         timestamp: new Date()
       });
-      fetchUsers();
       setSelectedUser(null);
     } catch (error) {
       console.error("Error rejecting user:", error);
@@ -122,14 +107,13 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
       });
       await addDoc(collection(db, "logs"), {
         action: "ROLE_UPDATED",
-        updatedBy: currentUser?.id || "SUPERADMIN",
+        updatedBy: authUser?.id || "SUPERADMIN",
         targetUser: user.id,
         targetEmail: user.email,
         oldRole: user.role,
         newRole: newRole,
         timestamp: new Date()
       });
-      fetchUsers();
     } catch (error) {
       console.error("Error updating role:", error);
     }
@@ -143,14 +127,13 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
       });
       await addDoc(collection(db, "logs"), {
         action: "STATUS_UPDATED",
-        updatedBy: currentUser?.id || "SUPERADMIN",
+        updatedBy: authUser?.id || "SUPERADMIN",
         targetUser: user.id,
         targetEmail: user.email,
         oldStatus: user.status,
         newStatus: newStatus,
         timestamp: new Date()
       });
-      fetchUsers();
     } catch (error) {
       console.error("Error updating status:", error);
     }
@@ -300,9 +283,11 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {loading ? (
+                    {isLoadingUsers ? (
                       <tr>
-                        <td colSpan={6} className="p-8 text-center text-slate-500">Loading...</td>
+                        <td colSpan={6} className="p-8 text-center text-slate-500">
+                          <Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" />
+                        </td>
                       </tr>
                     ) : filteredPendingUsers.length === 0 ? (
                       <tr>

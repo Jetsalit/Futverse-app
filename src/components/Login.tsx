@@ -9,7 +9,7 @@ import {
   GoogleAuthProvider,
   sendPasswordResetEmail,
 } from "firebase/auth";
-import { doc, setDoc, getDoc, addDoc, collection } from "firebase/firestore";
+import { doc, setDoc, getDoc, addDoc, collection, serverTimestamp } from "firebase/firestore";
 import {
   Shield,
   Mail,
@@ -121,37 +121,45 @@ export default function Login() {
       if (!userSnap.exists()) {
         const isSuperAdmin = user.email === "jetsalween@gmail.com";
         const assignedRole = isSuperAdmin ? "SUPERADMIN" : "USER";
-        const status = isSuperAdmin ? "ACTIVE" : "PENDING";
+        const status = isSuperAdmin ? "Active" : "Inactive";
         
         const newData: any = {
-          name: user.displayName || "User",
+          uid: user.uid,
           email: user.email,
+          name: user.displayName || name || "User",
+          displayName: user.displayName || name || "User",
+          photoURL: user.photoURL || null,
           role: assignedRole,
           status: status,
+          subscriptionPlan: "FREE",
           createdAt: new Date(),
           updatedAt: new Date(),
+          lastLogin: new Date(),
         };
 
         if (!isSuperAdmin) {
           newData.requestedRole = requestedRole; // always set to default/selected
-          if (country) newData.country = country;
-          if (academyId) newData.academyId = academyId;
-          if (phone) newData.phone = phone;
+          newData.country = country || null;
+          newData.academyId = academyId || null;
+          newData.phone = phone || null;
+        } else {
+          newData.requestedRole = null;
+          newData.academyId = null;
         }
 
-        await setDoc(userRef, newData);
+        await setDoc(userRef, newData, { merge: true });
 
         await addDoc(collection(db, "logs"), {
           action: "USER_REGISTERED",
           userId: user.uid,
           email: user.email,
           requestedRole: isSuperAdmin ? "SUPERADMIN" : requestedRole,
-          timestamp: new Date()
+          timestamp: serverTimestamp()
         });
       } else {
         await setDoc(
           userRef,
-          { updatedAt: new Date() },
+          { lastLogin: serverTimestamp(), updatedAt: serverTimestamp() },
           { merge: true },
         );
       }
@@ -195,31 +203,40 @@ export default function Login() {
         // Save user data to Firestore
         const isSuperAdmin = email === "jetsalween@gmail.com";
         const assignedRole = isSuperAdmin ? "SUPERADMIN" : "USER";
-        const status = isSuperAdmin ? "ACTIVE" : "PENDING";
+        const status = isSuperAdmin ? "Active" : "Inactive";
         
         await setDoc(doc(db, "users", user.uid), {
-          name: name,
+          uid: user.uid,
           email: email,
+          name: name || "User",
+          displayName: name || "User",
+          photoURL: user.photoURL || null,
           role: assignedRole,
           status: status,
-          requestedRole: isSuperAdmin ? undefined : requestedRole,
-          country: country,
-          academyId: academyId || undefined,
-          phone: phone || undefined,
+          requestedRole: isSuperAdmin ? null : requestedRole,
+          country: country || null,
+          academyId: academyId || null,
+          phone: phone || null,
+          subscriptionPlan: "FREE",
           createdAt: new Date(),
-          updatedAt: new Date()
-        });
+          updatedAt: new Date(),
+          lastLogin: new Date()
+        }, { merge: true });
 
         await addDoc(collection(db, "logs"), {
           action: "USER_REGISTERED",
           userId: user.uid,
           email: user.email,
           requestedRole: isSuperAdmin ? "SUPERADMIN" : requestedRole,
-          timestamp: new Date()
+          timestamp: serverTimestamp()
         });
       } else {
         // Sign in existing user
-        await signInWithEmailAndPassword(auth, email, password);
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        await setDoc(doc(db, "users", userCredential.user.uid), {
+          lastLogin: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        }, { merge: true });
       }
     } catch (err: any) {
       console.error(err);
