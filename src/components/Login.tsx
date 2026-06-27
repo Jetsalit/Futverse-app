@@ -9,7 +9,7 @@ import {
   GoogleAuthProvider,
   sendPasswordResetEmail,
 } from "firebase/auth";
-import { doc, setDoc } from "firebase/firestore";
+import { doc, setDoc, getDoc, addDoc, collection } from "firebase/firestore";
 import {
   Shield,
   Mail,
@@ -115,33 +115,46 @@ export default function Login() {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
 
-      // Save or update user data to Firestore
-      const isSuperAdmin = user.email === "jetsalween@gmail.com";
-      const assignedRole = isSuperAdmin ? "SUPERADMIN" : "USER";
-      const status = isSuperAdmin ? "ACTIVE" : "PENDING";
-      
-      const updateData: any = {
-        name: user.displayName || "User",
-        email: user.email,
-        role: assignedRole,
-        updatedAt: new Date(),
-      };
-      
-      if (!isSuperAdmin) {
-        updateData.status = status;
-        if (!isLoginView) {
-          updateData.requestedRole = requestedRole;
-          if (country) updateData.country = country;
-          if (academyId) updateData.academyId = academyId;
-          if (phone) updateData.phone = phone;
-        }
-      }
+      const userRef = doc(db, "users", user.uid);
+      const userSnap = await getDoc(userRef);
 
-      await setDoc(
-        doc(db, "users", user.uid),
-        updateData,
-        { merge: true },
-      );
+      if (!userSnap.exists()) {
+        const isSuperAdmin = user.email === "jetsalween@gmail.com";
+        const assignedRole = isSuperAdmin ? "SUPERADMIN" : "USER";
+        const status = isSuperAdmin ? "ACTIVE" : "PENDING";
+        
+        const newData: any = {
+          name: user.displayName || "User",
+          email: user.email,
+          role: assignedRole,
+          status: status,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        if (!isSuperAdmin) {
+          newData.requestedRole = requestedRole; // always set to default/selected
+          if (country) newData.country = country;
+          if (academyId) newData.academyId = academyId;
+          if (phone) newData.phone = phone;
+        }
+
+        await setDoc(userRef, newData);
+
+        await addDoc(collection(db, "logs"), {
+          action: "USER_REGISTERED",
+          userId: user.uid,
+          email: user.email,
+          requestedRole: isSuperAdmin ? "SUPERADMIN" : requestedRole,
+          timestamp: new Date()
+        });
+      } else {
+        await setDoc(
+          userRef,
+          { updatedAt: new Date() },
+          { merge: true },
+        );
+      }
     } catch (err: any) {
       console.error(err);
       setError(err.message || "Google Sign-In failed. Please try again.");
@@ -195,6 +208,14 @@ export default function Login() {
           phone: phone || undefined,
           createdAt: new Date(),
           updatedAt: new Date()
+        });
+
+        await addDoc(collection(db, "logs"), {
+          action: "USER_REGISTERED",
+          userId: user.uid,
+          email: user.email,
+          requestedRole: isSuperAdmin ? "SUPERADMIN" : requestedRole,
+          timestamp: new Date()
         });
       } else {
         // Sign in existing user

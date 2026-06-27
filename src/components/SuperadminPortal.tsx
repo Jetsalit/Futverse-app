@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth, User } from "../contexts/AuthContext";
 import { db } from "../lib/firebase";
-import { collection, getDocs, doc, updateDoc, query } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc, query, addDoc } from "firebase/firestore";
 import {
   ShieldAlert,
   ArrowLeft,
@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 
 export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
-  const { hasPermission } = useAuth();
+  const { hasPermission, currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState<"approvals" | "users">("approvals");
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -68,8 +68,17 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
       await updateDoc(doc(db, "users", user.id), {
         status: "ACTIVE",
         role: newRole,
-        approvedBy: "SUPERADMIN",
+        approvedBy: currentUser?.id || "SUPERADMIN",
         approvedAt: new Date().toISOString()
+      });
+      await addDoc(collection(db, "logs"), {
+        action: "USER_APPROVED",
+        approvedBy: currentUser?.id || "SUPERADMIN",
+        targetUser: user.id,
+        targetEmail: user.email,
+        oldRole: user.role,
+        newRole: newRole,
+        timestamp: new Date()
       });
       fetchUsers();
       setSelectedUser(null);
@@ -83,6 +92,13 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     try {
       await updateDoc(doc(db, "users", user.id), {
         status: "REJECTED"
+      });
+      await addDoc(collection(db, "logs"), {
+        action: "USER_REJECTED",
+        rejectedBy: currentUser?.id || "SUPERADMIN",
+        targetUser: user.id,
+        targetEmail: user.email,
+        timestamp: new Date()
       });
       fetchUsers();
       setSelectedUser(null);
@@ -104,6 +120,15 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
       await updateDoc(doc(db, "users", user.id), {
         role: newRole
       });
+      await addDoc(collection(db, "logs"), {
+        action: "ROLE_UPDATED",
+        updatedBy: currentUser?.id || "SUPERADMIN",
+        targetUser: user.id,
+        targetEmail: user.email,
+        oldRole: user.role,
+        newRole: newRole,
+        timestamp: new Date()
+      });
       fetchUsers();
     } catch (error) {
       console.error("Error updating role:", error);
@@ -115,6 +140,15 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     try {
       await updateDoc(doc(db, "users", user.id), {
         status: newStatus
+      });
+      await addDoc(collection(db, "logs"), {
+        action: "STATUS_UPDATED",
+        updatedBy: currentUser?.id || "SUPERADMIN",
+        targetUser: user.id,
+        targetEmail: user.email,
+        oldStatus: user.status,
+        newStatus: newStatus,
+        timestamp: new Date()
       });
       fetchUsers();
     } catch (error) {
