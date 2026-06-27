@@ -7,6 +7,7 @@ import {
   updateProfile,
   signInWithPopup,
   GoogleAuthProvider,
+  sendPasswordResetEmail,
 } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 import {
@@ -52,6 +53,8 @@ const FutVerseLogo = ({ className = "" }: { className?: string }) => (
 export default function Login() {
   const { login } = useAuth();
   const [isLoginView, setIsLoginView] = useState(true);
+  const [isForgotPasswordView, setIsForgotPasswordView] = useState(false);
+  const [isResetEmailSent, setIsResetEmailSent] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -61,6 +64,24 @@ export default function Login() {
 
   const [showDemo, setShowDemo] = useState(false);
   const [clickCount, setClickCount] = useState(0);
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) {
+      setError("Please enter your email address first.");
+      return;
+    }
+    setError("");
+    setIsSubmitting(true);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setIsResetEmailSent(true);
+    } catch (err: any) {
+      setError(err.message || "Failed to send password reset email.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleLogoClick = () => {
     setClickCount((prev) => {
@@ -204,22 +225,52 @@ export default function Login() {
           </h2>
 
           <h3 className="text-3xl font-black text-slate-800 mb-2 tracking-tight">
-            {isLoginView ? "Sign In" : "Create Account"}
+            {isForgotPasswordView
+              ? "Reset Password"
+              : isLoginView
+              ? "Sign In"
+              : "Create Account"}
           </h3>
           <p className="text-slate-500 font-medium mb-8">
-            {isLoginView
+            {isForgotPasswordView
+              ? "Enter your email address and we'll send you a link to reset your password."
+              : isLoginView
               ? "Enter your email and password to access your account."
               : "Set up a new user account with your email."}
           </p>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          {isResetEmailSent ? (
+            <div className="space-y-6 text-center">
+              <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Mail size={32} />
+              </div>
+              <h3 className="text-xl font-bold text-slate-800">Check Your Email</h3>
+              <p className="text-slate-500 font-medium">
+                We've sent a password reset link to <br />
+                <span className="text-slate-800 font-bold">{email}</span>
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsForgotPasswordView(false);
+                  setIsResetEmailSent(false);
+                  setIsLoginView(true);
+                  setError("");
+                }}
+                className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-[#E1FF01] font-black rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 mt-4 uppercase tracking-wide text-sm"
+              >
+                Back to Sign In
+              </button>
+            </div>
+          ) : (
+          <form onSubmit={isForgotPasswordView ? handleForgotPassword : handleSubmit} className="space-y-4">
             {error && (
               <div className="p-3 bg-red-50 text-red-600 text-sm font-medium rounded-xl border border-red-100 flex flex-col">
                 <span>{error}</span>
               </div>
             )}
 
-            {!isLoginView && (
+            {!isLoginView && !isForgotPasswordView && (
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5 pl-1">
                   Full Name
@@ -235,7 +286,7 @@ export default function Login() {
                     onChange={(e) => setName(e.target.value)}
                     placeholder="John Doe"
                     className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium rounded-xl focus:ring-2 focus:ring-[#E1FF01] focus:border-[#E1FF01] outline-none transition-all placeholder:text-slate-400"
-                    required={!isLoginView}
+                    required={!isLoginView && !isForgotPasswordView}
                   />
                 </div>
               </div>
@@ -261,6 +312,7 @@ export default function Login() {
               </div>
             </div>
 
+            {!isForgotPasswordView && (
             <div>
               <div className="flex justify-between items-center mb-1.5 pl-1">
                 <label className="block text-xs font-bold text-slate-700">
@@ -269,7 +321,11 @@ export default function Login() {
                 {isLoginView && (
                   <button
                     type="button"
-                    onClick={(e) => e.preventDefault()}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setIsForgotPasswordView(true);
+                      setError("");
+                    }}
                     className="text-[10px] font-bold text-slate-500 hover:text-slate-700 bg-transparent border-none p-0 cursor-pointer"
                   >
                     Forgot Password?
@@ -287,13 +343,14 @@ export default function Login() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium rounded-xl focus:ring-2 focus:ring-[#E1FF01] focus:border-[#E1FF01] outline-none transition-all placeholder:text-slate-400 tracking-widest"
-                  required
+                  required={!isForgotPasswordView}
                   minLength={6}
                 />
               </div>
             </div>
+            )}
 
-            {!isLoginView && (
+            {!isLoginView && !isForgotPasswordView && (
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5 pl-1">
                   Confirm Password
@@ -309,7 +366,7 @@ export default function Login() {
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="••••••••"
                     className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium rounded-xl focus:ring-2 focus:ring-[#E1FF01] focus:border-[#E1FF01] outline-none transition-all placeholder:text-slate-400 tracking-widest"
-                    required={!isLoginView}
+                    required={!isLoginView && !isForgotPasswordView}
                     minLength={6}
                   />
                 </div>
@@ -325,51 +382,74 @@ export default function Login() {
                 <Loader2 className="animate-spin" size={20} />
               ) : (
                 <>
-                  {isLoginView ? "Sign In" : "Create Account"}{" "}
+                  {isForgotPasswordView
+                    ? "Reset Password"
+                    : isLoginView
+                    ? "Sign In"
+                    : "Create Account"}{" "}
                   <ChevronRight size={16} className="text-[#E1FF01]" />
                 </>
               )}
             </button>
-
-            <div className="relative my-6">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-slate-200" />
+            
+            {isForgotPasswordView ? (
+              <div className="text-center mt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsForgotPasswordView(false);
+                    setError("");
+                  }}
+                  className="text-sm font-medium text-slate-500 hover:text-slate-800 transition-colors"
+                >
+                  Back to Sign In
+                </button>
               </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white px-2 text-slate-500 font-medium">
-                  Or continue with
-                </span>
-              </div>
-            </div>
+            ) : (
+              <>
+                <div className="relative my-6">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t border-slate-200" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-white px-2 text-slate-500 font-medium">
+                      Or continue with
+                    </span>
+                  </div>
+                </div>
 
-            <button
-              type="button"
-              onClick={handleGoogleSignIn}
-              disabled={isSubmitting}
-              className="w-full py-3 bg-white border border-slate-200 hover:bg-slate-50 disabled:bg-slate-50 disabled:cursor-not-allowed text-slate-700 font-bold rounded-xl shadow-sm transition-all flex items-center justify-center gap-3 text-sm"
-            >
-              <svg className="w-5 h-5" viewBox="0 0 24 24">
-                <path
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  fill="#4285F4"
-                />
-                <path
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  fill="#34A853"
-                />
-                <path
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                  fill="#FBBC05"
-                />
-                <path
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  fill="#EA4335"
-                />
-              </svg>
-              Google
-            </button>
+                <button
+                  type="button"
+                  onClick={handleGoogleSignIn}
+                  disabled={isSubmitting}
+                  className="w-full py-3 bg-white border border-slate-200 hover:bg-slate-50 disabled:bg-slate-50 disabled:cursor-not-allowed text-slate-700 font-bold rounded-xl shadow-sm transition-all flex items-center justify-center gap-3 text-sm"
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 24 24">
+                    <path
+                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                      fill="#4285F4"
+                    />
+                    <path
+                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                      fill="#34A853"
+                    />
+                    <path
+                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                      fill="#FBBC05"
+                    />
+                    <path
+                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                      fill="#EA4335"
+                    />
+                  </svg>
+                  Google
+                </button>
+              </>
+            )}
           </form>
+          )}
 
+          {!isForgotPasswordView && (
           <div className="mt-8 text-center">
             <p className="text-sm text-slate-500 font-medium">
               {isLoginView
@@ -384,6 +464,7 @@ export default function Login() {
               </button>
             </p>
           </div>
+          )}
 
           {/* Demo Roles Section */}
           {showDemo && (
