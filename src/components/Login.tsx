@@ -308,116 +308,30 @@ export default function Login() {
             )}
 
             {!isLoginView && !isForgotPasswordView && (
-              <>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5 pl-1">
-                    Full Name
-                  </label>
-                  <div className="relative">
-                    <User
-                      className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-                      size={18}
-                    />
-                    <input
-                      type="text"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="John Doe"
-                      className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium rounded-xl focus:ring-2 focus:ring-[#E1FF01] focus:border-[#E1FF01] outline-none transition-all placeholder:text-slate-400"
-                      required={!isLoginView && !isForgotPasswordView}
-                    />
-                  </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 pl-1">
+                  ชื่อ (Name)
+                </label>
+                <div className="relative">
+                  <User
+                    className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                    size={18}
+                  />
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="John Doe"
+                    className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium rounded-xl focus:ring-2 focus:ring-[#E1FF01] focus:border-[#E1FF01] outline-none transition-all placeholder:text-slate-400"
+                    required={!isLoginView && !isForgotPasswordView}
+                  />
                 </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1.5 pl-1">
-                      Country
-                    </label>
-                    <div className="relative">
-                      <Globe
-                        className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-                        size={18}
-                      />
-                      <input
-                        type="text"
-                        value={country}
-                        onChange={(e) => setCountry(e.target.value)}
-                        placeholder="Your Country"
-                        className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium rounded-xl focus:ring-2 focus:ring-[#E1FF01] focus:border-[#E1FF01] outline-none transition-all placeholder:text-slate-400"
-                        required={!isLoginView && !isForgotPasswordView}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1.5 pl-1">
-                      Phone (Optional)
-                    </label>
-                    <div className="relative">
-                      <Phone
-                        className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-                        size={18}
-                      />
-                      <input
-                        type="tel"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        placeholder="+1 234 567"
-                        className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium rounded-xl focus:ring-2 focus:ring-[#E1FF01] focus:border-[#E1FF01] outline-none transition-all placeholder:text-slate-400"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5 pl-1">
-                    Academy Name (Optional)
-                  </label>
-                  <div className="relative">
-                    <Building2
-                      className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-                      size={18}
-                    />
-                    <input
-                      type="text"
-                      value={academyId}
-                      onChange={(e) => setAcademyId(e.target.value)}
-                      placeholder="e.g. Elite Football Academy"
-                      className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium rounded-xl focus:ring-2 focus:ring-[#E1FF01] focus:border-[#E1FF01] outline-none transition-all placeholder:text-slate-400"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5 pl-1">
-                    Requested Role
-                  </label>
-                  <div className="relative">
-                    <Briefcase
-                      className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
-                      size={18}
-                    />
-                    <select
-                      value={requestedRole}
-                      onChange={(e) => setRequestedRole(e.target.value)}
-                      className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium rounded-xl focus:ring-2 focus:ring-[#E1FF01] focus:border-[#E1FF01] outline-none transition-all appearance-none cursor-pointer"
-                    >
-                      <option value="PLAYER">Player</option>
-                      <option value="COACH">Coach</option>
-                      <option value="SCOUT">Scout</option>
-                      <option value="PARENT">Parent</option>
-                    </select>
-                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
-                      <ChevronRight size={16} className="text-slate-400 rotate-90" />
-                    </div>
-                  </div>
-                </div>
-              </>
+              </div>
             )}
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5 pl-1">
-                Email Address
+                อีเมล (Email)
               </label>
               <div className="relative">
                 <Mail
@@ -439,7 +353,7 @@ export default function Login() {
             <div>
               <div className="flex justify-between items-center mb-1.5 pl-1">
                 <label className="block text-xs font-bold text-slate-700">
-                  Password
+                  รหัสผ่าน (Password)
                 </label>
                 {isLoginView && (
                   <button
@@ -474,26 +388,105 @@ export default function Login() {
             )}
 
             {!isLoginView && !isForgotPasswordView && (
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5 pl-1">
-                  Confirm Password
-                </label>
-                <div className="relative">
-                  <Lock
-                    className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-                    size={18}
-                  />
-                  <input
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium rounded-xl focus:ring-2 focus:ring-[#E1FF01] focus:border-[#E1FF01] outline-none transition-all placeholder:text-slate-400 tracking-widest"
-                    required={!isLoginView && !isForgotPasswordView}
-                    minLength={6}
-                  />
+              <>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5 pl-1">
+                    ยืนยันรหัสผ่าน (Confirm Password)
+                  </label>
+                  <div className="relative">
+                    <Lock
+                      className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                      size={18}
+                    />
+                    <input
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium rounded-xl focus:ring-2 focus:ring-[#E1FF01] focus:border-[#E1FF01] outline-none transition-all placeholder:text-slate-400 tracking-widest"
+                      required={!isLoginView && !isForgotPasswordView}
+                      minLength={6}
+                    />
+                  </div>
                 </div>
-              </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5 pl-1">
+                    ประเทศ (Country)
+                  </label>
+                  <div className="relative">
+                    <Globe
+                      className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                      size={18}
+                    />
+                    <input
+                      type="text"
+                      value={country}
+                      onChange={(e) => setCountry(e.target.value)}
+                      placeholder="Your Country"
+                      className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium rounded-xl focus:ring-2 focus:ring-[#E1FF01] focus:border-[#E1FF01] outline-none transition-all placeholder:text-slate-400"
+                      required={!isLoginView && !isForgotPasswordView}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5 pl-1">
+                    Academy (ถ้ามี)
+                  </label>
+                  <div className="relative">
+                    <Building2
+                      className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                      size={18}
+                    />
+                    <input
+                      type="text"
+                      value={academyId}
+                      onChange={(e) => setAcademyId(e.target.value)}
+                      placeholder="e.g. Elite Football Academy"
+                      className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium rounded-xl focus:ring-2 focus:ring-[#E1FF01] focus:border-[#E1FF01] outline-none transition-all placeholder:text-slate-400"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-2 pl-1">
+                    สมัครเป็น (Role)
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { id: "COACH", label: "Coach" },
+                      { id: "PLAYER", label: "Player" },
+                      { id: "SCOUT", label: "Scout" },
+                      { id: "PARENT", label: "Parent" },
+                    ].map((role) => (
+                      <label
+                        key={role.id}
+                        className={`flex items-center gap-2 p-3 rounded-xl border cursor-pointer transition-all ${
+                          requestedRole === role.id
+                            ? "bg-slate-900 border-slate-900 text-[#E1FF01]"
+                            : "bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300"
+                        }`}
+                      >
+                        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                          requestedRole === role.id ? "border-[#E1FF01]" : "border-slate-300"
+                        }`}>
+                          {requestedRole === role.id && <div className="w-2 h-2 rounded-full bg-[#E1FF01]" />}
+                        </div>
+                        <input
+                          type="radio"
+                          name="requestedRole"
+                          value={role.id}
+                          checked={requestedRole === role.id}
+                          onChange={(e) => setRequestedRole(e.target.value)}
+                          className="sr-only"
+                        />
+                        <span className="text-sm font-bold">{role.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </>
             )}
 
             <button
