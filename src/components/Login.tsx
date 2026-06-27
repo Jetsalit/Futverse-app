@@ -205,23 +205,31 @@ export default function Login() {
         const assignedRole = isSuperAdmin ? "SUPERADMIN" : "USER";
         const status = isSuperAdmin ? "Active" : "Inactive";
         
-        await setDoc(doc(db, "users", user.uid), {
-          uid: user.uid,
-          email: email,
-          name: name || "User",
-          displayName: name || "User",
-          photoURL: user.photoURL || null,
-          role: assignedRole,
-          status: status,
-          requestedRole: isSuperAdmin ? null : requestedRole,
-          country: country || null,
-          academyId: academyId || null,
-          phone: phone || null,
-          subscriptionPlan: "FREE",
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          lastLogin: new Date()
-        }, { merge: true });
+        console.log("=== Before setDoc ===");
+
+try {
+  await setDoc(doc(db, "users", user.uid), {
+    uid: user.uid,
+    email: email,
+    name: name || "User",
+    displayName: name || "User",
+    photoURL: user.photoURL || null,
+    role: assignedRole,
+    status: status,
+    requestedRole: isSuperAdmin ? null : requestedRole,
+    country: country || null,
+    academyId: academyId || null,
+    phone: phone || null,
+    subscriptionPlan: "FREE",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    lastLogin: new Date()
+  }, { merge: true });
+
+  console.log("=== After setDoc ===");
+} catch (e) {
+  console.error("setDoc ERROR:", e);
+}
 
         await addDoc(collection(db, "logs"), {
           action: "USER_REGISTERED",
