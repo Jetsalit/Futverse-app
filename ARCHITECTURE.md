@@ -105,10 +105,19 @@ Firebase is configured in `src/lib/firebase.ts` and integrated primarily for Aut
 
 Currently, core feature data (drills, players, tactics) relies primarily on local component state or mock data for rapid prototyping, and is not yet fully persisted to Firestore.
 
+## User Registration and Approval Workflow
+
+FutVerse utilizes an explicit user approval process to ensure platform security. 
+
+1. **Registration:** Users sign up via Email/Password or Google Sign-In in `Login.tsx`. During registration, they must provide their Name, Country, and a `requestedRole` (e.g., PLAYER, COACH). New accounts default to the `USER` role with a `PENDING` status.
+2. **Pending State:** Users with a `PENDING` or `REJECTED` status are blocked from accessing protected app modules and are shown the `PendingApproval.tsx` screen.
+3. **Approval Flow:** A `SUPERADMIN` reviews pending users in the User Approval Center inside `SuperadminPortal.tsx`.
+4. **Activation:** When approved, the user's status is updated to `ACTIVE` and their `role` is promoted to their `requestedRole`. The dashboard becomes accessible upon their next login or state refresh.
+
 ## Data Flow
 
 1. **Authentication:** The user logs in via `Login.tsx`. Firebase Auth resolves the credential.
 2. **Profile Hydration:** `AuthContext` listens for the auth state, fetches the corresponding user document from the `users` Firestore collection, and sets `currentUser` in state.
-3. **Authorization:** `App.tsx` checks `currentUser.role` and `currentUser.status`. If the user is `Pending` or `Inactive`, they are shown the `SubscriptionPaywall`. Otherwise, the Sidebar dynamically renders allowed navigation items.
+3. **Authorization:** `App.tsx` checks `currentUser.role` and `currentUser.status`. If the user is `PENDING` or `REJECTED`, they are shown the `PendingApproval` page. If `Inactive`, they are shown the `SubscriptionPaywall`. Otherwise, the Sidebar dynamically renders allowed navigation items.
 4. **Navigation & Rendering:** The user clicks a sidebar item, updating `currentPage`. `App.tsx` conditionally renders the corresponding feature component based on the active route.
 5. **State Management:** The majority of application state is managed locally within the top-level components or via the mock data hooks (`useDrillDatabase`), flowing downwards via props. Network status is globally tracked via `useNetworkStatus`.

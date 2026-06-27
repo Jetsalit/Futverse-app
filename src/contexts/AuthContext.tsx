@@ -24,7 +24,16 @@ export interface User {
   name: string;
   email?: string;
   role: UserRole;
-  status?: "Active" | "Inactive" | "Pending";
+  requestedRole?: UserRole;
+  status?: "ACTIVE" | "INACTIVE" | "PENDING" | "REJECTED" | "Active" | "Inactive" | "Pending";
+  country?: string;
+  phone?: string;
+  academyId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  lastLogin?: string;
   subscriptionPlan?: "monthly" | "yearly";
   paymentDetails?: {
     date: string;

@@ -18,13 +18,22 @@ This document outlines the proposed Firestore database architecture for the FutV
 Stores application user accounts and global access control data.
 - **Document ID:** Firebase Auth UID
 - **Fields:**
+  - `uid` (string)
   - `email` (string)
   - `name` (string)
+  - `photoURL` (string, optional)
   - `role` (string) - Enum: `SUPERADMIN`, `ADMIN`, `DATA_ADMIN`, `COACH`, `SCOUT`, `PLAYER`, `USER`, `PARENT`
-  - `status` (string) - Enum: `ACTIVE`, `PENDING`, `INACTIVE`
+  - `requestedRole` (string, optional)
+  - `status` (string) - Enum: `ACTIVE`, `PENDING`, `INACTIVE`, `REJECTED`
+  - `academyId` (string, optional)
+  - `country` (string, optional)
+  - `phone` (string, optional)
   - `subscriptionPlan` (string, optional)
   - `createdAt` (timestamp)
   - `updatedAt` (timestamp)
+  - `approvedBy` (string, optional) - Reference to `users` (SUPERADMIN)
+  - `approvedAt` (timestamp, optional)
+  - `lastLogin` (timestamp, optional)
 
 ### `teams`
 Represents different squads within the academy or club (e.g., U18s, First Team).

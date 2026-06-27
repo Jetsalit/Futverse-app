@@ -41,6 +41,7 @@ import Login from "./components/Login";
 import SuperadminPortal from "./components/SuperadminPortal";
 import SubscriptionPaywall from "./components/SubscriptionPaywall";
 import ConciergeDashboard from "./components/ConciergeDashboard";
+import PendingApproval from "./components/PendingApproval";
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState("dashboard");
@@ -95,6 +96,10 @@ export default function App() {
 
   if (!currentUser) {
     return <Login />;
+  }
+  
+  if (currentUser.status === "PENDING" || currentUser.status === "REJECTED") {
+    return <PendingApproval />;
   }
 
   // Handle Paywall Logic inside the main app layout so the banner can still be visible

@@ -20,6 +20,10 @@ import {
   ChevronRight,
   Database,
   Loader2,
+  Globe,
+  Phone,
+  Building2,
+  Briefcase
 } from "lucide-react";
 
 const FutVerseLogo = ({ className = "" }: { className?: string }) => (
@@ -59,6 +63,10 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [country, setCountry] = useState("");
+  const [academyId, setAcademyId] = useState("");
+  const [phone, setPhone] = useState("");
+  const [requestedRole, setRequestedRole] = useState("PLAYER");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -108,16 +116,30 @@ export default function Login() {
       const user = result.user;
 
       // Save or update user data to Firestore
-      const assignedRole = user.email === "jetsalween@gmail.com" ? "SUPERADMIN" : "USER";
+      const isSuperAdmin = user.email === "jetsalween@gmail.com";
+      const assignedRole = isSuperAdmin ? "SUPERADMIN" : "USER";
+      const status = isSuperAdmin ? "ACTIVE" : "PENDING";
+      
+      const updateData: any = {
+        name: user.displayName || "User",
+        email: user.email,
+        role: assignedRole,
+        updatedAt: new Date(),
+      };
+      
+      if (!isSuperAdmin) {
+        updateData.status = status;
+        if (!isLoginView) {
+          updateData.requestedRole = requestedRole;
+          if (country) updateData.country = country;
+          if (academyId) updateData.academyId = academyId;
+          if (phone) updateData.phone = phone;
+        }
+      }
+
       await setDoc(
         doc(db, "users", user.uid),
-        {
-          name: user.displayName || "User",
-          email: user.email,
-          role: assignedRole,
-          updatedAt: new Date(),
-          // Keep createdAt if it exists, use merge to not overwrite
-        },
+        updateData,
         { merge: true },
       );
     } catch (err: any) {
@@ -140,6 +162,12 @@ export default function Login() {
           setIsSubmitting(false);
           return;
         }
+        
+        if (!country) {
+          setError("Country is required!");
+          setIsSubmitting(false);
+          return;
+        }
 
         // Register new user
         const userCredential = await createUserWithEmailAndPassword(
@@ -152,12 +180,21 @@ export default function Login() {
         await updateProfile(user, { displayName: name });
 
         // Save user data to Firestore
-        const assignedRole = email === "jetsalween@gmail.com" ? "SUPERADMIN" : "USER";
+        const isSuperAdmin = email === "jetsalween@gmail.com";
+        const assignedRole = isSuperAdmin ? "SUPERADMIN" : "USER";
+        const status = isSuperAdmin ? "ACTIVE" : "PENDING";
+        
         await setDoc(doc(db, "users", user.uid), {
           name: name,
           email: email,
           role: assignedRole,
+          status: status,
+          requestedRole: isSuperAdmin ? undefined : requestedRole,
+          country: country,
+          academyId: academyId || undefined,
+          phone: phone || undefined,
           createdAt: new Date(),
+          updatedAt: new Date()
         });
       } else {
         // Sign in existing user
@@ -271,25 +308,111 @@ export default function Login() {
             )}
 
             {!isLoginView && !isForgotPasswordView && (
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5 pl-1">
-                  Full Name
-                </label>
-                <div className="relative">
-                  <User
-                    className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-                    size={18}
-                  />
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="John Doe"
-                    className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium rounded-xl focus:ring-2 focus:ring-[#E1FF01] focus:border-[#E1FF01] outline-none transition-all placeholder:text-slate-400"
-                    required={!isLoginView && !isForgotPasswordView}
-                  />
+              <>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5 pl-1">
+                    Full Name
+                  </label>
+                  <div className="relative">
+                    <User
+                      className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                      size={18}
+                    />
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="John Doe"
+                      className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium rounded-xl focus:ring-2 focus:ring-[#E1FF01] focus:border-[#E1FF01] outline-none transition-all placeholder:text-slate-400"
+                      required={!isLoginView && !isForgotPasswordView}
+                    />
+                  </div>
                 </div>
-              </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5 pl-1">
+                      Country
+                    </label>
+                    <div className="relative">
+                      <Globe
+                        className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                        size={18}
+                      />
+                      <input
+                        type="text"
+                        value={country}
+                        onChange={(e) => setCountry(e.target.value)}
+                        placeholder="Your Country"
+                        className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium rounded-xl focus:ring-2 focus:ring-[#E1FF01] focus:border-[#E1FF01] outline-none transition-all placeholder:text-slate-400"
+                        required={!isLoginView && !isForgotPasswordView}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5 pl-1">
+                      Phone (Optional)
+                    </label>
+                    <div className="relative">
+                      <Phone
+                        className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                        size={18}
+                      />
+                      <input
+                        type="tel"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        placeholder="+1 234 567"
+                        className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium rounded-xl focus:ring-2 focus:ring-[#E1FF01] focus:border-[#E1FF01] outline-none transition-all placeholder:text-slate-400"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5 pl-1">
+                    Academy Name (Optional)
+                  </label>
+                  <div className="relative">
+                    <Building2
+                      className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                      size={18}
+                    />
+                    <input
+                      type="text"
+                      value={academyId}
+                      onChange={(e) => setAcademyId(e.target.value)}
+                      placeholder="e.g. Elite Football Academy"
+                      className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium rounded-xl focus:ring-2 focus:ring-[#E1FF01] focus:border-[#E1FF01] outline-none transition-all placeholder:text-slate-400"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5 pl-1">
+                    Requested Role
+                  </label>
+                  <div className="relative">
+                    <Briefcase
+                      className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                      size={18}
+                    />
+                    <select
+                      value={requestedRole}
+                      onChange={(e) => setRequestedRole(e.target.value)}
+                      className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium rounded-xl focus:ring-2 focus:ring-[#E1FF01] focus:border-[#E1FF01] outline-none transition-all appearance-none cursor-pointer"
+                    >
+                      <option value="PLAYER">Player</option>
+                      <option value="COACH">Coach</option>
+                      <option value="SCOUT">Scout</option>
+                      <option value="PARENT">Parent</option>
+                    </select>
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                      <ChevronRight size={16} className="text-slate-400 rotate-90" />
+                    </div>
+                  </div>
+                </div>
+              </>
             )}
 
             <div>
