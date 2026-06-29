@@ -49,22 +49,28 @@ export default function RecoveryDashboard({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubInjured = onSnapshot(collection(db, "injuredPlayers"), (snapshot) => {
-      const loaded = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as InjuredPlayer[];
-      setInjuredPlayers(loaded);
-    });
+    const unsubInjured = onSnapshot(
+      collection(db, "injuredPlayers"),
+      (snapshot) => {
+        const loaded = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as InjuredPlayer[];
+        setInjuredPlayers(loaded);
+      },
+    );
 
-    const unsubWellness = onSnapshot(collection(db, "wellnessPlayers"), (snapshot) => {
-      const loaded = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as WellnessPlayer[];
-      setWellnessPlayers(loaded);
-      setLoading(false);
-    });
+    const unsubWellness = onSnapshot(
+      collection(db, "wellnessPlayers"),
+      (snapshot) => {
+        const loaded = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as WellnessPlayer[];
+        setWellnessPlayers(loaded);
+        setLoading(false);
+      },
+    );
 
     return () => {
       unsubInjured();

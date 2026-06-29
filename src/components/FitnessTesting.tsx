@@ -23,7 +23,7 @@ import {
   ClipboardList,
   Database,
   Check,
-  Users
+  Users,
 } from "lucide-react";
 import { db } from "../lib/firebase";
 import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
@@ -54,7 +54,6 @@ const METRICS_CONFIG = [
   { key: "speed_30m", label: "30m Sprint", unit: "Sec", max: 6, invert: true },
   { key: "vertical_jump", label: "Vertical Jump", unit: "cm", max: 80 },
 ];
-
 
 // --- FitnessTestingGrid Implementation ---
 
@@ -88,18 +87,24 @@ const PlayerTestRow = memo(
         <td className="px-6 py-3 sticky left-0 bg-white group-hover:bg-slate-50 z-10 shadow-[1px_0_0_#e2e8f0]">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-emerald-100 group-hover:text-emerald-600 transition-colors shrink-0 overflow-hidden border border-slate-200">
-               {player.avatar ? (
-                <img src={player.avatar} alt={player.firstName} className="w-full h-full object-cover" />
-               ) : (
+              {player.avatar ? (
+                <img
+                  src={player.avatar}
+                  alt={player.firstName}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
                 <User size={14} />
-               )}
+              )}
             </div>
             <div className="min-w-0">
               <div className="font-medium text-slate-800 truncate">
                 {player.firstName} {player.lastName}
               </div>
               <div className="text-[10px] text-slate-500 flex gap-1.5 mt-0.5">
-                <span className="font-bold text-slate-400">{player.position}</span>
+                <span className="font-bold text-slate-400">
+                  {player.position}
+                </span>
                 <span>•</span>
                 <span>{player.ageGroup}</span>
               </div>
@@ -320,9 +325,9 @@ export default function FitnessTesting({
   useEffect(() => {
     const q = query(collection(db, "players"), orderBy("firstName"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loadedPlayers = snapshot.docs.map(doc => ({
+      const loadedPlayers = snapshot.docs.map((doc) => ({
         id: doc.id,
-        ...doc.data()
+        ...doc.data(),
       })) as Player[];
       setPlayers(loadedPlayers);
       if (loadedPlayers.length > 0 && !selectedPlayerId) {
@@ -490,7 +495,9 @@ export default function FitnessTesting({
                       : "border-transparent hover:bg-slate-50 text-slate-700"
                   }`}
                 >
-                  <span className="font-medium text-sm">{player.firstName} {player.lastName}</span>
+                  <span className="font-medium text-sm">
+                    {player.firstName} {player.lastName}
+                  </span>
                   <span
                     className={`text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded ${selectedPlayerId === player.id ? "bg-emerald-100 text-emerald-600" : "bg-slate-100 text-slate-400"}`}
                   >
@@ -582,7 +589,9 @@ export default function FitnessTesting({
                 Fitness Progression Timeline
               </h3>
               <div className="h-[300px] w-full mt-4 flex items-center justify-center border-2 border-dashed border-slate-200 rounded-xl">
-                 <p className="text-slate-400 font-medium">Historical data will appear here after multiple tests</p>
+                <p className="text-slate-400 font-medium">
+                  Historical data will appear here after multiple tests
+                </p>
               </div>
             </div>
           </div>

@@ -13,7 +13,7 @@ import {
   Zap,
   Shield,
   X,
-  Users
+  Users,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { db } from "../lib/firebase";

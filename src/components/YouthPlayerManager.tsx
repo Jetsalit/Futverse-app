@@ -10,11 +10,18 @@ import {
   ChevronLeft,
   Edit2,
   Trash2,
-  Users
+  Users,
 } from "lucide-react";
 import YouthDevelopmentReport from "./YouthDevelopmentReport";
 import { db } from "../lib/firebase";
-import { collection, onSnapshot, doc, deleteDoc, addDoc, updateDoc } from "firebase/firestore";
+import {
+  collection,
+  onSnapshot,
+  doc,
+  deleteDoc,
+  addDoc,
+  updateDoc,
+} from "firebase/firestore";
 import { useAcademy } from "../contexts/AcademyContext";
 import { EmptyState } from "./common/EmptyState";
 
@@ -60,9 +67,9 @@ export default function YouthPlayerManager({
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "players"), (snapshot) => {
-      const loadedPlayers = snapshot.docs.map(doc => ({
+      const loadedPlayers = snapshot.docs.map((doc) => ({
         id: doc.id,
-        ...doc.data()
+        ...doc.data(),
       })) as Player[];
       setPlayers(loadedPlayers);
       setLoading(false);
@@ -153,7 +160,7 @@ export default function YouthPlayerManager({
           dob: formData.dob,
           age: calculateAge(formData.dob),
           fitness_status: formData.fitness_status,
-          ...(formData.avatarUrl ? { avatar: formData.avatarUrl } : {})
+          ...(formData.avatarUrl ? { avatar: formData.avatarUrl } : {}),
         });
       } else {
         const newPlayer = {
@@ -175,7 +182,7 @@ export default function YouthPlayerManager({
       console.error("Error saving player:", error);
     }
   };
-  
+
   const handleDeleteConfirm = async () => {
     if (playerToDelete) {
       try {
@@ -274,8 +281,10 @@ export default function YouthPlayerManager({
                   className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-lg pl-3 pr-8 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                 >
                   <option value="All">All Squads</option>
-                  {settings.squads.map(squad => (
-                    <option key={squad} value={squad}>{squad} Squad</option>
+                  {settings.squads.map((squad) => (
+                    <option key={squad} value={squad}>
+                      {squad} Squad
+                    </option>
                   ))}
                 </select>
                 <ChevronDown
@@ -562,8 +571,10 @@ export default function YouthPlayerManager({
                         onChange={handleInputChange}
                         className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-slate-700 font-medium"
                       >
-                        {settings.squads.map(squad => (
-                          <option key={squad} value={squad}>{squad} Squad</option>
+                        {settings.squads.map((squad) => (
+                          <option key={squad} value={squad}>
+                            {squad} Squad
+                          </option>
                         ))}
                       </select>
                       <ChevronDown

@@ -9,10 +9,8 @@ import {
   Edit2,
   Trash2,
   X,
-  ClipboardList
 } from "lucide-react";
 import DrillDetailModal from "./DrillDetailModal";
-import { EmptyState } from "./common/EmptyState";
 
 export default function DrillLibrary({
   onNavigate,
@@ -231,14 +229,8 @@ export default function DrillLibrary({
             ))}
           </div>
         ) : (
-          <div className="h-full flex flex-col justify-center">
-            <EmptyState
-              icon={ClipboardList}
-              title="No Drills Found"
-              description="There are no practice drills matching your criteria in this category."
-              primaryActionLabel={activeTab === "my" ? "Create New Drill" : undefined}
-              onPrimaryAction={activeTab === "my" ? () => onNavigate("tactic_board") : undefined}
-            />
+          <div className="bg-white rounded-2xl border border-slate-200 border-dashed p-12 text-center text-slate-500">
+            ไม่มีแบบฝึกซ้อมในหมวดหมู่นี้
           </div>
         )}
       </div>

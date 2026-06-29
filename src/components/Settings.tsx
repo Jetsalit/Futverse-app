@@ -36,7 +36,9 @@ export default function Settings({
 
   // Profile State
   const [academyName, setAcademyName] = useState(settings.name);
-  const [squads, setSquads] = useState<string[]>(settings.squads || ["U11", "U13", "U15", "PRO"]);
+  const [squads, setSquads] = useState<string[]>(
+    settings.squads || ["U11", "U13", "U15", "PRO"],
+  );
   const [newSquadInput, setNewSquadInput] = useState("");
   const [logoUrl, setLogoUrl] = useState<string | null>(settings.logoUrl);
 

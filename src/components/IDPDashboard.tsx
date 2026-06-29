@@ -6,7 +6,7 @@ import {
   TrendingUp,
   AlertCircle,
   CheckCircle2,
-  Users
+  Users,
 } from "lucide-react";
 import { db } from "../lib/firebase";
 import { collection, onSnapshot } from "firebase/firestore";
@@ -38,9 +38,9 @@ export default function IDPDashboard({
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "idps"), (snapshot) => {
-      const loaded = snapshot.docs.map(doc => ({
+      const loaded = snapshot.docs.map((doc) => ({
         id: doc.id,
-        ...doc.data()
+        ...doc.data(),
       })) as IDPPlayerSummary[];
       setIdps(loaded);
       setLoading(false);
@@ -82,7 +82,9 @@ export default function IDPDashboard({
   };
 
   const averageProgress = Math.round(
-    idps.length > 0 ? idps.reduce((acc, curr) => acc + curr.overallProgress, 0) / idps.length : 0,
+    idps.length > 0
+      ? idps.reduce((acc, curr) => acc + curr.overallProgress, 0) / idps.length
+      : 0,
   );
 
   if (loading) {
@@ -181,10 +183,7 @@ export default function IDPDashboard({
               Needs Attention
             </p>
             <h3 className="text-3xl font-black text-rose-600">
-              {
-                idps.filter((p) => p.status === "Needs Attention")
-                  .length
-              }
+              {idps.filter((p) => p.status === "Needs Attention").length}
             </h3>
           </div>
           <div className="w-12 h-12 bg-rose-50 rounded-full flex items-center justify-center text-rose-500">

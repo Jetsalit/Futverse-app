@@ -157,7 +157,7 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     let resizeObserver: ResizeObserver;
-    
+
     if (containerRef.current) {
       resizeObserver = new ResizeObserver(() => {
         if (containerRef.current) {
@@ -546,334 +546,336 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
               {/* Canvas Area Container */}
               <div className="flex-1 relative w-full overflow-auto bg-slate-50 flex p-2 lg:p-6">
                 <div
-                  className={`relative bg-white ring-1 ring-slate-300 shadow-sm overflow-hidden select-none shrink-0 mx-auto ${activeTool !== 'pan' ? 'touch-none' : ''}`}
+                  className={`relative bg-white ring-1 ring-slate-300 shadow-sm overflow-hidden select-none shrink-0 mx-auto ${activeTool !== "pan" ? "touch-none" : ""}`}
                   style={{
-                     aspectRatio: fieldType === "full" || fieldType === "small" ? "1.54 / 1" : "1.3 / 1",
-                     width: "100%",
-                     maxWidth: fieldType === "half" ? "600px" : "800px",
-                     height: "auto",
-                     margin: "auto"
+                    aspectRatio:
+                      fieldType === "full" || fieldType === "small"
+                        ? "1.54 / 1"
+                        : "1.3 / 1",
+                    width: "100%",
+                    maxWidth: fieldType === "half" ? "600px" : "800px",
+                    height: "auto",
+                    margin: "auto",
                   }}
                   ref={containerRef}
                 >
-                {/* Pure CSS Pitch Markings */}
-                <div className="absolute inset-4 lg:inset-6 ring-[1.5px] ring-slate-800 pointer-events-none z-0">
-                  {fieldType === "full" ? (
-                    <>
-                      {/* Center line */}
-                      <div className="absolute top-0 bottom-0 left-1/2 w-[1.5px] bg-slate-800 -translate-x-1/2"></div>
-                      
-                      {/* Center circle */}
-                      <div className="absolute top-1/2 left-1/2 h-[26.9%] aspect-square border-[1.5px] border-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
-                      
-                      {/* Center mark */}
-                      <div className="absolute top-1/2 left-1/2 w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
+                  {/* Pure CSS Pitch Markings */}
+                  <div className="absolute inset-4 lg:inset-6 ring-[1.5px] ring-slate-800 pointer-events-none z-0">
+                    {fieldType === "full" ? (
+                      <>
+                        {/* Center line */}
+                        <div className="absolute top-0 bottom-0 left-1/2 w-[1.5px] bg-slate-800 -translate-x-1/2"></div>
 
-                      {/* Left Penalty Arc */}
-                      <div className="absolute top-1/2 left-[10.4%] h-[26.9%] aspect-square border-[1.5px] border-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2 z-0"></div>
+                        {/* Center circle */}
+                        <div className="absolute top-1/2 left-1/2 h-[26.9%] aspect-square border-[1.5px] border-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
 
-                      {/* Left Penalty Area */}
-                      <div className="absolute top-1/2 left-0 w-[15.7%] h-[59.3%] border-[1.5px] border-slate-800 -translate-y-1/2 border-l-0 bg-white z-10"></div>
-                      
-                      {/* Left Goal Area */}
-                      <div className="absolute top-1/2 left-0 w-[5.2%] h-[26.9%] border-[1.5px] border-slate-800 -translate-y-1/2 border-l-0 bg-white z-20"></div>
-                      
-                      {/* Left Penalty Mark */}
-                      <div className="absolute top-1/2 left-[10.4%] w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2 z-30"></div>
+                        {/* Center mark */}
+                        <div className="absolute top-1/2 left-1/2 w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
 
-                      {/* Right Penalty Arc */}
-                      <div className="absolute top-1/2 right-[10.4%] h-[26.9%] aspect-square border-[1.5px] border-slate-800 rounded-full translate-x-1/2 -translate-y-1/2 z-0"></div>
+                        {/* Left Penalty Arc */}
+                        <div className="absolute top-1/2 left-[10.4%] h-[26.9%] aspect-square border-[1.5px] border-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2 z-0"></div>
 
-                      {/* Right Penalty Area */}
-                      <div className="absolute top-1/2 right-0 w-[15.7%] h-[59.3%] border-[1.5px] border-slate-800 -translate-y-1/2 border-r-0 bg-white z-10"></div>
-                      
-                      {/* Right Goal Area */}
-                      <div className="absolute top-1/2 right-0 w-[5.2%] h-[26.9%] border-[1.5px] border-slate-800 -translate-y-1/2 border-r-0 bg-white z-20"></div>
-                      
-                      {/* Right Penalty Mark */}
-                      <div className="absolute top-1/2 right-[10.4%] w-1.5 h-1.5 bg-slate-800 rounded-full translate-x-1/2 -translate-y-1/2 z-30"></div>
+                        {/* Left Penalty Area */}
+                        <div className="absolute top-1/2 left-0 w-[15.7%] h-[59.3%] border-[1.5px] border-slate-800 -translate-y-1/2 border-l-0 bg-white z-10"></div>
 
-                      {/* Corner Arcs */}
-                      <div className="absolute top-0 left-0 w-4 h-4 border-b-[1.5px] border-r-[1.5px] border-slate-800 rounded-br-full z-10"></div>
-                      <div className="absolute bottom-0 left-0 w-4 h-4 border-t-[1.5px] border-r-[1.5px] border-slate-800 rounded-tr-full z-10"></div>
-                      <div className="absolute top-0 right-0 w-4 h-4 border-b-[1.5px] border-l-[1.5px] border-slate-800 rounded-bl-full z-10"></div>
-                      <div className="absolute bottom-0 right-0 w-4 h-4 border-t-[1.5px] border-l-[1.5px] border-slate-800 rounded-tl-full z-10"></div>
-                    </>
-                  ) : fieldType === "small" ? (
-                    <>
-                    </>
-                  ) : (
-                    <>
-                      {/* Half Field Markings (Goal at bottom) */}
-                      {/* Center line (at top) */}
-                      <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-slate-800 z-10"></div>
-                      
-                      {/* Center circle (top) */}
-                      <div className="absolute top-0 left-1/2 w-[26.9%] aspect-square border-[1.5px] border-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2 z-10"></div>
-                      
-                      {/* Center mark (top) */}
-                      <div className="absolute top-0 left-1/2 w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2 z-10"></div>
-                      
-                      {/* Penalty Arc */}
-                      <div className="absolute bottom-[21%] left-1/2 w-[26.9%] aspect-square border-[1.5px] border-slate-800 rounded-full -translate-x-1/2 translate-y-1/2 z-0"></div>
+                        {/* Left Goal Area */}
+                        <div className="absolute top-1/2 left-0 w-[5.2%] h-[26.9%] border-[1.5px] border-slate-800 -translate-y-1/2 border-l-0 bg-white z-20"></div>
 
-                      {/* Penalty Area */}
-                      <div className="absolute bottom-0 left-1/2 w-[59.3%] h-[31.4%] border-[1.5px] border-slate-800 border-b-0 -translate-x-1/2 bg-white z-10"></div>
-                      
-                      {/* Goal Area */}
-                      <div className="absolute bottom-0 left-1/2 w-[26.9%] h-[10.5%] border-[1.5px] border-slate-800 border-b-0 -translate-x-1/2 bg-white z-20"></div>
-                      
-                      {/* Penalty Mark */}
-                      <div className="absolute bottom-[21%] left-1/2 w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 translate-y-1/2 z-30"></div>
+                        {/* Left Penalty Mark */}
+                        <div className="absolute top-1/2 left-[10.4%] w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2 z-30"></div>
 
-                      {/* Corner Arcs */}
-                      <div className="absolute bottom-0 left-0 w-4 h-4 border-t-[1.5px] border-r-[1.5px] border-slate-800 rounded-tr-full z-10"></div>
-                      <div className="absolute bottom-0 right-0 w-4 h-4 border-t-[1.5px] border-l-[1.5px] border-slate-800 rounded-tl-full z-10"></div>
-                    </>
-                  )}
+                        {/* Right Penalty Arc */}
+                        <div className="absolute top-1/2 right-[10.4%] h-[26.9%] aspect-square border-[1.5px] border-slate-800 rounded-full translate-x-1/2 -translate-y-1/2 z-0"></div>
+
+                        {/* Right Penalty Area */}
+                        <div className="absolute top-1/2 right-0 w-[15.7%] h-[59.3%] border-[1.5px] border-slate-800 -translate-y-1/2 border-r-0 bg-white z-10"></div>
+
+                        {/* Right Goal Area */}
+                        <div className="absolute top-1/2 right-0 w-[5.2%] h-[26.9%] border-[1.5px] border-slate-800 -translate-y-1/2 border-r-0 bg-white z-20"></div>
+
+                        {/* Right Penalty Mark */}
+                        <div className="absolute top-1/2 right-[10.4%] w-1.5 h-1.5 bg-slate-800 rounded-full translate-x-1/2 -translate-y-1/2 z-30"></div>
+
+                        {/* Corner Arcs */}
+                        <div className="absolute top-0 left-0 w-4 h-4 border-b-[1.5px] border-r-[1.5px] border-slate-800 rounded-br-full z-10"></div>
+                        <div className="absolute bottom-0 left-0 w-4 h-4 border-t-[1.5px] border-r-[1.5px] border-slate-800 rounded-tr-full z-10"></div>
+                        <div className="absolute top-0 right-0 w-4 h-4 border-b-[1.5px] border-l-[1.5px] border-slate-800 rounded-bl-full z-10"></div>
+                        <div className="absolute bottom-0 right-0 w-4 h-4 border-t-[1.5px] border-l-[1.5px] border-slate-800 rounded-tl-full z-10"></div>
+                      </>
+                    ) : fieldType === "small" ? (
+                      <></>
+                    ) : (
+                      <>
+                        {/* Half Field Markings (Goal at bottom) */}
+                        {/* Center line (at top) */}
+                        <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-slate-800 z-10"></div>
+
+                        {/* Center circle (top) */}
+                        <div className="absolute top-0 left-1/2 w-[26.9%] aspect-square border-[1.5px] border-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2 z-10"></div>
+
+                        {/* Center mark (top) */}
+                        <div className="absolute top-0 left-1/2 w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2 z-10"></div>
+
+                        {/* Penalty Arc */}
+                        <div className="absolute bottom-[21%] left-1/2 w-[26.9%] aspect-square border-[1.5px] border-slate-800 rounded-full -translate-x-1/2 translate-y-1/2 z-0"></div>
+
+                        {/* Penalty Area */}
+                        <div className="absolute bottom-0 left-1/2 w-[59.3%] h-[31.4%] border-[1.5px] border-slate-800 border-b-0 -translate-x-1/2 bg-white z-10"></div>
+
+                        {/* Goal Area */}
+                        <div className="absolute bottom-0 left-1/2 w-[26.9%] h-[10.5%] border-[1.5px] border-slate-800 border-b-0 -translate-x-1/2 bg-white z-20"></div>
+
+                        {/* Penalty Mark */}
+                        <div className="absolute bottom-[21%] left-1/2 w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 translate-y-1/2 z-30"></div>
+
+                        {/* Corner Arcs */}
+                        <div className="absolute bottom-0 left-0 w-4 h-4 border-t-[1.5px] border-r-[1.5px] border-slate-800 rounded-tr-full z-10"></div>
+                        <div className="absolute bottom-0 right-0 w-4 h-4 border-t-[1.5px] border-l-[1.5px] border-slate-800 rounded-tl-full z-10"></div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Interactive Canvas Grid (Subtle overlay for alignment) */}
+                  <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMSIgY3k9IjEiIHI9IjEiIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC4wNykiLz48L3N2Zz4=')] z-0"></div>
+
+                  {/* The Drawing & Drag Layer (react-konva) */}
+                  <div className="absolute inset-0 z-10 block w-full h-full">
+                    <Stage
+                      ref={stageRef}
+                      width={stageSize.width}
+                      height={stageSize.height}
+                      onMouseDown={handleMouseDown}
+                      onMouseMove={handleMouseMove}
+                      onMouseUp={handleMouseUp}
+                      onTouchStart={handleMouseDown}
+                      onTouchMove={handleMouseMove}
+                      onTouchEnd={handleMouseUp}
+                      className={
+                        activeTool === "select"
+                          ? "cursor-default"
+                          : activeTool === "pan"
+                            ? "cursor-grab"
+                            : "cursor-crosshair"
+                      }
+                    >
+                      <Layer>
+                        {lines.map((line, i) => {
+                          let dash: number[] = [];
+                          if (line.tool === "dashed") dash = [10, 8];
+                          let tension =
+                            line.tool === "curve" || line.tool === "freehand"
+                              ? 0.5
+                              : 0;
+
+                          return (
+                            <Arrow
+                              key={line.id || i}
+                              points={line.points}
+                              stroke={line.color}
+                              strokeWidth={line.tool === "dribble" ? 3 : 4}
+                              fill={line.color}
+                              tension={tension}
+                              lineCap="round"
+                              lineJoin="round"
+                              dash={dash}
+                              pointerLength={10}
+                              pointerWidth={10}
+                              onClick={(e) =>
+                                handleElementClick(e, line.id, "line")
+                              }
+                              onTap={(e) =>
+                                handleElementClick(e, line.id, "line")
+                              }
+                              hitStrokeWidth={20}
+                            />
+                          );
+                        })}
+
+                        {elements.map((el) => {
+                          if (el.type === "red") {
+                            return (
+                              <Circle
+                                key={el.id}
+                                id={el.id}
+                                x={el.x}
+                                y={el.y}
+                                radius={10}
+                                fill="#ef4444"
+                                stroke="#991b1b"
+                                strokeWidth={2}
+                                draggable
+                                onDragEnd={(e) => handleDragEnd(el.id, e)}
+                                onClick={(e) =>
+                                  handleElementClick(e, el.id, "element")
+                                }
+                                onTap={(e) =>
+                                  handleElementClick(e, el.id, "element")
+                                }
+                              />
+                            );
+                          }
+                          if (el.type === "blue") {
+                            return (
+                              <Circle
+                                key={el.id}
+                                id={el.id}
+                                x={el.x}
+                                y={el.y}
+                                radius={10}
+                                fill="#3b82f6"
+                                stroke="#1e3a8a"
+                                strokeWidth={2}
+                                draggable
+                                onDragEnd={(e) => handleDragEnd(el.id, e)}
+                                onClick={(e) =>
+                                  handleElementClick(e, el.id, "element")
+                                }
+                                onTap={(e) =>
+                                  handleElementClick(e, el.id, "element")
+                                }
+                              />
+                            );
+                          }
+                          if (el.type === "ball") {
+                            return (
+                              <BallNode
+                                key={el.id}
+                                el={el}
+                                onDragEnd={handleDragEnd}
+                                onClick={(e: any) =>
+                                  handleElementClick(e, el.id, "element")
+                                }
+                                onTap={(e: any) =>
+                                  handleElementClick(e, el.id, "element")
+                                }
+                              />
+                            );
+                          }
+                          if (el.type === "cone") {
+                            return (
+                              <Path
+                                key={el.id}
+                                id={el.id}
+                                x={el.x}
+                                y={el.y}
+                                data="M 0 16 L 8 0 L 16 16 Z"
+                                fill="#f97316"
+                                offsetX={8}
+                                offsetY={8}
+                                draggable
+                                onDragEnd={(e) => handleDragEnd(el.id, e)}
+                                onClick={(e) =>
+                                  handleElementClick(e, el.id, "element")
+                                }
+                                onTap={(e) =>
+                                  handleElementClick(e, el.id, "element")
+                                }
+                                hitStrokeWidth={16}
+                              />
+                            );
+                          }
+                          if (el.type === "mini_goal") {
+                            return (
+                              <Path
+                                key={el.id}
+                                id={el.id}
+                                x={el.x}
+                                y={el.y}
+                                data="M 0 16 L 0 0 L 40 0 L 40 16"
+                                stroke="#e2e8f0"
+                                strokeWidth={5}
+                                offsetX={20}
+                                offsetY={8}
+                                draggable
+                                onDragEnd={(e) => handleDragEnd(el.id, e)}
+                                onClick={(e) =>
+                                  handleElementClick(e, el.id, "element")
+                                }
+                                onTap={(e) =>
+                                  handleElementClick(e, el.id, "element")
+                                }
+                                hitStrokeWidth={16}
+                              />
+                            );
+                          }
+                          if (el.type === "hurdle") {
+                            return (
+                              <Path
+                                key={el.id}
+                                id={el.id}
+                                x={el.x}
+                                y={el.y}
+                                data="M 0 16 L 0 0 L 24 0 L 24 16"
+                                stroke="#facc15"
+                                strokeWidth={3}
+                                offsetX={12}
+                                offsetY={8}
+                                draggable
+                                onDragEnd={(e) => handleDragEnd(el.id, e)}
+                                onClick={(e) =>
+                                  handleElementClick(e, el.id, "element")
+                                }
+                                onTap={(e) =>
+                                  handleElementClick(e, el.id, "element")
+                                }
+                                hitStrokeWidth={16}
+                              />
+                            );
+                          }
+                          if (el.type === "ladder") {
+                            return (
+                              <Group
+                                key={el.id}
+                                id={el.id}
+                                x={el.x}
+                                y={el.y}
+                                offsetX={12}
+                                offsetY={24}
+                                draggable
+                                onDragEnd={(e) => handleDragEnd(el.id, e)}
+                                onClick={(e) =>
+                                  handleElementClick(e, el.id, "element")
+                                }
+                                onTap={(e) =>
+                                  handleElementClick(e, el.id, "element")
+                                }
+                              >
+                                <Rect
+                                  width={24}
+                                  height={48}
+                                  stroke="transparent"
+                                  strokeWidth={20}
+                                />
+                                <Rect
+                                  width={24}
+                                  height={48}
+                                  stroke="#facc15"
+                                  strokeWidth={2}
+                                />
+                                <Line
+                                  points={[0, 12, 24, 12]}
+                                  stroke="#facc15"
+                                  strokeWidth={2}
+                                />
+                                <Line
+                                  points={[0, 24, 24, 24]}
+                                  stroke="#facc15"
+                                  strokeWidth={2}
+                                />
+                                <Line
+                                  points={[0, 36, 24, 36]}
+                                  stroke="#facc15"
+                                  strokeWidth={2}
+                                />
+                              </Group>
+                            );
+                          }
+                          return null;
+                        })}
+                      </Layer>
+                    </Stage>
+                  </div>
                 </div>
-
-                {/* Interactive Canvas Grid (Subtle overlay for alignment) */}
-                <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMSIgY3k9IjEiIHI9IjEiIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC4wNykiLz48L3N2Zz4=')] z-0"></div>
-
-                {/* The Drawing & Drag Layer (react-konva) */}
-                <div className="absolute inset-0 z-10 block w-full h-full">
-                  <Stage
-                    ref={stageRef}
-                    width={stageSize.width}
-                    height={stageSize.height}
-                    onMouseDown={handleMouseDown}
-                    onMouseMove={handleMouseMove}
-                    onMouseUp={handleMouseUp}
-                    onTouchStart={handleMouseDown}
-                    onTouchMove={handleMouseMove}
-                    onTouchEnd={handleMouseUp}
-                    className={
-                      activeTool === "select"
-                        ? "cursor-default"
-                        : activeTool === "pan"
-                          ? "cursor-grab"
-                          : "cursor-crosshair"
-                    }
-                  >
-                    <Layer>
-                      {lines.map((line, i) => {
-                        let dash: number[] = [];
-                        if (line.tool === "dashed") dash = [10, 8];
-                        let tension =
-                          line.tool === "curve" || line.tool === "freehand"
-                            ? 0.5
-                            : 0;
-
-                        return (
-                          <Arrow
-                            key={line.id || i}
-                            points={line.points}
-                            stroke={line.color}
-                            strokeWidth={line.tool === "dribble" ? 3 : 4}
-                            fill={line.color}
-                            tension={tension}
-                            lineCap="round"
-                            lineJoin="round"
-                            dash={dash}
-                            pointerLength={10}
-                            pointerWidth={10}
-                            onClick={(e) =>
-                              handleElementClick(e, line.id, "line")
-                            }
-                            onTap={(e) =>
-                              handleElementClick(e, line.id, "line")
-                            }
-                            hitStrokeWidth={20}
-                          />
-                        );
-                      })}
-
-                      {elements.map((el) => {
-                        if (el.type === "red") {
-                          return (
-                            <Circle
-                              key={el.id}
-                              id={el.id}
-                              x={el.x}
-                              y={el.y}
-                              radius={10}
-                              fill="#ef4444"
-                              stroke="#991b1b"
-                              strokeWidth={2}
-                              draggable
-                              onDragEnd={(e) => handleDragEnd(el.id, e)}
-                              onClick={(e) =>
-                                handleElementClick(e, el.id, "element")
-                              }
-                              onTap={(e) =>
-                                handleElementClick(e, el.id, "element")
-                              }
-                            />
-                          );
-                        }
-                        if (el.type === "blue") {
-                          return (
-                            <Circle
-                              key={el.id}
-                              id={el.id}
-                              x={el.x}
-                              y={el.y}
-                              radius={10}
-                              fill="#3b82f6"
-                              stroke="#1e3a8a"
-                              strokeWidth={2}
-                              draggable
-                              onDragEnd={(e) => handleDragEnd(el.id, e)}
-                              onClick={(e) =>
-                                handleElementClick(e, el.id, "element")
-                              }
-                              onTap={(e) =>
-                                handleElementClick(e, el.id, "element")
-                              }
-                            />
-                          );
-                        }
-                        if (el.type === "ball") {
-                          return (
-                            <BallNode
-                              key={el.id}
-                              el={el}
-                              onDragEnd={handleDragEnd}
-                              onClick={(e: any) =>
-                                handleElementClick(e, el.id, "element")
-                              }
-                              onTap={(e: any) =>
-                                handleElementClick(e, el.id, "element")
-                              }
-                            />
-                          );
-                        }
-                        if (el.type === "cone") {
-                          return (
-                            <Path
-                              key={el.id}
-                              id={el.id}
-                              x={el.x}
-                              y={el.y}
-                              data="M 0 16 L 8 0 L 16 16 Z"
-                              fill="#f97316"
-                              offsetX={8}
-                              offsetY={8}
-                              draggable
-                              onDragEnd={(e) => handleDragEnd(el.id, e)}
-                              onClick={(e) =>
-                                handleElementClick(e, el.id, "element")
-                              }
-                              onTap={(e) =>
-                                handleElementClick(e, el.id, "element")
-                              }
-                              hitStrokeWidth={16}
-                            />
-                          );
-                        }
-                        if (el.type === "mini_goal") {
-                          return (
-                            <Path
-                              key={el.id}
-                              id={el.id}
-                              x={el.x}
-                              y={el.y}
-                              data="M 0 16 L 0 0 L 40 0 L 40 16"
-                              stroke="#e2e8f0"
-                              strokeWidth={5}
-                              offsetX={20}
-                              offsetY={8}
-                              draggable
-                              onDragEnd={(e) => handleDragEnd(el.id, e)}
-                              onClick={(e) =>
-                                handleElementClick(e, el.id, "element")
-                              }
-                              onTap={(e) =>
-                                handleElementClick(e, el.id, "element")
-                              }
-                              hitStrokeWidth={16}
-                            />
-                          );
-                        }
-                        if (el.type === "hurdle") {
-                          return (
-                            <Path
-                              key={el.id}
-                              id={el.id}
-                              x={el.x}
-                              y={el.y}
-                              data="M 0 16 L 0 0 L 24 0 L 24 16"
-                              stroke="#facc15"
-                              strokeWidth={3}
-                              offsetX={12}
-                              offsetY={8}
-                              draggable
-                              onDragEnd={(e) => handleDragEnd(el.id, e)}
-                              onClick={(e) =>
-                                handleElementClick(e, el.id, "element")
-                              }
-                              onTap={(e) =>
-                                handleElementClick(e, el.id, "element")
-                              }
-                              hitStrokeWidth={16}
-                            />
-                          );
-                        }
-                        if (el.type === "ladder") {
-                          return (
-                            <Group
-                              key={el.id}
-                              id={el.id}
-                              x={el.x}
-                              y={el.y}
-                              offsetX={12}
-                              offsetY={24}
-                              draggable
-                              onDragEnd={(e) => handleDragEnd(el.id, e)}
-                              onClick={(e) =>
-                                handleElementClick(e, el.id, "element")
-                              }
-                              onTap={(e) =>
-                                handleElementClick(e, el.id, "element")
-                              }
-                            >
-                              <Rect
-                                width={24}
-                                height={48}
-                                stroke="transparent"
-                                strokeWidth={20}
-                              />
-                              <Rect
-                                width={24}
-                                height={48}
-                                stroke="#facc15"
-                                strokeWidth={2}
-                              />
-                              <Line
-                                points={[0, 12, 24, 12]}
-                                stroke="#facc15"
-                                strokeWidth={2}
-                              />
-                              <Line
-                                points={[0, 24, 24, 24]}
-                                stroke="#facc15"
-                                strokeWidth={2}
-                              />
-                              <Line
-                                points={[0, 36, 24, 36]}
-                                stroke="#facc15"
-                                strokeWidth={2}
-                              />
-                            </Group>
-                          );
-                        }
-                        return null;
-                      })}
-                    </Layer>
-                  </Stage>
-                </div>
-              </div>
               </div>
             </>
           ) : (

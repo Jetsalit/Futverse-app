@@ -203,6 +203,37 @@ const getIntensityWidth = (intensity: IntensityType) => {
   }
 };
 
+const MOCK_DRILL_LIBRARY = [
+  {
+    id: "lib1",
+    category: "Warm-up",
+    icon: "🏃‍♂️",
+    name: "Dynamic Stretching",
+    duration: 15,
+  },
+  {
+    id: "lib2",
+    category: "Technical",
+    icon: "⚽",
+    name: "Passing Triangle",
+    duration: 20,
+  },
+  {
+    id: "lib3",
+    category: "Tactical",
+    icon: "🧠",
+    name: "Rondo 4v2",
+    duration: 15,
+  },
+  {
+    id: "lib4",
+    category: "Tactical",
+    icon: "🧠",
+    name: "Attacking Phase",
+    duration: 30,
+  },
+];
+
 export default function WeeklyPeriodization({
   onBack,
   onNavigate,
@@ -212,15 +243,6 @@ export default function WeeklyPeriodization({
 }) {
   const { hasPermission } = useAuth();
   const hasEditPermission = hasPermission(["ADMIN", "COACH"]);
-  const { drills } = useDrillDatabase();
-  
-  const mappedDrills = drills.map(d => ({
-    id: d.id,
-    category: d.category || "Technical",
-    icon: d.category === "Warm-up" ? "🏃‍♂️" : d.category === "Tactical" ? "🧠" : d.category === "Physical" ? "💪" : "⚽",
-    name: d.title,
-    duration: d.duration ? parseInt(d.duration) : 15,
-  }));
 
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
@@ -259,9 +281,9 @@ export default function WeeklyPeriodization({
   useEffect(() => {
     const q = query(collection(db, "players"), orderBy("firstName"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loadedPlayers = snapshot.docs.map(doc => ({
+      const loadedPlayers = snapshot.docs.map((doc) => ({
         id: doc.id,
-        ...doc.data()
+        ...doc.data(),
       })) as Player[];
       setPlayers(loadedPlayers);
       setLoading(false);
@@ -337,7 +359,7 @@ export default function WeeklyPeriodization({
     setIsLibraryOpen(true);
   };
 
-  const handleAddDrill = (libDrill: typeof mappedDrills[0]) => {
+  const handleAddDrill = (libDrill: (typeof MOCK_DRILL_LIBRARY)[0]) => {
     if (!addingToDayId) return;
     setWeekDays((prev) =>
       prev.map((d) => {
@@ -1002,7 +1024,9 @@ export default function WeeklyPeriodization({
                             className="w-full h-full object-cover"
                           />
                         ) : (
-                          <span className="text-slate-400 font-bold">{player.firstName[0]}</span>
+                          <span className="text-slate-400 font-bold">
+                            {player.firstName[0]}
+                          </span>
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -1301,20 +1325,15 @@ export default function WeeklyPeriodization({
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50 space-y-6">
-              {mappedDrills.length === 0 ? (
-                <div className="py-10 flex flex-col items-center">
-                   <p className="text-slate-500 text-sm">No drills available.</p>
-                </div>
-              ) : (
-                /* Group by category */
-                Array.from(new Set(mappedDrills.map(d => d.category))).map(
-                  (category) => {
-                    const categoryDrills = mappedDrills.filter(
-                      (d) => d.category === category,
-                    );
-                    if (categoryDrills.length === 0) return null;
-                    return (
-                      <div key={category}>
+              {/* Group by category */}
+              {["Warm-up", "Technical", "Tactical", "Physical"].map(
+                (category) => {
+                  const categoryDrills = MOCK_DRILL_LIBRARY.filter(
+                    (d) => d.category === category,
+                  );
+                  if (categoryDrills.length === 0) return null;
+                  return (
+                    <div key={category}>
                       <h4 className="text-xs font-black uppercase text-slate-400 tracking-widest mb-3">
                         {category}
                       </h4>
@@ -1348,8 +1367,8 @@ export default function WeeklyPeriodization({
                       </div>
                     </div>
                   );
-                }
-              ))}
+                },
+              )}
             </div>
           </div>
         </div>

@@ -6,20 +6,57 @@ import {
   HeartPulse,
   AlertTriangle,
   TrendingUp,
-  Bell
 } from "lucide-react";
-import { EmptyState } from "./common/EmptyState";
 
 interface NotificationDrawerProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
+const INITIAL_NOTIFICATIONS = [
+  {
+    id: 1,
+    type: "Medical",
+    title: "Injury Update",
+    message: "Somchai reported knee pain after training. Requires assessment.",
+    isRead: false,
+    time: "2h ago",
+    icon: HeartPulse,
+    color: "text-rose-500",
+    bg: "bg-rose-100",
+    border: "border-rose-200",
+  },
+  {
+    id: 2,
+    type: "Operations",
+    title: "Schedule Change",
+    message: "U15 afternoon training session moved to Pitch B.",
+    isRead: false,
+    time: "4h ago",
+    icon: AlertTriangle,
+    color: "text-amber-500",
+    bg: "bg-amber-100",
+    border: "border-amber-200",
+  },
+  {
+    id: 3,
+    type: "Performance",
+    title: "Fitness Benchmark",
+    message: "Pro squad achieved 95% target in Yo-Yo test.",
+    isRead: true,
+    time: "1d ago",
+    icon: TrendingUp,
+    color: "text-emerald-500",
+    bg: "bg-emerald-100",
+    border: "border-emerald-200",
+  },
+];
+
 export default function NotificationDrawer({
   isOpen,
   onClose,
 }: NotificationDrawerProps) {
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
 
   const markAllAsRead = () => {
     setNotifications(notifications.map((n) => ({ ...n, isRead: true })));
@@ -87,18 +124,8 @@ export default function NotificationDrawer({
             )}
 
             {/* List */}
-            <div className="flex-1 overflow-y-auto p-4 md:p-6 flex flex-col h-full">
-              {notifications.length === 0 ? (
-                <div className="flex-1 flex flex-col justify-center pb-20">
-                  <EmptyState
-                    icon={Bell}
-                    title="No Notifications"
-                    description="You're all caught up! There are no new alerts or messages at this time."
-                  />
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {notifications.map((notification) => (
+            <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
+              {notifications.map((notification) => (
                 <div
                   key={notification.id}
                   onClick={() => markAsRead(notification.id)}
@@ -140,8 +167,20 @@ export default function NotificationDrawer({
                   </div>
                 </div>
               ))}
-              </div>
-             )}
+
+              {notifications.length === 0 && (
+                <div className="py-10 text-center flex flex-col items-center">
+                  <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mb-3">
+                    <CheckCircle2 size={32} className="text-emerald-500" />
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-800">
+                    You're all caught up!
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    No new notifications right now.
+                  </p>
+                </div>
+              )}
             </div>
           </motion.div>
         </>

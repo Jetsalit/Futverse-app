@@ -1,5 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { ChevronLeft, CheckCircle2, Search, X, Users, User } from "lucide-react";
+import {
+  ChevronLeft,
+  CheckCircle2,
+  Search,
+  X,
+  Users,
+  User,
+} from "lucide-react";
 import { db } from "../lib/firebase";
 import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
 import { EmptyState } from "./common/EmptyState";
@@ -75,9 +82,9 @@ export default function StartingXIBuilder({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     const q = query(collection(db, "players"), orderBy("firstName"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loadedPlayers = snapshot.docs.map(doc => ({
+      const loadedPlayers = snapshot.docs.map((doc) => ({
         id: doc.id,
-        ...doc.data()
+        ...doc.data(),
       })) as Player[];
       setPlayers(loadedPlayers);
       setLoading(false);
@@ -122,7 +129,9 @@ export default function StartingXIBuilder({ onBack }: { onBack: () => void }) {
 
   const filteredSquad = players.filter(
     (p) =>
-      `${p.firstName} ${p.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      `${p.firstName} ${p.lastName}`
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase()) ||
       p.position.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
@@ -251,7 +260,7 @@ export default function StartingXIBuilder({ onBack }: { onBack: () => void }) {
                           : "bg-black/30 border-white/50 text-white border-dashed"
                       }`}
                     >
-                      {player ? (player.jerseyNumber || "-") : "+"}
+                      {player ? player.jerseyNumber || "-" : "+"}
                     </button>
                     {player && (
                       <button
@@ -341,7 +350,11 @@ export default function StartingXIBuilder({ onBack }: { onBack: () => void }) {
                       }`}
                     >
                       {player.avatar ? (
-                        <img src={player.avatar} alt={player.firstName} className="w-full h-full object-cover" />
+                        <img
+                          src={player.avatar}
+                          alt={player.firstName}
+                          className="w-full h-full object-cover"
+                        />
                       ) : (
                         player.jerseyNumber || <User size={16} />
                       )}

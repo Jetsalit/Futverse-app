@@ -1,7 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { useAuth, User } from "../contexts/AuthContext";
 import { db } from "../lib/firebase";
-import { collection, getDocs, doc, updateDoc, query, addDoc } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  doc,
+  updateDoc,
+  query,
+  addDoc,
+} from "firebase/firestore";
 import {
   ShieldAlert,
   ArrowLeft,
@@ -17,10 +24,12 @@ import { subscribeToUsers, updateUserStatus } from "../lib/firestore/users";
 
 export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const { hasPermission, impersonate, currentUser: authUser } = useAuth();
-  const [activeTab, setActiveTab] = useState<"approvals" | "users">("approvals");
+  const [activeTab, setActiveTab] = useState<"approvals" | "users">(
+    "approvals",
+  );
   const [users, setUsers] = useState<User[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
-  
+
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("ALL");
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -41,14 +50,31 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     );
   }
 
-  const pendingUsers = users.filter((u) => u.status === "PENDING" || u.status === "Inactive");
+  const pendingUsers = users.filter(
+    (u) => u.status === "PENDING" || u.status === "Inactive",
+  );
   const today = new Date().toDateString();
-  const approvedToday = users.filter((u) => (u.status === "ACTIVE" || u.status === "Active") && u.approvedAt && new Date(u.approvedAt).toDateString() === today).length;
-  const rejectedCount = users.filter((u) => u.status === "REJECTED" || u.status === "Inactive").length;
-  const coachesCount = users.filter((u) => u.role === "COACH" || u.requestedRole === "COACH").length;
-  const playersCount = users.filter((u) => u.role === "PLAYER" || u.requestedRole === "PLAYER").length;
-  const scoutsCount = users.filter((u) => u.role === "SCOUT" || u.requestedRole === "SCOUT").length;
-  const parentsCount = users.filter((u) => u.role === "PARENT" || u.requestedRole === "PARENT").length;
+  const approvedToday = users.filter(
+    (u) =>
+      (u.status === "ACTIVE" || u.status === "Active") &&
+      u.approvedAt &&
+      new Date(u.approvedAt).toDateString() === today,
+  ).length;
+  const rejectedCount = users.filter(
+    (u) => u.status === "REJECTED" || u.status === "Inactive",
+  ).length;
+  const coachesCount = users.filter(
+    (u) => u.role === "COACH" || u.requestedRole === "COACH",
+  ).length;
+  const playersCount = users.filter(
+    (u) => u.role === "PLAYER" || u.requestedRole === "PLAYER",
+  ).length;
+  const scoutsCount = users.filter(
+    (u) => u.role === "SCOUT" || u.requestedRole === "SCOUT",
+  ).length;
+  const parentsCount = users.filter(
+    (u) => u.role === "PARENT" || u.requestedRole === "PARENT",
+  ).length;
 
   const handleApprove = async (user: User) => {
     if (!user.id) return;
@@ -57,7 +83,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
       await updateUserStatus(user.id, "Active", {
         role: newRole,
         approvedBy: authUser?.id || "SUPERADMIN",
-        approvedAt: new Date().toISOString()
+        approvedAt: new Date().toISOString(),
       });
       await addDoc(collection(db, "logs"), {
         action: "USER_APPROVED",
@@ -66,7 +92,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
         targetEmail: user.email,
         oldRole: user.role,
         newRole: newRole,
-        timestamp: new Date()
+        timestamp: new Date(),
       });
       setSelectedUser(null);
     } catch (error) {
@@ -78,20 +104,22 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     if (!user.id) return;
     const rejectReason = "Rejected by admin";
     try {
-      await updateUserStatus(user.id, "Inactive", { rejectionReason: rejectReason });
+      await updateUserStatus(user.id, "Inactive", {
+        rejectionReason: rejectReason,
+      });
       await addDoc(collection(db, "logs"), {
         action: "USER_REJECTED",
         rejectedBy: authUser?.id || "SUPERADMIN",
         targetUser: user.id,
         targetEmail: user.email,
-        timestamp: new Date()
+        timestamp: new Date(),
       });
       setSelectedUser(null);
     } catch (error) {
       console.error("Error rejecting user:", error);
     }
   };
-  
+
   const handleBulkApprove = async () => {
     const toApprove = filteredPendingUsers;
     for (const u of toApprove) {
@@ -103,7 +131,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     if (!user.id) return;
     try {
       await updateDoc(doc(db, "users", user.id), {
-        role: newRole
+        role: newRole,
       });
       await addDoc(collection(db, "logs"), {
         action: "ROLE_UPDATED",
@@ -112,7 +140,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
         targetEmail: user.email,
         oldRole: user.role,
         newRole: newRole,
-        timestamp: new Date()
+        timestamp: new Date(),
       });
     } catch (error) {
       console.error("Error updating role:", error);
@@ -123,7 +151,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     if (!user.id) return;
     try {
       await updateDoc(doc(db, "users", user.id), {
-        status: newStatus
+        status: newStatus,
       });
       await addDoc(collection(db, "logs"), {
         action: "STATUS_UPDATED",
@@ -132,15 +160,17 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
         targetEmail: user.email,
         oldStatus: user.status,
         newStatus: newStatus,
-        timestamp: new Date()
+        timestamp: new Date(),
       });
     } catch (error) {
       console.error("Error updating status:", error);
     }
   };
 
-  const filteredPendingUsers = pendingUsers.filter(u => {
-    const matchesSearch = (u.name?.toLowerCase().includes(searchQuery.toLowerCase()) || u.email?.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredPendingUsers = pendingUsers.filter((u) => {
+    const matchesSearch =
+      u.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.email?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesRole = roleFilter === "ALL" || u.requestedRole === roleFilter;
     return matchesSearch && matchesRole;
   });
@@ -193,9 +223,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
               : "border-transparent text-slate-500 hover:text-slate-800"
           }`}
         >
-          <span className="flex items-center gap-2">
-            Manage Users
-          </span>
+          <span className="flex items-center gap-2">Manage Users</span>
         </button>
       </div>
 
@@ -204,32 +232,60 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
           <>
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="text-slate-500 text-xs font-bold uppercase mb-1">Pending</div>
-                <div className="text-2xl font-black text-rose-600">{pendingUsers.length}</div>
+                <div className="text-slate-500 text-xs font-bold uppercase mb-1">
+                  Pending
+                </div>
+                <div className="text-2xl font-black text-rose-600">
+                  {pendingUsers.length}
+                </div>
               </div>
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="text-slate-500 text-xs font-bold uppercase mb-1">Approved Today</div>
-                <div className="text-2xl font-black text-emerald-600">{approvedToday}</div>
+                <div className="text-slate-500 text-xs font-bold uppercase mb-1">
+                  Approved Today
+                </div>
+                <div className="text-2xl font-black text-emerald-600">
+                  {approvedToday}
+                </div>
               </div>
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="text-slate-500 text-xs font-bold uppercase mb-1">Rejected</div>
-                <div className="text-2xl font-black text-slate-800">{rejectedCount}</div>
+                <div className="text-slate-500 text-xs font-bold uppercase mb-1">
+                  Rejected
+                </div>
+                <div className="text-2xl font-black text-slate-800">
+                  {rejectedCount}
+                </div>
               </div>
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="text-slate-500 text-xs font-bold uppercase mb-1">Coaches</div>
-                <div className="text-2xl font-black text-blue-600">{coachesCount}</div>
+                <div className="text-slate-500 text-xs font-bold uppercase mb-1">
+                  Coaches
+                </div>
+                <div className="text-2xl font-black text-blue-600">
+                  {coachesCount}
+                </div>
               </div>
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="text-slate-500 text-xs font-bold uppercase mb-1">Players</div>
-                <div className="text-2xl font-black text-indigo-600">{playersCount}</div>
+                <div className="text-slate-500 text-xs font-bold uppercase mb-1">
+                  Players
+                </div>
+                <div className="text-2xl font-black text-indigo-600">
+                  {playersCount}
+                </div>
               </div>
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="text-slate-500 text-xs font-bold uppercase mb-1">Scouts</div>
-                <div className="text-2xl font-black text-amber-600">{scoutsCount}</div>
+                <div className="text-slate-500 text-xs font-bold uppercase mb-1">
+                  Scouts
+                </div>
+                <div className="text-2xl font-black text-amber-600">
+                  {scoutsCount}
+                </div>
               </div>
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="text-slate-500 text-xs font-bold uppercase mb-1">Parents</div>
-                <div className="text-2xl font-black text-purple-600">{parentsCount}</div>
+                <div className="text-slate-500 text-xs font-bold uppercase mb-1">
+                  Parents
+                </div>
+                <div className="text-2xl font-black text-purple-600">
+                  {parentsCount}
+                </div>
               </div>
             </div>
 
@@ -237,7 +293,10 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
               <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4">
                 <div className="flex gap-4 w-full sm:w-auto">
                   <div className="relative flex-1 sm:w-64">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <Search
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                      size={16}
+                    />
                     <input
                       type="text"
                       placeholder="Search users..."
@@ -247,7 +306,10 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                     />
                   </div>
                   <div className="relative">
-                    <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <Filter
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                      size={16}
+                    />
                     <select
                       value={roleFilter}
                       onChange={(e) => setRoleFilter(e.target.value)}
@@ -262,7 +324,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                   </div>
                 </div>
                 {filteredPendingUsers.length > 0 && (
-                  <button 
+                  <button
                     onClick={handleBulkApprove}
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm transition-colors whitespace-nowrap"
                   >
@@ -285,27 +347,46 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                   <tbody className="divide-y divide-slate-100">
                     {isLoadingUsers ? (
                       <tr>
-                        <td colSpan={6} className="p-8 text-center text-slate-500">
+                        <td
+                          colSpan={6}
+                          className="p-8 text-center text-slate-500"
+                        >
                           <Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" />
                         </td>
                       </tr>
                     ) : filteredPendingUsers.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="p-8 text-center text-slate-500">
+                        <td
+                          colSpan={6}
+                          className="p-8 text-center text-slate-500"
+                        >
                           No pending users found.
                         </td>
                       </tr>
                     ) : (
                       filteredPendingUsers.map((user) => (
-                        <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="p-4 font-bold text-slate-800">{user.name}</td>
-                          <td className="p-4">
-                            <div className="text-slate-800">{user.email}</div>
-                            {user.phone && <div className="text-xs text-slate-500">{user.phone}</div>}
+                        <tr
+                          key={user.id}
+                          className="hover:bg-slate-50/50 transition-colors"
+                        >
+                          <td className="p-4 font-bold text-slate-800">
+                            {user.name}
                           </td>
                           <td className="p-4">
-                            <div className="text-slate-800">{user.academyId || "-"}</div>
-                            <div className="text-xs text-slate-500">{user.country || "-"}</div>
+                            <div className="text-slate-800">{user.email}</div>
+                            {user.phone && (
+                              <div className="text-xs text-slate-500">
+                                {user.phone}
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-4">
+                            <div className="text-slate-800">
+                              {user.academyId || "-"}
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              {user.country || "-"}
+                            </div>
                           </td>
                           <td className="p-4">
                             <span className="px-2.5 py-1 bg-amber-100 text-amber-800 text-xs font-bold rounded-full border border-amber-200">
@@ -313,7 +394,9 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                             </span>
                           </td>
                           <td className="p-4 text-slate-500 text-xs">
-                            {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : "-"}
+                            {user.createdAt
+                              ? new Date(user.createdAt).toLocaleDateString()
+                              : "-"}
                           </td>
                           <td className="p-4 text-right space-x-2 whitespace-nowrap">
                             <button
@@ -352,7 +435,10 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
             <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4">
               <div className="relative flex-1 sm:w-64 w-full">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <Search
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  size={16}
+                />
                 <input
                   type="text"
                   placeholder="Search users..."
@@ -374,58 +460,82 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {users.filter(u => (u.name?.toLowerCase().includes(searchQuery.toLowerCase()) || u.email?.toLowerCase().includes(searchQuery.toLowerCase()))).map((user) => (
-                    <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="p-4 font-bold text-slate-800">{user.name}</td>
-                      <td className="p-4">
-                        <div className="text-slate-800">{user.email}</div>
-                      </td>
-                      <td className="p-4">
-                        <select
-                          value={user.status || "INACTIVE"}
-                          onChange={(e) => handleUpdateStatus(user, e.target.value)}
-                          disabled={user.role === "SUPERADMIN"}
-                          className={`text-xs font-bold rounded-xl px-2 py-1 outline-none cursor-pointer border ${
-                            user.status === "ACTIVE" ? "bg-emerald-100 text-emerald-800 border-emerald-200" :
-                            user.status === "PENDING" ? "bg-amber-100 text-amber-800 border-amber-200" :
-                            user.status === "REJECTED" ? "bg-rose-100 text-rose-800 border-rose-200" :
-                            "bg-slate-100 text-slate-800 border-slate-200"
-                          }`}
-                        >
-                          <option value="ACTIVE">ACTIVE</option>
-                          <option value="PENDING">PENDING</option>
-                          <option value="REJECTED">REJECTED</option>
-                          <option value="INACTIVE">SUSPENDED</option>
-                        </select>
-                      </td>
-                      <td className="p-4">
-                        <select
-                          value={user.role || "USER"}
-                          onChange={(e) => handleUpdateRole(user, e.target.value)}
-                          disabled={user.role === "SUPERADMIN"}
-                          className="text-xs font-bold rounded-xl px-2 py-1 bg-slate-50 border border-slate-200 text-slate-800 outline-none cursor-pointer"
-                        >
-                          <option value="USER">USER</option>
-                          <option value="PLAYER">PLAYER</option>
-                          <option value="COACH">COACH</option>
-                          <option value="SCOUT">SCOUT</option>
-                          <option value="PARENT">PARENT</option>
-                          <option value="ADMIN">ADMIN</option>
-                          <option value="DATA_ADMIN">DATA_ADMIN</option>
-                          <option value="SUPERADMIN" disabled>SUPERADMIN</option>
-                        </select>
-                      </td>
-                      <td className="p-4 text-right space-x-2 whitespace-nowrap">
-                        <button
-                          onClick={() => setSelectedUser(user)}
-                          className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="View Profile"
-                        >
-                          <Eye size={18} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {users
+                    .filter(
+                      (u) =>
+                        u.name
+                          ?.toLowerCase()
+                          .includes(searchQuery.toLowerCase()) ||
+                        u.email
+                          ?.toLowerCase()
+                          .includes(searchQuery.toLowerCase()),
+                    )
+                    .map((user) => (
+                      <tr
+                        key={user.id}
+                        className="hover:bg-slate-50/50 transition-colors"
+                      >
+                        <td className="p-4 font-bold text-slate-800">
+                          {user.name}
+                        </td>
+                        <td className="p-4">
+                          <div className="text-slate-800">{user.email}</div>
+                        </td>
+                        <td className="p-4">
+                          <select
+                            value={user.status || "INACTIVE"}
+                            onChange={(e) =>
+                              handleUpdateStatus(user, e.target.value)
+                            }
+                            disabled={user.role === "SUPERADMIN"}
+                            className={`text-xs font-bold rounded-xl px-2 py-1 outline-none cursor-pointer border ${
+                              user.status === "ACTIVE"
+                                ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                                : user.status === "PENDING"
+                                  ? "bg-amber-100 text-amber-800 border-amber-200"
+                                  : user.status === "REJECTED"
+                                    ? "bg-rose-100 text-rose-800 border-rose-200"
+                                    : "bg-slate-100 text-slate-800 border-slate-200"
+                            }`}
+                          >
+                            <option value="ACTIVE">ACTIVE</option>
+                            <option value="PENDING">PENDING</option>
+                            <option value="REJECTED">REJECTED</option>
+                            <option value="INACTIVE">SUSPENDED</option>
+                          </select>
+                        </td>
+                        <td className="p-4">
+                          <select
+                            value={user.role || "USER"}
+                            onChange={(e) =>
+                              handleUpdateRole(user, e.target.value)
+                            }
+                            disabled={user.role === "SUPERADMIN"}
+                            className="text-xs font-bold rounded-xl px-2 py-1 bg-slate-50 border border-slate-200 text-slate-800 outline-none cursor-pointer"
+                          >
+                            <option value="USER">USER</option>
+                            <option value="PLAYER">PLAYER</option>
+                            <option value="COACH">COACH</option>
+                            <option value="SCOUT">SCOUT</option>
+                            <option value="PARENT">PARENT</option>
+                            <option value="ADMIN">ADMIN</option>
+                            <option value="DATA_ADMIN">DATA_ADMIN</option>
+                            <option value="SUPERADMIN" disabled>
+                              SUPERADMIN
+                            </option>
+                          </select>
+                        </td>
+                        <td className="p-4 text-right space-x-2 whitespace-nowrap">
+                          <button
+                            onClick={() => setSelectedUser(user)}
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="View Profile"
+                          >
+                            <Eye size={18} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </div>
@@ -438,8 +548,12 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="p-6 border-b border-slate-100 flex justify-between items-start">
               <div>
-                <h3 className="text-xl font-black text-slate-800">User Profile</h3>
-                <p className="text-sm text-slate-500">Review details before approval</p>
+                <h3 className="text-xl font-black text-slate-800">
+                  User Profile
+                </h3>
+                <p className="text-sm text-slate-500">
+                  Review details before approval
+                </p>
               </div>
               <button
                 onClick={() => setSelectedUser(null)}
@@ -448,32 +562,56 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                 <X size={20} />
               </button>
             </div>
-            
+
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <div className="text-slate-500 text-xs font-bold uppercase mb-1">Name</div>
-                  <div className="font-bold text-slate-800">{selectedUser.name}</div>
+                  <div className="text-slate-500 text-xs font-bold uppercase mb-1">
+                    Name
+                  </div>
+                  <div className="font-bold text-slate-800">
+                    {selectedUser.name}
+                  </div>
                 </div>
                 <div>
-                  <div className="text-slate-500 text-xs font-bold uppercase mb-1">Email</div>
-                  <div className="font-bold text-slate-800">{selectedUser.email}</div>
+                  <div className="text-slate-500 text-xs font-bold uppercase mb-1">
+                    Email
+                  </div>
+                  <div className="font-bold text-slate-800">
+                    {selectedUser.email}
+                  </div>
                 </div>
                 <div>
-                  <div className="text-slate-500 text-xs font-bold uppercase mb-1">Phone</div>
-                  <div className="font-bold text-slate-800">{selectedUser.phone || "-"}</div>
+                  <div className="text-slate-500 text-xs font-bold uppercase mb-1">
+                    Phone
+                  </div>
+                  <div className="font-bold text-slate-800">
+                    {selectedUser.phone || "-"}
+                  </div>
                 </div>
                 <div>
-                  <div className="text-slate-500 text-xs font-bold uppercase mb-1">Country</div>
-                  <div className="font-bold text-slate-800">{selectedUser.country || "-"}</div>
+                  <div className="text-slate-500 text-xs font-bold uppercase mb-1">
+                    Country
+                  </div>
+                  <div className="font-bold text-slate-800">
+                    {selectedUser.country || "-"}
+                  </div>
                 </div>
                 <div>
-                  <div className="text-slate-500 text-xs font-bold uppercase mb-1">Academy</div>
-                  <div className="font-bold text-slate-800">{selectedUser.academyId || "-"}</div>
+                  <div className="text-slate-500 text-xs font-bold uppercase mb-1">
+                    Academy
+                  </div>
+                  <div className="font-bold text-slate-800">
+                    {selectedUser.academyId || "-"}
+                  </div>
                 </div>
                 <div>
-                  <div className="text-slate-500 text-xs font-bold uppercase mb-1">Requested Role</div>
-                  <div className="font-bold text-slate-800">{selectedUser.requestedRole || "-"}</div>
+                  <div className="text-slate-500 text-xs font-bold uppercase mb-1">
+                    Requested Role
+                  </div>
+                  <div className="font-bold text-slate-800">
+                    {selectedUser.requestedRole || "-"}
+                  </div>
                 </div>
               </div>
             </div>

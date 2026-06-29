@@ -1,10 +1,32 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { Database, Search, ArrowRight, Shield, Users } from "lucide-react";
 import { User } from "../contexts/AuthContext";
-import { db } from "../lib/firebase";
-import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { EmptyState } from "./common/EmptyState";
+
+const CLIENTS: User[] = [
+  {
+    id: "2",
+    name: "Coach Pep",
+    email: "pep@futverse.com",
+    role: "COACH",
+    status: "ACTIVE",
+  },
+  {
+    id: "3",
+    name: "Dr. Somchai",
+    email: "medical@futverse.com",
+    role: "ADMIN",
+    status: "ACTIVE",
+  },
+  {
+    id: "4",
+    name: "Scout A",
+    email: "scout@futverse.com",
+    role: "SCOUT",
+    status: "ACTIVE",
+  },
+];
 
 export default function ConciergeDashboard({
   onNavigate,
@@ -12,33 +34,7 @@ export default function ConciergeDashboard({
   onNavigate: (page: string) => void;
 }) {
   const { hasPermission, actualUser, impersonate } = useAuth();
-  const [assignedClients, setAssignedClients] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-
-  useEffect(() => {
-    if (!actualUser?.assignedClients || actualUser.assignedClients.length === 0) {
-      setAssignedClients([]);
-      setLoading(false);
-      return;
-    }
-
-    const q = query(
-      collection(db, "users"),
-      where("__name__", "in", actualUser.assignedClients)
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const clients = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as User[];
-      setAssignedClients(clients);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, [actualUser]);
 
   if (!hasPermission(["DATA_ADMIN"])) {
     return (
@@ -48,9 +44,15 @@ export default function ConciergeDashboard({
     );
   }
 
-  const filteredClients = assignedClients.filter(client => 
-    client.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    client.email?.toLowerCase().includes(searchTerm.toLowerCase())
+  // Filter clients based on actualUser's assignedClients
+  const assignedClients = CLIENTS.filter((client) =>
+    actualUser?.assignedClients?.includes(client.id!),
+  );
+
+  const filteredClients = assignedClients.filter(
+    (client) =>
+      client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      client.email?.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
   return (
@@ -100,11 +102,7 @@ export default function ConciergeDashboard({
           </div>
         </div>
 
-        {loading ? (
-          <div className="flex-1 flex items-center justify-center min-h-[200px]">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-600"></div>
-          </div>
-        ) : assignedClients.length === 0 ? (
+        {assignedClients.length === 0 ? (
           <div className="flex-1 p-6 flex flex-col justify-center min-h-[200px]">
             <EmptyState
               icon={Users}
@@ -153,18 +151,22 @@ export default function ConciergeDashboard({
                     <td className="py-4 px-6">
                       <span
                         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${
-                          client.status === "Active" || client.status === "ACTIVE"
+                          client.status === "Active" ||
+                          client.status === "ACTIVE"
                             ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                            : client.status === "Pending" || client.status === "PENDING"
+                            : client.status === "Pending" ||
+                                client.status === "PENDING"
                               ? "bg-amber-50 text-amber-700 border-amber-200"
                               : "bg-slate-50 text-slate-700 border-slate-200"
                         }`}
                       >
                         <span
                           className={`w-1.5 h-1.5 rounded-full ${
-                            client.status === "Active" || client.status === "ACTIVE"
+                            client.status === "Active" ||
+                            client.status === "ACTIVE"
                               ? "bg-emerald-500"
-                              : client.status === "Pending" || client.status === "PENDING"
+                              : client.status === "Pending" ||
+                                  client.status === "PENDING"
                                 ? "bg-amber-500"
                                 : "bg-slate-400"
                           }`}
@@ -186,7 +188,10 @@ export default function ConciergeDashboard({
                 ))}
                 {filteredClients.length === 0 && assignedClients.length > 0 && (
                   <tr>
-                    <td colSpan={4} className="py-10 text-center text-slate-500 font-medium">
+                    <td
+                      colSpan={4}
+                      className="py-10 text-center text-slate-500 font-medium"
+                    >
                       No clients found matching "{searchTerm}"
                     </td>
                   </tr>

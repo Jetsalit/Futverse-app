@@ -7,10 +7,16 @@ import {
   ChevronLeft,
   Search,
   Upload,
-  Users
+  Users,
 } from "lucide-react";
 import { db } from "../lib/firebase";
-import { collection, onSnapshot, doc, deleteDoc, addDoc } from "firebase/firestore";
+import {
+  collection,
+  onSnapshot,
+  doc,
+  deleteDoc,
+  addDoc,
+} from "firebase/firestore";
 import { useAcademy } from "../contexts/AcademyContext";
 import { EmptyState } from "./common/EmptyState";
 
@@ -47,9 +53,9 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "coaches"), (snapshot) => {
-      const loadedCoaches = snapshot.docs.map(doc => ({
+      const loadedCoaches = snapshot.docs.map((doc) => ({
         id: doc.id,
-        ...doc.data()
+        ...doc.data(),
       })) as Coach[];
       setCoaches(loadedCoaches);
       setLoading(false);
@@ -105,7 +111,7 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
           formData.avatarUrl ||
           `https://api.dicebear.com/7.x/avataaars/svg?seed=${formData.firstName}`,
       };
-      
+
       await addDoc(collection(db, "coaches"), newCoach);
       setIsModalOpen(false);
       setFormData({
@@ -528,4 +534,3 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
     </div>
   );
 }
-

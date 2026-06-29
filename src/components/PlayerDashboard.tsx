@@ -2,13 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { db } from "../lib/firebase";
 import { collection, query, onSnapshot, doc, getDoc } from "firebase/firestore";
-import {
-  Award,
-  Activity,
-  Heart,
-  ChevronRight,
-  UserCircle
-} from "lucide-react";
+import { Award, Activity, Heart, ChevronRight, UserCircle } from "lucide-react";
 import PeerVotingModal from "./PeerVotingModal";
 import { EmptyState } from "./common/EmptyState";
 
@@ -25,7 +19,7 @@ export default function PlayerDashboard({
   onNavigate: (page: string) => void;
 }) {
   const { currentUser } = useAuth();
-  
+
   const [playerProfile, setPlayerProfile] = useState<any>(null);
   const [teammates, setTeammates] = useState<Teammate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,16 +59,16 @@ export default function PlayerDashboard({
     const q = query(collection(db, "players"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const loadedTeammates = snapshot.docs
-        .map(doc => {
+        .map((doc) => {
           const data = doc.data();
           return {
             id: doc.id,
             name: `${data.firstName} ${data.lastName}`,
             position: data.position || "Unknown",
-            avatar: data.avatar || ""
+            avatar: data.avatar || "",
           };
         })
-        .filter(t => t.id !== currentUser.id);
+        .filter((t) => t.id !== currentUser.id);
       setTeammates(loadedTeammates);
     });
 

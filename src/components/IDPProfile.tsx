@@ -13,12 +13,17 @@ import {
   HeartPulse,
   X,
 } from "lucide-react";
-import { useDrillDatabase } from "../hooks/useDrillDatabase";
+
+const MOCK_DRILL_LIBRARY = [
+  { id: "d1", title: "1v1 Attacking Repetition", category: "Technical" },
+  { id: "d2", title: "High Press Activation", category: "Tactical" },
+  { id: "d3", title: "Sprint Repeatability (30m)", category: "Physical" },
+  { id: "d4", title: "Finishing Under Pressure", category: "Technical" },
+];
 
 export default function IDPProfile() {
   const [activeTab, setActiveTab] = useState<"overview" | "tasks">("overview");
   const [isAssignDrillModalOpen, setIsAssignDrillModalOpen] = useState(false);
-  const { drills } = useDrillDatabase();
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -425,30 +430,26 @@ export default function IDPProfile() {
                 action plan.
               </p>
               <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                {drills.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center py-4">No drills available.</p>
-                ) : (
-                  drills.map((drill) => (
-                    <label
-                      key={drill.id}
-                      className="flex items-start gap-3 p-3 border border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors"
-                    >
-                      <input
-                        type="radio"
-                        name="drill_selection"
-                        className="mt-1"
-                      />
-                      <div>
-                        <div className="font-bold text-sm text-slate-800">
-                          {drill.title}
-                        </div>
-                        <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider mt-1">
-                          {drill.category}
-                        </div>
+                {MOCK_DRILL_LIBRARY.map((drill) => (
+                  <label
+                    key={drill.id}
+                    className="flex items-start gap-3 p-3 border border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors"
+                  >
+                    <input
+                      type="radio"
+                      name="drill_selection"
+                      className="mt-1"
+                    />
+                    <div>
+                      <div className="font-bold text-sm text-slate-800">
+                        {drill.title}
                       </div>
-                    </label>
-                  ))
-                )}
+                      <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider mt-1">
+                        {drill.category}
+                      </div>
+                    </div>
+                  </label>
+                ))}
               </div>
             </div>
             <div className="p-4 border-t border-slate-200 flex justify-end gap-2 bg-slate-50">
