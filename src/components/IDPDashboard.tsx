@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   ChevronLeft,
   Search,
@@ -6,7 +6,11 @@ import {
   TrendingUp,
   AlertCircle,
   CheckCircle2,
+  Users
 } from "lucide-react";
+import { db } from "../lib/firebase";
+import { collection, onSnapshot } from "firebase/firestore";
+import { EmptyState } from "./common/EmptyState";
 
 interface IDPPlayerSummary {
   id: string;
@@ -21,61 +25,6 @@ interface IDPPlayerSummary {
   lastUpdated: string;
 }
 
-const MOCK_IDP_SUMMARY: IDPPlayerSummary[] = [
-  {
-    id: "p1",
-    name: "Teerasil Dangda",
-    position: "Striker",
-    avatarUrl:
-      "https://api.dicebear.com/7.x/avataaars/svg?seed=Teerasil&backgroundColor=0284c7",
-    team: "Senior Team",
-    overallProgress: 85,
-    shortTermProgress: 90,
-    longTermProgress: 80,
-    status: "On Track",
-    lastUpdated: "2 days ago",
-  },
-  {
-    id: "p2",
-    name: "Supachok Sarachat",
-    position: "Midfielder",
-    avatarUrl:
-      "https://api.dicebear.com/7.x/avataaars/svg?seed=Supachok&backgroundColor=dc2626",
-    team: "Senior Team",
-    overallProgress: 60,
-    shortTermProgress: 50,
-    longTermProgress: 70,
-    status: "Needs Attention",
-    lastUpdated: "1 week ago",
-  },
-  {
-    id: "p3",
-    name: "Ekanit Panya",
-    position: "Winger",
-    avatarUrl:
-      "https://api.dicebear.com/7.x/avataaars/svg?seed=Ekanit&backgroundColor=ea580c",
-    team: "Senior Team",
-    overallProgress: 95,
-    shortTermProgress: 100,
-    longTermProgress: 90,
-    status: "Exceeding",
-    lastUpdated: "1 day ago",
-  },
-  {
-    id: "p4",
-    name: "Suphanat Mueanta",
-    position: "Forward",
-    avatarUrl:
-      "https://api.dicebear.com/7.x/avataaars/svg?seed=Suphanat&backgroundColor=0d9488",
-    team: "U-23 Squad",
-    overallProgress: 75,
-    shortTermProgress: 80,
-    longTermProgress: 70,
-    status: "On Track",
-    lastUpdated: "4 days ago",
-  },
-];
-
 export default function IDPDashboard({
   onBack,
   onNavigateToPlayer,
@@ -84,8 +33,23 @@ export default function IDPDashboard({
   onNavigateToPlayer?: (id: string) => void;
 }) {
   const [searchTerm, setSearchTerm] = useState("");
+  const [idps, setIdps] = useState<IDPPlayerSummary[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filteredPlayers = MOCK_IDP_SUMMARY.filter(
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "idps"), (snapshot) => {
+      const loaded = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as IDPPlayerSummary[];
+      setIdps(loaded);
+      setLoading(false);
+    });
+
+    return () => unsub();
+  }, []);
+
+  const filteredPlayers = idps.filter(
     (p) =>
       p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.position.toLowerCase().includes(searchTerm.toLowerCase()),
@@ -118,9 +82,48 @@ export default function IDPDashboard({
   };
 
   const averageProgress = Math.round(
-    MOCK_IDP_SUMMARY.reduce((acc, curr) => acc + curr.overallProgress, 0) /
-      MOCK_IDP_SUMMARY.length,
+    idps.length > 0 ? idps.reduce((acc, curr) => acc + curr.overallProgress, 0) / idps.length : 0,
   );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full w-full">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
+
+  if (idps.length === 0) {
+    return (
+      <div className="flex flex-col h-full space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onBack}
+              className="p-2 hover:bg-slate-200 bg-white rounded-full transition-colors text-slate-600 border border-slate-200 shadow-sm"
+            >
+              <ChevronLeft size={20} />
+            </button>
+            <div>
+              <h1 className="text-2xl font-black text-slate-800 tracking-tight">
+                IDP Dashboard
+              </h1>
+              <p className="text-sm font-bold text-slate-500">
+                Individual Development Plans Overview
+              </p>
+            </div>
+          </div>
+        </div>
+        <EmptyState
+          icon={Users}
+          title="No IDPs Found"
+          description="There are currently no Individual Development Plans configured."
+          primaryActionLabel="Go Back"
+          onPrimaryAction={onBack}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full space-y-6">
@@ -152,7 +155,7 @@ export default function IDPDashboard({
               Squad IDP Active
             </p>
             <h3 className="text-3xl font-black text-slate-800">
-              {MOCK_IDP_SUMMARY.length}
+              {idps.length}
             </h3>
           </div>
           <div className="w-12 h-12 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-500">
@@ -179,7 +182,7 @@ export default function IDPDashboard({
             </p>
             <h3 className="text-3xl font-black text-rose-600">
               {
-                MOCK_IDP_SUMMARY.filter((p) => p.status === "Needs Attention")
+                idps.filter((p) => p.status === "Needs Attention")
                   .length
               }
             </h3>

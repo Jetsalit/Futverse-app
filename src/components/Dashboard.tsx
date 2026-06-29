@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import { useLanguage } from "../contexts/LanguageContext";
 import { useAuth, UserRole } from "../contexts/AuthContext";
-import PeerVotingModal from "./PeerVotingModal";
 
 type DashboardItem = {
   id: string;
@@ -43,6 +42,7 @@ const SECTIONS: DashboardSection[] = [
         icon: Calendar,
         color: "bg-indigo-500 text-indigo-50",
         route: "periodization",
+        allowedRoles: ["ADMIN", "COACH", "SUPERADMIN"],
       },
       {
         id: "xi",
@@ -51,6 +51,7 @@ const SECTIONS: DashboardSection[] = [
         icon: Shield,
         color: "bg-emerald-500 text-emerald-50",
         route: "starting_xi",
+        allowedRoles: ["ADMIN", "COACH", "SUPERADMIN"],
       },
       {
         id: "youth",
@@ -59,6 +60,7 @@ const SECTIONS: DashboardSection[] = [
         icon: Users,
         color: "bg-blue-500 text-blue-50",
         route: "youth",
+        allowedRoles: ["ADMIN", "COACH", "SUPERADMIN"],
       },
     ],
   },
@@ -72,6 +74,7 @@ const SECTIONS: DashboardSection[] = [
         icon: Star,
         color: "bg-violet-500 text-violet-50",
         route: "pro",
+        allowedRoles: ["ADMIN", "COACH", "SCOUT", "SUPERADMIN", "PLAYER"],
       },
       {
         id: "coaches",
@@ -80,6 +83,7 @@ const SECTIONS: DashboardSection[] = [
         icon: UserCheck,
         color: "bg-purple-500 text-purple-50",
         route: "coaches",
+        allowedRoles: ["ADMIN", "SUPERADMIN"],
       },
       {
         id: "recovery",
@@ -88,6 +92,7 @@ const SECTIONS: DashboardSection[] = [
         icon: Heart,
         color: "bg-rose-500 text-rose-50",
         route: "recovery",
+        allowedRoles: ["ADMIN", "COACH", "SUPERADMIN"],
       },
       {
         id: "fitness",
@@ -96,7 +101,7 @@ const SECTIONS: DashboardSection[] = [
         icon: Activity,
         color: "bg-orange-500 text-orange-50",
         route: "fitness",
-        allowedRoles: ["ADMIN"],
+        allowedRoles: ["ADMIN", "COACH", "SUPERADMIN"],
       },
     ],
   },
@@ -110,6 +115,7 @@ const SECTIONS: DashboardSection[] = [
         icon: ClipboardList,
         color: "bg-cyan-500 text-cyan-50",
         route: "drills",
+        allowedRoles: ["ADMIN", "COACH", "SUPERADMIN", "PLAYER"],
       },
       {
         id: "scout",
@@ -118,7 +124,7 @@ const SECTIONS: DashboardSection[] = [
         icon: Search,
         color: "bg-amber-500 text-amber-50",
         route: "scout",
-        allowedRoles: ["ADMIN", "SCOUT"],
+        allowedRoles: ["ADMIN", "SCOUT", "SUPERADMIN"],
       },
       {
         id: "settings",
@@ -127,7 +133,7 @@ const SECTIONS: DashboardSection[] = [
         icon: Settings,
         color: "bg-slate-700 text-slate-50",
         route: "settings",
-        allowedRoles: ["ADMIN"],
+        allowedRoles: ["ADMIN", "SUPERADMIN"],
       },
       {
         id: "superadmin",
@@ -158,47 +164,9 @@ export default function Dashboard({
 }) {
   const { t, language } = useLanguage();
   const { hasPermission, currentUser } = useAuth();
-  const [showVotingModal, setShowVotingModal] = useState(false);
-
-  // Auto-popup removed to stop the modal from constantly popping up.
-
-  // Mock teammates for voting
-  const teammates = [
-    {
-      id: "t1",
-      name: "Supachai Jaided",
-      position: "ST",
-      avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Supachai",
-    },
-    {
-      id: "t2",
-      name: "Chanathip Songkrasin",
-      position: "AM",
-      avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Chanathip",
-    },
-    {
-      id: "t3",
-      name: "Theerathon Bunmathan",
-      position: "LB",
-      avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Theerathon",
-    },
-    {
-      id: "t4",
-      name: "Kritsada Kaman",
-      position: "CB",
-      avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Kritsada",
-    },
-  ];
 
   return (
     <div className="w-full max-w-6xl mx-auto pb-10">
-      {/* Peer Voting Modal */}
-      <PeerVotingModal
-        isOpen={showVotingModal}
-        onClose={() => setShowVotingModal(false)}
-        teammates={teammates}
-      />
-
       <div className="mb-8">
         <h1 className="text-2xl font-black text-slate-800 tracking-tight">
           {t("dashboard_title")}

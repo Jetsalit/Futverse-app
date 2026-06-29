@@ -1,10 +1,22 @@
-import React, { useState } from "react";
-import { ChevronLeft, CheckCircle2, Search, X } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { ChevronLeft, CheckCircle2, Search, X, Users, User } from "lucide-react";
+import { db } from "../lib/firebase";
+import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import { EmptyState } from "./common/EmptyState";
 
 interface Position {
   x: number;
   y: number;
   label: string;
+}
+
+interface Player {
+  id: string;
+  firstName: string;
+  lastName: string;
+  position: string;
+  avatar: string;
+  jerseyNumber?: number;
 }
 
 const FORMATIONS: Record<string, Position[]> = {
@@ -49,36 +61,30 @@ const FORMATIONS: Record<string, Position[]> = {
   ],
 };
 
-const MOCK_SQUAD = [
-  { id: "1", name: "Kawin Thamsatchanan", number: 1, position: "GK" },
-  { id: "2", name: "Nicholas Mickelson", number: 12, position: "RB" },
-  { id: "3", name: "Pansa Hemviboon", number: 4, position: "CB" },
-  { id: "4", name: "Elias Dolah", number: 15, position: "CB" },
-  { id: "5", name: "Theerathon Bunmathan", number: 3, position: "LB" },
-  { id: "6", name: "Sarach Yooyen", number: 6, position: "CM" },
-  { id: "7", name: "Chanathip Songkrasin", number: 18, position: "CM" },
-  { id: "8", name: "Supachok Sarachat", number: 7, position: "CAM" },
-  { id: "9", name: "Bordin Phala", number: 11, position: "LW" },
-  { id: "10", name: "Suphanat Mueanta", number: 10, position: "RW" },
-  { id: "11", name: "Teerasil Dangda", number: 8, position: "ST" },
-  { id: "12", name: "Supachai Chaided", number: 9, position: "ST" },
-  { id: "13", name: "Kritsada Kaman", number: 5, position: "CB" },
-  {
-    id: "14",
-    name: "Pathompol Charoenrattanapirom",
-    number: 14,
-    position: "RW",
-  },
-  { id: "15", name: "Picha Autra", number: 22, position: "CM" },
-];
-
 export default function StartingXIBuilder({ onBack }: { onBack: () => void }) {
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [loading, setLoading] = useState(true);
+
   const [formation, setFormation] = useState<string>("4-3-3");
   const [lineup, setLineup] = useState<Record<number, string | null>>({});
   const [activeSlot, setActiveSlot] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
   const currentFormation = FORMATIONS[formation];
+
+  useEffect(() => {
+    const q = query(collection(db, "players"), orderBy("firstName"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const loadedPlayers = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Player[];
+      setPlayers(loadedPlayers);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const handleFormationChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setFormation(e.target.value);
@@ -114,11 +120,49 @@ export default function StartingXIBuilder({ onBack }: { onBack: () => void }) {
   const selectedPlayerIds = Object.values(lineup).filter(Boolean) as string[];
   const selectedCount = selectedPlayerIds.length;
 
-  const filteredSquad = MOCK_SQUAD.filter(
+  const filteredSquad = players.filter(
     (p) =>
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      `${p.firstName} ${p.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.position.toLowerCase().includes(searchQuery.toLowerCase()),
   );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full w-full">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
+
+  if (players.length === 0) {
+    return (
+      <div className="w-full max-w-6xl mx-auto pb-10 flex flex-col h-[calc(100vh-4rem)]">
+        <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4 shrink-0">
+          <div>
+            <button
+              onClick={onBack}
+              className="flex items-center gap-1.5 text-sm font-bold text-slate-500 hover:text-indigo-600 transition-colors mb-3"
+            >
+              <ChevronLeft size={16} /> Back to Dashboard
+            </button>
+            <h1 className="text-3xl font-black text-slate-800 tracking-tight">
+              Starting XI & Tactics
+            </h1>
+            <p className="text-sm font-medium text-slate-500 mt-1">
+              Design your match setup and player assignments
+            </p>
+          </div>
+        </div>
+        <EmptyState
+          icon={Users}
+          title="No Players Available"
+          description="Add players to your squad to build your Starting XI."
+          primaryActionLabel="Go Back"
+          onPrimaryAction={onBack}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-6xl mx-auto pb-10 flex flex-col h-[calc(100vh-4rem)]">
@@ -186,7 +230,7 @@ export default function StartingXIBuilder({ onBack }: { onBack: () => void }) {
             {currentFormation.map((pos, idx) => {
               const isSelected = activeSlot === idx;
               const assignedPlayerId = lineup[idx];
-              const player = MOCK_SQUAD.find((p) => p.id === assignedPlayerId);
+              const player = players.find((p) => p.id === assignedPlayerId);
 
               return (
                 <div
@@ -207,7 +251,7 @@ export default function StartingXIBuilder({ onBack }: { onBack: () => void }) {
                           : "bg-black/30 border-white/50 text-white border-dashed"
                       }`}
                     >
-                      {player ? player.number : "+"}
+                      {player ? (player.jerseyNumber || "-") : "+"}
                     </button>
                     {player && (
                       <button
@@ -223,7 +267,7 @@ export default function StartingXIBuilder({ onBack }: { onBack: () => void }) {
                     )}
                   </div>
                   <div className="mt-1.5 px-2 py-1 md:px-4 md:py-2 bg-black/70 backdrop-blur-sm text-white text-[10px] md:text-sm font-bold rounded min-w-[60px] md:min-w-[80px] text-center whitespace-nowrap shadow-sm">
-                    {player ? player.name.split(" ")[0] : pos.label}
+                    {player ? player.firstName : pos.label}
                   </div>
                 </div>
               );
@@ -290,17 +334,21 @@ export default function StartingXIBuilder({ onBack }: { onBack: () => void }) {
                 >
                   <div className="flex items-center gap-3">
                     <div
-                      className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-sm transition-colors ${
+                      className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-sm transition-colors overflow-hidden ${
                         isAssigned
                           ? "bg-slate-200 text-slate-500"
                           : "bg-indigo-100 text-indigo-700 group-hover:bg-indigo-600 group-hover:text-white"
                       }`}
                     >
-                      {player.number}
+                      {player.avatar ? (
+                        <img src={player.avatar} alt={player.firstName} className="w-full h-full object-cover" />
+                      ) : (
+                        player.jerseyNumber || <User size={16} />
+                      )}
                     </div>
                     <div>
                       <div className="font-bold text-sm text-slate-800">
-                        {player.name}
+                        {player.firstName} {player.lastName}
                       </div>
                       <div className="text-[10px] font-black text-slate-400">
                         {player.position}

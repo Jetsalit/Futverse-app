@@ -1,4 +1,4 @@
-import { useState, memo, useCallback } from "react";
+import { useState, memo, useCallback, useEffect } from "react";
 import {
   Radar,
   RadarChart,
@@ -23,15 +23,23 @@ import {
   ClipboardList,
   Database,
   Check,
+  Users
 } from "lucide-react";
+import { db } from "../lib/firebase";
+import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import { EmptyState } from "./common/EmptyState";
 
-// Mock Data
-const MOCK_PLAYERS = [
-  { id: 1, name: "ศุภณัฏฐ์ เหมือนตา", position: "FW", uClass: "U-17" },
-  { id: 2, name: "เอกนิษฐ์ ปัญญา", position: "MF", uClass: "U-17" },
-  { id: 3, name: "กฤษดา กาแมน", position: "DF", uClass: "U-17" },
-  { id: 4, name: "สุภโชค สารชาติ", position: "MF", uClass: "U-17" },
-];
+interface Player {
+  id: string;
+  firstName: string;
+  lastName: string;
+  position: string;
+  ageGroup: string;
+  dob: string;
+  age: number;
+  fitness_status: string;
+  avatar: string;
+}
 
 const METRICS_CONFIG = [
   { key: "yoyo_level", label: "Yo-Yo Test", unit: "Level", max: 20 },
@@ -47,12 +55,6 @@ const METRICS_CONFIG = [
   { key: "vertical_jump", label: "Vertical Jump", unit: "cm", max: 80 },
 ];
 
-const MOCK_HISTORIC_DATA = [
-  { month: "Jan", yoyo_level: 16.5, speed_30m: 4.8 },
-  { month: "Feb", yoyo_level: 16.2, speed_30m: 4.6 },
-  { month: "Mar", yoyo_level: 15.8, speed_30m: 4.5 },
-  { month: "Apr", yoyo_level: 15.5, speed_30m: 4.3 },
-];
 
 // --- FitnessTestingGrid Implementation ---
 
@@ -73,27 +75,33 @@ const PlayerTestRow = memo(
     rowData,
     onChange,
   }: {
-    player: any;
+    player: Player;
     rowData: any;
     onChange: (id: string, field: string, value: string) => void;
   }) => {
     const handleInputChange = (field: string, value: string) => {
-      onChange(player.id.toString(), field, value);
+      onChange(player.id, field, value);
     };
 
     return (
       <tr className="hover:bg-slate-50 border-b border-slate-100 transition-colors group">
         <td className="px-6 py-3 sticky left-0 bg-white group-hover:bg-slate-50 z-10 shadow-[1px_0_0_#e2e8f0]">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-emerald-100 group-hover:text-emerald-600 transition-colors shrink-0">
-              <User size={14} />
+            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-emerald-100 group-hover:text-emerald-600 transition-colors shrink-0 overflow-hidden border border-slate-200">
+               {player.avatar ? (
+                <img src={player.avatar} alt={player.firstName} className="w-full h-full object-cover" />
+               ) : (
+                <User size={14} />
+               )}
             </div>
             <div className="min-w-0">
               <div className="font-medium text-slate-800 truncate">
-                {player.name}
+                {player.firstName} {player.lastName}
               </div>
               <div className="text-[10px] text-slate-500 flex gap-1.5 mt-0.5">
-                <span className="font-bold text-slate-400">{player.id}</span>
+                <span className="font-bold text-slate-400">{player.position}</span>
+                <span>•</span>
+                <span>{player.ageGroup}</span>
               </div>
             </div>
           </div>
@@ -129,7 +137,7 @@ function FitnessTestingGrid({
   testData,
   setTestData,
 }: {
-  players: any[];
+  players: Player[];
   isOnline: boolean;
   onOfflineSave?: () => void;
   saveStatus: "success" | "offline_queued" | null;
@@ -191,29 +199,6 @@ function FitnessTestingGrid({
           data.speed_30m !== null ||
           data.vertical_jump !== null,
       ); // Filter rows that actually have data filled
-
-    /**
-     * --- [EXPLANATION: SUPABASE UPSERT LOGIC] ---
-     *
-     * หลักการใช้ Upsert ใน Supabase สำหรับ Requirement นี้เพื่อกระจายปัญหาการกด Save ซ้ำหน้าบ้าน:
-     *
-     * const { data, error } = await supabase
-     *   .from('fitness_tests')
-     *   .upsert(
-     *     payloadToSave,
-     *     {
-     *       onConflict: 'player_id, test_date', // เราจะกำหนด Composite Unique Key (player_id + test_date) ที่ระดับ Database Table
-     *       ignoreDuplicates: false // อนุญาตให้ Update ทับของเดิมได้เลยถ้ารายการนั้นมีอยู่แล้ว
-     *     }
-     *   );
-     *
-     * สิ่งที่จะเกิดขึ้นเมื่อส่งคำสั่งนี้:
-     * 1. ฐานข้อมูลจะเช็กว่า วันนี้ (test_date) นักกีฬาคนนี้ (player_id) เคยบันทึกสถิติไปหรือยัง
-     * 2. หากยังไม่เคย (ไม่มี Record ที่ตรงทั้ง 2 คอลัมน์): Supabase จะ INSERT แถวใหม่ให้
-     * 3. หากมีแล้ว แต่เราแค่พิมพ์แก้ตัวเลข 10m Sprint ใหม่และกด Save: Supabase จะ UPDATE ทับ Record ของวันนี้ด้วยข้อมูลใหม่ทันที
-     *
-     * ข้อดีคือไม่เกิดขยะ Data Duplicate ในกรณีที่คนใช้งานกดปุ่ม "Save All Results" หลายๆ ครั้งในวันเดียวกัน
-     */
 
     // Simulate Supabase Response wait time
     setTimeout(() => {
@@ -305,7 +290,7 @@ function FitnessTestingGrid({
               <PlayerTestRow
                 key={player.id}
                 player={player}
-                rowData={testData[player.id.toString()]}
+                rowData={testData[player.id]}
                 onChange={handleRowChange}
               />
             ))}
@@ -327,10 +312,27 @@ export default function FitnessTesting({
   isOnline?: boolean;
   onOfflineSave?: () => void;
 }) {
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"entry" | "report">("entry");
-  const [selectedPlayerId, setSelectedPlayerId] = useState<number>(
-    MOCK_PLAYERS[0].id,
-  );
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string>("");
+
+  useEffect(() => {
+    const q = query(collection(db, "players"), orderBy("firstName"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const loadedPlayers = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Player[];
+      setPlayers(loadedPlayers);
+      if (loadedPlayers.length > 0 && !selectedPlayerId) {
+        setSelectedPlayerId(loadedPlayers[0].id);
+      }
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [selectedPlayerId]);
 
   // State from main wrapper for reports functionality and passing to grid
   const [testData, setTestData] = useState<
@@ -340,21 +342,14 @@ export default function FitnessTesting({
     null | "success" | "offline_queued"
   >(null);
 
-  const getRadarData = (playerId: number) => {
+  const getRadarData = (playerId: string) => {
     return METRICS_CONFIG.filter((m) => m.key !== "calculated_vo2max").map(
       (m) => {
         let val = 0;
         if (testData[playerId]?.[m.key]) {
           val = parseFloat(testData[playerId][m.key]);
         } else {
-          // Mock default values if not entered to show *something* in radar
-          val = m.key.includes("speed")
-            ? 4 + playerId * 0.1
-            : m.key === "vertical_jump"
-              ? 50 + playerId * 2
-              : m.key === "yoyo_level"
-                ? 14 + playerId * 0.5
-                : 15 - playerId * 0.2;
+          val = 0; // fallback to 0 if no data
         }
 
         // Normalize for radar (0-100 scale)
@@ -374,6 +369,44 @@ export default function FitnessTesting({
       },
     );
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full w-full">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div>
+      </div>
+    );
+  }
+
+  if (players.length === 0) {
+    return (
+      <div className="h-full w-full flex flex-col">
+        <div className="flex items-center gap-4 mb-6">
+          <button
+            onClick={onBack}
+            className="p-2 rounded-full hover:bg-slate-200 bg-white shadow-sm text-slate-600 transition-colors"
+          >
+            <ChevronLeft size={24} />
+          </button>
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-800 tracking-tight">
+              Fitness Testing System
+            </h1>
+            <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest mt-1">
+              Assessment Engine
+            </p>
+          </div>
+        </div>
+        <EmptyState
+          icon={Users}
+          title="No Players Available"
+          description="You need to add players to the academy before you can test their fitness."
+          primaryActionLabel="Go Back"
+          onPrimaryAction={onBack}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="w-full flex-1 flex flex-col animate-in fade-in duration-300 relative">
@@ -429,7 +462,7 @@ export default function FitnessTesting({
       {activeTab === "entry" && (
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col animate-in fade-in duration-300">
           <FitnessTestingGrid
-            players={MOCK_PLAYERS}
+            players={players}
             isOnline={isOnline}
             onOfflineSave={onOfflineSave}
             saveStatus={saveStatus}
@@ -447,7 +480,7 @@ export default function FitnessTesting({
               Squad Roster
             </h3>
             <div className="space-y-1.5">
-              {MOCK_PLAYERS.map((player) => (
+              {players.map((player) => (
                 <button
                   key={player.id}
                   onClick={() => setSelectedPlayerId(player.id)}
@@ -457,7 +490,7 @@ export default function FitnessTesting({
                       : "border-transparent hover:bg-slate-50 text-slate-700"
                   }`}
                 >
-                  <span className="font-medium text-sm">{player.name}</span>
+                  <span className="font-medium text-sm">{player.firstName} {player.lastName}</span>
                   <span
                     className={`text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded ${selectedPlayerId === player.id ? "bg-emerald-100 text-emerald-600" : "bg-slate-100 text-slate-400"}`}
                   >
@@ -548,87 +581,8 @@ export default function FitnessTesting({
               <h3 className="text-xs font-bold text-slate-400 uppercase mb-6 border-b border-slate-100 pb-3">
                 Fitness Progression Timeline
               </h3>
-              <div className="h-[300px] w-full mt-4">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    data={MOCK_HISTORIC_DATA}
-                    margin={{ top: 5, right: 20, bottom: 5, left: 0 }}
-                  >
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      vertical={false}
-                      stroke="#f1f5f9"
-                    />
-                    <XAxis
-                      dataKey="month"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{
-                        fill: "#64748b",
-                        fontSize: 11,
-                        fontWeight: "bold",
-                      }}
-                      dy={10}
-                    />
-                    <YAxis
-                      yAxisId="left"
-                      orientation="left"
-                      stroke="#0ea5e9"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fontSize: 10, fill: "#64748b" }}
-                      domain={["dataMin - 0.5", "dataMax + 0.5"]}
-                    />
-                    <YAxis
-                      yAxisId="right"
-                      orientation="right"
-                      stroke="#10b981"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fontSize: 10, fill: "#64748b" }}
-                      domain={["dataMin - 0.5", "dataMax + 0.5"]}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        borderRadius: "12px",
-                        border: "1px solid #e2e8f0",
-                        boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
-                        padding: "12px",
-                        fontSize: "12px",
-                        fontWeight: "bold",
-                      }}
-                    />
-                    <Legend
-                      iconType="circle"
-                      wrapperStyle={{
-                        paddingTop: "20px",
-                        fontSize: "11px",
-                        fontWeight: "bold",
-                        color: "#64748b",
-                      }}
-                    />
-                    <Line
-                      yAxisId="right"
-                      type="monotone"
-                      name="Yo-Yo Level"
-                      dataKey="yoyo_level"
-                      stroke="#10b981"
-                      strokeWidth={3}
-                      dot={{ r: 5, strokeWidth: 2, fill: "#fff" }}
-                      activeDot={{ r: 7 }}
-                    />
-                    <Line
-                      yAxisId="left"
-                      type="monotone"
-                      name="30m Sprint (sec)"
-                      dataKey="speed_30m"
-                      stroke="#0ea5e9"
-                      strokeWidth={3}
-                      dot={{ r: 5, strokeWidth: 2, fill: "#fff" }}
-                      activeDot={{ r: 7 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+              <div className="h-[300px] w-full mt-4 flex items-center justify-center border-2 border-dashed border-slate-200 rounded-xl">
+                 <p className="text-slate-400 font-medium">Historical data will appear here after multiple tests</p>
               </div>
             </div>
           </div>

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   ArrowLeft,
   UserCircle,
@@ -12,6 +12,9 @@ import {
   X,
   HeartPulse,
 } from "lucide-react";
+import { db } from "../lib/firebase";
+import { collection, onSnapshot } from "firebase/firestore";
+import { EmptyState } from "./common/EmptyState";
 
 interface InjuredPlayer {
   id: string;
@@ -33,70 +36,6 @@ interface WellnessPlayer {
   fatigue: number; // 1-5 (5 = worst)
 }
 
-const MOCK_INJURED: InjuredPlayer[] = [
-  {
-    id: "i1",
-    name: "Somchai Jaidee",
-    image:
-      "https://api.dicebear.com/7.x/avataaars/svg?seed=Somchai1&backgroundColor=f87171",
-    injury: "Ankle Sprain (Grade 2)",
-    startDate: "2026-06-05",
-    expectedReturn: "2026-06-28",
-    status: "Injured",
-    notes: "Needs icing 3x a day. Non-weight bearing.",
-  },
-  {
-    id: "i2",
-    name: "Arthit Singsomboon",
-    image:
-      "https://api.dicebear.com/7.x/avataaars/svg?seed=Arthit2&backgroundColor=fbd38d",
-    injury: "Hamstring Strain",
-    startDate: "2026-06-12",
-    expectedReturn: "2026-06-25",
-    status: "Rehab",
-    notes: "Started light jogging and stretching.",
-  },
-];
-
-const MOCK_WELLNESS: WellnessPlayer[] = [
-  {
-    id: "w1",
-    name: "Nawin Wattana",
-    image:
-      "https://api.dicebear.com/7.x/avataaars/svg?seed=Nawin&backgroundColor=e2e8f0",
-    muscleSoreness: 2,
-    sleepQuality: 4,
-    fatigue: 2,
-  },
-  {
-    id: "w2",
-    name: "Krit Panyarat",
-    image:
-      "https://api.dicebear.com/7.x/avataaars/svg?seed=Krit&backgroundColor=e2e8f0",
-    muscleSoreness: 4,
-    sleepQuality: 2,
-    fatigue: 4,
-  },
-  {
-    id: "w3",
-    name: "Danai Srisuwan",
-    image:
-      "https://api.dicebear.com/7.x/avataaars/svg?seed=Danai&backgroundColor=e2e8f0",
-    muscleSoreness: 3,
-    sleepQuality: 3,
-    fatigue: 3,
-  },
-  {
-    id: "w4",
-    name: "Tawan Rattanapan",
-    image:
-      "https://api.dicebear.com/7.x/avataaars/svg?seed=Tawan&backgroundColor=e2e8f0",
-    muscleSoreness: 1,
-    sleepQuality: 5,
-    fatigue: 1,
-  },
-];
-
 export default function RecoveryDashboard({
   onBack,
   teamName,
@@ -105,9 +44,33 @@ export default function RecoveryDashboard({
   teamName: string;
 }) {
   const [filterTeam, setFilterTeam] = useState(teamName);
-  const [injuredPlayers, setInjuredPlayers] =
-    useState<InjuredPlayer[]>(MOCK_INJURED);
-  const [wellnessPlayers] = useState<WellnessPlayer[]>(MOCK_WELLNESS);
+  const [injuredPlayers, setInjuredPlayers] = useState<InjuredPlayer[]>([]);
+  const [wellnessPlayers, setWellnessPlayers] = useState<WellnessPlayer[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubInjured = onSnapshot(collection(db, "injuredPlayers"), (snapshot) => {
+      const loaded = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as InjuredPlayer[];
+      setInjuredPlayers(loaded);
+    });
+
+    const unsubWellness = onSnapshot(collection(db, "wellnessPlayers"), (snapshot) => {
+      const loaded = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as WellnessPlayer[];
+      setWellnessPlayers(loaded);
+      setLoading(false);
+    });
+
+    return () => {
+      unsubInjured();
+      unsubWellness();
+    };
+  }, []);
 
   const [selectedInjured, setSelectedInjured] = useState<InjuredPlayer | null>(
     null,
@@ -162,6 +125,46 @@ export default function RecoveryDashboard({
     setIsUpdateModalOpen(false);
     setSelectedInjured(null);
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full w-full">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-rose-600"></div>
+      </div>
+    );
+  }
+
+  if (injuredPlayers.length === 0 && wellnessPlayers.length === 0) {
+    return (
+      <div className="flex flex-col min-h-fit animate-in fade-in duration-300">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 shrink-0">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={onBack}
+              className="p-2 hover:bg-slate-200 bg-white rounded-xl transition-colors shadow-sm text-slate-600 border border-slate-200"
+            >
+              <ArrowLeft size={20} />
+            </button>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
+                <HeartPulse className="text-rose-500" /> Recovery & Medical
+              </h1>
+              <p className="text-xs text-slate-500 font-medium uppercase tracking-widest mt-1">
+                U19 Elite Squad • Player Health Status
+              </p>
+            </div>
+          </div>
+        </div>
+        <EmptyState
+          icon={HeartPulse}
+          title="No Health Records"
+          description="There are currently no injured players or wellness logs in the system."
+          primaryActionLabel="Go Back"
+          onPrimaryAction={onBack}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col min-h-fit animate-in fade-in duration-300">

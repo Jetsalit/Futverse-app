@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Plus,
   X,
@@ -7,52 +7,30 @@ import {
   ChevronLeft,
   Search,
   Upload,
+  Users
 } from "lucide-react";
-
-const MOCK_TEAMS = [
-  { id: "1", name: "U-17 National Prospects" },
-  { id: "2", name: "U-15 Development" },
-  { id: "3", name: "U-13 Grassroots" },
-  { id: "4", name: "Senior Pro Squad" },
-];
+import { db } from "../lib/firebase";
+import { collection, onSnapshot, doc, deleteDoc, addDoc } from "firebase/firestore";
+import { useAcademy } from "../contexts/AcademyContext";
+import { EmptyState } from "./common/EmptyState";
 
 const LICENSES = ["Pro", "A", "B", "C", "ไม่มี"];
 
-const MOCK_COACHES = [
-  {
-    id: "1",
-    firstName: "Somchai",
-    lastName: "Kirati",
-    email: "somchai@academy.com",
-    phone: "081-234-5678",
-    license: "Pro",
-    teams: ["U-17 National Prospects", "Senior Pro Squad"],
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Somchai",
-  },
-  {
-    id: "2",
-    firstName: "Takano",
-    lastName: "Yuki",
-    email: "takano@academy.com",
-    phone: "089-876-5432",
-    license: "A",
-    teams: ["U-17 National Prospects", "U-15 Development"],
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Takano",
-  },
-  {
-    id: "3",
-    firstName: "Pipat",
-    lastName: "Tong",
-    email: "pipat@academy.com",
-    phone: "082-345-6789",
-    license: "C",
-    teams: ["U-13 Grassroots"],
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Pipat",
-  },
-];
+interface Coach {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  license: string;
+  teams: string[];
+  avatar: string;
+}
 
 export default function CoachManagement({ onBack }: { onBack: () => void }) {
-  const [coaches, setCoaches] = useState(MOCK_COACHES);
+  const { settings } = useAcademy();
+  const [coaches, setCoaches] = useState<Coach[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [coachToDelete, setCoachToDelete] = useState<string | null>(null);
@@ -66,6 +44,19 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
     teams: [] as string[],
     avatarUrl: "",
   });
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "coaches"), (snapshot) => {
+      const loadedCoaches = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Coach[];
+      setCoaches(loadedCoaches);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
@@ -100,41 +91,49 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
     });
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newCoach = {
-      id: Date.now().toString(),
-      firstName: formData.firstName,
-      lastName: formData.lastName,
-      email: formData.email,
-      phone: formData.phone,
-      license: formData.license,
-      teams: formData.teams,
-      avatar:
-        formData.avatarUrl ||
-        `https://api.dicebear.com/7.x/avataaars/svg?seed=${formData.firstName}`,
-    };
-    setCoaches([newCoach, ...coaches]);
-    setIsModalOpen(false);
-    setFormData({
-      firstName: "",
-      lastName: "",
-      email: "",
-      phone: "",
-      license: "C",
-      teams: [],
-      avatarUrl: "",
-    });
+    try {
+      const newCoach = {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: formData.email,
+        phone: formData.phone,
+        license: formData.license,
+        teams: formData.teams,
+        avatar:
+          formData.avatarUrl ||
+          `https://api.dicebear.com/7.x/avataaars/svg?seed=${formData.firstName}`,
+      };
+      
+      await addDoc(collection(db, "coaches"), newCoach);
+      setIsModalOpen(false);
+      setFormData({
+        firstName: "",
+        lastName: "",
+        email: "",
+        phone: "",
+        license: "C",
+        teams: [],
+        avatarUrl: "",
+      });
+    } catch (error) {
+      console.error("Error adding coach:", error);
+    }
   };
 
   const handleDeleteClick = (id: string) => {
     setCoachToDelete(id);
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (coachToDelete) {
-      setCoaches(coaches.filter((c) => c.id !== coachToDelete));
-      setCoachToDelete(null);
+      try {
+        await deleteDoc(doc(db, "coaches", coachToDelete));
+        setCoachToDelete(null);
+      } catch (error) {
+        console.error("Error deleting coach:", error);
+      }
     }
   };
 
@@ -149,6 +148,14 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
         .includes(searchQuery.toLowerCase()) ||
       c.email.toLowerCase().includes(searchQuery.toLowerCase()),
   );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full animate-in fade-in duration-300">
@@ -180,120 +187,132 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
         </button>
       </div>
 
-      {/* Toolbar */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center mb-6">
-        <div className="relative w-full max-w-sm">
-          <Search
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-            size={18}
-          />
-          <input
-            type="text"
-            placeholder="ค้นหาชื่อ หรือ อีเมล..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-          />
-        </div>
-      </div>
+      {coaches.length === 0 ? (
+        <EmptyState
+          icon={Users}
+          title="No Coaches Yet"
+          description="Start building your coaching staff."
+          primaryActionLabel="Add Coach"
+          onPrimaryAction={() => setIsModalOpen(true)}
+        />
+      ) : (
+        <>
+          {/* Toolbar */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center mb-6">
+            <div className="relative w-full max-w-sm">
+              <Search
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                size={18}
+              />
+              <input
+                type="text"
+                placeholder="ค้นหาชื่อ หรือ อีเมล..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              />
+            </div>
+          </div>
 
-      {/* Content Area - Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500 font-bold">
-                <th className="px-6 py-4 border-b">ข้อมูลผู้ฝึกสอน</th>
-                <th className="px-6 py-4 border-b">สิทธิ์ / License</th>
-                <th className="px-6 py-4 border-b">
-                  ทีมที่ดูแล (Assigned Teams)
-                </th>
-                <th className="px-6 py-4 border-b text-right">จัดการ</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredCoaches.map((coach) => (
-                <tr
-                  key={coach.id}
-                  className="hover:bg-slate-50/50 transition-colors group"
-                >
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full border-2 border-white shadow-sm overflow-hidden bg-slate-100 shrink-0">
-                        <img
-                          src={
-                            coach.avatar ||
-                            `https://api.dicebear.com/7.x/avataaars/svg?seed=${coach.firstName}`
-                          }
-                          alt="Avatar"
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      <div>
-                        <div className="font-bold text-slate-800 text-sm">
-                          {coach.firstName} {coach.lastName}
+          {/* Content Area - Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500 font-bold">
+                    <th className="px-6 py-4 border-b">ข้อมูลผู้ฝึกสอน</th>
+                    <th className="px-6 py-4 border-b">สิทธิ์ / License</th>
+                    <th className="px-6 py-4 border-b">
+                      ทีมที่ดูแล (Assigned Teams)
+                    </th>
+                    <th className="px-6 py-4 border-b text-right">จัดการ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredCoaches.map((coach) => (
+                    <tr
+                      key={coach.id}
+                      className="hover:bg-slate-50/50 transition-colors group"
+                    >
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full border-2 border-white shadow-sm overflow-hidden bg-slate-100 shrink-0">
+                            <img
+                              src={
+                                coach.avatar ||
+                                `https://api.dicebear.com/7.x/avataaars/svg?seed=${coach.firstName}`
+                              }
+                              alt="Avatar"
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          <div>
+                            <div className="font-bold text-slate-800 text-sm">
+                              {coach.firstName} {coach.lastName}
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              {coach.email}
+                            </div>
+                            <div className="text-xs text-slate-400 mt-0.5">
+                              {coach.phone}
+                            </div>
+                          </div>
                         </div>
-                        <div className="text-xs text-slate-500">
-                          {coach.email}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="inline-flex items-center justify-center bg-blue-50 text-blue-700 border border-blue-100 px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
+                          {coach.license}{" "}
+                          {coach.license !== "ไม่มี" ? "License" : ""}
                         </div>
-                        <div className="text-xs text-slate-400 mt-0.5">
-                          {coach.phone}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-wrap gap-1.5">
+                          {coach.teams.map((team, idx) => (
+                            <span
+                              key={idx}
+                              className="bg-slate-100 border border-slate-200 text-slate-600 text-xs px-2 py-0.5 rounded-md font-medium"
+                            >
+                              {team}
+                            </span>
+                          ))}
+                          {coach.teams.length === 0 && (
+                            <span className="text-xs text-slate-400 italic">
+                              No teams assigned
+                            </span>
+                          )}
                         </div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="inline-flex items-center justify-center bg-blue-50 text-blue-700 border border-blue-100 px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
-                      {coach.license}{" "}
-                      {coach.license !== "ไม่มี" ? "License" : ""}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-wrap gap-1.5">
-                      {coach.teams.map((team, idx) => (
-                        <span
-                          key={idx}
-                          className="bg-slate-100 border border-slate-200 text-slate-600 text-xs px-2 py-0.5 rounded-md font-medium"
-                        >
-                          {team}
-                        </span>
-                      ))}
-                      {coach.teams.length === 0 && (
-                        <span className="text-xs text-slate-400 italic">
-                          No teams assigned
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
-                        <Edit2 size={16} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteClick(coach.id)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                            <Edit2 size={16} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteClick(coach.id)}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredCoaches.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={4}
+                        className="px-6 py-12 text-center text-slate-500"
                       >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {filteredCoaches.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={4}
-                    className="px-6 py-12 text-center text-slate-500"
-                  >
-                    ไม่พบข้อมูลผู้ฝึกสอน
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                        ไม่พบข้อมูลผู้ฝึกสอน
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Modal เพิ่มผู้ฝึกสอน */}
       {isModalOpen && (
@@ -431,19 +450,19 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
                     รุ่นอายุที่รับผิดชอบ (Assigned Teams)
                   </label>
                   <div className="grid grid-cols-2 gap-2">
-                    {MOCK_TEAMS.map((team) => (
+                    {settings.squads.map((teamName) => (
                       <label
-                        key={team.id}
+                        key={teamName}
                         className="flex items-center gap-2 p-2.5 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors"
                       >
                         <input
                           type="checkbox"
-                          checked={formData.teams.includes(team.name)}
-                          onChange={() => toggleTeam(team.name)}
+                          checked={formData.teams.includes(teamName)}
+                          onChange={() => toggleTeam(teamName)}
                           className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
                         />
                         <span className="text-xs font-semibold text-slate-700">
-                          {team.name}
+                          {teamName}
                         </span>
                       </label>
                     ))}
@@ -509,3 +528,4 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
     </div>
   );
 }
+

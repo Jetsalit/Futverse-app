@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Plus,
   Search,
@@ -10,67 +10,25 @@ import {
   ChevronLeft,
   Edit2,
   Trash2,
+  Users
 } from "lucide-react";
 import YouthDevelopmentReport from "./YouthDevelopmentReport";
+import { db } from "../lib/firebase";
+import { collection, onSnapshot, doc, deleteDoc, addDoc, updateDoc } from "firebase/firestore";
+import { useAcademy } from "../contexts/AcademyContext";
+import { EmptyState } from "./common/EmptyState";
 
-// Mockup Data
-const initialPlayers = [
-  {
-    id: 1,
-    firstName: "Supachai",
-    lastName: "Jaided",
-    position: "ST",
-    ageGroup: "U17",
-    dob: "2009-05-15",
-    age: 17,
-    fitness_status: "Fit",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Supachai",
-  },
-  {
-    id: 2,
-    firstName: "Suphanat",
-    lastName: "Mueanta",
-    position: "Winger",
-    ageGroup: "U17",
-    dob: "2009-08-02",
-    age: 16,
-    fitness_status: "Fit",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Suphanat",
-  },
-  {
-    id: 3,
-    firstName: "Airfan",
-    lastName: "Doloh",
-    position: "CM",
-    ageGroup: "U15",
-    dob: "2011-02-14",
-    age: 15,
-    fitness_status: "Injured",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Airfan",
-  },
-  {
-    id: 4,
-    firstName: "Sarayut",
-    lastName: "Somphim",
-    position: "CB",
-    ageGroup: "U13",
-    dob: "2013-11-30",
-    age: 12,
-    fitness_status: "Returning",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Sarayut",
-  },
-  {
-    id: 5,
-    firstName: "Channarong",
-    lastName: "Promsrikaew",
-    position: "CAM",
-    ageGroup: "U15",
-    dob: "2010-04-17",
-    age: 15,
-    fitness_status: "Fit",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Channarong",
-  },
-];
+interface Player {
+  id: string;
+  firstName: string;
+  lastName: string;
+  position: string;
+  ageGroup: string;
+  dob: string;
+  age: number;
+  fitness_status: string;
+  avatar: string;
+}
 
 export default function YouthPlayerManager({
   onBack,
@@ -79,12 +37,14 @@ export default function YouthPlayerManager({
   onBack: () => void;
   onSelectPlayer?: (player: any) => void;
 }) {
-  const [players, setPlayers] = useState(initialPlayers);
+  const { settings } = useAcademy();
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filterAge, setFilterAge] = useState("All");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [editingPlayerId, setEditingPlayerId] = useState<number | null>(null);
-  const [playerToDelete, setPlayerToDelete] = useState<number | null>(null);
+  const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
+  const [playerToDelete, setPlayerToDelete] = useState<string | null>(null);
   const [reportPlayer, setReportPlayer] = useState<any>(null);
 
   // Form State
@@ -94,9 +54,22 @@ export default function YouthPlayerManager({
     dob: "",
     fitness_status: "Fit",
     position: "CM",
-    ageGroup: "U15",
+    ageGroup: settings.squads.length > 0 ? settings.squads[0] : "U15",
     avatarUrl: "",
   });
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "players"), (snapshot) => {
+      const loadedPlayers = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Player[];
+      setPlayers(loadedPlayers);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const calculateAge = (dob: string) => {
     if (!dob) return 0;
@@ -134,13 +107,13 @@ export default function YouthPlayerManager({
       dob: "",
       fitness_status: "Fit",
       position: "CM",
-      ageGroup: "U15",
+      ageGroup: settings.squads.length > 0 ? settings.squads[0] : "U15",
       avatarUrl: "",
     });
     setIsModalOpen(true);
   };
 
-  const handleEditClick = (player: (typeof initialPlayers)[0]) => {
+  const handleEditClick = (player: Player) => {
     setFormData({
       firstName: player.firstName,
       lastName: player.lastName,
@@ -163,49 +136,55 @@ export default function YouthPlayerManager({
       dob: "",
       fitness_status: "Fit",
       position: "CM",
-      ageGroup: "U15",
+      ageGroup: settings.squads.length > 0 ? settings.squads[0] : "U15",
       avatarUrl: "",
     });
   };
 
-  const handleSavePlayer = (e: React.FormEvent) => {
+  const handleSavePlayer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingPlayerId) {
-      setPlayers(
-        players.map((p) =>
-          p.id === editingPlayerId
-            ? {
-                ...p,
-                firstName: formData.firstName,
-                lastName: formData.lastName,
-                position: formData.position,
-                ageGroup: formData.ageGroup,
-                dob: formData.dob,
-                age: calculateAge(formData.dob),
-                fitness_status: formData.fitness_status,
-                avatar: formData.avatarUrl || p.avatar,
-              }
-            : p,
-        ),
-      );
-    } else {
-      const newPlayer = {
-        id: Date.now(),
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        position: formData.position,
-        ageGroup: formData.ageGroup,
-        dob: formData.dob,
-        age: calculateAge(formData.dob),
-        fitness_status: formData.fitness_status,
-        avatar:
-          formData.avatarUrl ||
-          `https://api.dicebear.com/7.x/avataaars/svg?seed=${formData.firstName}${Date.now()}`,
-      };
-      setPlayers([newPlayer, ...players]);
+    try {
+      if (editingPlayerId) {
+        await updateDoc(doc(db, "players", editingPlayerId), {
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          position: formData.position,
+          ageGroup: formData.ageGroup,
+          dob: formData.dob,
+          age: calculateAge(formData.dob),
+          fitness_status: formData.fitness_status,
+          ...(formData.avatarUrl ? { avatar: formData.avatarUrl } : {})
+        });
+      } else {
+        const newPlayer = {
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          position: formData.position,
+          ageGroup: formData.ageGroup,
+          dob: formData.dob,
+          age: calculateAge(formData.dob),
+          fitness_status: formData.fitness_status,
+          avatar:
+            formData.avatarUrl ||
+            `https://api.dicebear.com/7.x/avataaars/svg?seed=${formData.firstName}${Date.now()}`,
+        };
+        await addDoc(collection(db, "players"), newPlayer);
+      }
+      closeModal();
+    } catch (error) {
+      console.error("Error saving player:", error);
     }
-
-    closeModal();
+  };
+  
+  const handleDeleteConfirm = async () => {
+    if (playerToDelete) {
+      try {
+        await deleteDoc(doc(db, "players", playerToDelete));
+        setPlayerToDelete(null);
+      } catch (error) {
+        console.error("Error deleting player:", error);
+      }
+    }
   };
 
   const filteredPlayers = players.filter((p) => {
@@ -215,6 +194,14 @@ export default function YouthPlayerManager({
       .includes(searchQuery.toLowerCase());
     return matchAge && matchName;
   });
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   if (reportPlayer) {
     return (
@@ -253,148 +240,159 @@ export default function YouthPlayerManager({
         </div>
       </div>
 
-      {/* Filters and Search */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-4 mb-6">
-        <div className="relative flex-1">
-          <Search
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-            size={18}
-          />
-          <input
-            type="text"
-            placeholder="Search players..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-          />
-        </div>
-        <div className="flex items-center gap-2 sm:w-48">
-          <Filter className="text-slate-400 shrink-0" size={18} />
-          <div className="relative w-full">
-            <select
-              value={filterAge}
-              onChange={(e) => setFilterAge(e.target.value)}
-              className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-lg pl-3 pr-8 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-            >
-              <option value="All">All Squads</option>
-              <option value="U11">U11 Squad</option>
-              <option value="U13">U13 Squad</option>
-              <option value="U15">U15 Squad</option>
-              <option value="U17">U17 Squad</option>
-            </select>
-            <ChevronDown
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
-              size={16}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Player Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
-        {filteredPlayers.map((player) => (
-          <div
-            key={player.id}
-            className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow group relative"
-          >
-            <div className="h-20 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-slate-100 relative group-hover:from-blue-100 group-hover:to-indigo-100 transition-colors">
-              <div className="absolute top-3 left-3 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 bg-white/50 backdrop-blur-sm p-1 rounded-lg">
-                <button
-                  onClick={() => handleEditClick(player)}
-                  className="p-1 hover:text-blue-600 hover:bg-white rounded-md transition-colors text-slate-600"
-                >
-                  <Edit2 size={14} />
-                </button>
-                <button
-                  onClick={() => setPlayerToDelete(player.id)}
-                  className="p-1 hover:text-rose-600 hover:bg-white rounded-md transition-colors text-slate-600"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-              <span className="absolute top-3 right-3 bg-white px-2 py-1 rounded-md text-[10px] font-bold tracking-widest text-blue-700 uppercase border border-blue-100 shadow-sm">
-                {player.ageGroup}
-              </span>
+      {players.length === 0 ? (
+        <EmptyState
+          icon={Users}
+          title="No Youth Players Yet"
+          description="Add players to start managing your academy rosters."
+          primaryActionLabel="Add Player"
+          onPrimaryAction={openAddModal}
+        />
+      ) : (
+        <>
+          {/* Filters and Search */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-4 mb-6">
+            <div className="relative flex-1">
+              <Search
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                size={18}
+              />
+              <input
+                type="text"
+                placeholder="Search players..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              />
             </div>
-
-            <div className="px-5 pb-5 relative -mt-10">
-              <div className="w-20 h-20 rounded-full border-4 border-white bg-slate-100 mx-auto mb-3 overflow-hidden shadow-sm">
-                <img
-                  src={
-                    player.avatar ||
-                    `https://api.dicebear.com/7.x/avataaars/svg?seed=${player.firstName}`
-                  }
-                  alt={player.firstName}
-                  className="w-full h-full object-cover"
+            <div className="flex items-center gap-2 sm:w-48">
+              <Filter className="text-slate-400 shrink-0" size={18} />
+              <div className="relative w-full">
+                <select
+                  value={filterAge}
+                  onChange={(e) => setFilterAge(e.target.value)}
+                  className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-lg pl-3 pr-8 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                >
+                  <option value="All">All Squads</option>
+                  {settings.squads.map(squad => (
+                    <option key={squad} value={squad}>{squad} Squad</option>
+                  ))}
+                </select>
+                <ChevronDown
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                  size={16}
                 />
               </div>
-
-              <div className="text-center mb-4">
-                <h3 className="font-bold text-slate-800 text-lg leading-tight">
-                  {player.firstName}
-                </h3>
-                <p className="text-slate-500 text-sm">{player.lastName}</p>
-                <div className="flex items-center justify-center gap-2 mt-2">
-                  <div className="inline-flex items-center justify-center bg-slate-100 px-2.5 py-1 rounded-md text-xs font-bold text-slate-600">
-                    {player.position}
-                  </div>
-                  <div
-                    className={`inline-flex items-center justify-center px-2.5 py-1 rounded-md text-xs font-bold ${
-                      player.fitness_status === "Fit"
-                        ? "bg-emerald-100 text-emerald-700"
-                        : player.fitness_status === "Injured"
-                          ? "bg-rose-100 text-rose-700"
-                          : "bg-amber-100 text-amber-700"
-                    }`}
-                  >
-                    {player.fitness_status}
-                  </div>
-                </div>
-              </div>
-
-              <div className="border-t border-slate-100 pt-4 mt-2">
-                <div className="text-center mb-3">
-                  <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">
-                    Age
-                  </div>
-                  <div className="font-semibold text-slate-700 text-sm">
-                    {player.age}
-                  </div>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <button
-                    onClick={() => onSelectPlayer && onSelectPlayer(player)}
-                    className="w-full text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-2 rounded-lg transition-colors"
-                  >
-                    ดูโปรไฟล์ / IDP
-                  </button>
-                  <button
-                    onClick={() => setReportPlayer(player)}
-                    className="w-full text-xs font-bold text-teal-600 bg-teal-50 hover:bg-teal-100 px-3 py-2 rounded-lg transition-colors"
-                  >
-                    รายงานพัฒนาการ
-                  </button>
-                  <button
-                    onClick={() => {
-                      alert("Fitness Update Modal Coming Soon");
-                    }}
-                    className="w-full text-xs font-bold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 px-3 py-2 rounded-lg transition-colors"
-                  >
-                    อัปเดตความฟิต
-                  </button>
-                </div>
-              </div>
             </div>
           </div>
-        ))}
-        {filteredPlayers.length === 0 && (
-          <div className="col-span-full py-12 text-center bg-white rounded-2xl border border-slate-200 border-dashed">
-            <p className="text-slate-500">
-              No players found matching your criteria.
-            </p>
+
+          {/* Player Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+            {filteredPlayers.map((player) => (
+              <div
+                key={player.id}
+                className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow group relative"
+              >
+                <div className="h-20 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-slate-100 relative group-hover:from-blue-100 group-hover:to-indigo-100 transition-colors">
+                  <div className="absolute top-3 left-3 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 bg-white/50 backdrop-blur-sm p-1 rounded-lg">
+                    <button
+                      onClick={() => handleEditClick(player)}
+                      className="p-1 hover:text-blue-600 hover:bg-white rounded-md transition-colors text-slate-600"
+                    >
+                      <Edit2 size={14} />
+                    </button>
+                    <button
+                      onClick={() => setPlayerToDelete(player.id)}
+                      className="p-1 hover:text-rose-600 hover:bg-white rounded-md transition-colors text-slate-600"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                  <span className="absolute top-3 right-3 bg-white px-2 py-1 rounded-md text-[10px] font-bold tracking-widest text-blue-700 uppercase border border-blue-100 shadow-sm">
+                    {player.ageGroup}
+                  </span>
+                </div>
+
+                <div className="px-5 pb-5 relative -mt-10">
+                  <div className="w-20 h-20 rounded-full border-4 border-white bg-slate-100 mx-auto mb-3 overflow-hidden shadow-sm">
+                    <img
+                      src={
+                        player.avatar ||
+                        `https://api.dicebear.com/7.x/avataaars/svg?seed=${player.firstName}`
+                      }
+                      alt={player.firstName}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+
+                  <div className="text-center mb-4">
+                    <h3 className="font-bold text-slate-800 text-lg leading-tight">
+                      {player.firstName}
+                    </h3>
+                    <p className="text-slate-500 text-sm">{player.lastName}</p>
+                    <div className="flex items-center justify-center gap-2 mt-2">
+                      <div className="inline-flex items-center justify-center bg-slate-100 px-2.5 py-1 rounded-md text-xs font-bold text-slate-600">
+                        {player.position}
+                      </div>
+                      <div
+                        className={`inline-flex items-center justify-center px-2.5 py-1 rounded-md text-xs font-bold ${
+                          player.fitness_status === "Fit"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : player.fitness_status === "Injured"
+                              ? "bg-rose-100 text-rose-700"
+                              : "bg-amber-100 text-amber-700"
+                        }`}
+                      >
+                        {player.fitness_status}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-slate-100 pt-4 mt-2">
+                    <div className="text-center mb-3">
+                      <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">
+                        Age
+                      </div>
+                      <div className="font-semibold text-slate-700 text-sm">
+                        {player.age}
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <button
+                        onClick={() => onSelectPlayer && onSelectPlayer(player)}
+                        className="w-full text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-2 rounded-lg transition-colors"
+                      >
+                        ดูโปรไฟล์ / IDP
+                      </button>
+                      <button
+                        onClick={() => setReportPlayer(player)}
+                        className="w-full text-xs font-bold text-teal-600 bg-teal-50 hover:bg-teal-100 px-3 py-2 rounded-lg transition-colors"
+                      >
+                        รายงานพัฒนาการ
+                      </button>
+                      <button
+                        onClick={() => {
+                          alert("Fitness Update Modal Coming Soon");
+                        }}
+                        className="w-full text-xs font-bold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 px-3 py-2 rounded-lg transition-colors"
+                      >
+                        อัปเดตความฟิต
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {filteredPlayers.length === 0 && (
+              <div className="col-span-full py-12 text-center bg-white rounded-2xl border border-slate-200 border-dashed">
+                <p className="text-slate-500">
+                  No players found matching your criteria.
+                </p>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </>
+      )}
 
       {/* Add/Edit Player Modal */}
       {isModalOpen && (
@@ -564,10 +562,9 @@ export default function YouthPlayerManager({
                         onChange={handleInputChange}
                         className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-slate-700 font-medium"
                       >
-                        <option value="U11">U11 Squad</option>
-                        <option value="U13">U13 Squad</option>
-                        <option value="U15">U15 Squad</option>
-                        <option value="U17">U17 Squad</option>
+                        {settings.squads.map(squad => (
+                          <option key={squad} value={squad}>{squad} Squad</option>
+                        ))}
                       </select>
                       <ChevronDown
                         className="absolute right-3 text-slate-400 pointer-events-none"
@@ -624,10 +621,7 @@ export default function YouthPlayerManager({
                 ยกเลิก
               </button>
               <button
-                onClick={() => {
-                  setPlayers(players.filter((p) => p.id !== playerToDelete));
-                  setPlayerToDelete(null);
-                }}
+                onClick={handleDeleteConfirm}
                 className="flex-1 px-4 py-2.5 rounded-xl font-bold text-white bg-rose-600 hover:bg-rose-700 transition-colors shadow-sm"
               >
                 ลบข้อมูล

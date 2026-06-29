@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Save,
   MessageSquare,
@@ -13,8 +13,12 @@ import {
   Zap,
   Shield,
   X,
+  Users
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { db } from "../lib/firebase";
+import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import { EmptyState } from "./common/EmptyState";
 
 interface PlayerStat {
   id: string;
@@ -69,86 +73,6 @@ const BADGES = [
   },
 ];
 
-const INITIAL_PLAYERS: PlayerStat[] = [
-  {
-    id: "1",
-    name: "Suphanat Mueanta",
-    position: "FW",
-    passAccuracy: "",
-    shotsOnTarget: "",
-    duelsWon: "",
-    rating: "7",
-    note: "",
-    showNote: false,
-  },
-  {
-    id: "2",
-    name: "Supachok Sarachat",
-    position: "CAM",
-    passAccuracy: "",
-    shotsOnTarget: "",
-    duelsWon: "",
-    rating: "7",
-    note: "",
-    showNote: false,
-  },
-  {
-    id: "3",
-    name: "Theerathon Bunmathan",
-    position: "LB",
-    passAccuracy: "",
-    shotsOnTarget: "",
-    duelsWon: "",
-    rating: "7",
-    note: "",
-    showNote: false,
-  },
-  {
-    id: "4",
-    name: "Pansa Hemviboon",
-    position: "CB",
-    passAccuracy: "",
-    shotsOnTarget: "",
-    duelsWon: "",
-    rating: "7",
-    note: "",
-    showNote: false,
-  },
-  {
-    id: "5",
-    name: "Nicholas Mickelson",
-    position: "RB",
-    passAccuracy: "",
-    shotsOnTarget: "",
-    duelsWon: "",
-    rating: "7",
-    note: "",
-    showNote: false,
-  },
-  {
-    id: "6",
-    name: "Chanathip Songkrasin",
-    position: "CM",
-    passAccuracy: "",
-    shotsOnTarget: "",
-    duelsWon: "",
-    rating: "7",
-    note: "",
-    showNote: false,
-  },
-  {
-    id: "7",
-    name: "Teerasil Dangda",
-    position: "ST",
-    passAccuracy: "",
-    shotsOnTarget: "",
-    duelsWon: "",
-    rating: "7",
-    note: "",
-    showNote: false,
-  },
-];
-
 const TARGETS = {
   passAccuracy: 80, // Target %
   shotsOnTarget: 1, // Target count
@@ -169,10 +93,35 @@ export default function PostMatchStatsEntry({
     fouls: "",
   });
 
-  const [players, setPlayers] = useState<PlayerStat[]>(INITIAL_PLAYERS);
+  const [players, setPlayers] = useState<PlayerStat[]>([]);
+  const [loading, setLoading] = useState(true);
   const [coachAwards, setCoachAwards] = useState<CoachAward[]>([]);
   const [selectedPlayerForAward, setSelectedPlayerForAward] = useState("");
   const [selectedBadgeForAward, setSelectedBadgeForAward] = useState("");
+
+  useEffect(() => {
+    const q = query(collection(db, "players"), orderBy("firstName"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const loadedPlayers = snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          name: `${data.firstName} ${data.lastName}`,
+          position: data.position || "",
+          passAccuracy: "",
+          shotsOnTarget: "",
+          duelsWon: "",
+          rating: "7",
+          note: "",
+          showNote: false,
+        };
+      }) as PlayerStat[];
+      setPlayers(loadedPlayers);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const handleAssignAward = () => {
     if (!selectedPlayerForAward || !selectedBadgeForAward) return;
@@ -214,6 +163,41 @@ export default function PostMatchStatsEntry({
       ? "bg-emerald-50 border-emerald-300 text-emerald-800 focus:ring-emerald-500"
       : "bg-rose-50 border-rose-300 text-rose-800 focus:ring-rose-500";
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full w-full">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
+
+  if (players.length === 0) {
+    return (
+      <div className="w-full max-w-6xl mx-auto pb-10 flex flex-col h-[calc(100vh-4rem)]">
+        <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4 shrink-0">
+          <div>
+            <button
+              onClick={onBack}
+              className="flex items-center gap-1.5 text-sm font-bold text-slate-500 hover:text-indigo-600 transition-colors mb-3"
+            >
+              <ChevronLeft size={16} /> Back to Dashboard
+            </button>
+            <h1 className="text-3xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+              <Trophy className="text-amber-500" /> Post-Match Entry
+            </h1>
+          </div>
+        </div>
+        <EmptyState
+          icon={Users}
+          title="No Players Found"
+          description="You need to add players to your academy before you can log post-match stats."
+          primaryActionLabel="Go Back"
+          onPrimaryAction={onBack}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-6xl mx-auto pb-10">

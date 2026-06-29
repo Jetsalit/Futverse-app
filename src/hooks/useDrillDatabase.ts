@@ -1,4 +1,7 @@
 import { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { db } from '../lib/firebase';
+import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query } from 'firebase/firestore';
 
 export interface Drill {
   id: string;
@@ -21,66 +24,56 @@ export interface Drill {
   date?: string;
 }
 
-const MOCK_CURRENT_USER = 'coach_1';
-
-const INITIAL_DRILLS: Drill[] = [
-  {
-    id: 'mock-1',
-    title: 'Rondo 4v2',
-    category: 'Passing',
-    canvas_data: { elements: [], lines: [], fieldType: 'half' },
-    created_by: 'coach_1',
-    is_shared: false,
-  },
-  {
-    id: 'mock-2',
-    title: 'Defensive Shape',
-    category: 'Tactics',
-    canvas_data: { elements: [], lines: [], fieldType: 'full' },
-    created_by: 'coach_2',
-    is_shared: true,
-  }
-];
-
 export function useDrillDatabase() {
   const [drills, setDrills] = useState<Drill[]>([]);
-  const currentUser = MOCK_CURRENT_USER;
+  const { currentUser } = useAuth();
+  const currentUserId = currentUser?.id || 'unknown_user';
 
   useEffect(() => {
-    const saved = localStorage.getItem('practice_drills');
-    if (saved) {
-      setDrills(JSON.parse(saved));
-    } else {
-      setDrills(INITIAL_DRILLS);
-      localStorage.setItem('practice_drills', JSON.stringify(INITIAL_DRILLS));
-    }
+    const q = query(collection(db, 'drills'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const loadedDrills = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Drill[];
+      setDrills(loadedDrills);
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  const saveDrill = (newDrill: Omit<Drill, 'id' | 'created_by'>) => {
-    const drill: Drill = {
-      ...newDrill,
-      id: Date.now().toString(),
-      created_by: currentUser,
-    };
-    const updated = [drill, ...drills];
-    setDrills(updated);
-    localStorage.setItem('practice_drills', JSON.stringify(updated));
+  const saveDrill = async (newDrill: Omit<Drill, 'id' | 'created_by'>) => {
+    try {
+      const drillData = {
+        ...newDrill,
+        created_by: currentUserId,
+      };
+      await addDoc(collection(db, 'drills'), drillData);
+    } catch (e) {
+      console.error("Error saving drill: ", e);
+    }
   };
 
-  const updateDrill = (id: string, updates: Partial<Drill>) => {
-    const updated = drills.map(d => d.id === id ? { ...d, ...updates } : d);
-    setDrills(updated);
-    localStorage.setItem('practice_drills', JSON.stringify(updated));
+  const updateDrill = async (id: string, updates: Partial<Drill>) => {
+    try {
+      const docRef = doc(db, 'drills', id);
+      await updateDoc(docRef, updates);
+    } catch (e) {
+      console.error("Error updating drill: ", e);
+    }
   };
 
-  const deleteDrill = (id: string) => {
-    const updated = drills.filter(d => d.id !== id);
-    setDrills(updated);
-    localStorage.setItem('practice_drills', JSON.stringify(updated));
+  const deleteDrill = async (id: string) => {
+    try {
+      const docRef = doc(db, 'drills', id);
+      await deleteDoc(docRef);
+    } catch (e) {
+      console.error("Error deleting drill: ", e);
+    }
   };
 
-  const myDrills = drills.filter(d => d.created_by === currentUser);
+  const myDrills = drills.filter(d => d.created_by === currentUserId);
   const academyDrills = drills.filter(d => d.is_shared === true);
 
-  return { drills, myDrills, academyDrills, saveDrill, updateDrill, deleteDrill, currentUser };
+  return { drills, myDrills, academyDrills, saveDrill, updateDrill, deleteDrill, currentUser: currentUserId };
 }

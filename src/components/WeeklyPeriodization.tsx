@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -22,6 +22,10 @@ import {
   Share2,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { db } from "../lib/firebase";
+import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import { EmptyState } from "./common/EmptyState";
+import { useDrillDatabase } from "../hooks/useDrillDatabase";
 
 type ThemeType = "Recovery" | "Physical" | "Tactical" | "Match" | null;
 type IntensityType = "Low" | "Medium" | "High" | null;
@@ -44,38 +48,13 @@ interface TrainingDay {
 
 type AttendanceStatus = "Present" | "Late" | "Absent" | "Sick" | "Injured";
 
-const mockPlayers = [
-  {
-    id: "1",
-    name: "Supachai Jaided",
-    position: "ST",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Supachai",
-  },
-  {
-    id: "2",
-    name: "Suphanat Mueanta",
-    position: "RW",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Suphanat",
-  },
-  {
-    id: "3",
-    name: "Airfan Doloh",
-    position: "CM",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Airfan",
-  },
-  {
-    id: "4",
-    name: "Sarayut Sompim",
-    position: "CB",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Sarayut",
-  },
-  {
-    id: "5",
-    name: "Channarong Promsrikaew",
-    position: "CAM",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Channarong",
-  },
-];
+interface Player {
+  id: string;
+  firstName: string;
+  lastName: string;
+  position: string;
+  avatar: string;
+}
 
 const mockWeekData: TrainingDay[] = [
   {
@@ -224,37 +203,6 @@ const getIntensityWidth = (intensity: IntensityType) => {
   }
 };
 
-const MOCK_DRILL_LIBRARY = [
-  {
-    id: "lib1",
-    category: "Warm-up",
-    icon: "🏃‍♂️",
-    name: "Dynamic Stretching",
-    duration: 15,
-  },
-  {
-    id: "lib2",
-    category: "Technical",
-    icon: "⚽",
-    name: "Passing Triangle",
-    duration: 20,
-  },
-  {
-    id: "lib3",
-    category: "Tactical",
-    icon: "🧠",
-    name: "Rondo 4v2",
-    duration: 15,
-  },
-  {
-    id: "lib4",
-    category: "Tactical",
-    icon: "🧠",
-    name: "Attacking Phase",
-    duration: 30,
-  },
-];
-
 export default function WeeklyPeriodization({
   onBack,
   onNavigate,
@@ -264,6 +212,18 @@ export default function WeeklyPeriodization({
 }) {
   const { hasPermission } = useAuth();
   const hasEditPermission = hasPermission(["ADMIN", "COACH"]);
+  const { drills } = useDrillDatabase();
+  
+  const mappedDrills = drills.map(d => ({
+    id: d.id,
+    category: d.category || "Technical",
+    icon: d.category === "Warm-up" ? "🏃‍♂️" : d.category === "Tactical" ? "🧠" : d.category === "Physical" ? "💪" : "⚽",
+    name: d.title,
+    duration: d.duration ? parseInt(d.duration) : 15,
+  }));
+
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [weekDays, setWeekDays] = useState<TrainingDay[]>(mockWeekData);
   const [selectedDay, setSelectedDay] = useState<TrainingDay | null>(null);
@@ -295,6 +255,20 @@ export default function WeeklyPeriodization({
     intensity: null,
     objective: "",
   });
+
+  useEffect(() => {
+    const q = query(collection(db, "players"), orderBy("firstName"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const loadedPlayers = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Player[];
+      setPlayers(loadedPlayers);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const handleDateChange = (dateString: string) => {
     if (!dateString) return;
@@ -363,7 +337,7 @@ export default function WeeklyPeriodization({
     setIsLibraryOpen(true);
   };
 
-  const handleAddDrill = (libDrill: (typeof MOCK_DRILL_LIBRARY)[0]) => {
+  const handleAddDrill = (libDrill: typeof mappedDrills[0]) => {
     if (!addingToDayId) return;
     setWeekDays((prev) =>
       prev.map((d) => {
@@ -414,7 +388,7 @@ export default function WeeklyPeriodization({
     if (!hasEditPermission) return;
     let initial = { ...attendanceDB[selectedDay!.id] };
     if (Object.keys(initial).length === 0) {
-      mockPlayers.forEach((p) => (initial[p.id] = "Present"));
+      players.forEach((p) => (initial[p.id] = "Present"));
     }
     setCurrentAttendance(initial);
     setIsAttendanceModalOpen(true);
@@ -436,7 +410,7 @@ export default function WeeklyPeriodization({
   const handleMarkAllPresent = () => {
     if (!hasEditPermission) return;
     const updated: Record<string, AttendanceStatus> = {};
-    mockPlayers.forEach((p) => (updated[p.id] = "Present"));
+    players.forEach((p) => (updated[p.id] = "Present"));
     setCurrentAttendance(updated);
   };
 
@@ -449,11 +423,49 @@ export default function WeeklyPeriodization({
     setSelectedDay(day);
     let initial = { ...attendanceDB[day.id] };
     if (Object.keys(initial).length === 0) {
-      mockPlayers.forEach((p) => (initial[p.id] = "Present"));
+      players.forEach((p) => (initial[p.id] = "Present"));
     }
     setCurrentAttendance(initial);
     setIsAttendanceModalOpen(true);
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full w-full">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
+
+  if (players.length === 0) {
+    return (
+      <div className="h-full w-full flex flex-col p-4 md:p-6 bg-slate-50">
+        <div className="flex items-center gap-4 mb-6">
+          <button
+            onClick={onBack}
+            className="p-2 rounded-full hover:bg-slate-200 bg-white shadow-sm text-slate-600 transition-colors"
+          >
+            <ChevronLeft size={24} />
+          </button>
+          <div>
+            <h1 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+              <Activity className="text-indigo-600" /> Weekly Periodization
+            </h1>
+            <p className="text-sm text-slate-500 font-medium mt-1">
+              Plan and monitor training load across the week
+            </p>
+          </div>
+        </div>
+        <EmptyState
+          icon={Users}
+          title="No Players Found"
+          description="You need to add players to your academy before you can track attendance for weekly periodizations."
+          primaryActionLabel="Go Back"
+          onPrimaryAction={onBack}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="w-full flex-1 flex flex-col bg-slate-50 h-[calc(100vh-4rem)] p-4 md:p-6 overflow-hidden relative">
@@ -696,7 +708,7 @@ export default function WeeklyPeriodization({
                       <div className="mt-auto pt-3 border-t border-slate-100 flex-shrink-0">
                         {(() => {
                           const dayAttendance = attendanceDB[day.id];
-                          const total = mockPlayers.length;
+                          const total = players.length;
                           if (!dayAttendance) {
                             // Pending
                             return (
@@ -964,7 +976,7 @@ export default function WeeklyPeriodization({
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50 hide-scrollbar">
-              {mockPlayers.map((player) => {
+              {players.map((player) => {
                 const status = currentAttendance[player.id];
                 return (
                   <div
@@ -982,19 +994,20 @@ export default function WeeklyPeriodization({
                     }`}
                   >
                     <div className="flex items-center gap-3 mb-3 pb-3 border-b border-slate-100">
-                      <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 overflow-hidden shrink-0">
-                        <img
-                          src={
-                            player.avatar ||
-                            `https://api.dicebear.com/7.x/avataaars/svg?seed=${player.name}`
-                          }
-                          alt={player.name}
-                          className="w-full h-full object-cover"
-                        />
+                      <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center">
+                        {player.avatar ? (
+                          <img
+                            src={player.avatar}
+                            alt={player.firstName}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-slate-400 font-bold">{player.firstName[0]}</span>
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <h4 className="font-bold text-slate-800 text-sm truncate">
-                          {player.name}
+                          {player.firstName} {player.lastName}
                         </h4>
                         <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
                           {player.position}
@@ -1288,15 +1301,20 @@ export default function WeeklyPeriodization({
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50 space-y-6">
-              {/* Group by category */}
-              {["Warm-up", "Technical", "Tactical", "Physical"].map(
-                (category) => {
-                  const categoryDrills = MOCK_DRILL_LIBRARY.filter(
-                    (d) => d.category === category,
-                  );
-                  if (categoryDrills.length === 0) return null;
-                  return (
-                    <div key={category}>
+              {mappedDrills.length === 0 ? (
+                <div className="py-10 flex flex-col items-center">
+                   <p className="text-slate-500 text-sm">No drills available.</p>
+                </div>
+              ) : (
+                /* Group by category */
+                Array.from(new Set(mappedDrills.map(d => d.category))).map(
+                  (category) => {
+                    const categoryDrills = mappedDrills.filter(
+                      (d) => d.category === category,
+                    );
+                    if (categoryDrills.length === 0) return null;
+                    return (
+                      <div key={category}>
                       <h4 className="text-xs font-black uppercase text-slate-400 tracking-widest mb-3">
                         {category}
                       </h4>
@@ -1330,8 +1348,8 @@ export default function WeeklyPeriodization({
                       </div>
                     </div>
                   );
-                },
-              )}
+                }
+              ))}
             </div>
           </div>
         </div>
