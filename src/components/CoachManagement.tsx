@@ -16,6 +16,7 @@ import {
   doc,
   deleteDoc,
   addDoc,
+  updateDoc,
 } from "firebase/firestore";
 import { useAcademy } from "../contexts/AcademyContext";
 import { EmptyState } from "./common/EmptyState";
@@ -61,6 +62,7 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
   const [coaches, setCoaches] = useState<Coach[]>(MOCK_COACHES);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [coachToDelete, setCoachToDelete] = useState<string | null>(null);
 
@@ -75,8 +77,45 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
   });
 
   useEffect(() => {
-    // Mock data loads instantly
+    const unsubscribe = onSnapshot(collection(db, "coaches"), (snapshot) => {
+      const loadedCoaches = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Coach[];
+      setCoaches(loadedCoaches);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
+
+  const openAddModal = () => {
+    setEditingId(null);
+    setFormData({
+      firstName: "",
+      lastName: "",
+      email: "",
+      phone: "",
+      license: "C",
+      teams: [],
+      avatarUrl: "",
+    });
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (coach: Coach) => {
+    setEditingId(coach.id);
+    setFormData({
+      firstName: coach.firstName,
+      lastName: coach.lastName,
+      email: coach.email,
+      phone: coach.phone,
+      license: coach.license,
+      teams: coach.teams || [],
+      avatarUrl: coach.avatar || "",
+    });
+    setIsModalOpen(true);
+  };
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
@@ -114,7 +153,7 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const newCoach = {
+      const coachData = {
         firstName: formData.firstName,
         lastName: formData.lastName,
         email: formData.email,
@@ -126,8 +165,14 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
           `https://api.dicebear.com/7.x/avataaars/svg?seed=${formData.firstName}`,
       };
 
-      await addDoc(collection(db, "coaches"), newCoach);
+      if (editingId) {
+        await updateDoc(doc(db, "coaches", editingId), coachData);
+      } else {
+        await addDoc(collection(db, "coaches"), coachData);
+      }
+      
       setIsModalOpen(false);
+      setEditingId(null);
       setFormData({
         firstName: "",
         lastName: "",
@@ -138,7 +183,7 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
         avatarUrl: "",
       });
     } catch (error) {
-      console.error("Error adding coach:", error);
+      console.error("Error saving coach:", error);
     }
   };
 
@@ -199,7 +244,7 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
         </div>
 
         <button
-          onClick={() => setIsModalOpen(true)}
+          onClick={openAddModal}
           className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition shadow-sm w-full sm:w-auto justify-center"
         >
           <Plus size={18} />
@@ -213,7 +258,7 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
           title="No Coaches Yet"
           description="Start building your coaching staff."
           primaryActionLabel="Add Coach"
-          onPrimaryAction={() => setIsModalOpen(true)}
+          onPrimaryAction={openAddModal}
         />
       ) : (
         <>
@@ -304,7 +349,10 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                          <button
+                            onClick={() => openEditModal(coach)}
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          >
                             <Edit2 size={16} />
                           </button>
                           <button
@@ -344,7 +392,7 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
           <div className="relative bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
               <h2 className="text-lg font-bold text-slate-800">
-                เพิ่มผู้ฝึกสอน (Add Coach)
+                {editingId ? "แก้ไขผู้ฝึกสอน (Edit Coach)" : "เพิ่มผู้ฝึกสอน (Add Coach)"}
               </h2>
               <button
                 onClick={() => setIsModalOpen(false)}

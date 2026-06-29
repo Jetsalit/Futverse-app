@@ -11,8 +11,12 @@ service cloud.firestore {
       return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'SUPERADMIN';
     }
 
+    function isAdmin() {
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['SUPERADMIN', 'ADMIN'];
+    }
+
     match /users/{userId} {
-      allow read: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin());
+      allow read: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin() || isAdmin());
       allow create: if isSignedIn() && request.auth.uid == userId;
       allow update: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin());
       allow delete: if false;
@@ -20,7 +24,27 @@ service cloud.firestore {
 
     match /settings/{document=**} {
       allow read: if true;
-      allow write: if isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['SUPERADMIN', 'ADMIN'];
+      allow write: if isAdmin();
+    }
+    
+    match /coaches/{document=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+    
+    match /logs/{document=**} {
+      allow read: if isSuperAdmin();
+      allow create: if true;
+    }
+    
+    match /players/{document=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+    
+    match /drills/{document=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
     }
   }
 }
