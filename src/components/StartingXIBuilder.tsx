@@ -68,9 +68,28 @@ const FORMATIONS: Record<string, Position[]> = {
   ],
 };
 
+const MOCK_PLAYERS: Player[] = [
+  {
+    id: "p1",
+    firstName: "Suphanat",
+    lastName: "Mueanta",
+    position: "Striker",
+    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Suphanat",
+    jerseyNumber: 9,
+  },
+  {
+    id: "p2",
+    firstName: "Supachai",
+    lastName: "Jaided",
+    position: "Attacking Midfielder",
+    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Supachai",
+    jerseyNumber: 10,
+  }
+];
+
 export default function StartingXIBuilder({ onBack }: { onBack: () => void }) {
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [players, setPlayers] = useState<Player[]>(MOCK_PLAYERS);
+  const [loading, setLoading] = useState(false);
 
   const [formation, setFormation] = useState<string>("4-3-3");
   const [lineup, setLineup] = useState<Record<number, string | null>>({});
@@ -80,17 +99,7 @@ export default function StartingXIBuilder({ onBack }: { onBack: () => void }) {
   const currentFormation = FORMATIONS[formation];
 
   useEffect(() => {
-    const q = query(collection(db, "players"), orderBy("firstName"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loadedPlayers = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Player[];
-      setPlayers(loadedPlayers);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+    // Mock data
   }, []);
 
   const handleFormationChange = (e: React.ChangeEvent<HTMLSelectElement>) => {

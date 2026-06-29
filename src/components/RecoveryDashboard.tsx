@@ -36,6 +36,30 @@ interface WellnessPlayer {
   fatigue: number; // 1-5 (5 = worst)
 }
 
+const MOCK_INJURED: InjuredPlayer[] = [
+  {
+    id: "inj1",
+    name: "Supachok Sarachat",
+    image: "https://api.dicebear.com/7.x/avataaars/svg?seed=Supachok",
+    injury: "Hamstring Strain",
+    startDate: "2024-03-01",
+    expectedReturn: "2024-03-15",
+    status: "Rehab",
+    notes: "Light jogging allowed",
+  },
+];
+
+const MOCK_WELLNESS: WellnessPlayer[] = [
+  {
+    id: "w1",
+    name: "Chanathip S.",
+    image: "https://api.dicebear.com/7.x/avataaars/svg?seed=Chanathip",
+    muscleSoreness: 3,
+    sleepQuality: 4,
+    fatigue: 2,
+  },
+];
+
 export default function RecoveryDashboard({
   onBack,
   teamName,
@@ -44,38 +68,12 @@ export default function RecoveryDashboard({
   teamName: string;
 }) {
   const [filterTeam, setFilterTeam] = useState(teamName);
-  const [injuredPlayers, setInjuredPlayers] = useState<InjuredPlayer[]>([]);
-  const [wellnessPlayers, setWellnessPlayers] = useState<WellnessPlayer[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [injuredPlayers, setInjuredPlayers] = useState<InjuredPlayer[]>(MOCK_INJURED);
+  const [wellnessPlayers, setWellnessPlayers] = useState<WellnessPlayer[]>(MOCK_WELLNESS);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const unsubInjured = onSnapshot(
-      collection(db, "injuredPlayers"),
-      (snapshot) => {
-        const loaded = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as InjuredPlayer[];
-        setInjuredPlayers(loaded);
-      },
-    );
-
-    const unsubWellness = onSnapshot(
-      collection(db, "wellnessPlayers"),
-      (snapshot) => {
-        const loaded = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as WellnessPlayer[];
-        setWellnessPlayers(loaded);
-        setLoading(false);
-      },
-    );
-
-    return () => {
-      unsubInjured();
-      unsubWellness();
-    };
+    // Mock data
   }, []);
 
   const [selectedInjured, setSelectedInjured] = useState<InjuredPlayer | null>(

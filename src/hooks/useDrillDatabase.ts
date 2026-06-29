@@ -24,22 +24,24 @@ export interface Drill {
   date?: string;
 }
 
+const MOCK_DRILLS: Drill[] = [
+  {
+    id: "d1",
+    title: "Rondo 4v2",
+    category: "Tactical",
+    canvas_data: { elements: [], lines: [], fieldType: "half" },
+    created_by: "unknown_user",
+    is_shared: true,
+  }
+];
+
 export function useDrillDatabase() {
-  const [drills, setDrills] = useState<Drill[]>([]);
+  const [drills, setDrills] = useState<Drill[]>(MOCK_DRILLS);
   const { currentUser } = useAuth();
   const currentUserId = currentUser?.id || 'unknown_user';
 
   useEffect(() => {
-    const q = query(collection(db, 'drills'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loadedDrills = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Drill[];
-      setDrills(loadedDrills);
-    });
-
-    return () => unsubscribe();
+    // Mock data
   }, []);
 
   const saveDrill = async (newDrill: Omit<Drill, 'id' | 'created_by'>) => {

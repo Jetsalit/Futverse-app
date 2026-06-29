@@ -33,10 +33,33 @@ interface Coach {
   avatar: string;
 }
 
+const MOCK_COACHES: Coach[] = [
+  {
+    id: "c1",
+    firstName: "Pep",
+    lastName: "Guardiola",
+    email: "pep@futverse.com",
+    phone: "081-234-5678",
+    license: "Pro",
+    teams: ["U15", "U17", "First Team"],
+    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Pep",
+  },
+  {
+    id: "c2",
+    firstName: "Jurgen",
+    lastName: "Klopp",
+    email: "klopp@futverse.com",
+    phone: "082-345-6789",
+    license: "Pro",
+    teams: ["U13", "U15"],
+    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Jurgen",
+  },
+];
+
 export default function CoachManagement({ onBack }: { onBack: () => void }) {
   const { settings } = useAcademy();
-  const [coaches, setCoaches] = useState<Coach[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [coaches, setCoaches] = useState<Coach[]>(MOCK_COACHES);
+  const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [coachToDelete, setCoachToDelete] = useState<string | null>(null);
@@ -52,16 +75,7 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
   });
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "coaches"), (snapshot) => {
-      const loadedCoaches = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Coach[];
-      setCoaches(loadedCoaches);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+    // Mock data loads instantly
   }, []);
 
   const handleInputChange = (

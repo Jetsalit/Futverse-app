@@ -37,6 +37,31 @@ interface Player {
   avatar: string;
 }
 
+const MOCK_PLAYERS: Player[] = [
+  {
+    id: "p1",
+    firstName: "Suphanat",
+    lastName: "Mueanta",
+    position: "Striker",
+    ageGroup: "U17",
+    dob: "2007-08-02",
+    age: 17,
+    fitness_status: "Fit",
+    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Suphanat",
+  },
+  {
+    id: "p2",
+    firstName: "Ekanit",
+    lastName: "Panya",
+    position: "Winger",
+    ageGroup: "U15",
+    dob: "2009-10-21",
+    age: 15,
+    fitness_status: "Injured",
+    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Ekanit",
+  },
+];
+
 export default function YouthPlayerManager({
   onBack,
   onSelectPlayer,
@@ -45,8 +70,8 @@ export default function YouthPlayerManager({
   onSelectPlayer?: (player: any) => void;
 }) {
   const { settings } = useAcademy();
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [players, setPlayers] = useState<Player[]>(MOCK_PLAYERS);
+  const [loading, setLoading] = useState(false);
   const [filterAge, setFilterAge] = useState("All");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -66,16 +91,7 @@ export default function YouthPlayerManager({
   });
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "players"), (snapshot) => {
-      const loadedPlayers = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Player[];
-      setPlayers(loadedPlayers);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+    // Mock data
   }, []);
 
   const calculateAge = (dob: string) => {

@@ -306,6 +306,31 @@ function FitnessTestingGrid({
   );
 }
 
+const MOCK_PLAYERS: Player[] = [
+  {
+    id: "p1",
+    firstName: "Suphanat",
+    lastName: "Mueanta",
+    position: "Striker",
+    ageGroup: "U17",
+    dob: "2007-08-02",
+    age: 17,
+    fitness_status: "Fit",
+    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Suphanat",
+  },
+  {
+    id: "p2",
+    firstName: "Ekanit",
+    lastName: "Panya",
+    position: "Winger",
+    ageGroup: "U15",
+    dob: "2009-10-21",
+    age: 15,
+    fitness_status: "Fit",
+    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Ekanit",
+  },
+];
+
 export default function FitnessTesting({
   onBack,
   teamName,
@@ -317,26 +342,13 @@ export default function FitnessTesting({
   isOnline?: boolean;
   onOfflineSave?: () => void;
 }) {
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [players, setPlayers] = useState<Player[]>(MOCK_PLAYERS);
+  const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"entry" | "report">("entry");
-  const [selectedPlayerId, setSelectedPlayerId] = useState<string>("");
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string>(MOCK_PLAYERS[0].id);
 
   useEffect(() => {
-    const q = query(collection(db, "players"), orderBy("firstName"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loadedPlayers = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Player[];
-      setPlayers(loadedPlayers);
-      if (loadedPlayers.length > 0 && !selectedPlayerId) {
-        setSelectedPlayerId(loadedPlayers[0].id);
-      }
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+    // Mock data
   }, [selectedPlayerId]);
 
   // State from main wrapper for reports functionality and passing to grid

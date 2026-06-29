@@ -234,6 +234,16 @@ const MOCK_DRILL_LIBRARY = [
   },
 ];
 
+const MOCK_PLAYERS: Player[] = [
+  {
+    id: "p1",
+    firstName: "Suphanat",
+    lastName: "Mueanta",
+    position: "Striker",
+    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Suphanat",
+  },
+];
+
 export default function WeeklyPeriodization({
   onBack,
   onNavigate,
@@ -244,8 +254,8 @@ export default function WeeklyPeriodization({
   const { hasPermission } = useAuth();
   const hasEditPermission = hasPermission(["ADMIN", "COACH"]);
 
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [players, setPlayers] = useState<Player[]>(MOCK_PLAYERS);
+  const [loading, setLoading] = useState(false);
 
   const [weekDays, setWeekDays] = useState<TrainingDay[]>(mockWeekData);
   const [selectedDay, setSelectedDay] = useState<TrainingDay | null>(null);
@@ -279,17 +289,7 @@ export default function WeeklyPeriodization({
   });
 
   useEffect(() => {
-    const q = query(collection(db, "players"), orderBy("firstName"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loadedPlayers = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Player[];
-      setPlayers(loadedPlayers);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+    // Mock data
   }, []);
 
   const handleDateChange = (dateString: string) => {

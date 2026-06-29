@@ -13,6 +13,23 @@ interface Teammate {
   avatar: string;
 }
 
+const MOCK_PROFILE = {
+  id: "mock_id",
+  firstName: "Suphanat",
+  lastName: "Mueanta",
+  position: "Striker",
+  avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Suphanat",
+};
+
+const MOCK_TEAMMATES: Teammate[] = [
+  {
+    id: "t2",
+    name: "Supachai Jaided",
+    position: "Attacking Midfielder",
+    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Supachai",
+  },
+];
+
 export default function PlayerDashboard({
   onNavigate,
 }: {
@@ -20,9 +37,9 @@ export default function PlayerDashboard({
 }) {
   const { currentUser } = useAuth();
 
-  const [playerProfile, setPlayerProfile] = useState<any>(null);
-  const [teammates, setTeammates] = useState<Teammate[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [playerProfile, setPlayerProfile] = useState<any>(MOCK_PROFILE);
+  const [teammates, setTeammates] = useState<Teammate[]>(MOCK_TEAMMATES);
+  const [loading, setLoading] = useState(false);
 
   const [wellnessValues, setWellnessValues] = useState({
     fitness: 3,
@@ -34,45 +51,7 @@ export default function PlayerDashboard({
   const [hasVoted, setHasVoted] = useState(false);
 
   useEffect(() => {
-    if (!currentUser?.id) {
-      setLoading(false);
-      return;
-    }
-
-    const fetchProfile = async () => {
-      try {
-        const docRef = doc(db, "players", currentUser.id);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          setPlayerProfile({ id: docSnap.id, ...docSnap.data() });
-        } else {
-          setPlayerProfile(null);
-        }
-      } catch (error) {
-        console.error("Error fetching player profile:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchProfile();
-
-    const q = query(collection(db, "players"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loadedTeammates = snapshot.docs
-        .map((doc) => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            name: `${data.firstName} ${data.lastName}`,
-            position: data.position || "Unknown",
-            avatar: data.avatar || "",
-          };
-        })
-        .filter((t) => t.id !== currentUser.id);
-      setTeammates(loadedTeammates);
-    });
-
-    return () => unsubscribe();
+    // Mock data
   }, [currentUser]);
 
   const handleSaveWellness = () => {

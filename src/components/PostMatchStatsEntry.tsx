@@ -79,6 +79,31 @@ const TARGETS = {
   duelsWon: 50, // Target %
 };
 
+const MOCK_PLAYERS: PlayerStat[] = [
+  {
+    id: "p1",
+    name: "Suphanat Mueanta",
+    position: "Striker",
+    passAccuracy: "",
+    shotsOnTarget: "",
+    duelsWon: "",
+    rating: "7",
+    note: "",
+    showNote: false,
+  },
+  {
+    id: "p2",
+    name: "Supachai Jaided",
+    position: "Attacking Midfielder",
+    passAccuracy: "",
+    shotsOnTarget: "",
+    duelsWon: "",
+    rating: "7",
+    note: "",
+    showNote: false,
+  }
+];
+
 export default function PostMatchStatsEntry({
   onBack,
 }: {
@@ -93,34 +118,14 @@ export default function PostMatchStatsEntry({
     fouls: "",
   });
 
-  const [players, setPlayers] = useState<PlayerStat[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [players, setPlayers] = useState<PlayerStat[]>(MOCK_PLAYERS);
+  const [loading, setLoading] = useState(false);
   const [coachAwards, setCoachAwards] = useState<CoachAward[]>([]);
   const [selectedPlayerForAward, setSelectedPlayerForAward] = useState("");
   const [selectedBadgeForAward, setSelectedBadgeForAward] = useState("");
 
   useEffect(() => {
-    const q = query(collection(db, "players"), orderBy("firstName"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loadedPlayers = snapshot.docs.map((doc) => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          name: `${data.firstName} ${data.lastName}`,
-          position: data.position || "",
-          passAccuracy: "",
-          shotsOnTarget: "",
-          duelsWon: "",
-          rating: "7",
-          note: "",
-          showNote: false,
-        };
-      }) as PlayerStat[];
-      setPlayers(loadedPlayers);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+    // Mock data
   }, []);
 
   const handleAssignAward = () => {
