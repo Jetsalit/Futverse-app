@@ -156,18 +156,26 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
   const [stageSize, setStageSize] = useState({ width: 800, height: 500 });
 
   useEffect(() => {
-    const handleResize = () => {
-      if (containerRef.current) {
-        setStageSize({
-          width: containerRef.current.offsetWidth,
-          height: containerRef.current.offsetHeight,
-        });
+    let resizeObserver: ResizeObserver;
+    
+    if (containerRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        if (containerRef.current) {
+          setStageSize({
+            width: containerRef.current.offsetWidth,
+            height: containerRef.current.offsetHeight,
+          });
+        }
+      });
+      resizeObserver.observe(containerRef.current);
+    }
+
+    return () => {
+      if (resizeObserver) {
+        resizeObserver.disconnect();
       }
     };
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
+  }, [fieldType]); // re-bind if container changes or fieldType changes
 
   const handleMainToolClick = (toolId: string) => {
     if (
@@ -538,12 +546,11 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
               {/* Canvas Area Container */}
               <div className="flex-1 relative w-full overflow-auto bg-slate-50 flex flex-col p-2 lg:p-6">
                 <div
-                  className={`relative bg-white ring-1 ring-slate-300 shadow-sm overflow-hidden select-none shrink-0 ${activeTool !== 'pan' ? 'touch-none' : ''} ${
-                    fieldType === "full" ? "aspect-[1.54/1] w-full max-w-[800px]" : fieldType === "small" ? "aspect-[1.4/1] w-full max-w-[800px]" : "aspect-[1/1.3] w-full max-w-[500px]"
-                  }`}
+                  className={`relative bg-white ring-1 ring-slate-300 shadow-sm overflow-hidden select-none shrink-0 ${activeTool !== 'pan' ? 'touch-none' : ''} w-full`}
                   style={{
+                     aspectRatio: fieldType === "full" ? "1.54 / 1" : fieldType === "small" ? "1.54 / 1" : "1.3 / 1",
+                     maxWidth: fieldType === "half" ? "600px" : "800px",
                      maxHeight: "100%",
-                     height: fieldType === "full" || fieldType === "small" ? "auto" : "auto",
                      margin: "auto"
                   }}
                   ref={containerRef}
@@ -556,34 +563,34 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
                       <div className="absolute top-0 bottom-0 left-1/2 w-[1.5px] bg-slate-800 -translate-x-1/2"></div>
                       
                       {/* Center circle */}
-                      <div className="absolute top-1/2 left-1/2 w-[18%] aspect-square border-[1.5px] border-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
+                      <div className="absolute top-1/2 left-1/2 h-[26.9%] aspect-square border-[1.5px] border-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
                       
                       {/* Center mark */}
                       <div className="absolute top-1/2 left-1/2 w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
 
+                      {/* Left Penalty Arc */}
+                      <div className="absolute top-1/2 left-[10.4%] h-[26.9%] aspect-square border-[1.5px] border-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2 z-0"></div>
+
                       {/* Left Penalty Area */}
-                      <div className="absolute top-1/2 left-0 w-[16%] h-[60%] border-[1.5px] border-slate-800 -translate-y-1/2 border-l-0 bg-white"></div>
+                      <div className="absolute top-1/2 left-0 w-[15.7%] h-[59.3%] border-[1.5px] border-slate-800 -translate-y-1/2 border-l-0 bg-white z-10"></div>
                       
                       {/* Left Goal Area */}
-                      <div className="absolute top-1/2 left-0 w-[5.5%] h-[27%] border-[1.5px] border-slate-800 -translate-y-1/2 border-l-0 bg-white"></div>
+                      <div className="absolute top-1/2 left-0 w-[5.2%] h-[26.9%] border-[1.5px] border-slate-800 -translate-y-1/2 border-l-0 bg-white z-20"></div>
                       
                       {/* Left Penalty Mark */}
-                      <div className="absolute top-1/2 left-[11%] w-1.5 h-1.5 bg-slate-800 rounded-full -translate-y-1/2"></div>
-                      
-                      {/* Left Penalty Arc (only half outside penalty area) */}
-                      <div className="absolute top-1/2 left-[16%] w-[7%] h-[20%] border-[1.5px] border-slate-800 border-l-0 rounded-r-full -translate-y-1/2 z-0"></div>
+                      <div className="absolute top-1/2 left-[10.4%] w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2 z-30"></div>
+
+                      {/* Right Penalty Arc */}
+                      <div className="absolute top-1/2 right-[10.4%] h-[26.9%] aspect-square border-[1.5px] border-slate-800 rounded-full translate-x-1/2 -translate-y-1/2 z-0"></div>
 
                       {/* Right Penalty Area */}
-                      <div className="absolute top-1/2 right-0 w-[16%] h-[60%] border-[1.5px] border-slate-800 -translate-y-1/2 border-r-0 bg-white z-10"></div>
+                      <div className="absolute top-1/2 right-0 w-[15.7%] h-[59.3%] border-[1.5px] border-slate-800 -translate-y-1/2 border-r-0 bg-white z-10"></div>
                       
                       {/* Right Goal Area */}
-                      <div className="absolute top-1/2 right-0 w-[5.5%] h-[27%] border-[1.5px] border-slate-800 -translate-y-1/2 border-r-0 bg-white z-20"></div>
+                      <div className="absolute top-1/2 right-0 w-[5.2%] h-[26.9%] border-[1.5px] border-slate-800 -translate-y-1/2 border-r-0 bg-white z-20"></div>
                       
                       {/* Right Penalty Mark */}
-                      <div className="absolute top-1/2 right-[11%] w-1.5 h-1.5 bg-slate-800 rounded-full -translate-y-1/2 z-20"></div>
-                      
-                      {/* Right Penalty Arc */}
-                      <div className="absolute top-1/2 right-[16%] w-[7%] h-[20%] border-[1.5px] border-slate-800 border-r-0 rounded-l-full -translate-y-1/2 z-0"></div>
+                      <div className="absolute top-1/2 right-[10.4%] w-1.5 h-1.5 bg-slate-800 rounded-full translate-x-1/2 -translate-y-1/2 z-30"></div>
 
                       {/* Goal nets (optional visual detail outside pitch) */}
                       <div className="absolute top-1/2 left-0 w-[2%] h-[12%] border-[1.5px] border-slate-800 -translate-y-1/2 -translate-x-full border-r-0"></div>
@@ -601,15 +608,20 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
                   ) : (
                     <>
                       {/* Half Field Markings (Vertical) */}
-                      <div className="absolute top-0 left-1/2 w-[60%] h-[20%] border-[1.5px] border-slate-800 border-t-0 -translate-x-1/2 bg-white z-10"></div>
-                      <div className="absolute top-0 left-1/2 w-[27%] h-[7%] border-[1.5px] border-slate-800 border-t-0 -translate-x-1/2 bg-white z-20"></div>
-                      <div className="absolute top-[14%] left-1/2 w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 z-20"></div>
-                      
-                      {/* Penalty Arc */}
-                      <div className="absolute top-[20%] left-1/2 w-[20%] h-[6%] border-[1.5px] border-slate-800 border-t-0 rounded-b-full -translate-x-1/2 z-0"></div>
+                      {/* Penalty Arc (full circle placed behind penalty area) */}
+                      <div className="absolute top-[21%] left-1/2 w-[27%] aspect-square border-[1.5px] border-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2 z-0"></div>
 
+                      {/* Penalty Area */}
+                      <div className="absolute top-0 left-1/2 w-[59.3%] h-[31.4%] border-[1.5px] border-slate-800 border-t-0 -translate-x-1/2 bg-white z-10"></div>
+                      
+                      {/* Goal Area */}
+                      <div className="absolute top-0 left-1/2 w-[27%] h-[10.5%] border-[1.5px] border-slate-800 border-t-0 -translate-x-1/2 bg-white z-20"></div>
+                      
+                      {/* Penalty Mark */}
+                      <div className="absolute top-[21%] left-1/2 w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2 z-30"></div>
+                      
                       {/* Goal Net */}
-                      <div className="absolute top-0 left-1/2 w-[12%] h-[3%] border-[1.5px] border-slate-800 border-b-0 -translate-y-full -translate-x-1/2"></div>
+                      <div className="absolute top-0 left-1/2 w-[12%] h-[4%] border-[1.5px] border-slate-800 border-b-0 -translate-y-full -translate-x-1/2"></div>
 
                       {/* Corners */}
                       <div className="absolute top-0 left-0 w-6 h-6 border-b-[1.5px] border-r-[1.5px] border-slate-800 rounded-br-full"></div>
