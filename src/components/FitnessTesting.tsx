@@ -41,6 +41,7 @@ interface Player {
   age: number;
   fitness_status: string;
   avatar: string;
+  hideFromFitness?: boolean;
 }
 
 const METRICS_CONFIG = [
@@ -509,7 +510,7 @@ export default function FitnessTesting({
   const handleDeleteConfirm = async () => {
     if (playerToDelete) {
       try {
-        await deleteDoc(doc(db, "players", playerToDelete));
+        await updateDoc(doc(db, "players", playerToDelete), { hideFromFitness: true });
         setPlayerToDelete(null);
       } catch (error: any) {
         console.error("Error deleting player:", error);
@@ -518,7 +519,7 @@ export default function FitnessTesting({
     }
   };
 
-  const filteredPlayers = players.filter((p) => filterAge === "All" || p.ageGroup === filterAge);
+  const filteredPlayers = players.filter((p) => !p.hideFromFitness && (filterAge === "All" || p.ageGroup === filterAge));
 
   // State from main wrapper for reports functionality and passing to grid
   const [testData, setTestData] = useState<
