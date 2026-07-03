@@ -20,6 +20,8 @@ import {
   BatteryCharging,
   Apple,
   Share2,
+  Edit2,
+  Trash2,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { db } from "../lib/firebase";
@@ -251,8 +253,9 @@ export default function WeeklyPeriodization({
   onBack: () => void;
   onNavigate?: (page: string) => void;
 }) {
-  const { hasPermission } = useAuth();
+  const { hasPermission, currentUser } = useAuth();
   const hasEditPermission = hasPermission(["ADMIN", "COACH"]);
+  const { myDrills, academyDrills, saveDrill, updateDrill, deleteDrill } = useDrillDatabase();
 
   const [players, setPlayers] = useState<Player[]>(MOCK_PLAYERS);
   const [loading, setLoading] = useState(false);
@@ -277,6 +280,78 @@ export default function WeeklyPeriodization({
   // Library Modal State
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [addingToDayId, setAddingToDayId] = useState<string | null>(null);
+  
+  const [isCreatingDrill, setIsCreatingDrill] = useState(false);
+  const [editingDrillId, setEditingDrillId] = useState<string | null>(null);
+  const [drillForm, setDrillForm] = useState({ title: "", category: "Technical", duration: "15" });
+
+  const [editingSessionDrillId, setEditingSessionDrillId] = useState<string | null>(null);
+  const [sessionDrillEditForm, setSessionDrillEditForm] = useState({ name: "", duration: "" });
+
+  const combinedLibrary = [...myDrills, ...academyDrills, ...MOCK_DRILL_LIBRARY].filter((v,i,a)=>a.findIndex(t=>(t.id === v.id))===i);
+
+  const getCategoryIcon = (category: string) => {
+    switch (category) {
+      case "Warm-up": return "🏃‍♂️";
+      case "Technical": return "⚽";
+      case "Tactical": return "🧠";
+      case "Physical": return "💪";
+      default: return "📋";
+    }
+  };
+
+  const handleSaveCustomDrill = async () => {
+    if (!drillForm.title) return;
+    if (editingDrillId) {
+      await updateDrill(editingDrillId, {
+        title: drillForm.title,
+        category: drillForm.category,
+        duration: drillForm.duration
+      });
+    } else {
+      await saveDrill({
+        title: drillForm.title,
+        category: drillForm.category,
+        duration: drillForm.duration,
+        is_shared: false,
+        canvas_data: { elements: [], lines: [], fieldType: "half" }
+      });
+    }
+    setIsCreatingDrill(false);
+    setEditingDrillId(null);
+    setDrillForm({ title: "", category: "Technical", duration: "15" });
+  };
+
+  const handleRemoveSessionDrill = (dayId: string, drillId: string) => {
+    setWeekDays(prev => prev.map(d => {
+      if (d.id === dayId) {
+        return { ...d, drills: d.drills.filter(drill => drill.id !== drillId) };
+      }
+      return d;
+    }));
+  };
+
+  const handleSaveSessionDrill = (dayId: string, drillId: string) => {
+    setWeekDays(prev => prev.map(d => {
+      if (d.id === dayId) {
+        return {
+          ...d,
+          drills: d.drills.map(drill => {
+            if (drill.id === drillId) {
+              return {
+                ...drill,
+                name: sessionDrillEditForm.name,
+                duration: parseInt(sessionDrillEditForm.duration) || drill.duration
+              };
+            }
+            return drill;
+          })
+        };
+      }
+      return d;
+    }));
+    setEditingSessionDrillId(null);
+  };
 
   const [editForm, setEditForm] = useState<{
     theme: ThemeType;
@@ -359,7 +434,7 @@ export default function WeeklyPeriodization({
     setIsLibraryOpen(true);
   };
 
-  const handleAddDrill = (libDrill: (typeof MOCK_DRILL_LIBRARY)[0]) => {
+  const handleAddDrill = (libDrill: any) => {
     if (!addingToDayId) return;
     setWeekDays((prev) =>
       prev.map((d) => {
@@ -370,8 +445,8 @@ export default function WeeklyPeriodization({
               ...d.drills,
               {
                 id: Date.now().toString() + Math.random(),
-                name: libDrill.name,
-                duration: libDrill.duration,
+                name: libDrill.title || libDrill.name,
+                duration: parseInt(libDrill.duration) || 15,
               },
             ],
           };
@@ -380,7 +455,7 @@ export default function WeeklyPeriodization({
       }),
     );
     const dayName = weekDays.find((d) => d.id === addingToDayId)?.dayOfWeek;
-    setToastMessage(`Added ${libDrill.name} to ${dayName}`);
+    setToastMessage(`Added ${libDrill.title || libDrill.name} to ${dayName}`);
     setTimeout(() => setToastMessage(null), 3000);
     setIsLibraryOpen(false);
   };
@@ -686,7 +761,7 @@ export default function WeeklyPeriodization({
                     </div>
 
                     {/* Match Day Special Treatment */}
-                    {day.theme === "Match" && day.drills.length === 0 && (
+                    {day.theme === "Match" && (
                       <div className="mt-auto flex flex-col gap-2 p-3 bg-amber-50 rounded-xl border border-amber-100 mb-1.5 overflow-hidden">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 bg-white border border-amber-200 rounded-full flex items-center justify-center shrink-0">
@@ -903,18 +978,63 @@ export default function WeeklyPeriodization({
                       ?.drills.map((drill, idx) => (
                         <div
                           key={drill.id}
-                          className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl p-2.5"
+                          className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl p-2.5 group"
                         >
                           <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center text-xs font-bold shrink-0">
                             {idx + 1}
                           </div>
-                          <div className="text-sm font-bold text-slate-700 truncate">
-                            {drill.name}
-                          </div>
-                          {drill.duration && (
-                            <div className="text-xs font-bold text-slate-400 shrink-0">
-                              {drill.duration}'
+                          
+                          {editingSessionDrillId === drill.id ? (
+                            <div className="flex-1 flex items-center gap-2">
+                              <input 
+                                type="text"
+                                value={sessionDrillEditForm.name}
+                                onChange={(e) => setSessionDrillEditForm(prev => ({...prev, name: e.target.value}))}
+                                className="flex-1 text-sm border border-slate-200 rounded p-1 outline-none focus:border-indigo-500"
+                                placeholder="Drill name"
+                              />
+                              <input 
+                                type="number"
+                                value={sessionDrillEditForm.duration}
+                                onChange={(e) => setSessionDrillEditForm(prev => ({...prev, duration: e.target.value}))}
+                                className="w-16 text-sm border border-slate-200 rounded p-1 outline-none focus:border-indigo-500"
+                                placeholder="Min"
+                              />
+                              <button onClick={() => handleSaveSessionDrill(selectedDay.id, drill.id)} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded">
+                                <CheckCircle size={14} />
+                              </button>
+                              <button onClick={() => setEditingSessionDrillId(null)} className="p-1 text-slate-400 hover:bg-slate-100 rounded">
+                                <X size={14} />
+                              </button>
                             </div>
+                          ) : (
+                            <>
+                              <div className="text-sm font-bold text-slate-700 truncate flex-1">
+                                {drill.name}
+                              </div>
+                              {drill.duration && (
+                                <div className="text-xs font-bold text-slate-400 shrink-0">
+                                  {drill.duration}'
+                                </div>
+                              )}
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                  onClick={() => {
+                                    setSessionDrillEditForm({ name: drill.name, duration: drill.duration?.toString() || "" });
+                                    setEditingSessionDrillId(drill.id);
+                                  }}
+                                  className="p-1 hover:bg-slate-200 text-slate-400 hover:text-slate-700 rounded transition-colors"
+                                >
+                                  <Edit2 size={14} />
+                                </button>
+                                <button
+                                  onClick={() => handleRemoveSessionDrill(selectedDay.id, drill.id)}
+                                  className="p-1 hover:bg-rose-100 text-slate-400 hover:text-rose-600 rounded transition-colors"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </>
                           )}
                         </div>
                       ))}
@@ -948,19 +1068,37 @@ export default function WeeklyPeriodization({
               </div>
             </div>
 
-            <div className="p-5 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 shrink-0">
+            <div className="p-5 border-t border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
               <button
-                onClick={() => setIsModalOpen(false)}
-                className="px-5 py-2 text-sm font-bold text-slate-600 hover:bg-slate-200 rounded-xl transition-colors"
+                onClick={() => {
+                  setWeekDays((prev) =>
+                    prev.map((d) =>
+                      d.id === selectedDay.id
+                        ? { ...d, theme: null, intensity: null, objective: "", drills: [] }
+                        : d,
+                    ),
+                  );
+                  setIsModalOpen(false);
+                  setSelectedDay(null);
+                }}
+                className="px-4 py-2 text-sm font-bold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 rounded-xl transition-colors border border-emerald-200 flex items-center gap-1.5"
               >
-                Cancel
+                <BatteryCharging size={16} /> Set as Rest Day
               </button>
-              <button
-                onClick={handleSave}
-                className="px-6 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-colors shadow-sm"
-              >
-                Save Changes
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-5 py-2 text-sm font-bold text-slate-600 hover:bg-slate-200 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSave}
+                  className="px-6 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-colors shadow-sm"
+                >
+                  Save Changes
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1316,19 +1454,62 @@ export default function WeeklyPeriodization({
                   Select a drill to add to the session
                 </p>
               </div>
-              <button
-                onClick={() => setIsLibraryOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-2 rounded-lg hover:bg-slate-200 transition-colors"
-              >
-                <X size={20} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setIsCreatingDrill(true);
+                    setEditingDrillId(null);
+                    setDrillForm({ title: "", category: "Technical", duration: "15" });
+                  }}
+                  className="text-xs font-bold bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg hover:bg-indigo-200 transition-colors flex items-center gap-1"
+                >
+                  <Plus size={14} /> สร้างแบบฝึก
+                </button>
+                <button
+                  onClick={() => setIsLibraryOpen(false)}
+                  className="text-slate-400 hover:text-slate-600 p-2 rounded-lg hover:bg-slate-200 transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50 space-y-6">
+              {isCreatingDrill && (
+                <div className="bg-white p-4 rounded-xl border border-indigo-200 shadow-sm mb-4 animate-in slide-in-from-top-2">
+                  <h4 className="text-sm font-bold text-slate-800 mb-3">{editingDrillId ? 'แก้ไขแบบฝึกซ้อม' : 'สร้างแบบฝึกซ้อมใหม่'}</h4>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 mb-1">ชื่อแบบฝึกซ้อม (Title)</label>
+                      <input type="text" value={drillForm.title} onChange={e => setDrillForm({...drillForm, title: e.target.value})} className="w-full text-sm border-slate-200 rounded-lg p-2 focus:ring-indigo-500 focus:border-indigo-500 border outline-none" placeholder="เช่น Rondo 4v2" />
+                    </div>
+                    <div className="flex gap-3">
+                      <div className="flex-1">
+                        <label className="block text-xs font-bold text-slate-500 mb-1">หมวดหมู่ (Category)</label>
+                        <select value={drillForm.category} onChange={e => setDrillForm({...drillForm, category: e.target.value})} className="w-full text-sm border-slate-200 rounded-lg p-2 focus:ring-indigo-500 focus:border-indigo-500 border outline-none">
+                          <option value="Warm-up">Warm-up</option>
+                          <option value="Technical">Technical</option>
+                          <option value="Tactical">Tactical</option>
+                          <option value="Physical">Physical</option>
+                        </select>
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-xs font-bold text-slate-500 mb-1">เวลา (นาที)</label>
+                        <input type="number" value={drillForm.duration} onChange={e => setDrillForm({...drillForm, duration: e.target.value})} className="w-full text-sm border-slate-200 rounded-lg p-2 focus:ring-indigo-500 focus:border-indigo-500 border outline-none" />
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2 mt-4 pt-2">
+                      <button onClick={() => { setIsCreatingDrill(false); setEditingDrillId(null); }} className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">ยกเลิก</button>
+                      <button onClick={handleSaveCustomDrill} disabled={!drillForm.title} className="px-4 py-1.5 text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50">บันทึก</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Group by category */}
               {["Warm-up", "Technical", "Tactical", "Physical"].map(
                 (category) => {
-                  const categoryDrills = MOCK_DRILL_LIBRARY.filter(
+                  const categoryDrills = combinedLibrary.filter(
                     (d) => d.category === category,
                   );
                   if (categoryDrills.length === 0) return null;
@@ -1338,30 +1519,56 @@ export default function WeeklyPeriodization({
                         {category}
                       </h4>
                       <div className="space-y-3">
-                        {categoryDrills.map((drill) => (
+                        {categoryDrills.map((drill: any) => (
                           <div
                             key={drill.id}
-                            className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between gap-3"
+                            className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between gap-3 group"
                           >
                             <div className="flex items-center gap-3 min-w-0">
                               <div className="w-10 h-10 rounded-xl bg-slate-50 text-xl border border-slate-100 flex items-center justify-center shrink-0">
-                                {drill.icon}
+                                {drill.icon || getCategoryIcon(drill.category)}
                               </div>
                               <div className="min-w-0">
                                 <h5 className="font-bold text-slate-800 text-sm truncate">
-                                  {drill.name}
+                                  {drill.title || drill.name}
                                 </h5>
                                 <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded uppercase tracking-wider">
                                   {drill.duration} MIN
                                 </span>
                               </div>
                             </div>
-                            <button
-                              onClick={() => handleAddDrill(drill)}
-                              className="shrink-0 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white text-xs font-bold rounded-lg transition-colors border border-indigo-200 hover:border-indigo-600 flex items-center gap-1"
-                            >
-                              <Plus size={14} /> Add
-                            </button>
+                            <div className="flex items-center gap-1 shrink-0">
+                              {drill.created_by === currentUser?.id && (
+                                <>
+                                  <button
+                                    onClick={() => {
+                                      setDrillForm({
+                                        title: drill.title || drill.name,
+                                        category: drill.category,
+                                        duration: drill.duration || "15",
+                                      });
+                                      setEditingDrillId(drill.id);
+                                      setIsCreatingDrill(true);
+                                    }}
+                                    className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                                  >
+                                    <Edit2 size={14} />
+                                  </button>
+                                  <button
+                                    onClick={() => deleteDrill(drill.id)}
+                                    className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-500 rounded-md opacity-0 group-hover:opacity-100 transition-opacity mr-1"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </>
+                              )}
+                              <button
+                                onClick={() => handleAddDrill(drill)}
+                                className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white text-xs font-bold rounded-lg transition-colors border border-indigo-200 hover:border-indigo-600 flex items-center gap-1"
+                              >
+                                <Plus size={14} /> Add
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>

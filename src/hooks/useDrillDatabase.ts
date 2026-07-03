@@ -36,12 +36,20 @@ const MOCK_DRILLS: Drill[] = [
 ];
 
 export function useDrillDatabase() {
-  const [drills, setDrills] = useState<Drill[]>(MOCK_DRILLS);
+  const [drills, setDrills] = useState<Drill[]>([]);
   const { currentUser } = useAuth();
   const currentUserId = currentUser?.id || 'unknown_user';
 
   useEffect(() => {
-    // Mock data
+    const q = query(collection(db, 'drills'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const drillsData: Drill[] = [];
+      snapshot.forEach((doc) => {
+        drillsData.push({ id: doc.id, ...doc.data() } as Drill);
+      });
+      setDrills(drillsData);
+    });
+    return () => unsubscribe();
   }, []);
 
   const saveDrill = async (newDrill: Omit<Drill, 'id' | 'created_by'>) => {
@@ -49,6 +57,7 @@ export function useDrillDatabase() {
       const drillData = {
         ...newDrill,
         created_by: currentUserId,
+        createdAt: new Date().toISOString(),
       };
       await addDoc(collection(db, 'drills'), drillData);
     } catch (e) {

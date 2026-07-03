@@ -9,11 +9,7 @@ import {
   X,
   Loader2,
 } from "lucide-react";
-import { useAuth } from "../contexts/AuthContext";
 import { ProPlayer } from "../types/ProPlayer";
-import { db } from "../lib/firebase";
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from "firebase/firestore";
-import { Edit2, Trash2, AlertCircle } from "lucide-react";
 
 const MOCK_PRO_PLAYERS: ProPlayer[] = [
   {
@@ -125,41 +121,24 @@ export default function ProPlayerManager({
   const [searchQuery, setSearchQuery] = useState("");
   const [leagueFilter, setLeagueFilter] = useState("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [editingPlayer, setEditingPlayer] = useState<ProPlayer | null>(null);
-  const [playerToDelete, setPlayerToDelete] = useState<string | null>(null);
-  const { currentUser } = useAuth();
-  const hasManagePermission = currentUser?.role === "SUPERADMIN" || currentUser?.role === "ADMIN";
 
   useEffect(() => {
-    const proPlayersRef = collection(db, "proPlayers");
-    const unsubscribe = onSnapshot(
-      proPlayersRef,
-      (snapshot) => {
-        const playersData = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as ProPlayer[];
-        setPlayers(playersData);
-        setIsLoading(false);
-      },
-      (error) => {
-        console.error("Error fetching pro players:", error);
-        setIsLoading(false);
-      }
-    );
-    return () => unsubscribe();
-  }, []);
-
-  const handleDelete = async (id: string) => {
-    if (window.confirm("คุณต้องการลบนักเตะคนนี้ใช่หรือไม่?")) {
+    let isMounted = true;
+    const fetchPlayers = async () => {
       try {
-        await deleteDoc(doc(db, "proPlayers", id));
-      } catch (err) {
-        console.error("Error deleting pro player:", err);
-        alert("เกิดข้อผิดพลาดในการลบข้อมูล");
+        setIsLoading(true);
+        // Simulate fetch delay to show loading state if needed
+        await new Promise((r) => setTimeout(r, 400));
+        if (isMounted) setPlayers(MOCK_PRO_PLAYERS);
+      } finally {
+        if (isMounted) setIsLoading(false);
       }
-    }
-  };
+    };
+    fetchPlayers();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const filteredPlayers = useMemo(() => {
     return players.filter((player) => {
@@ -196,18 +175,13 @@ export default function ProPlayerManager({
           </div>
         </div>
 
-        {hasManagePermission && (
-          <button
-            onClick={() => {
-              setEditingPlayer(null);
-              setIsAddModalOpen(true);
-            }}
-            className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-sm shadow-indigo-600/20 hover:bg-indigo-700 transition-colors w-full lg:w-auto justify-center"
-          >
-            <UserPlus size={18} />
-            เพิ่มนักเตะอาชีพ
-          </button>
-        )}
+        <button
+          onClick={() => setIsAddModalOpen(true)}
+          className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-sm shadow-indigo-600/20 hover:bg-indigo-700 transition-colors w-full lg:w-auto justify-center"
+        >
+          <UserPlus size={18} />
+          เพิ่มนักเตะอาชีพ
+        </button>
       </div>
 
       <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6 flex flex-col sm:flex-row gap-4 items-center">
@@ -271,30 +245,7 @@ export default function ProPlayerManager({
               className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col group hover:shadow-md transition-shadow cursor-pointer"
               onClick={() => onSelectPlayer(player)}
             >
-              <div className="flex items-start p-5 gap-4 relative">
-                {hasManagePermission && (
-                  <div className="absolute top-2 right-2 flex gap-1 z-10">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingPlayer(player);
-                        setIsAddModalOpen(true);
-                      }}
-                      className="p-2 bg-white/80 hover:bg-indigo-50 text-indigo-600 rounded-full transition-colors shadow-sm border border-slate-100"
-                    >
-                      <Edit2 size={16} />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(player.id!);
-                      }}
-                      className="p-2 bg-white/80 hover:bg-red-50 text-red-600 rounded-full transition-colors shadow-sm border border-slate-100"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                )}
+              <div className="flex items-start p-5 gap-4">
                 <div className="w-16 h-16 rounded-full bg-slate-100 border border-slate-200 overflow-hidden shrink-0">
                   <img
                     src={
@@ -340,24 +291,10 @@ export default function ProPlayerManager({
 
       {isAddModalOpen && (
         <AddProPlayerModal
-          initialData={editingPlayer}
-          onClose={() => {
+          onClose={() => setIsAddModalOpen(false)}
+          onAdd={(p) => {
+            setPlayers((prev) => [p, ...prev]);
             setIsAddModalOpen(false);
-            setEditingPlayer(null);
-          }}
-          onSave={async (p) => {
-            try {
-              if (editingPlayer && editingPlayer.id) {
-                await updateDoc(doc(db, "proPlayers", editingPlayer.id), p as any);
-              } else {
-                await addDoc(collection(db, "proPlayers"), p);
-              }
-              setIsAddModalOpen(false);
-              setEditingPlayer(null);
-            } catch (err) {
-              console.error("Error saving pro player:", err);
-              alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
-            }
           }}
         />
       )}
@@ -366,15 +303,13 @@ export default function ProPlayerManager({
 }
 
 function AddProPlayerModal({
-  initialData,
   onClose,
-  onSave,
+  onAdd,
 }: {
-  initialData?: ProPlayer | null;
   onClose: () => void;
-  onSave: (p: Partial<ProPlayer>) => void;
+  onAdd: (p: ProPlayer) => void;
 }) {
-  const [formData, setFormData] = useState<Partial<ProPlayer>>(initialData || {
+  const [formData, setFormData] = useState<Partial<ProPlayer>>({
     name: "",
     nationality: "",
     dob: "",
@@ -409,7 +344,7 @@ function AddProPlayerModal({
       <div className="relative bg-white rounded-2xl w-full max-w-3xl max-h-full overflow-hidden flex flex-col shadow-2xl animate-in zoom-in-95 duration-200 border border-slate-100">
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/80">
           <h2 className="text-lg font-bold text-slate-800">
-            {initialData ? "แก้ไขข้อมูลนักเตะ (Edit Pro Player)" : "เพิ่มข้อมูลนักเตะอาชีพ (Add Pro Player)"}
+            เพิ่มข้อมูลนักเตะอาชีพ (Add Pro Player)
           </h2>
           <button
             onClick={onClose}
@@ -923,10 +858,11 @@ function AddProPlayerModal({
           </button>
           <button
             onClick={() => {
-              onSave({
+              onAdd({
                 ...formData,
+                id: "new_" + Date.now(),
                 name: formData.name || "Unknown",
-              });
+              } as ProPlayer);
             }}
             className="flex-1 py-2.5 rounded-xl font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors text-sm shadow-sm"
           >

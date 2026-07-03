@@ -70,7 +70,7 @@ export default function YouthPlayerManager({
   onSelectPlayer?: (player: any) => void;
 }) {
   const { settings } = useAcademy();
-  const [players, setPlayers] = useState<Player[]>(MOCK_PLAYERS);
+  const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(false);
   const [filterAge, setFilterAge] = useState("All");
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -91,7 +91,24 @@ export default function YouthPlayerManager({
   });
 
   useEffect(() => {
-    // Mock data
+    setLoading(true);
+    const unsubscribe = onSnapshot(
+      collection(db, "players"),
+      (snapshot) => {
+        const playersData = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as Player[];
+        setPlayers(playersData);
+        setLoading(false);
+      },
+      (error) => {
+        console.error("Error fetching players:", error);
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
   }, []);
 
   const calculateAge = (dob: string) => {
@@ -194,8 +211,9 @@ export default function YouthPlayerManager({
         await addDoc(collection(db, "players"), newPlayer);
       }
       closeModal();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving player:", error);
+      alert("ไม่สามารถบันทึกข้อมูลได้: " + error.message);
     }
   };
 
@@ -204,8 +222,9 @@ export default function YouthPlayerManager({
       try {
         await deleteDoc(doc(db, "players", playerToDelete));
         setPlayerToDelete(null);
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error deleting player:", error);
+        alert("ไม่สามารถลบข้อมูลได้: " + error.message);
       }
     }
   };

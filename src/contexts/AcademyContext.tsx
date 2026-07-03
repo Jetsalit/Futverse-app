@@ -30,16 +30,16 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const docRef = doc(db, "settings", "general");
-    
-    // Listen for real-time updates
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data() as Partial<AcademySettings>;
-        setSettings((prev) => ({ ...prev, ...data }));
+        setSettings({ ...defaultSettings, ...data });
+      } else {
+        setSettings(defaultSettings);
       }
       setLoading(false);
     }, (error) => {
-      console.error("Error fetching academy settings:", error);
+      console.error("Error fetching settings:", error);
       setLoading(false);
     });
 
@@ -50,6 +50,7 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
     try {
       const docRef = doc(db, "settings", "general");
       await setDoc(docRef, newSettings, { merge: true });
+
     } catch (error) {
       console.error("Error updating academy settings:", error);
       throw error;
