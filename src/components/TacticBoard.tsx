@@ -14,6 +14,9 @@ import {
   Upload,
   Image as ImageIcon,
   Camera,
+  Square,
+  Triangle,
+  Minus,
 } from "lucide-react";
 import {
   Stage,
@@ -25,6 +28,8 @@ import {
   Rect,
   Path,
   Group,
+  Transformer,
+  RegularPolygon,
 } from "react-konva";
 import useImage from "use-image";
 import { useDrillDatabase } from "../hooks/useDrillDatabase";
@@ -85,11 +90,14 @@ const MAIN_TOOLS = [
   { id: "mini_goal", label: "มินิโกล", icon: GoalIcon },
   { id: "hurdle", label: "รั้วข้าม", icon: HurdleIcon },
   { id: "ladder", label: "บันไดลิง", icon: LadderIcon },
+  { id: "square", label: "กรอบสี่เหลี่ยม", icon: Square },
+  { id: "triangle", label: "กรอบสามเหลี่ยม", icon: Triangle },
   { id: "eraser", label: "ยางลบ", icon: Eraser },
 ];
 
 const DRAWING_TOOLS = [
   { id: "freehand", icon: Pencil, label: "วาดอิสระ" },
+  { id: "solid", icon: Minus, label: "เส้นทึบ" },
   { id: "pass", icon: ArrowRight, label: "ส่งบอล" },
   { id: "dashed", icon: DashedLineIcon, label: "เส้นประ" },
   { id: "curve", icon: CurveLineIcon, label: "เส้นโค้ง" },
@@ -134,6 +142,9 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
   const [activeLineTool, setActiveLineTool] = useState("freehand");
   const [activeColor, setActiveColor] = useState("#ffffff");
   const [fieldType, setFieldType] = useState("full");
+  const [fieldColor, setFieldColor] = useState("white");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const trRef = useRef<any>(null);
 
   const { saveDrill } = useDrillDatabase();
   const [saveForm, setSaveForm] = useState({
@@ -179,7 +190,7 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
 
   const handleMainToolClick = (toolId: string) => {
     if (
-      ["red", "blue", "ball", "cone", "mini_goal", "hurdle", "ladder"].includes(
+      ["red", "blue", "ball", "cone", "mini_goal", "hurdle", "ladder", "square", "triangle"].includes(
         toolId,
       )
     ) {
@@ -192,6 +203,9 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
       setActiveTool("select");
     } else {
       setActiveTool(toolId);
+      if (toolId !== "select") {
+        setSelectedId(null);
+      }
     }
   };
 
@@ -213,7 +227,49 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
       if (type === "element")
         setElements(elements.filter((el) => el.id !== id));
       if (type === "line") setLines(lines.filter((l) => l.id !== id));
+      return;
     }
+    
+    if (activeTool === "select" && type === "element") {
+      setSelectedId(id);
+    }
+  };
+
+  const checkDeselect = (e: any) => {
+    // deselect when clicked on empty area
+    const clickedOnEmpty = e.target === e.target.getStage();
+    if (clickedOnEmpty) {
+      setSelectedId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedId && trRef.current) {
+      const node = stageRef.current.findOne(`#${selectedId}`);
+      if (node) {
+        trRef.current.nodes([node]);
+        trRef.current.getLayer().batchDraw();
+      }
+    }
+  }, [selectedId]);
+
+  const handleTransformEnd = (e: any) => {
+    const node = e.target;
+    setElements(
+      elements.map((el) => {
+        if (el.id === node.id()) {
+          return {
+            ...el,
+            x: node.x(),
+            y: node.y(),
+            rotation: node.rotation(),
+            scaleX: node.scaleX(),
+            scaleY: node.scaleY(),
+          };
+        }
+        return el;
+      })
+    );
   };
 
   const handleDragEnd = (id: string, e: any) => {
@@ -229,6 +285,10 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
   };
 
   const handleMouseDown = (e: any) => {
+    if (activeTool === "select") {
+      checkDeselect(e);
+      return;
+    }
     if (activeTool === "eraser") return;
     if (activeTool !== "draw") return;
     isDrawing.current = true;
@@ -273,7 +333,7 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
     const point = stage.getPointerPosition();
     let lastLine = { ...lines[lines.length - 1] };
 
-    if (["pass", "dashed"].includes(lastLine.tool)) {
+    if (["pass", "dashed", "solid"].includes(lastLine.tool)) {
       lastLine.points = [
         lastLine.points[0],
         lastLine.points[1],
@@ -338,7 +398,7 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
       finalPreviewImage = stageRef.current
         ? stageRef.current.toDataURL({ pixelRatio: 2 })
         : undefined;
-      finalCanvasData = { elements, lines, fieldType };
+      finalCanvasData = { elements, lines, fieldType, fieldColor };
     } else {
       finalPreviewImage = uploadedImage || undefined;
       finalCanvasData = null; // Mark as paper drill essentially
@@ -526,6 +586,21 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
                     </select>
                   </div>
 
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-600 text-xs">
+                      สีพื้นสนาม:
+                    </span>
+                    <select
+                      value={fieldColor}
+                      onChange={(e) => setFieldColor(e.target.value)}
+                      className="border border-slate-300 rounded-md px-2 py-1 text-sm bg-white outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-slate-700 shadow-sm"
+                    >
+                      <option value="white">ขาว (White)</option>
+                      <option value="green">เขียวหญ้า (Green)</option>
+                      <option value="dark">สีเข้ม (Dark)</option>
+                    </select>
+                  </div>
+
                   <div className="flex items-center gap-5">
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-slate-600 text-xs">
@@ -546,7 +621,7 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
               {/* Canvas Area Container */}
               <div className="flex-1 relative w-full overflow-auto bg-slate-50 flex p-2 lg:p-6">
                 <div
-                  className={`relative bg-white ring-1 ring-slate-300 shadow-sm overflow-hidden select-none shrink-0 mx-auto ${activeTool !== "pan" ? "touch-none" : ""}`}
+                  className={`relative ${fieldColor === "green" ? "bg-emerald-600" : fieldColor === "dark" ? "bg-slate-800" : "bg-white"} ring-1 ring-slate-300 shadow-sm overflow-hidden select-none shrink-0 mx-auto ${activeTool !== "pan" ? "touch-none" : ""}`}
                   style={{
                     aspectRatio:
                       fieldType === "full" || fieldType === "small"
@@ -560,47 +635,47 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
                   ref={containerRef}
                 >
                   {/* Pure CSS Pitch Markings */}
-                  <div className="absolute inset-4 lg:inset-6 ring-[1.5px] ring-slate-800 pointer-events-none z-0">
+                  <div className={`absolute inset-4 lg:inset-6 ring-[1.5px] ${fieldColor !== "white" ? "ring-white/70" : "ring-slate-800"} pointer-events-none z-0`}>
                     {fieldType === "full" ? (
                       <>
                         {/* Center line */}
-                        <div className="absolute top-0 bottom-0 left-1/2 w-[1.5px] bg-slate-800 -translate-x-1/2"></div>
+                        <div className={`absolute top-0 bottom-0 left-1/2 w-[1.5px] ${fieldColor !== "white" ? "bg-white/70" : "bg-slate-800"} -translate-x-1/2`}></div>
 
                         {/* Center circle */}
-                        <div className="absolute top-1/2 left-1/2 h-[26.9%] aspect-square border-[1.5px] border-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
+                        <div className={`absolute top-1/2 left-1/2 h-[26.9%] aspect-square border-[1.5px] ${fieldColor !== "white" ? "border-white/70" : "border-slate-800"} rounded-full -translate-x-1/2 -translate-y-1/2`}></div>
 
                         {/* Center mark */}
-                        <div className="absolute top-1/2 left-1/2 w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
+                        <div className={`absolute top-1/2 left-1/2 w-1.5 h-1.5 ${fieldColor !== "white" ? "bg-white/70" : "bg-slate-800"} rounded-full -translate-x-1/2 -translate-y-1/2`}></div>
 
                         {/* Left Penalty Arc */}
-                        <div className="absolute top-1/2 left-[10.4%] h-[26.9%] aspect-square border-[1.5px] border-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2 z-0"></div>
+                        <div className={`absolute top-1/2 left-[10.4%] h-[26.9%] aspect-square border-[1.5px] ${fieldColor !== "white" ? "border-white/70" : "border-slate-800"} rounded-full -translate-x-1/2 -translate-y-1/2 z-0`}></div>
 
                         {/* Left Penalty Area */}
-                        <div className="absolute top-1/2 left-0 w-[15.7%] h-[59.3%] border-[1.5px] border-slate-800 -translate-y-1/2 border-l-0 bg-white z-10"></div>
+                        <div className={`absolute top-1/2 left-0 w-[15.7%] h-[59.3%] border-[1.5px] ${fieldColor !== "white" ? `border-white/70 ${fieldColor === "green" ? "bg-emerald-600" : "bg-slate-800"}` : "border-slate-800 bg-white"} -translate-y-1/2 border-l-0 z-10`}></div>
 
                         {/* Left Goal Area */}
-                        <div className="absolute top-1/2 left-0 w-[5.2%] h-[26.9%] border-[1.5px] border-slate-800 -translate-y-1/2 border-l-0 bg-white z-20"></div>
+                        <div className={`absolute top-1/2 left-0 w-[5.2%] h-[26.9%] border-[1.5px] ${fieldColor !== "white" ? `border-white/70 ${fieldColor === "green" ? "bg-emerald-600" : "bg-slate-800"}` : "border-slate-800 bg-white"} -translate-y-1/2 border-l-0 z-20`}></div>
 
                         {/* Left Penalty Mark */}
-                        <div className="absolute top-1/2 left-[10.4%] w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2 z-30"></div>
+                        <div className={`absolute top-1/2 left-[10.4%] w-1.5 h-1.5 ${fieldColor !== "white" ? "bg-white/70" : "bg-slate-800"} rounded-full -translate-x-1/2 -translate-y-1/2 z-30`}></div>
 
                         {/* Right Penalty Arc */}
-                        <div className="absolute top-1/2 right-[10.4%] h-[26.9%] aspect-square border-[1.5px] border-slate-800 rounded-full translate-x-1/2 -translate-y-1/2 z-0"></div>
+                        <div className={`absolute top-1/2 right-[10.4%] h-[26.9%] aspect-square border-[1.5px] ${fieldColor !== "white" ? "border-white/70" : "border-slate-800"} rounded-full translate-x-1/2 -translate-y-1/2 z-0`}></div>
 
                         {/* Right Penalty Area */}
-                        <div className="absolute top-1/2 right-0 w-[15.7%] h-[59.3%] border-[1.5px] border-slate-800 -translate-y-1/2 border-r-0 bg-white z-10"></div>
+                        <div className={`absolute top-1/2 right-0 w-[15.7%] h-[59.3%] border-[1.5px] ${fieldColor !== "white" ? `border-white/70 ${fieldColor === "green" ? "bg-emerald-600" : "bg-slate-800"}` : "border-slate-800 bg-white"} -translate-y-1/2 border-r-0 z-10`}></div>
 
                         {/* Right Goal Area */}
-                        <div className="absolute top-1/2 right-0 w-[5.2%] h-[26.9%] border-[1.5px] border-slate-800 -translate-y-1/2 border-r-0 bg-white z-20"></div>
+                        <div className={`absolute top-1/2 right-0 w-[5.2%] h-[26.9%] border-[1.5px] ${fieldColor !== "white" ? `border-white/70 ${fieldColor === "green" ? "bg-emerald-600" : "bg-slate-800"}` : "border-slate-800 bg-white"} -translate-y-1/2 border-r-0 z-20`}></div>
 
                         {/* Right Penalty Mark */}
-                        <div className="absolute top-1/2 right-[10.4%] w-1.5 h-1.5 bg-slate-800 rounded-full translate-x-1/2 -translate-y-1/2 z-30"></div>
+                        <div className={`absolute top-1/2 right-[10.4%] w-1.5 h-1.5 ${fieldColor !== "white" ? "bg-white/70" : "bg-slate-800"} rounded-full translate-x-1/2 -translate-y-1/2 z-30`}></div>
 
                         {/* Corner Arcs */}
-                        <div className="absolute top-0 left-0 w-4 h-4 border-b-[1.5px] border-r-[1.5px] border-slate-800 rounded-br-full z-10"></div>
-                        <div className="absolute bottom-0 left-0 w-4 h-4 border-t-[1.5px] border-r-[1.5px] border-slate-800 rounded-tr-full z-10"></div>
-                        <div className="absolute top-0 right-0 w-4 h-4 border-b-[1.5px] border-l-[1.5px] border-slate-800 rounded-bl-full z-10"></div>
-                        <div className="absolute bottom-0 right-0 w-4 h-4 border-t-[1.5px] border-l-[1.5px] border-slate-800 rounded-tl-full z-10"></div>
+                        <div className={`absolute top-0 left-0 w-4 h-4 border-b-[1.5px] border-r-[1.5px] ${fieldColor !== "white" ? "border-white/70" : "border-slate-800"} rounded-br-full z-10`}></div>
+                        <div className={`absolute bottom-0 left-0 w-4 h-4 border-t-[1.5px] border-r-[1.5px] ${fieldColor !== "white" ? "border-white/70" : "border-slate-800"} rounded-tr-full z-10`}></div>
+                        <div className={`absolute top-0 right-0 w-4 h-4 border-b-[1.5px] border-l-[1.5px] ${fieldColor !== "white" ? "border-white/70" : "border-slate-800"} rounded-bl-full z-10`}></div>
+                        <div className={`absolute bottom-0 right-0 w-4 h-4 border-t-[1.5px] border-l-[1.5px] ${fieldColor !== "white" ? "border-white/70" : "border-slate-800"} rounded-tl-full z-10`}></div>
                       </>
                     ) : fieldType === "small" ? (
                       <></>
@@ -608,29 +683,29 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
                       <>
                         {/* Half Field Markings (Goal at bottom) */}
                         {/* Center line (at top) */}
-                        <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-slate-800 z-10"></div>
+                        <div className={`absolute top-0 left-0 right-0 h-[1.5px] ${fieldColor !== "white" ? "bg-white/70" : "bg-slate-800"} z-10`}></div>
 
                         {/* Center circle (top) */}
-                        <div className="absolute top-0 left-1/2 w-[26.9%] aspect-square border-[1.5px] border-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2 z-10"></div>
+                        <div className={`absolute top-0 left-1/2 w-[26.9%] aspect-square border-[1.5px] ${fieldColor !== "white" ? "border-white/70" : "border-slate-800"} rounded-full -translate-x-1/2 -translate-y-1/2 z-10`}></div>
 
                         {/* Center mark (top) */}
-                        <div className="absolute top-0 left-1/2 w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2 z-10"></div>
+                        <div className={`absolute top-0 left-1/2 w-1.5 h-1.5 ${fieldColor !== "white" ? "bg-white/70" : "bg-slate-800"} rounded-full -translate-x-1/2 -translate-y-1/2 z-10`}></div>
 
                         {/* Penalty Arc */}
-                        <div className="absolute bottom-[21%] left-1/2 w-[26.9%] aspect-square border-[1.5px] border-slate-800 rounded-full -translate-x-1/2 translate-y-1/2 z-0"></div>
+                        <div className={`absolute bottom-[21%] left-1/2 w-[26.9%] aspect-square border-[1.5px] ${fieldColor !== "white" ? "border-white/70" : "border-slate-800"} rounded-full -translate-x-1/2 translate-y-1/2 z-0`}></div>
 
                         {/* Penalty Area */}
-                        <div className="absolute bottom-0 left-1/2 w-[59.3%] h-[31.4%] border-[1.5px] border-slate-800 border-b-0 -translate-x-1/2 bg-white z-10"></div>
+                        <div className={`absolute bottom-0 left-1/2 w-[59.3%] h-[31.4%] border-[1.5px] ${fieldColor !== "white" ? `border-white/70 ${fieldColor === "green" ? "bg-emerald-600" : "bg-slate-800"}` : "border-slate-800 bg-white"} border-b-0 -translate-x-1/2 z-10`}></div>
 
                         {/* Goal Area */}
-                        <div className="absolute bottom-0 left-1/2 w-[26.9%] h-[10.5%] border-[1.5px] border-slate-800 border-b-0 -translate-x-1/2 bg-white z-20"></div>
+                        <div className={`absolute bottom-0 left-1/2 w-[26.9%] h-[10.5%] border-[1.5px] ${fieldColor !== "white" ? `border-white/70 ${fieldColor === "green" ? "bg-emerald-600" : "bg-slate-800"}` : "border-slate-800 bg-white"} border-b-0 -translate-x-1/2 z-20`}></div>
 
                         {/* Penalty Mark */}
-                        <div className="absolute bottom-[21%] left-1/2 w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 translate-y-1/2 z-30"></div>
+                        <div className={`absolute bottom-[21%] left-1/2 w-1.5 h-1.5 ${fieldColor !== "white" ? "bg-white/70" : "bg-slate-800"} rounded-full -translate-x-1/2 translate-y-1/2 z-30`}></div>
 
                         {/* Corner Arcs */}
-                        <div className="absolute bottom-0 left-0 w-4 h-4 border-t-[1.5px] border-r-[1.5px] border-slate-800 rounded-tr-full z-10"></div>
-                        <div className="absolute bottom-0 right-0 w-4 h-4 border-t-[1.5px] border-l-[1.5px] border-slate-800 rounded-tl-full z-10"></div>
+                        <div className={`absolute bottom-0 left-0 w-4 h-4 border-t-[1.5px] border-r-[1.5px] ${fieldColor !== "white" ? "border-white/70" : "border-slate-800"} rounded-tr-full z-10`}></div>
+                        <div className={`absolute bottom-0 right-0 w-4 h-4 border-t-[1.5px] border-l-[1.5px] ${fieldColor !== "white" ? "border-white/70" : "border-slate-800"} rounded-tl-full z-10`}></div>
                       </>
                     )}
                   </div>
@@ -666,6 +741,30 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
                             line.tool === "curve" || line.tool === "freehand"
                               ? 0.5
                               : 0;
+
+                          const hasArrow = line.tool === "pass" || line.tool === "dribble";
+                          
+                          if (!hasArrow) {
+                            return (
+                              <Line
+                                key={line.id || i}
+                                points={line.points}
+                                stroke={line.color}
+                                strokeWidth={4}
+                                tension={tension}
+                                lineCap="round"
+                                lineJoin="round"
+                                dash={dash}
+                                onClick={(e) =>
+                                  handleElementClick(e, line.id, "line")
+                                }
+                                onTap={(e) =>
+                                  handleElementClick(e, line.id, "line")
+                                }
+                                hitStrokeWidth={20}
+                              />
+                            );
+                          }
 
                           return (
                             <Arrow
@@ -758,6 +857,9 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
                                 id={el.id}
                                 x={el.x}
                                 y={el.y}
+                                rotation={el.rotation || 0}
+                                scaleX={el.scaleX || 1}
+                                scaleY={el.scaleY || 1}
                                 data="M 0 16 L 8 0 L 16 16 Z"
                                 fill="#f97316"
                                 offsetX={8}
@@ -770,6 +872,7 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
                                 onTap={(e) =>
                                   handleElementClick(e, el.id, "element")
                                 }
+                                onTransformEnd={handleTransformEnd}
                                 hitStrokeWidth={16}
                               />
                             );
@@ -781,6 +884,9 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
                                 id={el.id}
                                 x={el.x}
                                 y={el.y}
+                                rotation={el.rotation || 0}
+                                scaleX={el.scaleX || 1}
+                                scaleY={el.scaleY || 1}
                                 data="M 0 16 L 0 0 L 40 0 L 40 16"
                                 stroke="#e2e8f0"
                                 strokeWidth={5}
@@ -794,6 +900,7 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
                                 onTap={(e) =>
                                   handleElementClick(e, el.id, "element")
                                 }
+                                onTransformEnd={handleTransformEnd}
                                 hitStrokeWidth={16}
                               />
                             );
@@ -805,6 +912,9 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
                                 id={el.id}
                                 x={el.x}
                                 y={el.y}
+                                rotation={el.rotation || 0}
+                                scaleX={el.scaleX || 1}
+                                scaleY={el.scaleY || 1}
                                 data="M 0 16 L 0 0 L 24 0 L 24 16"
                                 stroke="#facc15"
                                 strokeWidth={3}
@@ -818,6 +928,7 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
                                 onTap={(e) =>
                                   handleElementClick(e, el.id, "element")
                                 }
+                                onTransformEnd={handleTransformEnd}
                                 hitStrokeWidth={16}
                               />
                             );
@@ -829,6 +940,9 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
                                 id={el.id}
                                 x={el.x}
                                 y={el.y}
+                                rotation={el.rotation || 0}
+                                scaleX={el.scaleX || 1}
+                                scaleY={el.scaleY || 1}
                                 offsetX={12}
                                 offsetY={24}
                                 draggable
@@ -839,6 +953,7 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
                                 onTap={(e) =>
                                   handleElementClick(e, el.id, "element")
                                 }
+                                onTransformEnd={handleTransformEnd}
                               >
                                 <Rect
                                   width={24}
@@ -870,8 +985,78 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
                               </Group>
                             );
                           }
+                          if (el.type === "square") {
+                            return (
+                              <Rect
+                                key={el.id}
+                                id={el.id}
+                                x={el.x}
+                                y={el.y}
+                                width={30}
+                                height={30}
+                                offsetX={15}
+                                offsetY={15}
+                                rotation={el.rotation || 0}
+                                scaleX={el.scaleX || 1}
+                                scaleY={el.scaleY || 1}
+                                stroke={activeColor}
+                                strokeWidth={3}
+                                strokeScaleEnabled={false}
+                                draggable
+                                onDragEnd={(e) => handleDragEnd(el.id, e)}
+                                onClick={(e) =>
+                                  handleElementClick(e, el.id, "element")
+                                }
+                                onTap={(e) =>
+                                  handleElementClick(e, el.id, "element")
+                                }
+                                onTransformEnd={handleTransformEnd}
+                                hitStrokeWidth={16}
+                              />
+                            );
+                          }
+                          if (el.type === "triangle") {
+                            return (
+                              <RegularPolygon
+                                key={el.id}
+                                id={el.id}
+                                x={el.x}
+                                y={el.y}
+                                sides={3}
+                                radius={20}
+                                rotation={el.rotation || 0}
+                                scaleX={el.scaleX || 1}
+                                scaleY={el.scaleY || 1}
+                                stroke={activeColor}
+                                strokeWidth={3}
+                                strokeScaleEnabled={false}
+                                draggable
+                                onDragEnd={(e) => handleDragEnd(el.id, e)}
+                                onClick={(e) =>
+                                  handleElementClick(e, el.id, "element")
+                                }
+                                onTap={(e) =>
+                                  handleElementClick(e, el.id, "element")
+                                }
+                                onTransformEnd={handleTransformEnd}
+                                hitStrokeWidth={16}
+                              />
+                            );
+                          }
                           return null;
                         })}
+                        {selectedId && (
+                          <Transformer
+                            ref={trRef}
+                            boundBoxFunc={(oldBox, newBox) => {
+                              // limit resize
+                              if (newBox.width < 5 || newBox.height < 5) {
+                                return oldBox;
+                              }
+                              return newBox;
+                            }}
+                          />
+                        )}
                       </Layer>
                     </Stage>
                   </div>

@@ -50,7 +50,7 @@ export default function DrillLibrary({
   );
 
   return (
-    <div className="flex flex-col h-full animate-in fade-in duration-300">
+    <div className="flex flex-col animate-in fade-in duration-300 h-auto">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 shrink-0">
         <div>
@@ -104,7 +104,7 @@ export default function DrillLibrary({
       </div>
 
       {/* Grid Area */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="pb-10">
         {filteredDrills.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
             {filteredDrills.map((drill) => (
@@ -153,7 +153,7 @@ export default function DrillLibrary({
                   <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMSIgY3k9IjEiIHI9IjEiIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC4wNykiLz48L3N2Zz4=')] z-0 pointer-events-none opacity-50"></div>
 
                   <div className="absolute inset-4 ring-[1px] ring-slate-800 pointer-events-none z-0">
-                    {drill.canvas_data.fieldType === "full" ? (
+                    {drill.canvas_data?.fieldType === "full" ? (
                       <>
                         <div className="absolute top-0 bottom-0 left-1/2 w-[1px] bg-slate-800 -translate-x-1/2"></div>
                         <div className="absolute top-1/2 left-1/2 w-[22%] max-w-[200px] aspect-square border-[1px] border-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
@@ -219,8 +219,8 @@ export default function DrillLibrary({
                       </span>
                     )}
                     {activeTab === "academy" && (
-                      <span className="text-xs text-slate-400">
-                        By {drill.created_by}
+                      <span className="text-xs text-slate-400 truncate max-w-[120px]" title={drill.created_by_name || drill.created_by}>
+                        By {drill.created_by === currentUser ? "ฉัน" : (drill.created_by_name || "โค้ช")}
                       </span>
                     )}
                   </div>

@@ -25,32 +25,7 @@ interface IDPPlayerSummary {
   lastUpdated: string;
 }
 
-const MOCK_IDPS: IDPPlayerSummary[] = [
-  {
-    id: "p1",
-    name: "Suphanat Mueanta",
-    position: "Striker",
-    avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Suphanat",
-    team: "U-19",
-    overallProgress: 85,
-    shortTermProgress: 90,
-    longTermProgress: 80,
-    status: "On Track",
-    lastUpdated: "2024-02-15",
-  },
-  {
-    id: "p2",
-    name: "Ekanit Panya",
-    position: "Winger",
-    avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Ekanit",
-    team: "U-17",
-    overallProgress: 45,
-    shortTermProgress: 30,
-    longTermProgress: 60,
-    status: "Needs Attention",
-    lastUpdated: "2024-02-10",
-  },
-];
+const MOCK_IDPS: IDPPlayerSummary[] = [];
 
 export default function IDPDashboard({
   onBack,

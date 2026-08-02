@@ -15,6 +15,16 @@ service cloud.firestore {
       return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['SUPERADMIN', 'ADMIN'];
     }
 
+    function isTenantAdmin(academyId) {
+      let user = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return isSignedIn() && user.role == 'ADMIN' && user.academyId == academyId;
+    }
+
+    function belongsToAcademy(academyId) {
+      let user = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return isSignedIn() && (user.academyId == academyId || isSuperAdmin() || user.role == 'PARENT');
+    }
+
     match /users/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin() || isAdmin());
       allow create: if isSignedIn() && request.auth.uid == userId;
@@ -25,6 +35,41 @@ service cloud.firestore {
     match /settings/{document=**} {
       allow read: if true;
       allow write: if isAdmin();
+    }
+    
+    match /academies/{academyId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+      
+      // ============================================================
+      // OBSERVATION ENGINE (Rev 3.9.2) - Tenant Collections
+      // ============================================================
+      match /observation_profiles/{profileId} {
+        allow read: if belongsToAcademy(academyId);
+        allow write: if isSuperAdmin() || isTenantAdmin(academyId);
+      }
+      
+      match /observation_sessions/{sessionId} {
+        allow read: if belongsToAcademy(academyId);
+        allow write: if belongsToAcademy(academyId);
+      }
+      
+      match /observation_live_events/{eventId} {
+        allow read: if belongsToAcademy(academyId);
+        allow write: if belongsToAcademy(academyId);
+      }
+      
+      match /observation_reflections/{reflectionId} {
+        allow read: if belongsToAcademy(academyId);
+        allow write: if belongsToAcademy(academyId);
+      }
+
+      // Legacy fallback
+      match /{collection}/{document=**} {
+        allow read: if isSignedIn();
+        // Prevent wildcard from bypassing strict observation rules
+        allow write: if isSignedIn() && !(collection in ['observation_profiles', 'observation_sessions', 'observation_live_events', 'observation_reflections']);
+      }
     }
     
     match /coaches/{document=**} {
@@ -56,6 +101,49 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
       allow update, delete: if isSuperAdmin() || isAdmin();
+    }
+    
+    match /evaluation_criteria/{document=**} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin() || isAdmin() || isSignedIn();
+    }
+    
+    match /player_evaluations/{document=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+    
+    match /fitness_tests/{document=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+    
+    match /profile_claims/{document=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+    
+    match /notifications/{document=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+    
+    match /parent_observation_metrics/{document=**} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+    
+    match /parent_match_observations/{document=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // ============================================================
+    // OBSERVATION ENGINE (Rev 3.8) - New Collections
+    // ============================================================
+    match /observation_metrics/{document=**} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
     }
   }
 }

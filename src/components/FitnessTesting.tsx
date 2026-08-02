@@ -1,4 +1,5 @@
 import { useState, memo, useCallback, useEffect } from "react";
+import { ThaiDatePicker } from "./ThaiDatePicker";
 import {
   Radar,
   RadarChart,
@@ -26,9 +27,9 @@ import {
   Users,
 } from "lucide-react";
 import { db } from "../lib/firebase";
-import { collection, onSnapshot, query, orderBy, doc, deleteDoc, addDoc, updateDoc } from "firebase/firestore";
+import { collection, onSnapshot, query, orderBy, doc, deleteDoc, addDoc, updateDoc, setDoc } from "firebase/firestore";
 import { EmptyState } from "./common/EmptyState";
-import { useAcademy } from "../contexts/AcademyContext";
+import { useAcademy, FitnessMetric } from "../contexts/AcademyContext";
 import { Plus, Edit2, Trash2, X, Upload, Calendar, ChevronDown, Filter } from "lucide-react";
 
 interface Player {
@@ -44,8 +45,8 @@ interface Player {
   hideFromFitness?: boolean;
 }
 
-const METRICS_CONFIG = [
-  { key: "yoyo_level", label: "Yo-Yo Test", unit: "Level", max: 20 },
+const DEFAULT_FITNESS_METRICS: FitnessMetric[] = [
+  { key: "beep_level", label: "Beep Test", unit: "Level", max: 20 },
   {
     key: "calculated_vo2max",
     label: "VO2 Max (Auto)",
@@ -61,9 +62,9 @@ const METRICS_CONFIG = [
 // --- FitnessTestingGrid Implementation ---
 
 // 1. ฟังก์ชันคำนวณอัตโนมัติ (Real-time Calculation)
-const calculateVO2Max = (yoyoLevel: string) => {
-  if (!yoyoLevel) return "";
-  const level = parseFloat(yoyoLevel);
+const calculateVO2Max = (beepLevel: string) => {
+  if (!beepLevel) return "";
+  const level = parseFloat(beepLevel);
   if (isNaN(level)) return "";
   // จำลองสูตรคำนวณ (เช่น ถ้าระดับ 16.1 -> 44.4)
   // ตัวอย่างใช้สูตรสมมุติเพื่อให้ใกล้เคียงกับเงื่อนไข
@@ -75,12 +76,14 @@ const PlayerTestRow = memo(
   ({
     player,
     rowData,
+    metrics,
     onChange,
     onEdit,
     onDelete,
   }: {
     player: Player;
     rowData: any;
+    metrics: FitnessMetric[];
     onChange: (id: string, field: string, value: string) => void;
     onEdit: (player: Player) => void;
     onDelete: (player: Player) => void;
@@ -127,7 +130,7 @@ const PlayerTestRow = memo(
              </button>
           </div>
         </td>
-        {METRICS_CONFIG.map((m) => (
+        {metrics.map((m) => (
           <td key={m.key} className="px-4 py-3 text-center">
             <input
               type="number"
@@ -163,6 +166,11 @@ function FitnessTestingGrid({
   setFilterAge,
   squads,
   onAddPlayer,
+  metrics,
+  updateSettings,
+  testDate,
+  setTestDate,
+  getAcademyCollection,
 }: {
   players: Player[];
   isOnline: boolean;
@@ -177,8 +185,55 @@ function FitnessTestingGrid({
   setFilterAge: (val: string) => void;
   squads: string[];
   onAddPlayer: () => void;
+  metrics: FitnessMetric[];
+  updateSettings: (newSettings: any) => Promise<void>;
+  testDate: string;
+  setTestDate: (date: string) => void;
+  getAcademyCollection: (path: string) => import('firebase/firestore').CollectionReference<import('firebase/firestore').DocumentData>;
 }) {
   const [isSaving, setIsSaving] = useState(false);
+  
+  const [isAddingMetric, setIsAddingMetric] = useState(false);
+  const [editingMetric, setEditingMetric] = useState<FitnessMetric | null>(null);
+  const [newMetricLabel, setNewMetricLabel] = useState("");
+  const [newMetricUnit, setNewMetricUnit] = useState("");
+  const [newMetricMax, setNewMetricMax] = useState("100");
+  const [newMetricInvert, setNewMetricInvert] = useState(false);
+
+  const handleAddMetric = async () => {
+    if (!newMetricLabel) return;
+    const newKey = newMetricLabel.toLowerCase().replace(/[^a-z0-9]/g, "_");
+    const newMetrics = [
+      ...metrics,
+      { 
+        key: newKey, 
+        label: newMetricLabel, 
+        unit: newMetricUnit || "-", 
+        max: Number(newMetricMax) || 100,
+        invert: newMetricInvert
+      }
+    ];
+    await updateSettings({ fitnessMetrics: newMetrics });
+    setIsAddingMetric(false);
+    setNewMetricLabel("");
+    setNewMetricUnit("");
+    setNewMetricMax("100");
+    setNewMetricInvert(false);
+  };
+
+  const handleUpdateMetric = async () => {
+    if (!editingMetric) return;
+    const newMetrics = metrics.map(m => m.key === editingMetric.key ? editingMetric : m);
+    await updateSettings({ fitnessMetrics: newMetrics });
+    setEditingMetric(null);
+  };
+
+  const handleDeleteMetric = async (key: string) => {
+    if (window.confirm("Are you sure you want to delete this metric?")) {
+      const newMetrics = metrics.filter(m => m.key !== key);
+      await updateSettings({ fitnessMetrics: newMetrics });
+    }
+  };
 
   // ควบคุมการอัปเดตข้อมูลรายบุคคลและคำนวณอัตโนมัติ
   const handleRowChange = useCallback(
@@ -189,8 +244,8 @@ function FitnessTestingGrid({
           [field]: value,
         };
 
-        // เมื่อกรอก Yo-Yo Test Level ให้คำนวณ VO2 Max ใส่ช่องแบบ Read-only ทันที
-        if (field === "yoyo_level") {
+        // เมื่อกรอก Beep Test Level ให้คำนวณ VO2 Max ใส่ช่องแบบ Read-only ทันที
+        if (field === "beep_level") {
           updatedPlayerStats["calculated_vo2max"] = calculateVO2Max(value);
         }
 
@@ -205,39 +260,39 @@ function FitnessTestingGrid({
   );
 
   // 3. ระบบจัดเก็บข้อมูลแยกรายบุคคล (Upsert Logic)
-  const handleSaveAllResults = () => {
+  const handleSaveAllResults = async () => {
     setIsSaving(true);
 
-    // แปลงเทเบิล State ให้อยู่ในรูปแบบ Array of Objects ตามเงื่อนไข
-    const todayDate = new Date().toISOString().split("T")[0];
     const payloadToSave = players
       .map((player) => {
         const stats = testData[player.id] || {};
+        
+        // Build dynamic payload based on metrics
+        const dynamicStats: any = {};
+        metrics.forEach(m => {
+          if (stats[m.key] !== undefined && stats[m.key] !== null && stats[m.key] !== "") {
+            dynamicStats[m.key] = Number(stats[m.key]);
+          }
+        });
+
         return {
           player_id: player.id.toString(),
-          test_date: todayDate,
-          yoyo_level: Number(stats["yoyo_level"]) || null,
-          calculated_vo2max: Number(stats["calculated_vo2max"]) || null,
-          speed_10m: Number(stats["speed_10m"]) || null,
-          speed_30m: Number(stats["speed_30m"]) || null,
-          vertical_jump: Number(stats["vertical_jump"]) || null,
+          test_date: testDate,
+          ...dynamicStats
         };
       })
-      .filter(
-        (data) =>
-          data.yoyo_level !== null ||
-          data.speed_10m !== null ||
-          data.speed_30m !== null ||
-          data.vertical_jump !== null,
-      ); // Filter rows that actually have data filled
+      .filter((data) => Object.keys(data).length > 2); // Ensure there is at least one metric besides player_id and test_date
 
-    // Simulate Supabase Response wait time
-    setTimeout(() => {
-      setIsSaving(false);
-      console.log(
-        "--- Payload Prepared for Upsert (Supabase) ---",
-        payloadToSave,
+    try {
+      // Use Promise.all to save all valid records to Firestore
+      await Promise.all(
+        payloadToSave.map(async (data) => {
+          const docId = `${data.player_id}_${data.test_date}`;
+          await setDoc(doc(getAcademyCollection("fitness_tests"), docId), data, { merge: true });
+        })
       );
+      
+      console.log("--- Successfully saved all results to Firestore ---", payloadToSave);
 
       if (isOnline) {
         setSaveStatus("success");
@@ -245,9 +300,13 @@ function FitnessTestingGrid({
         setSaveStatus("offline_queued");
         onOfflineSave?.();
       }
-
+    } catch (error) {
+      console.error("Error saving fitness results:", error);
+      alert("Failed to save data. Please try again.");
+    } finally {
+      setIsSaving(false);
       setTimeout(() => setSaveStatus(null), 3000);
-    }, 800);
+    }
   };
 
   return (
@@ -268,6 +327,14 @@ function FitnessTestingGrid({
         </div>
 
         <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto shrink-0">
+          <div className="flex items-center gap-2">
+            <Calendar size={18} className="text-emerald-600" />
+            <ThaiDatePicker 
+              value={testDate}
+              onChange={(e) => setTestDate(e.target.value)}
+              className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium focus-within:ring-2 focus-within:ring-emerald-500 outline-none text-emerald-800"
+            />
+          </div>
           <div className="relative">
             <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
             <select
@@ -315,22 +382,168 @@ function FitnessTestingGrid({
         </div>
       </div>
 
+      {isAddingMetric && (
+        <div className="px-6 py-4 bg-emerald-50 border-b border-emerald-100 flex flex-wrap items-end gap-4">
+          <div>
+            <label className="block text-xs font-bold text-emerald-800 uppercase tracking-widest mb-1">Metric Name</label>
+            <input 
+              type="text" 
+              value={newMetricLabel} 
+              onChange={e => setNewMetricLabel(e.target.value)} 
+              className="w-48 px-3 py-2 rounded-lg border border-emerald-200 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              placeholder="e.g. 5km Run"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-emerald-800 uppercase tracking-widest mb-1">Unit</label>
+            <input 
+              type="text" 
+              value={newMetricUnit} 
+              onChange={e => setNewMetricUnit(e.target.value)} 
+              className="w-24 px-3 py-2 rounded-lg border border-emerald-200 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              placeholder="e.g. Min"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-emerald-800 uppercase tracking-widest mb-1">Max Value (for radar)</label>
+            <input 
+              type="number" 
+              value={newMetricMax} 
+              onChange={e => setNewMetricMax(e.target.value)} 
+              className="w-32 px-3 py-2 rounded-lg border border-emerald-200 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+          <div className="flex items-center gap-2 mb-2">
+            <input 
+              type="checkbox" 
+              id="invertCheckbox"
+              checked={newMetricInvert} 
+              onChange={e => setNewMetricInvert(e.target.checked)} 
+              className="rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500"
+            />
+            <label htmlFor="invertCheckbox" className="text-sm font-bold text-emerald-800 cursor-pointer">Lower is better</label>
+          </div>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={handleAddMetric}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition-all shadow-sm"
+            >
+              Add
+            </button>
+            <button 
+              onClick={() => setIsAddingMetric(false)}
+              className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-bold transition-all shadow-sm"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {editingMetric && (
+        <div className="px-6 py-4 bg-amber-50 border-b border-amber-100 flex flex-wrap items-end gap-4">
+          <div>
+            <label className="block text-xs font-bold text-amber-800 uppercase tracking-widest mb-1">Edit Metric Name</label>
+            <input 
+              type="text" 
+              value={editingMetric.label} 
+              onChange={e => setEditingMetric({...editingMetric, label: e.target.value})} 
+              className="w-48 px-3 py-2 rounded-lg border border-amber-200 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-amber-800 uppercase tracking-widest mb-1">Unit</label>
+            <input 
+              type="text" 
+              value={editingMetric.unit} 
+              onChange={e => setEditingMetric({...editingMetric, unit: e.target.value})} 
+              className="w-24 px-3 py-2 rounded-lg border border-amber-200 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-amber-800 uppercase tracking-widest mb-1">Max Value</label>
+            <input 
+              type="number" 
+              value={editingMetric.max} 
+              onChange={e => setEditingMetric({...editingMetric, max: Number(e.target.value)})} 
+              className="w-32 px-3 py-2 rounded-lg border border-amber-200 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
+          </div>
+          <div className="flex items-center gap-2 mb-2">
+            <input 
+              type="checkbox" 
+              id="editInvertCheckbox"
+              checked={editingMetric.invert || false} 
+              onChange={e => setEditingMetric({...editingMetric, invert: e.target.checked})} 
+              className="rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+            />
+            <label htmlFor="editInvertCheckbox" className="text-sm font-bold text-amber-800 cursor-pointer">Lower is better</label>
+          </div>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={handleUpdateMetric}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-bold transition-all shadow-sm"
+            >
+              Save
+            </button>
+            <button 
+              onClick={() => setEditingMetric(null)}
+              className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-bold transition-all shadow-sm"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="overflow-x-auto flex-1">
         <table className="w-full text-left border-collapse min-w-[800px]">
           <thead>
             <tr className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500 font-bold">
               <th className="px-6 py-3 border-b sticky left-0 bg-slate-50 z-10 w-72 shadow-[1px_0_0_#e2e8f0]">
-                Player Info & Actions
+                <div className="flex justify-between items-center">
+                  <span>Player Info & Actions</span>
+                  <button 
+                    onClick={() => setIsAddingMetric(true)}
+                    className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-1 rounded-md hover:bg-emerald-200 transition-colors flex items-center gap-1"
+                  >
+                    <Plus size={12} /> Add Metric
+                  </button>
+                </div>
               </th>
-              {METRICS_CONFIG.map((m) => (
+              {metrics.map((m) => (
                 <th
                   key={m.key}
-                  className="px-4 py-3 border-b text-center align-bottom min-w-[120px]"
+                  className="px-4 py-3 border-b text-center align-bottom min-w-[120px] group relative"
                 >
-                  {m.label}{" "}
-                  <span className="font-normal text-slate-400 block mt-0.5">
-                    ({m.unit})
-                  </span>
+                  <div className="flex flex-col items-center justify-end h-full">
+                    <div className="mb-1">
+                      {m.label}{" "}
+                      <span className="font-normal text-slate-400 block mt-0.5">
+                        ({m.unit})
+                      </span>
+                    </div>
+                    {!m.readonly && (
+                      <div className="hidden group-hover:flex items-center gap-1 mt-1 justify-center absolute top-1 right-1">
+                        <button 
+                          onClick={() => setEditingMetric(m)}
+                          className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-emerald-600 transition-colors"
+                          title="Edit Metric"
+                        >
+                          <Edit2 size={12} />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteMetric(m.key)}
+                          className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-rose-600 transition-colors"
+                          title="Delete Metric"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </th>
               ))}
             </tr>
@@ -341,6 +554,7 @@ function FitnessTestingGrid({
                 key={player.id}
                 player={player}
                 rowData={testData[player.id]}
+                metrics={metrics}
                 onChange={handleRowChange}
                 onEdit={onEditPlayer}
                 onDelete={onDeletePlayer}
@@ -353,30 +567,7 @@ function FitnessTestingGrid({
   );
 }
 
-const MOCK_PLAYERS: Player[] = [
-  {
-    id: "p1",
-    firstName: "Suphanat",
-    lastName: "Mueanta",
-    position: "Striker",
-    ageGroup: "U17",
-    dob: "2007-08-02",
-    age: 17,
-    fitness_status: "Fit",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Suphanat",
-  },
-  {
-    id: "p2",
-    firstName: "Ekanit",
-    lastName: "Panya",
-    position: "Winger",
-    ageGroup: "U15",
-    dob: "2009-10-21",
-    age: 15,
-    fitness_status: "Fit",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Ekanit",
-  },
-];
+const MOCK_PLAYERS: Player[] = [];
 
 export default function FitnessTesting({
   onBack,
@@ -389,7 +580,8 @@ export default function FitnessTesting({
   isOnline?: boolean;
   onOfflineSave?: () => void;
 }) {
-  const { settings } = useAcademy();
+  const { settings, updateSettings, getAcademyCollection } = useAcademy();
+  const fitnessMetrics = settings?.fitnessMetrics || DEFAULT_FITNESS_METRICS;
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"entry" | "report">("entry");
@@ -398,6 +590,7 @@ export default function FitnessTesting({
 
   // CRUD state
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSelectPlayerModalOpen, setIsSelectPlayerModalOpen] = useState(false);
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
   const [playerToDelete, setPlayerToDelete] = useState<string | null>(null);
   const [formData, setFormData] = useState({
@@ -412,7 +605,7 @@ export default function FitnessTesting({
 
   useEffect(() => {
     setLoading(true);
-    const unsubscribe = onSnapshot(collection(db, "players"), (snapshot) => {
+    const unsubscribe = onSnapshot(getAcademyCollection("players"), (snapshot) => {
       const playersData = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
@@ -446,24 +639,41 @@ export default function FitnessTesting({
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setFormData((prev) => ({ ...prev, avatarUrl: reader.result as string }));
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const MAX_SIZE = 500;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_SIZE) {
+              height *= MAX_SIZE / width;
+              width = MAX_SIZE;
+            }
+          } else {
+            if (height > MAX_SIZE) {
+              width *= MAX_SIZE / height;
+              height = MAX_SIZE;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx?.drawImage(img, 0, 0, width, height);
+          
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+          setFormData((prev) => ({ ...prev, avatarUrl: dataUrl }));
+        };
+        img.src = reader.result as string;
       };
       reader.readAsDataURL(file);
     }
   };
 
   const openAddModal = () => {
-    setEditingPlayerId(null);
-    setFormData({
-      firstName: "",
-      lastName: "",
-      dob: "",
-      fitness_status: "Fit",
-      position: "CM",
-      ageGroup: settings?.squads?.[0] || "U15",
-      avatarUrl: "",
-    });
-    setIsModalOpen(true);
+    setIsSelectPlayerModalOpen(true);
   };
 
   const handleEditClick = (player: Player) => {
@@ -496,9 +706,9 @@ export default function FitnessTesting({
       delete playerData.avatarUrl;
 
       if (editingPlayerId) {
-        await updateDoc(doc(db, "players", editingPlayerId), playerData);
+        await updateDoc(doc(getAcademyCollection("players"), editingPlayerId), playerData);
       } else {
-        await addDoc(collection(db, "players"), playerData);
+        await addDoc(getAcademyCollection("players"), playerData);
       }
       closeModal();
     } catch (error: any) {
@@ -510,7 +720,7 @@ export default function FitnessTesting({
   const handleDeleteConfirm = async () => {
     if (playerToDelete) {
       try {
-        await updateDoc(doc(db, "players", playerToDelete), { hideFromFitness: true });
+        await updateDoc(doc(getAcademyCollection("players"), playerToDelete), { hideFromFitness: true });
         setPlayerToDelete(null);
       } catch (error: any) {
         console.error("Error deleting player:", error);
@@ -521,16 +731,72 @@ export default function FitnessTesting({
 
   const filteredPlayers = players.filter((p) => !p.hideFromFitness && (filterAge === "All" || p.ageGroup === filterAge));
 
-  // State from main wrapper for reports functionality and passing to grid
   const [testData, setTestData] = useState<
     Record<string, Record<string, string>>
   >({});
   const [saveStatus, setSaveStatus] = useState<
     null | "success" | "offline_queued"
   >(null);
+  
+  const [testDate, setTestDate] = useState<string>(new Date().toISOString().split("T")[0]);
+
+  // Load existing fitness records when testDate changes
+  useEffect(() => {
+    if (!testDate) return;
+    
+    // Reset data before fetching
+    setTestData({});
+    
+    // We fetch from the 'fitness_tests' collection filtering by test_date
+    const q = query(getAcademyCollection("fitness_tests"));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const newData: Record<string, Record<string, string>> = {};
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.test_date === testDate) {
+          newData[data.player_id] = data;
+        }
+      });
+      setTestData(newData);
+    }, (error) => {
+      console.error("Error fetching fitness records:", error);
+    });
+
+    return () => unsubscribe();
+  }, [testDate]);
+
+  const [historicalData, setHistoricalData] = useState<Record<string, any>[]>([]);
+  const [selectedMetricForChart, setSelectedMetricForChart] = useState<string>("");
+
+  useEffect(() => {
+    if (fitnessMetrics.length > 0 && !selectedMetricForChart) {
+      setSelectedMetricForChart(fitnessMetrics[0].key);
+    }
+  }, [fitnessMetrics]);
+
+  useEffect(() => {
+    if (activeTab === "report" && selectedPlayerId) {
+      const q = query(getAcademyCollection("fitness_tests"));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const data: any[] = [];
+        snapshot.forEach(doc => {
+          const docData = doc.data();
+          if (docData.player_id === selectedPlayerId) {
+            data.push(docData);
+          }
+        });
+        
+        // Sort by date ascending
+        data.sort((a, b) => new Date(a.test_date).getTime() - new Date(b.test_date).getTime());
+        setHistoricalData(data);
+      });
+      return () => unsubscribe();
+    }
+  }, [activeTab, selectedPlayerId]);
 
   const getRadarData = (playerId: string) => {
-    return METRICS_CONFIG.filter((m) => m.key !== "calculated_vo2max").map(
+    return fitnessMetrics.filter((m) => m.key !== "calculated_vo2max").map(
       (m) => {
         let val = 0;
         if (testData[playerId]?.[m.key]) {
@@ -555,6 +821,38 @@ export default function FitnessTesting({
         };
       },
     );
+  };
+
+  const getPersonalBests = () => {
+    if (!historicalData.length) return [];
+    
+    return fitnessMetrics.filter((m) => m.key !== "calculated_vo2max").map(m => {
+      let bestValue: number | null = null;
+      let lastValue: number | null = null;
+      
+      historicalData.forEach(record => {
+        if (record[m.key] !== undefined && record[m.key] !== null) {
+          const val = Number(record[m.key]);
+          lastValue = val;
+          if (bestValue === null) {
+            bestValue = val;
+          } else {
+            if (m.invert) {
+              bestValue = Math.min(bestValue, val);
+            } else {
+              bestValue = Math.max(bestValue, val);
+            }
+          }
+        }
+      });
+      
+      return {
+        label: m.label,
+        unit: m.unit,
+        bestValue: bestValue !== null ? bestValue : "-",
+        lastValue: lastValue !== null ? lastValue : "-"
+      };
+    });
   };
 
   if (loading) {
@@ -662,6 +960,11 @@ export default function FitnessTesting({
             setFilterAge={setFilterAge}
             squads={settings?.squads || ["U13", "U15", "U17", "U19", "U21"]}
             onAddPlayer={openAddModal}
+            metrics={fitnessMetrics}
+            updateSettings={updateSettings}
+            testDate={testDate}
+            setTestDate={setTestDate}
+            getAcademyCollection={getAcademyCollection}
           />
         </section>
       )}
@@ -710,6 +1013,38 @@ export default function FitnessTesting({
           </div>
 
           <div className="lg:col-span-3 space-y-6">
+            {/* Personal Stats Section */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+              <h3 className="text-xs font-bold text-slate-400 uppercase mb-4 border-b border-slate-100 pb-3 flex items-center gap-2">
+                <Activity size={14} className="text-emerald-500" />
+                Personal Stats Overview
+              </h3>
+              {historicalData.length > 0 ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {getPersonalBests().map((stat, idx) => (
+                    <div key={idx} className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">{stat.label}</div>
+                      <div className="flex flex-col gap-1">
+                        <div className="flex justify-between items-baseline">
+                          <span className="text-xs text-slate-500">Best:</span>
+                          <span className="text-lg font-black text-emerald-600">{stat.bestValue} <span className="text-[10px] text-emerald-400">{stat.unit !== "-" ? stat.unit : ""}</span></span>
+                        </div>
+                        <div className="flex justify-between items-baseline">
+                          <span className="text-xs text-slate-500">Latest:</span>
+                          <span className="text-sm font-bold text-slate-700">{stat.lastValue} <span className="text-[10px] text-slate-400">{stat.unit !== "-" ? stat.unit : ""}</span></span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-6 flex flex-col items-center justify-center text-slate-400">
+                  <Database size={24} className="mb-2 opacity-20" />
+                  <p className="text-sm font-medium">No testing history available for this player.</p>
+                </div>
+              )}
+            </div>
+
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
               <h3 className="text-xs font-bold text-slate-400 uppercase mb-6 border-b border-slate-100 pb-3">
                 Performance Spider Chart
@@ -773,13 +1108,76 @@ export default function FitnessTesting({
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-              <h3 className="text-xs font-bold text-slate-400 uppercase mb-6 border-b border-slate-100 pb-3">
-                Fitness Progression Timeline
-              </h3>
-              <div className="h-[300px] w-full mt-4 flex items-center justify-center border-2 border-dashed border-slate-200 rounded-xl">
-                <p className="text-slate-400 font-medium">
-                  Historical data will appear here after multiple tests
-                </p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 border-b border-slate-100 pb-3 gap-4">
+                <h3 className="text-xs font-bold text-slate-400 uppercase">
+                  Fitness Progression Timeline
+                </h3>
+                {historicalData.length > 0 && (
+                  <div className="relative">
+                    <select
+                      value={selectedMetricForChart}
+                      onChange={(e) => setSelectedMetricForChart(e.target.value)}
+                      className="appearance-none bg-slate-50 border border-slate-200 rounded-lg pl-4 pr-8 py-1.5 text-xs font-bold text-slate-600 focus:outline-none focus:border-emerald-500 transition-colors cursor-pointer"
+                    >
+                      {fitnessMetrics.map(m => (
+                        <option key={m.key} value={m.key}>{m.label}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={12} />
+                  </div>
+                )}
+              </div>
+              
+              <div className="h-[300px] w-full mt-4">
+                {historicalData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={historicalData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis 
+                        dataKey="test_date" 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{ fill: "#94a3b8", fontSize: 11, fontWeight: "bold" }}
+                        dy={10}
+                      />
+                      <YAxis 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{ fill: "#94a3b8", fontSize: 11, fontWeight: "bold" }}
+                        domain={['auto', 'auto']}
+                      />
+                      <Tooltip 
+                        contentStyle={{
+                          borderRadius: "12px",
+                          border: "1px solid #e2e8f0",
+                          boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+                          padding: "12px",
+                          fontSize: "12px",
+                          fontWeight: "bold",
+                        }}
+                        labelStyle={{ color: "#64748b", marginBottom: "4px" }}
+                        cursor={{ stroke: "#e2e8f0", strokeWidth: 2 }}
+                      />
+                      <Legend iconType="circle" wrapperStyle={{ fontSize: "11px", fontWeight: "bold", paddingTop: "20px" }} />
+                      <Line 
+                        type="monotone" 
+                        dataKey={selectedMetricForChart} 
+                        name={fitnessMetrics.find(m => m.key === selectedMetricForChart)?.label || selectedMetricForChart}
+                        stroke="#10b981" 
+                        strokeWidth={3}
+                        dot={{ r: 4, strokeWidth: 2, fill: "#fff", stroke: "#10b981" }}
+                        activeDot={{ r: 6, fill: "#10b981", strokeWidth: 0 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-xl">
+                    <Database size={32} className="text-slate-300 mb-3" />
+                    <p className="text-slate-400 font-medium">
+                      Historical data will appear here after multiple tests
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -800,16 +1198,16 @@ export default function FitnessTesting({
             </div>
             <form onSubmit={handleSavePlayer} className="p-6 overflow-y-auto">
               <div className="flex flex-col items-center justify-center mb-6">
-                <label className="w-24 h-24 rounded-full border-2 border-dashed border-slate-300 bg-slate-50 flex flex-col items-center justify-center text-slate-400 cursor-pointer hover:bg-slate-100 hover:border-slate-400 transition-colors group relative overflow-hidden">
+                <label htmlFor="fitness-player-photo" className="w-24 h-24 rounded-full border-2 border-dashed border-slate-300 bg-slate-50 flex flex-col items-center justify-center text-slate-400 cursor-pointer hover:bg-slate-100 hover:border-slate-400 transition-colors group relative overflow-hidden">
                   {formData.avatarUrl ? (
-                    <img src={formData.avatarUrl} alt="Preview" className="w-full h-full object-cover" />
+                    <img src={formData.avatarUrl} alt="Preview" className="w-full h-full object-cover pointer-events-none" />
                   ) : (
                     <>
-                      <Upload size={24} className="mb-1 group-hover:-translate-y-1 transition-transform" />
-                      <span className="text-[10px] font-medium uppercase tracking-wider">Photo</span>
+                      <Upload size={24} className="mb-1 group-hover:-translate-y-1 transition-transform pointer-events-none" />
+                      <span className="text-[10px] font-medium uppercase tracking-wider pointer-events-none">Photo</span>
                     </>
                   )}
-                  <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                  <input id="fitness-player-photo" type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
                 </label>
               </div>
               <div className="space-y-4">
@@ -827,7 +1225,7 @@ export default function FitnessTesting({
                   <label className="block text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Date of Birth</label>
                   <div className="relative">
                     <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                    <input required name="dob" value={formData.dob} onChange={handleInputChange} type="date" className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all" />
+                    <ThaiDatePicker required name="dob" value={formData.dob} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-sm focus-within:outline-none focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all" />
                   </div>
                 </div>
                 <div className="grid grid-cols-1 gap-4">
@@ -893,6 +1291,59 @@ export default function FitnessTesting({
             <div className="flex gap-3">
               <button type="button" onClick={() => setPlayerToDelete(null)} className="flex-1 px-4 py-2.5 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">Cancel</button>
               <button type="button" onClick={handleDeleteConfirm} className="flex-1 px-4 py-2.5 rounded-xl font-bold text-white bg-rose-600 hover:bg-rose-700 transition-colors">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Select Existing Player Modal */}
+      {isSelectPlayerModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-xl animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
+              <div>
+                <h2 className="text-xl font-black text-slate-800">Add Player to Test</h2>
+                <p className="text-sm text-slate-500 font-medium">Select a player from the academy</p>
+              </div>
+              <button onClick={() => setIsSelectPlayerModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors p-2 hover:bg-slate-100 rounded-full">
+                <X size={24} />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto">
+              {players.filter(p => p.hideFromFitness).length === 0 ? (
+                <div className="text-center text-slate-500 py-8">
+                  <User size={48} className="mx-auto text-slate-200 mb-4" />
+                  <p className="font-medium text-slate-600">No players available</p>
+                  <p className="text-sm mt-1">All academy players are already in the test list.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {players.filter(p => p.hideFromFitness).map(player => (
+                    <div key={player.id} className="flex items-center justify-between p-3 border border-slate-100 rounded-xl hover:border-emerald-200 transition-colors bg-slate-50/50">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-slate-200 overflow-hidden flex items-center justify-center text-slate-400 shrink-0">
+                          {player.avatar ? <img src={player.avatar} alt="" className="w-full h-full object-cover"/> : <User size={20}/>}
+                        </div>
+                        <div>
+                          <div className="font-bold text-sm text-slate-800">{player.firstName} {player.lastName}</div>
+                          <div className="text-xs text-slate-500 font-medium">{player.position} • {player.ageGroup}</div>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={async () => {
+                          try {
+                            await updateDoc(doc(getAcademyCollection("players"), player.id), { hideFromFitness: false });
+                          } catch (error) {
+                            console.error("Error adding player back:", error);
+                          }
+                        }}
+                        className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { ThaiDatePicker } from "./ThaiDatePicker";
 import {
   Search,
   ArrowLeft,
@@ -10,108 +11,51 @@ import {
   Loader2,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { useAcademy } from "../contexts/AcademyContext";
 import { ProPlayer } from "../types/ProPlayer";
 import { db } from "../lib/firebase";
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from "firebase/firestore";
-import { Edit2, Trash2, AlertCircle } from "lucide-react";
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, writeBatch } from "firebase/firestore";
+import { Edit2, Trash2, AlertCircle, Upload, Users } from "lucide-react";
+import Papa from "papaparse";
 
-const MOCK_PRO_PLAYERS: ProPlayer[] = [
-  {
-    id: "p1",
-    name: "Teerasil Dangda",
-    nationality: "Thailand",
-    dob: "1988-06-06",
-    position: "Striker",
-    secondaryPosition: "Attacking Midfielder",
-    height: 181,
-    weight: 75,
-    preferredFoot: "Right",
-    currentClub: "BG Pathum United",
-    league: "T1",
-    contractExpiry: "2025-05-31",
-    marketValue: "€300k",
-    avatarUrl:
-      "https://api.dicebear.com/7.x/avataaars/svg?seed=Teerasil&backgroundColor=0284c7",
-    actionShotUrl:
-      "https://images.unsplash.com/photo-1579952363873-27f3bade9f55?q=80&w=800&auto=format&fit=crop",
-    highlightVideoUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ",
-    careerHistory: [
-      {
-        year: "2020-Present",
-        club: "BG Pathum United",
-        apps: 85,
-        goals: 34,
-        assists: 12,
-      },
-      { year: "2020", club: "Shimizu S-Pulse", apps: 24, goals: 3, assists: 1 },
-      {
-        year: "2018",
-        club: "Sanfrecce Hiroshima",
-        apps: 32,
-        goals: 6,
-        assists: 3,
-      },
-      {
-        year: "2009-2020",
-        club: "Muangthong United",
-        apps: 268,
-        goals: 117,
-        assists: 40,
-      },
-    ],
-    attributes: {
-      technical: 85,
-      tactical: 80,
-      physical: 72,
-      mental: 88,
-      attacking: 89,
-      defending: 40,
-    },
-  },
-  {
-    id: "p2",
-    name: "Supachok Sarachat",
-    nationality: "Thailand",
-    dob: "1998-05-22",
-    position: "Winger",
-    secondaryPosition: "Attacking Midfielder",
-    height: 169,
-    weight: 60,
-    preferredFoot: "Right",
-    currentClub: "Hokkaido Consadole Sapporo",
-    league: "T1",
-    contractExpiry: "2027-12-31",
-    marketValue: "€1.00m",
-    avatarUrl:
-      "https://api.dicebear.com/7.x/avataaars/svg?seed=Supachok&backgroundColor=dc2626",
-    actionShotUrl:
-      "https://images.unsplash.com/photo-1518605368461-1e1e11111111?q=80&w=800&auto=format&fit=crop",
-    careerHistory: [
-      {
-        year: "2022-Present",
-        club: "Hokkaido Consadole Sapporo",
-        apps: 42,
-        goals: 9,
-        assists: 6,
-      },
-      {
-        year: "2015-2022",
-        club: "Buriram United",
-        apps: 153,
-        goals: 34,
-        assists: 20,
-      },
-    ],
-    attributes: {
-      technical: 88,
-      tactical: 78,
-      physical: 75,
-      mental: 80,
-      attacking: 85,
-      defending: 45,
-    },
-  },
-];
+const MOCK_PRO_PLAYERS: ProPlayer[] = [];
+
+const compressImage = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX_SIZE = 500;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_SIZE) {
+            height *= MAX_SIZE / width;
+            width = MAX_SIZE;
+          }
+        } else {
+          if (height > MAX_SIZE) {
+            width *= MAX_SIZE / height;
+            height = MAX_SIZE;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.7));
+      };
+      img.onerror = reject;
+      img.src = reader.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
 
 export default function ProPlayerManager({
   onBack,
@@ -127,11 +71,17 @@ export default function ProPlayerManager({
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<ProPlayer | null>(null);
   const [playerToDelete, setPlayerToDelete] = useState<string | null>(null);
+  
+  // Bulk Import State
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [csvData, setCsvData] = useState<any[]>([]);
+  const [csvError, setCsvError] = useState<string | null>(null);
   const { currentUser } = useAuth();
+  const { getAcademyCollection } = useAcademy();
   const hasManagePermission = currentUser?.role === "SUPERADMIN" || currentUser?.role === "ADMIN";
 
   useEffect(() => {
-    const proPlayersRef = collection(db, "proPlayers");
+    const proPlayersRef = getAcademyCollection("proPlayers");
     const unsubscribe = onSnapshot(
       proPlayersRef,
       (snapshot) => {
@@ -153,13 +103,103 @@ export default function ProPlayerManager({
   const handleDelete = async (id: string) => {
     if (window.confirm("คุณต้องการลบนักเตะคนนี้ใช่หรือไม่?")) {
       try {
-        await deleteDoc(doc(db, "proPlayers", id));
+        await deleteDoc(doc(getAcademyCollection("proPlayers"), id));
       } catch (err) {
         console.error("Error deleting pro player:", err);
         alert("เกิดข้อผิดพลาดในการลบข้อมูล");
       }
     }
   };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          if (results.errors.length > 0) {
+            setCsvError("Invalid CSV format. Please check the template.");
+          } else {
+            const parsedData = results.data.map((row: any) => ({
+              name: row.name || row.Name || "",
+              nationality: row.nationality || row.Nationality || "Thailand",
+              dob: row.dob || row.DOB || "",
+              position: row.position || row.Position || "Striker",
+              height: parseInt(row.height || row.Height) || 175,
+              weight: parseInt(row.weight || row.Weight) || 70,
+              currentClub: row.currentClub || row.CurrentClub || "",
+              league: row.league || row.League || "T1",
+              marketValue: row.marketValue || row.MarketValue || "",
+            })).filter(p => p.name); // basic validation
+            
+            setCsvData(parsedData);
+            setCsvError(null);
+            setIsImportModalOpen(true);
+          }
+        },
+        error: (err) => {
+          setCsvError(err.message);
+        }
+      });
+    }
+    // reset input
+    e.target.value = '';
+  };
+
+  const handleImportConfirm = async () => {
+    if (csvData.length === 0) return;
+    setIsLoading(true);
+    setIsImportModalOpen(false);
+    
+    try {
+      const batch = writeBatch(db);
+      let count = 0;
+      
+      // Limit to 50
+      const dataToImport = csvData.slice(0, 50);
+
+      dataToImport.forEach((player) => {
+        const newPlayerRef = doc(getAcademyCollection("proPlayers"));
+        batch.set(newPlayerRef, {
+          ...player,
+          preferredFoot: "Right",
+          avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${player.name}${Date.now()}${count}`,
+          attributes: {
+            technical: 70,
+            tactical: 70,
+            physical: 70,
+            mental: 70,
+            attacking: 70,
+            defending: 70,
+          },
+        });
+        count++;
+      });
+
+      await batch.commit();
+      setCsvData([]);
+      alert(`นำเข้าผู้เล่นสำเร็จ ${count} คน`);
+    } catch (error: any) {
+      console.error("Error bulk importing players:", error);
+      alert("เกิดข้อผิดพลาดในการนำเข้าข้อมูล: " + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const downloadTemplate = () => {
+    const csvContent = "data:text/csv;charset=utf-8,name,nationality,dob,position,height,weight,currentClub,league,marketValue\nSupachok Sarachat,Thailand,1998-05-22,Winger,169,60,Hokkaido Consadole Sapporo,T1,€1.00m";
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "pro_player_import_template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+
 
   const filteredPlayers = useMemo(() => {
     return players.filter((player) => {
@@ -182,38 +222,67 @@ export default function ProPlayerManager({
         <div className="flex items-center gap-4">
           <button
             onClick={onBack}
-            className="p-2 hover:bg-slate-200 bg-white rounded-xl transition-colors shadow-sm text-slate-600"
+            className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 bg-white dark:bg-slate-800 rounded-xl transition-colors shadow-sm border border-transparent dark:border-slate-700/50 text-slate-600 dark:text-slate-300 cursor-pointer"
           >
             <ArrowLeft size={20} />
           </button>
           <div>
-            <h1 className="text-2xl font-bold text-slate-800 tracking-tight">
+            <h1 className="text-2xl font-bold text-slate-800 dark:text-transparent dark:bg-clip-text dark:bg-gradient-to-r dark:from-indigo-400 dark:to-emerald-400 tracking-tight dark:drop-shadow-[0_0_8px_rgba(99,102,241,0.5)]">
               Pro Player Management
             </h1>
-            <p className="text-xs text-slate-500 font-medium uppercase tracking-widest mt-0.5">
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium uppercase tracking-widest mt-0.5">
               Professional Squad & Digital CVs
             </p>
           </div>
         </div>
 
         {hasManagePermission && (
-          <button
-            onClick={() => {
-              setEditingPlayer(null);
-              setIsAddModalOpen(true);
-            }}
-            className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-sm shadow-indigo-600/20 hover:bg-indigo-700 transition-colors w-full lg:w-auto justify-center"
-          >
-            <UserPlus size={18} />
-            เพิ่มนักเตะอาชีพ
-          </button>
+          <div className="flex gap-3 ml-auto lg:ml-0 w-full lg:w-auto">
+            <button
+              onClick={downloadTemplate}
+              className="hidden lg:flex px-4 py-2 bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-transparent dark:border-slate-700/50 font-bold rounded-xl text-sm transition-colors cursor-pointer"
+            >
+              CSV Template
+            </button>
+            <div className="relative">
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleFileUpload}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                title="Upload CSV"
+              />
+              <button
+                className="px-4 py-2 bg-amber-500 dark:bg-amber-600 hover:bg-amber-600 dark:hover:bg-amber-500 text-white font-bold rounded-xl text-sm transition-colors flex items-center justify-center gap-2 pointer-events-none w-full lg:w-auto shadow-sm shadow-amber-500/20 dark:shadow-amber-500/10 border border-transparent dark:border-amber-500/50"
+              >
+                <Upload size={18} />
+                Bulk Import
+              </button>
+            </div>
+            <button
+              onClick={() => {
+                setEditingPlayer(null);
+                setIsAddModalOpen(true);
+              }}
+              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 dark:bg-indigo-500 text-white rounded-xl text-sm font-bold shadow-sm shadow-indigo-600/20 dark:shadow-indigo-500/20 border border-transparent dark:border-indigo-400/30 hover:bg-indigo-700 dark:hover:bg-indigo-600 transition-colors w-full lg:w-auto justify-center cursor-pointer"
+            >
+              <UserPlus size={18} />
+              เพิ่มนักเตะอาชีพ
+            </button>
+          </div>
         )}
       </div>
 
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6 flex flex-col sm:flex-row gap-4 items-center">
+      {csvError && (
+        <div className="mb-6 p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-600 text-sm font-medium">
+          {csvError}
+        </div>
+      )}
+
+      <div className="bg-white dark:bg-slate-800/40 backdrop-blur-sm p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700/50 mb-6 flex flex-col sm:flex-row gap-4 items-center">
         <div className="relative flex-1 w-full">
           <Search
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500"
             size={18}
           />
           <input
@@ -221,15 +290,15 @@ export default function ProPlayerManager({
             placeholder="ค้นหาชื่อนักเตะ..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium"
+            className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/50 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 dark:focus:border-indigo-500/50 text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-all font-medium"
           />
         </div>
         <div className="flex items-center gap-3 w-full sm:w-auto">
-          <Filter size={18} className="text-slate-400 hidden sm:block" />
+          <Filter size={18} className="text-slate-400 dark:text-slate-500 hidden sm:block" />
           <select
             value={leagueFilter}
             onChange={(e) => setLeagueFilter(e.target.value)}
-            className="w-full sm:w-48 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-bold text-slate-700"
+            className="w-full sm:w-48 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-indigo-500 dark:focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/20 font-bold text-slate-700 dark:text-slate-200"
           >
             <option value="">ทุกลีก (All Leagues)</option>
             {LEAGUES.map((l) => (
@@ -249,14 +318,14 @@ export default function ProPlayerManager({
             <p className="font-medium text-sm">กำลังโหลดข้อมูล...</p>
           </div>
         ) : players.length === 0 ? (
-          <div className="col-span-full py-16 text-center bg-white border border-slate-200 border-dashed rounded-3xl flex flex-col items-center justify-center shadow-sm">
-            <div className="w-16 h-16 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center mb-4">
+          <div className="col-span-full py-16 text-center bg-white dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/50 border-dashed rounded-3xl flex flex-col items-center justify-center shadow-sm backdrop-blur-sm">
+            <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded-full flex items-center justify-center mb-4 border border-transparent dark:border-slate-700/50">
               <UserPlus size={32} />
             </div>
-            <h3 className="text-slate-700 font-bold text-lg mb-1">
+            <h3 className="text-slate-700 dark:text-slate-300 font-bold text-lg mb-1">
               ยังไม่มีรายชื่อนักเตะในระบบ
             </h3>
-            <p className="text-slate-500 text-sm">
+            <p className="text-slate-500 dark:text-slate-400 text-sm">
               โปรดกดปุ่ม 'เพิ่มนักเตะอาชีพ' ด้านบน
             </p>
           </div>
@@ -348,9 +417,9 @@ export default function ProPlayerManager({
           onSave={async (p) => {
             try {
               if (editingPlayer && editingPlayer.id) {
-                await updateDoc(doc(db, "proPlayers", editingPlayer.id), p as any);
+                await updateDoc(doc(getAcademyCollection("proPlayers"), editingPlayer.id), p as any);
               } else {
-                await addDoc(collection(db, "proPlayers"), p);
+                await addDoc(getAcademyCollection("proPlayers"), p);
               }
               setIsAddModalOpen(false);
               setEditingPlayer(null);
@@ -360,6 +429,61 @@ export default function ProPlayerManager({
             }
           }}
         />
+      )}
+
+      {isImportModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <h3 className="text-xl font-black text-slate-800 flex items-center gap-2">
+                <Users className="text-amber-500" /> Confirm Import
+              </h3>
+              <button
+                onClick={() => {
+                  setIsImportModalOpen(false);
+                  setCsvData([]);
+                }}
+                className="p-2 hover:bg-slate-200 rounded-full transition-colors"
+              >
+                <X size={20} className="text-slate-500" />
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="mb-4 text-slate-600">
+                Found <span className="font-bold text-slate-800">{csvData.length}</span> players in the CSV file. {csvData.length > 50 && <span className="text-rose-500 text-xs font-bold block mt-1">(Note: Only the first 50 players will be imported at a time.)</span>}
+              </div>
+              <div className="max-h-48 overflow-y-auto bg-slate-50 rounded-xl border border-slate-100 p-2">
+                {csvData.slice(0, 5).map((player, idx) => (
+                  <div key={idx} className="p-2 border-b border-slate-100 last:border-0 text-sm">
+                    <span className="font-bold text-slate-700">{player.name}</span> - {player.position} ({player.currentClub})
+                  </div>
+                ))}
+                {csvData.length > 5 && (
+                  <div className="p-2 text-center text-sm text-slate-400 font-medium">
+                    ... and {csvData.length - 5} more
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="p-6 border-t border-slate-100 bg-slate-50 flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setIsImportModalOpen(false);
+                  setCsvData([]);
+                }}
+                className="px-6 py-2.5 font-bold text-slate-600 hover:bg-slate-200 rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleImportConfirm}
+                className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition-colors shadow-sm"
+              >
+                Import Players
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -458,10 +582,9 @@ function AddProPlayerModal({
                 <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">
                   วัน/เดือน/ปีเกิด
                 </label>
-                <input
-                  type="date"
+                <ThaiDatePicker
                   max={new Date().toISOString().split("T")[0]}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-500"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus-within:border-indigo-500"
                   value={formData.dob}
                   onChange={(e) =>
                     setFormData({ ...formData, dob: e.target.value })
@@ -580,9 +703,8 @@ function AddProPlayerModal({
                 <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">
                   สัญญาหมดอายุ (Contract Expiry)
                 </label>
-                <input
-                  type="date"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-500"
+                <ThaiDatePicker
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus-within:border-indigo-500"
                   value={formData.contractExpiry}
                   onChange={(e) =>
                     setFormData({ ...formData, contractExpiry: e.target.value })
@@ -631,16 +753,18 @@ function AddProPlayerModal({
                     type="file"
                     accept="image/*"
                     className="text-xs text-slate-500 file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100 w-full"
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (file) {
-                        const reader = new FileReader();
-                        reader.onloadend = () =>
+                        try {
+                          const dataUrl = await compressImage(file);
                           setFormData({
                             ...formData,
-                            avatarUrl: reader.result as string,
+                            avatarUrl: dataUrl,
                           });
-                        reader.readAsDataURL(file);
+                        } catch (error) {
+                          console.error("Error compressing image:", error);
+                        }
                       }
                     }}
                   />
@@ -664,16 +788,18 @@ function AddProPlayerModal({
                     type="file"
                     accept="image/*"
                     className="text-xs text-slate-500 file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100 w-full"
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (file) {
-                        const reader = new FileReader();
-                        reader.onloadend = () =>
+                        try {
+                          const dataUrl = await compressImage(file);
                           setFormData({
                             ...formData,
-                            actionShotUrl: reader.result as string,
+                            actionShotUrl: dataUrl,
                           });
-                        reader.readAsDataURL(file);
+                        } catch (error) {
+                          console.error("Error compressing image:", error);
+                        }
                       }
                     }}
                   />

@@ -34,7 +34,8 @@ export interface User {
   approvedBy?: string;
   approvedAt?: string;
   lastLogin?: string;
-  subscriptionPlan?: "monthly" | "yearly";
+  subscriptionPlan?: string;
+  maxPlayers?: number;
   paymentDetails?: {
     date: string;
     time: string;
@@ -42,6 +43,9 @@ export interface User {
   };
   rejectionReason?: string;
   assignedClients?: string[]; // Array of User IDs they can manage
+  linkedPlayerId?: string; // For PARENT role to link to a specific child
+  pdpaAccepted?: boolean;
+  pdpaAcceptedAt?: string;
 }
 
 interface AuthContextType {
@@ -56,7 +60,8 @@ interface AuthContextType {
   impersonate: (user: User) => void;
   revertImpersonation: () => void;
   submitSubscription: (
-    plan: "monthly" | "yearly",
+    plan: string,
+    maxPlayers: number,
     date: string,
     time: string,
     slipUrl: string,
@@ -153,23 +158,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCurrentUser(actualUser);
   };
 
-  const submitSubscription = (
-    plan: "monthly" | "yearly",
+  const submitSubscription = async (
+    plan: string,
+    maxPlayers: number,
     date: string,
     time: string,
     slipUrl: string,
   ) => {
-    if (currentUser) {
+    if (currentUser?.id) {
       const updatedUser = {
         ...currentUser,
         status: "Pending" as const,
         subscriptionPlan: plan,
+        maxPlayers,
         paymentDetails: { date, time, slipUrl },
       };
-      setCurrentUser(updatedUser);
-      if (actualUser?.id === currentUser.id) {
-        setActualUser(updatedUser);
+      
+      try {
+        const { doc, updateDoc } = await import("firebase/firestore");
+        await updateDoc(doc(db, "users", currentUser.id), {
+          status: "Pending",
+          subscriptionPlan: plan,
+          maxPlayers,
+          paymentDetails: { date, time, slipUrl },
+        });
+      } catch (error) {
+        console.error("Failed to update subscription:", error);
       }
+      
+      setActualUser(updatedUser);
+      setCurrentUser(updatedUser);
     }
   };
 

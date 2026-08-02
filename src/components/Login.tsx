@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth, UserRole } from "../contexts/AuthContext";
 import { auth, db } from "../lib/firebase";
 import {
@@ -6,6 +6,8 @@ import {
   signInWithEmailAndPassword,
   updateProfile,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider,
   sendPasswordResetEmail,
 } from "firebase/auth";
@@ -74,11 +76,73 @@ export default function Login() {
   const [academyId, setAcademyId] = useState("");
   const [phone, setPhone] = useState("");
   const [requestedRole, setRequestedRole] = useState("PLAYER");
+  const [academySize, setAcademySize] = useState("30");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [inAppBrowserWarning, setInAppBrowserWarning] = useState(false);
 
-  const [showDemo, setShowDemo] = useState(false);
-  const [clickCount, setClickCount] = useState(0);
+  // Detect in-app browser
+  const isInAppBrowser = () => {
+    const ua = navigator.userAgent || navigator.vendor || "";
+    return /FBAN|FBAV|Instagram|Line\/|Twitter|MicroMessenger|Snapchat/i.test(ua);
+  };
+
+  // Handle Google redirect result when user returns
+  useEffect(() => {
+    const handleRedirectResult = async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        if (result) {
+          const user = result.user;
+          const userRef = doc(db, "users", user.uid);
+          const userSnap = await getDoc(userRef);
+          if (!userSnap.exists()) {
+            const isSuperAdmin = user.email === "jetsalween@gmail.com";
+            const assignedRole = isSuperAdmin ? "SUPERADMIN" : "USER";
+            const status = isSuperAdmin ? "Active" : "Inactive";
+            const newData: any = {
+              uid: user.uid,
+              email: user.email,
+              name: user.displayName || "User",
+              displayName: user.displayName || "User",
+              photoURL: user.photoURL || null,
+              role: assignedRole,
+              status: status,
+              subscriptionPlan: "FREE",
+              createdAt: new Date(),
+              updatedAt: new Date(),
+              lastLogin: new Date(),
+            };
+            if (!isSuperAdmin) {
+              newData.requestedRole = "COACH";
+              newData.country = null;
+              newData.academyId = null;
+              newData.phone = null;
+            } else {
+              newData.requestedRole = null;
+              newData.academyId = null;
+            }
+            await setDoc(userRef, newData, { merge: true });
+            await addDoc(collection(db, "logs"), {
+              action: "USER_REGISTERED",
+              userId: user.uid,
+              email: user.email,
+              requestedRole: isSuperAdmin ? "SUPERADMIN" : "COACH",
+              timestamp: serverTimestamp(),
+            });
+          } else {
+            await setDoc(userRef, { lastLogin: serverTimestamp(), updatedAt: serverTimestamp() }, { merge: true });
+          }
+        }
+      } catch (err: any) {
+        console.error("Redirect result error:", err);
+        if (err.code !== "auth/popup-blocked") {
+          setError(err.message || "Google Sign-In failed.");
+        }
+      }
+    };
+    handleRedirectResult();
+  }, []);
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,77 +162,80 @@ export default function Login() {
     }
   };
 
-  const handleLogoClick = () => {
-    setClickCount((prev) => {
-      const newCount = prev + 1;
-      if (newCount >= 5) {
-        setShowDemo(true);
-        return 0;
-      }
-      return newCount;
-    });
-
-    // Reset click count after a delay
-    setTimeout(() => {
-      setClickCount((current) => Math.max(0, current - 1));
-    }, 2000);
-  };
-
   const handleGoogleSignIn = async () => {
     setError("");
+
+    // Detect in-app browser and warn user
+    if (isInAppBrowser()) {
+      setInAppBrowserWarning(true);
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
+      // Try popup first, fall back to redirect
+      try {
+        const result = await signInWithPopup(auth, provider);
+        const user = result.user;
 
-      const userRef = doc(db, "users", user.uid);
-      const userSnap = await getDoc(userRef);
+        const userRef = doc(db, "users", user.uid);
+        const userSnap = await getDoc(userRef);
 
-      if (!userSnap.exists()) {
-        const isSuperAdmin = user.email === "jetsalween@gmail.com";
-        const assignedRole = isSuperAdmin ? "SUPERADMIN" : "USER";
-        const status = isSuperAdmin ? "Active" : "Inactive";
+        if (!userSnap.exists()) {
+          const isSuperAdmin = user.email === "jetsalween@gmail.com";
+          const isPlayer = requestedRole === "PLAYER";
+          const assignedRole = isSuperAdmin ? "SUPERADMIN" : (isPlayer ? "PLAYER" : "USER");
+          const status = isSuperAdmin ? "Active" : (isPlayer ? "Active" : "Inactive");
 
-        const newData: any = {
-          uid: user.uid,
-          email: user.email,
-          name: user.displayName || name || "User",
-          displayName: user.displayName || name || "User",
-          photoURL: user.photoURL || null,
-          role: assignedRole,
-          status: status,
-          subscriptionPlan: "FREE",
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          lastLogin: new Date(),
-        };
+          const newData: any = {
+            uid: user.uid,
+            email: user.email,
+            name: user.displayName || name || "User",
+            displayName: user.displayName || name || "User",
+            photoURL: user.photoURL || null,
+            role: assignedRole,
+            status: status,
+            subscriptionPlan: "FREE",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            lastLogin: new Date(),
+          };
 
-        if (!isSuperAdmin) {
-          newData.requestedRole = requestedRole; // always set to default/selected
-          newData.country = country || null;
-          newData.academyId = academyId || null;
-          newData.phone = phone || null;
+          if (!isSuperAdmin) {
+            newData.requestedRole = requestedRole;
+            newData.country = country || null;
+            newData.academyId = academyId || null;
+            newData.phone = phone || null;
+          } else {
+            newData.requestedRole = null;
+            newData.academyId = null;
+          }
+
+          await setDoc(userRef, newData, { merge: true });
+
+          await addDoc(collection(db, "logs"), {
+            action: "USER_REGISTERED",
+            userId: user.uid,
+            email: user.email,
+            requestedRole: isSuperAdmin ? "SUPERADMIN" : requestedRole,
+            timestamp: serverTimestamp(),
+          });
         } else {
-          newData.requestedRole = null;
-          newData.academyId = null;
+          await setDoc(
+            userRef,
+            { lastLogin: serverTimestamp(), updatedAt: serverTimestamp() },
+            { merge: true },
+          );
         }
-
-        await setDoc(userRef, newData, { merge: true });
-
-        await addDoc(collection(db, "logs"), {
-          action: "USER_REGISTERED",
-          userId: user.uid,
-          email: user.email,
-          requestedRole: isSuperAdmin ? "SUPERADMIN" : requestedRole,
-          timestamp: serverTimestamp(),
-        });
-      } else {
-        await setDoc(
-          userRef,
-          { lastLogin: serverTimestamp(), updatedAt: serverTimestamp() },
-          { merge: true },
-        );
+      } catch (popupErr: any) {
+        // If popup is blocked or disallowed, fall back to redirect
+        if (popupErr.code === "auth/popup-blocked" || popupErr.code === "auth/unauthorized-domain" || popupErr.code === "auth/operation-not-allowed" || popupErr.message?.includes("disallowed_useragent")) {
+          const provider = new GoogleAuthProvider();
+          await signInWithRedirect(auth, provider);
+          return;
+        }
+        throw popupErr;
       }
     } catch (err: any) {
       console.error(err);
@@ -184,6 +251,19 @@ export default function Login() {
     setIsSubmitting(true);
 
     try {
+      if (isForgotPasswordView) {
+        if (!email) {
+          setError("Please enter your email address.");
+          setIsSubmitting(false);
+          return;
+        }
+        await sendPasswordResetEmail(auth, email);
+        alert("Password reset email sent! Please check your inbox.");
+        setIsForgotPasswordView(false);
+        setIsSubmitting(false);
+        return;
+      }
+
       if (!isLoginView) {
         if (password !== confirmPassword) {
           setError("Passwords do not match!");
@@ -209,8 +289,22 @@ export default function Login() {
 
         // Save user data to Firestore
         const isSuperAdmin = email === "jetsalween@gmail.com";
-        const assignedRole = isSuperAdmin ? "SUPERADMIN" : "USER";
-        const status = isSuperAdmin ? "Active" : "Inactive";
+        const isPlayer = requestedRole === "PLAYER";
+        const assignedRole = isSuperAdmin ? "SUPERADMIN" : (isPlayer ? "PLAYER" : "USER");
+        const status = isSuperAdmin ? "Active" : (isPlayer ? "Active" : "Inactive");
+        
+        let finalAcademyId = academyId || null;
+        if (!isSuperAdmin && requestedRole === "COACH" && academyId) {
+          const academyRef = doc(collection(db, "academies"));
+          await setDoc(academyRef, {
+            name: academyId,
+            max_players: parseInt(academySize) || 30,
+            current_players_count: 0,
+            ownerId: user.uid,
+            createdAt: serverTimestamp(),
+          });
+          finalAcademyId = academyRef.id;
+        }
 
         await setDoc(
           doc(db, "users", user.uid),
@@ -224,7 +318,7 @@ export default function Login() {
             status: status,
             requestedRole: isSuperAdmin ? null : requestedRole,
             country: country || null,
-            academyId: academyId || null,
+            academyId: finalAcademyId,
             phone: phone || null,
             subscriptionPlan: "FREE",
             createdAt: new Date(),
@@ -285,8 +379,7 @@ export default function Login() {
 
         <div className="relative z-10 px-16 text-center max-w-3xl">
           <div
-            onClick={handleLogoClick}
-            className="w-24 h-24 mb-8 bg-slate-900/60 backdrop-blur-md border border-slate-700/50 rounded-3xl mx-auto flex items-center justify-center cursor-pointer overflow-hidden p-3"
+            className="w-24 h-24 mb-8 bg-slate-900/60 backdrop-blur-md border border-slate-700/50 rounded-3xl mx-auto flex items-center justify-center overflow-hidden p-3"
           >
             <FutVerseLogo className="w-full h-full" />
           </div>
@@ -309,8 +402,7 @@ export default function Login() {
         <div className="max-w-sm w-full mx-auto py-12 flex-1 flex flex-col justify-center">
           {/* Logo Context for Mobile */}
           <div
-            onClick={handleLogoClick}
-            className="lg:hidden w-16 h-16 mb-8 bg-slate-900 border border-slate-800 rounded-2xl flex items-center justify-center cursor-pointer shadow-lg p-2"
+            className="lg:hidden w-16 h-16 mb-8 bg-slate-900 border border-slate-800 rounded-2xl flex items-center justify-center shadow-lg p-2"
           >
             <FutVerseLogo className="w-full h-full" />
           </div>
@@ -558,6 +650,24 @@ export default function Login() {
                       ))}
                     </div>
                   </div>
+
+                  {!isLoginView && requestedRole === "COACH" && (
+                    <div className="animate-in fade-in zoom-in-95 duration-300">
+                      <label className="block text-xs font-bold text-slate-700 mb-2 pl-1">
+                        ขนาดอคาเดมี่ (Academy Size)
+                      </label>
+                      <select
+                        value={academySize}
+                        onChange={(e) => setAcademySize(e.target.value)}
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium rounded-xl focus:ring-2 focus:ring-[#E1FF01] focus:border-[#E1FF01] outline-none transition-all"
+                      >
+                        <option value="30">สูงสุด 30 คน (Max 30 Players)</option>
+                        <option value="50">สูงสุด 50 คน (Max 50 Players)</option>
+                        <option value="100">สูงสุด 100 คน (Max 100 Players)</option>
+                        <option value="150">สูงสุด 150 คน (Max 150 Players)</option>
+                      </select>
+                    </div>
+                  )}
                 </>
               )}
 
@@ -605,6 +715,14 @@ export default function Login() {
                       </span>
                     </div>
                   </div>
+
+                  {inAppBrowserWarning && (
+                    <div className="mb-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                      <p className="text-sm font-bold text-amber-800 mb-1">⚠️ ไม่สามารถล็อกอินผ่านแอปแชทได้</p>
+                      <p className="text-xs text-amber-700">กรุณาเปิดลิงค์นี้ในเบราว์เซอร์ Safari หรือ Chrome แทน</p>
+                      <p className="text-xs text-amber-600 mt-1">กดจุด 3 จุด (⋯) แล้วเลือก "เปิดใน Safari" หรือ "Open in Chrome"</p>
+                    </div>
+                  )}
 
                   <button
                     type="button"
@@ -654,174 +772,6 @@ export default function Login() {
             </div>
           )}
 
-          {/* Demo Roles Section */}
-          {showDemo && (
-            <div className="mt-12 pt-8 border-t border-slate-100">
-              <div className="flex items-center gap-2 mb-6">
-                <span className="h-px bg-slate-200 flex-1"></span>
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest px-2 group">
-                  Fast Login for Testing (Demo Mode)
-                </span>
-                <span className="h-px bg-slate-200 flex-1"></span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button
-                  onClick={() => handleRoleLogin("ADMIN", "Director J")}
-                  className="flex items-center gap-3 p-3 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 group transition-colors"
-                  title="Full Access"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-rose-100/50 flex items-center justify-center shrink-0">
-                    <Crown
-                      size={20}
-                      className="group-hover:scale-110 transition-transform"
-                    />
-                  </div>
-                  <div className="text-left flex-1 min-w-0">
-                    <div className="text-xs font-bold truncate">
-                      Login as Director
-                    </div>
-                    <div className="text-[10px] uppercase font-bold text-rose-400/80 tracking-wider">
-                      ADMIN Role
-                    </div>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => handleRoleLogin("COACH", "Coach Pep")}
-                  className="flex items-center gap-3 p-3 rounded-xl border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 group transition-colors"
-                  title="Management Access"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-emerald-100/50 flex items-center justify-center shrink-0">
-                    <Navigation
-                      size={20}
-                      className="group-hover:scale-110 transition-transform"
-                    />
-                  </div>
-                  <div className="text-left flex-1 min-w-0">
-                    <div className="text-xs font-bold truncate">
-                      Login as Head Coach
-                    </div>
-                    <div className="text-[10px] uppercase font-bold text-emerald-400/80 tracking-wider">
-                      COACH Role
-                    </div>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => handleRoleLogin("SCOUT", "Chief Scout")}
-                  className="flex items-center gap-3 p-3 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-700 group transition-colors"
-                  title="Scouting Access"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-amber-100/50 flex items-center justify-center shrink-0">
-                    <span className="text-lg group-hover:scale-110 transition-transform block">
-                      🕵️
-                    </span>
-                  </div>
-                  <div className="text-left flex-1 min-w-0">
-                    <div className="text-xs font-bold truncate">
-                      Login as Scout
-                    </div>
-                    <div className="text-[10px] uppercase font-bold text-amber-500/80 tracking-wider">
-                      SCOUT Role
-                    </div>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() =>
-                    login({
-                      name: "Parent Dan",
-                      role: "USER",
-                      status: "Inactive",
-                    })
-                  }
-                  className="flex items-center gap-3 p-3 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 group transition-colors"
-                  title="Read-only Access"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-blue-100/50 flex items-center justify-center shrink-0">
-                    <User
-                      size={20}
-                      className="group-hover:scale-110 transition-transform"
-                    />
-                  </div>
-                  <div className="text-left flex-1 min-w-0">
-                    <div className="text-xs font-bold truncate">
-                      Login as Parent
-                    </div>
-                    <div className="text-[10px] uppercase font-bold text-blue-400/80 tracking-wider">
-                      USER Role (Inactive)
-                    </div>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() =>
-                    handleRoleLogin("DATA_ADMIN", "Data Entry Pro")
-                  }
-                  className="flex items-center gap-3 p-3 rounded-xl border border-cyan-200 bg-cyan-50 hover:bg-cyan-100 text-cyan-700 group transition-colors"
-                  title="Data Entry Access"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-cyan-100/50 flex items-center justify-center shrink-0">
-                    <Database
-                      size={20}
-                      className="group-hover:scale-110 transition-transform"
-                    />
-                  </div>
-                  <div className="text-left flex-1 min-w-0">
-                    <div className="text-xs font-bold truncate">
-                      Login as Concierge
-                    </div>
-                    <div className="text-[10px] uppercase font-bold text-cyan-500/80 tracking-wider">
-                      DATA_ADMIN Role
-                    </div>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => handleRoleLogin("PLAYER", "Suphanat M.")}
-                  className="flex items-center gap-3 p-3 rounded-xl border border-lime-200 bg-lime-50 hover:bg-lime-100 text-lime-700 group transition-colors"
-                  title="Player Access"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-lime-100/50 flex items-center justify-center shrink-0">
-                    <User
-                      size={20}
-                      className="group-hover:scale-110 transition-transform"
-                    />
-                  </div>
-                  <div className="text-left flex-1 min-w-0">
-                    <div className="text-xs font-bold truncate">
-                      Login as Youth Player
-                    </div>
-                    <div className="text-[10px] uppercase font-bold text-lime-500/80 tracking-wider">
-                      PLAYER Role
-                    </div>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => handleRoleLogin("SUPERADMIN", "System Admin")}
-                  className="flex items-center gap-3 p-3 rounded-xl border border-violet-200 bg-violet-50 hover:bg-violet-100 text-violet-700 group transition-colors sm:col-span-2"
-                  title="System Access"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-violet-100/50 flex items-center justify-center shrink-0">
-                    <Shield
-                      size={20}
-                      className="group-hover:scale-110 transition-transform"
-                    />
-                  </div>
-                  <div className="text-left flex-1 min-w-0">
-                    <div className="text-xs font-bold truncate">
-                      Login as Superadmin
-                    </div>
-                    <div className="text-[10px] uppercase font-bold text-violet-400/80 tracking-wider">
-                      SUPERADMIN Role (Bypass all)
-                    </div>
-                  </div>
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>

@@ -13,6 +13,7 @@ export interface Drill {
     fieldType: string;
   };
   created_by: string;
+  created_by_name?: string;
   is_shared: boolean;
   duration?: string;
   description?: string;
@@ -24,16 +25,7 @@ export interface Drill {
   date?: string;
 }
 
-const MOCK_DRILLS: Drill[] = [
-  {
-    id: "d1",
-    title: "Rondo 4v2",
-    category: "Tactical",
-    canvas_data: { elements: [], lines: [], fieldType: "half" },
-    created_by: "unknown_user",
-    is_shared: true,
-  }
-];
+
 
 export function useDrillDatabase() {
   const [drills, setDrills] = useState<Drill[]>([]);
@@ -52,11 +44,12 @@ export function useDrillDatabase() {
     return () => unsubscribe();
   }, []);
 
-  const saveDrill = async (newDrill: Omit<Drill, 'id' | 'created_by'>) => {
+  const saveDrill = async (newDrill: Omit<Drill, 'id' | 'created_by' | 'created_by_name'>) => {
     try {
       const drillData = {
         ...newDrill,
         created_by: currentUserId,
+        created_by_name: currentUser?.name || 'Coach',
         createdAt: new Date().toISOString(),
       };
       await addDoc(collection(db, 'drills'), drillData);

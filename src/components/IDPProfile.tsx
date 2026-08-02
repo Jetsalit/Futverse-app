@@ -14,12 +14,7 @@ import {
   X,
 } from "lucide-react";
 
-const MOCK_DRILL_LIBRARY = [
-  { id: "d1", title: "1v1 Attacking Repetition", category: "Technical" },
-  { id: "d2", title: "High Press Activation", category: "Tactical" },
-  { id: "d3", title: "Sprint Repeatability (30m)", category: "Physical" },
-  { id: "d4", title: "Finishing Under Pressure", category: "Technical" },
-];
+const MOCK_DRILL_LIBRARY: any[] = [];
 
 export default function IDPProfile() {
   const [activeTab, setActiveTab] = useState<"overview" | "tasks">("overview");

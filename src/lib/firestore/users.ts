@@ -2,12 +2,15 @@ import { collection, doc, onSnapshot, updateDoc, getFirestore } from "firebase/f
 import { db } from "../firebase";
 
 export const subscribeToUsers = (callback: (users: any[]) => void) => {
-  // Mock data
-  callback([
-    { id: "1", name: "Super Admin", role: "SUPERADMIN" },
-    { id: "2", name: "Coach John", role: "COACH" }
-  ]);
-  return () => {}; // mock unsubscribe
+  const usersRef = collection(db, "users");
+  const unsubscribe = onSnapshot(usersRef, (snapshot) => {
+    const usersList = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+    callback(usersList);
+  });
+  return unsubscribe;
 };
 
 export const updateUserStatus = async (userId: string, status: string, additionalData?: any) => {

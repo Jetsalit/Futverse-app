@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useMemo, useEffect } from "react";
+import { ThaiDatePicker } from "./ThaiDatePicker";
 import {
   ChevronLeft,
   ChevronRight,
@@ -22,14 +23,22 @@ import {
   Share2,
   Edit2,
   Trash2,
+  FileText,
+  Info,
+  Zap,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { db } from "../lib/firebase";
-import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import { collection, onSnapshot, query, orderBy, doc, getDoc, setDoc, where, writeBatch, serverTimestamp } from "firebase/firestore";
 import { EmptyState } from "./common/EmptyState";
+import { useAcademy } from "../contexts/AcademyContext";
 import { useDrillDatabase } from "../hooks/useDrillDatabase";
+import MonthlyPeriodization from "./MonthlyPeriodization";
 
-type ThemeType = "Recovery" | "Physical" | "Tactical" | "Match" | null;
+type PeriodizationView = "Weekly" | "Monthly";
+
+
+type ThemeType = "Recovery" | "Physical" | "Technical" | "Technique" | "Tactical" | "Match" | null;
 type IntensityType = "Low" | "Medium" | "High" | null;
 
 interface Drill {
@@ -56,87 +65,17 @@ interface Player {
   lastName: string;
   position: string;
   avatar: string;
+  seasonHistory?: Record<string, { squad: string; active: boolean; jerseyNumber?: string }>;
 }
 
 const mockWeekData: TrainingDay[] = [
-  {
-    id: "1",
-    dayOfWeek: "Mon",
-    date: "Oct 14",
-    theme: "Recovery",
-    intensity: "Low",
-    objective: "Active recovery and mobility",
-    drills: [
-      { id: "d1", name: "Pool Session", duration: 30 },
-      { id: "d2", name: "Light Stretching", duration: 15 },
-    ],
-  },
-  {
-    id: "2",
-    dayOfWeek: "Tue",
-    date: "Oct 15",
-    theme: "Tactical",
-    intensity: "Medium",
-    objective: "Build-up play under pressure",
-    drills: [
-      { id: "d3", name: "Rondo 4v2", duration: 15 },
-      { id: "d4", name: "Phase of Play 8v6", duration: 30 },
-    ],
-  },
-  {
-    id: "3",
-    dayOfWeek: "Wed",
-    date: "Oct 16",
-    theme: "Physical",
-    intensity: "High",
-    objective: "Max aerobic speed & repeated sprints",
-    drills: [
-      { id: "d5", name: "15v15 Small Sided", duration: 25 },
-      { id: "d6", name: "Sprint Repeats", duration: 20 },
-    ],
-  },
-  {
-    id: "4",
-    dayOfWeek: "Thu",
-    date: "Oct 17",
-    theme: "Tactical",
-    intensity: "Medium",
-    objective: "Defensive organization in mid-block",
-    drills: [
-      { id: "d7", name: "Shadow Play", duration: 20 },
-      { id: "d8", name: "11v11 Walkthrough", duration: 40 },
-    ],
-  },
-  {
-    id: "5",
-    dayOfWeek: "Fri",
-    date: "Oct 18",
-    theme: "Recovery",
-    intensity: "Low",
-    objective: "Pre-match activation",
-    drills: [
-      { id: "d9", name: "Rondo", duration: 15 },
-      { id: "d10", name: "Set Pieces", duration: 20 },
-    ],
-  },
-  {
-    id: "6",
-    dayOfWeek: "Sat",
-    date: "Oct 19",
-    theme: "Match",
-    intensity: "High",
-    objective: "League Fixture vs Rivals FC",
-    drills: [],
-  },
-  {
-    id: "7",
-    dayOfWeek: "Sun",
-    date: "Oct 20",
-    theme: null,
-    intensity: null,
-    objective: "",
-    drills: [],
-  },
+  { id: "1", dayOfWeek: "Mon", date: "", theme: null, intensity: null, objective: "", drills: [] },
+  { id: "2", dayOfWeek: "Tue", date: "", theme: null, intensity: null, objective: "", drills: [] },
+  { id: "3", dayOfWeek: "Wed", date: "", theme: null, intensity: null, objective: "", drills: [] },
+  { id: "4", dayOfWeek: "Thu", date: "", theme: null, intensity: null, objective: "", drills: [] },
+  { id: "5", dayOfWeek: "Fri", date: "", theme: null, intensity: null, objective: "", drills: [] },
+  { id: "6", dayOfWeek: "Sat", date: "", theme: null, intensity: null, objective: "", drills: [] },
+  { id: "7", dayOfWeek: "Sun", date: "", theme: null, intensity: null, objective: "", drills: [] },
 ];
 
 const getThemeColor = (theme: ThemeType) => {
@@ -162,6 +101,14 @@ const getThemeColor = (theme: ThemeType) => {
         text: "text-sky-700",
         icon: <Target size={16} />,
       };
+    case "Technical":
+    case "Technique":
+      return {
+        bg: "bg-purple-50",
+        border: "border-purple-200",
+        text: "text-purple-700",
+        icon: <Zap size={16} />,
+      };
     case "Match":
       return {
         bg: "bg-amber-50",
@@ -177,6 +124,13 @@ const getThemeColor = (theme: ThemeType) => {
         icon: <Calendar size={16} />,
       };
   }
+};
+
+const formatDateToYYYYMMDD = (d: Date): string => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 };
 
 const getIntensityColor = (intensity: IntensityType) => {
@@ -249,18 +203,23 @@ const MOCK_PLAYERS: Player[] = [
 export default function WeeklyPeriodization({
   onBack,
   onNavigate,
+  defaultView,
 }: {
   onBack: () => void;
   onNavigate?: (page: string) => void;
+  defaultView?: string;
 }) {
-  const { hasPermission, currentUser } = useAuth();
-  const hasEditPermission = hasPermission(["ADMIN", "COACH"]);
+  const { currentUser, hasPermission } = useAuth();
+  const hasEditPermission = hasPermission(["ADMIN", "COACH", "SUPERADMIN"]);
+  const [activeView, setActiveView] = useState<PeriodizationView>("Weekly");
+  const { getAcademyCollection, academyId, settings, activeSeason } = useAcademy();
   const { myDrills, academyDrills, saveDrill, updateDrill, deleteDrill } = useDrillDatabase();
 
-  const [players, setPlayers] = useState<Player[]>(MOCK_PLAYERS);
-  const [loading, setLoading] = useState(false);
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [weekDays, setWeekDays] = useState<TrainingDay[]>(mockWeekData);
+  const [weekDays, setWeekDays] = useState<TrainingDay[]>([]);
+  const [weekStartStr, setWeekStartStr] = useState("");
   const [selectedDay, setSelectedDay] = useState<TrainingDay | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
@@ -323,20 +282,22 @@ export default function WeeklyPeriodization({
   };
 
   const handleRemoveSessionDrill = (dayId: string, drillId: string) => {
-    setWeekDays(prev => prev.map(d => {
+    const newDays = weekDays.map(d => {
       if (d.id === dayId) {
-        return { ...d, drills: d.drills.filter(drill => drill.id !== drillId) };
+        return { ...d, drills: (d.drills || []).filter((drill: any) => drill.id !== drillId) };
       }
       return d;
-    }));
+    });
+    setWeekDays(newDays);
+    saveWeekData(newDays, attendanceDB);
   };
 
   const handleSaveSessionDrill = (dayId: string, drillId: string) => {
-    setWeekDays(prev => prev.map(d => {
+    const newDays = weekDays.map(d => {
       if (d.id === dayId) {
         return {
           ...d,
-          drills: d.drills.map(drill => {
+          drills: (d.drills || []).map(drill => {
             if (drill.id === drillId) {
               return {
                 ...drill,
@@ -349,7 +310,9 @@ export default function WeeklyPeriodization({
         };
       }
       return d;
-    }));
+    });
+    setWeekDays(newDays);
+    saveWeekData(newDays, attendanceDB);
     setEditingSessionDrillId(null);
   };
 
@@ -363,9 +326,127 @@ export default function WeeklyPeriodization({
     objective: "",
   });
 
+  const saveWeekData = async (newDays: TrainingDay[], newAttendance: Record<string, Record<string, AttendanceStatus>>) => {
+    if (!academyId || !weekStartStr) return;
+    try {
+      const docRef = doc(getAcademyCollection("training_weeks"), `${weekStartStr}`);
+      await setDoc(docRef, {
+        academyId: academyId,
+        weekStartStr,
+        days: newDays,
+        attendanceDB: newAttendance,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (e) {
+      console.error("Error saving week data", e);
+    }
+  };
+
   useEffect(() => {
-    // Mock data
-  }, []);
+    if (!academyId) return;
+    
+    const playersRef = collection(db, "academies", academyId, "players");
+    const unsubscribe = onSnapshot(playersRef, (snapshot) => {
+      const playersData = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Player[];
+      
+      const filteredPlayers = playersData.filter(p => {
+        const isSeasonActive = p.seasonHistory?.[activeSeason]?.active 
+          || (!p.seasonHistory && activeSeason === (settings.currentSeason || "2026"));
+        return isSeasonActive;
+      });
+
+      console.log(`[WeeklyPeriodization] Fetched ${filteredPlayers.length} players for academy: ${academyId}`);
+      setPlayers(filteredPlayers);
+    });
+    
+    return () => unsubscribe();
+  }, [academyId, activeSeason, settings.currentSeason]);
+
+  useEffect(() => {
+    if (!academyId || !weekStartStr) {
+      setLoading(false);
+      return;
+    }
+    let isMounted = true;
+    const fetchWeekData = async () => {
+      setLoading(true);
+      try {
+        const docRef = doc(getAcademyCollection("training_weeks"), `${weekStartStr}`);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (isMounted) {
+            setWeekDays((data.days || [])
+              .filter((day: any) => ["1", "2", "3", "4", "5", "6", "7"].includes(day.id))
+              .map((day: any) => ({
+                ...day,
+                drills: day.drills || []
+              })));
+            setAttendanceDB(data.attendanceDB || {});
+          }
+        } else {
+          // Initialize empty week data
+          const monthsArr = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+          const daysArr = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+          const initialDays = mockWeekData.map((d, index) => {
+             const dateAtIdx = new Date(weekStartStr);
+             dateAtIdx.setDate(dateAtIdx.getDate() + index);
+             return {
+               ...d,
+               dayOfWeek: daysArr[dateAtIdx.getDay()],
+               date: `${monthsArr[dateAtIdx.getMonth()]} ${dateAtIdx.getDate()}`,
+               theme: null,
+               intensity: null,
+               objective: "",
+               drills: []
+             };
+          });
+          if (isMounted) {
+            setWeekDays(initialDays);
+            setAttendanceDB({});
+          }
+        }
+      } catch (e) {
+        console.error("Error fetching week data", e);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+    fetchWeekData();
+    return () => { isMounted = false; };
+  }, [academyId, weekStartStr]);
+
+  // Handle auto-opening attendance modal
+  useEffect(() => {
+    if (defaultView === "attendance" && weekDays.length > 0 && !loading) {
+      const today = new Date().toISOString().split("T")[0];
+      const todayDate = new Date(today);
+      const monthsArr = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      const formattedToday = `${monthsArr[todayDate.getMonth()]} ${todayDate.getDate()}`;
+      
+      const todayDay = weekDays.find(d => d.date === formattedToday);
+      if (todayDay && !isAttendanceModalOpen) {
+        setSelectedDay(todayDay);
+        let initial = { ...attendanceDB[todayDay.id] };
+        
+        // Auto initialize missing players
+        let hasChanges = false;
+        players.forEach((p) => {
+          if (!initial[p.id]) {
+            initial[p.id] = "Present";
+            hasChanges = true;
+          }
+        });
+        
+        setCurrentAttendance(initial);
+        setIsAttendanceModalOpen(true);
+      }
+    }
+  }, [defaultView, weekDays, loading, players, attendanceDB]);
+
 
   const handleDateChange = (dateString: string) => {
     if (!dateString) return;
@@ -403,29 +484,42 @@ export default function WeeklyPeriodization({
       `${monthsArr[startOfWeek.getMonth()]} ${startOfWeek.getDate()} - ${monthsArr[endOfWeek.getMonth()]} ${endOfWeek.getDate()}`,
     );
 
-    setWeekDays((prev) =>
-      prev.map((d, index) => {
+    const startStr = formatDateToYYYYMMDD(startOfWeek);
+    if (weekStartStr !== startStr) {
+      // Immediately create the 7 day cards so UI is never empty
+      const initialDays = mockWeekData.map((d, index) => {
         const dateAtIdx = new Date(startOfWeek);
         dateAtIdx.setDate(dateAtIdx.getDate() + index);
         return {
           ...d,
           dayOfWeek: daysArr[dateAtIdx.getDay()],
           date: `${monthsArr[dateAtIdx.getMonth()]} ${dateAtIdx.getDate()}`,
+          theme: null,
+          intensity: null,
+          objective: "",
+          drills: []
         };
-      }),
-    );
+      });
+      setWeekDays(initialDays);
+      setWeekStartStr(startStr);
+    }
   };
+
+  useEffect(() => {
+    const today = formatDateToYYYYMMDD(new Date());
+    handleDateChange(today);
+  }, []);
 
   const handlePrevWeek = () => {
     const current = new Date(currentDateStr);
     current.setDate(current.getDate() - 7);
-    handleDateChange(current.toISOString().split("T")[0]);
+    handleDateChange(formatDateToYYYYMMDD(current));
   };
 
   const handleNextWeek = () => {
     const current = new Date(currentDateStr);
     current.setDate(current.getDate() + 7);
-    handleDateChange(current.toISOString().split("T")[0]);
+    handleDateChange(formatDateToYYYYMMDD(current));
   };
 
   const openLibraryForDay = (dayId: string) => {
@@ -436,25 +530,26 @@ export default function WeeklyPeriodization({
 
   const handleAddDrill = (libDrill: any) => {
     if (!addingToDayId) return;
-    setWeekDays((prev) =>
-      prev.map((d) => {
-        if (d.id === addingToDayId) {
-          return {
-            ...d,
-            drills: [
-              ...d.drills,
-              {
-                id: Date.now().toString() + Math.random(),
-                name: libDrill.title || libDrill.name,
-                duration: parseInt(libDrill.duration) || 15,
-              },
-            ],
-          };
-        }
-        return d;
-      }),
-    );
-    const dayName = weekDays.find((d) => d.id === addingToDayId)?.dayOfWeek;
+    const newDays = weekDays.map((d) => {
+      if (d.id === addingToDayId) {
+        return {
+          ...d,
+          drills: [
+            ...(d.drills || []),
+            {
+              id: Date.now().toString() + Math.random(),
+              name: libDrill.title || libDrill.name,
+              duration: parseInt(libDrill.duration) || 15,
+            },
+          ],
+        };
+      }
+      return d;
+    });
+    setWeekDays(newDays);
+    saveWeekData(newDays, attendanceDB);
+    
+    const dayName = newDays.find((d) => d.id === addingToDayId)?.dayOfWeek;
     setToastMessage(`Added ${libDrill.title || libDrill.name} to ${dayName}`);
     setTimeout(() => setToastMessage(null), 3000);
     setIsLibraryOpen(false);
@@ -473,9 +568,9 @@ export default function WeeklyPeriodization({
 
   const handleSave = () => {
     if (selectedDay) {
-      setWeekDays((prev) =>
-        prev.map((d) => (d.id === selectedDay.id ? { ...d, ...editForm } : d)),
-      );
+      const newDays = weekDays.map((d) => (d.id === selectedDay.id ? { ...d, ...editForm } : d));
+      setWeekDays(newDays);
+      saveWeekData(newDays, attendanceDB);
     }
     setIsModalOpen(false);
     setSelectedDay(null);
@@ -491,12 +586,79 @@ export default function WeeklyPeriodization({
     setIsAttendanceModalOpen(true);
   };
 
-  const handleSaveAttendance = () => {
-    if (!hasEditPermission) return;
-    setAttendanceDB((prev) => ({
-      ...prev,
-      [selectedDay!.id]: currentAttendance,
-    }));
+  const handleSaveAttendance = async () => {
+    if (!hasEditPermission || !selectedDay || !academyId || !weekStartStr) return;
+    const newAttendanceDB = {
+      ...attendanceDB,
+      [selectedDay.id]: currentAttendance,
+    };
+    setAttendanceDB(newAttendanceDB);
+    saveWeekData(weekDays, newAttendanceDB);
+    
+    // Sync attendance to each player's attendance and daily_logs subcollections
+    try {
+      const dayIndex = weekDays.findIndex((d) => d.id === selectedDay.id);
+      const idx = dayIndex >= 0 ? dayIndex : 0;
+      
+      // Timezone-safe YYYY-MM-DD calculation using Date.UTC
+      const [year, month, day] = weekStartStr.split("-").map(Number);
+      const targetDateObj = new Date(Date.UTC(year, month - 1, day + idx));
+      const targetDateStr = targetDateObj.toISOString().split("T")[0];
+
+      const batch = writeBatch(db);
+
+      Object.entries(currentAttendance).forEach(([pId, status]) => {
+        if (!pId) return;
+
+        const normalizedStatus = 
+          status === "Present" ? "PRESENT" :
+          status === "Late" ? "LATE" :
+          status === "Sick" ? "SICK" :
+          status === "Injured" ? "INJURED" : "ABSENT";
+
+        // 1. Player Attendance subcollection
+        const attRef = doc(db, `academies/${academyId}/players/${pId}/attendance`, targetDateStr);
+        batch.set(
+          attRef,
+          {
+            status: normalizedStatus,
+            attendanceStatus: status,
+            date: targetDateStr,
+            dayOfWeek: selectedDay.dayOfWeek,
+            checkedInAt: serverTimestamp(),
+            checkedInBy: currentUser?.id || "COACH",
+            source: "PERIODIZATION",
+          },
+          { merge: true }
+        );
+
+        // 2. Player Training Log subcollection
+        const logRef = doc(db, `academies/${academyId}/players/${pId}/daily_logs`, targetDateStr);
+        batch.set(
+          logRef,
+          {
+            id: targetDateStr,
+            date: targetDateStr,
+            dayOfWeek: selectedDay.dayOfWeek,
+            theme: selectedDay.theme || "General Training",
+            intensity: selectedDay.intensity || "Medium",
+            objective: selectedDay.objective || "",
+            attendanceStatus: status,
+            isAttended: status === "Present" || status === "Late",
+            drillsCount: selectedDay.drills?.length || 0,
+            updatedAt: serverTimestamp(),
+            source: "PERIODIZATION",
+          },
+          { merge: true }
+        );
+      });
+
+      await batch.commit();
+      console.log(`[WeeklyPeriodization] Successfully synced attendance & training logs for date: ${targetDateStr}`);
+    } catch (err) {
+      console.error("Error syncing attendance to player logs:", err);
+    }
+
     setIsAttendanceModalOpen(false);
     setToastMessage(
       `บันทึกการเช็กชื่อของวัน ${selectedDay?.dayOfWeek} เรียบร้อยแล้ว`,
@@ -534,38 +696,9 @@ export default function WeeklyPeriodization({
     );
   }
 
-  if (players.length === 0) {
-    return (
-      <div className="h-full w-full flex flex-col p-4 md:p-6 bg-slate-50">
-        <div className="flex items-center gap-4 mb-6">
-          <button
-            onClick={onBack}
-            className="p-2 rounded-full hover:bg-slate-200 bg-white shadow-sm text-slate-600 transition-colors"
-          >
-            <ChevronLeft size={24} />
-          </button>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
-              <Activity className="text-indigo-600" /> Weekly Periodization
-            </h1>
-            <p className="text-sm text-slate-500 font-medium mt-1">
-              Plan and monitor training load across the week
-            </p>
-          </div>
-        </div>
-        <EmptyState
-          icon={Users}
-          title="No Players Found"
-          description="You need to add players to your academy before you can track attendance for weekly periodizations."
-          primaryActionLabel="Go Back"
-          onPrimaryAction={onBack}
-        />
-      </div>
-    );
-  }
 
   return (
-    <div className="w-full flex-1 flex flex-col bg-slate-50 h-[calc(100vh-4rem)] p-4 md:p-6 overflow-hidden relative">
+    <div className="w-full flex-1 flex flex-col bg-slate-50 lg:h-[calc(100vh-4rem)] p-4 md:p-6 overflow-y-auto lg:overflow-hidden relative pb-24">
       {/* Toast Notification */}
       {toastMessage && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-4 py-3 rounded-xl shadow-xl z-50 flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-300 pointer-events-none">
@@ -575,7 +708,7 @@ export default function WeeklyPeriodization({
       )}
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 shrink-0 gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 shrink-0 gap-4">
         <div>
           <button
             onClick={onBack}
@@ -583,16 +716,32 @@ export default function WeeklyPeriodization({
           >
             <ChevronLeft size={16} /> Back
           </button>
-          <h1 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
-            <Activity className="text-indigo-600" /> Weekly Periodization
-            (Microcycle)
-          </h1>
+          <div className="flex items-center gap-4">
+            <h1 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+              <Activity className="text-indigo-600" /> 
+              {activeView === "Weekly" ? "Weekly Periodization (Microcycle)" : "Monthly Periodization (Mesocycle)"}
+            </h1>
+            <div className="hidden sm:flex bg-slate-200/50 p-1 rounded-xl">
+              <button 
+                onClick={() => setActiveView("Weekly")}
+                className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${activeView === "Weekly" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+              >
+                Weekly
+              </button>
+              <button 
+                onClick={() => setActiveView("Monthly")}
+                className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${activeView === "Monthly" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+              >
+                Monthly
+              </button>
+            </div>
+          </div>
           <p className="text-sm text-slate-500 font-medium">
-            Plan and monitor training load across the week
+            {activeView === "Weekly" ? "Plan and monitor training load across the week" : "Plan and monitor training phases across the month"}
           </p>
         </div>
 
-        <div className="flex items-center gap-2 bg-white p-2 rounded-xl shadow-sm border border-slate-200 w-full sm:w-auto justify-between sm:justify-start">
+        <div className="flex items-center gap-2 bg-white p-2 rounded-xl shadow-sm border border-slate-200 w-full md:w-auto justify-between md:justify-start">
           <button
             onClick={handlePrevWeek}
             className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-600 transition-colors"
@@ -601,8 +750,7 @@ export default function WeeklyPeriodization({
           </button>
           <label className="text-sm font-bold text-slate-800 w-36 text-center cursor-pointer hover:bg-indigo-50 hover:text-indigo-600 rounded-lg py-1.5 relative transition-colors">
             {weekDateRange}
-            <input
-              type="date"
+            <ThaiDatePicker
               value={currentDateStr}
               onChange={(e) => handleDateChange(e.target.value)}
               className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
@@ -617,12 +765,13 @@ export default function WeeklyPeriodization({
         </div>
       </div>
 
-      {/* Grid Layout */}
-      <div className="flex-1 overflow-y-auto sm:overflow-x-auto hide-scrollbar">
+      {/* Grid Layout or Monthly View */}
+      {activeView === "Weekly" ? (
+      <div className="flex-1 overflow-auto pb-2">
         <div className="flex flex-col xl:flex-row gap-4 h-full xl:min-w-fit pr-1 pb-4">
           {weekDays.map((day) => {
             const themeSettings = getThemeColor(day.theme);
-            const isRestDay = !day.theme && day.drills.length === 0;
+            const isRestDay = !day.theme && (day.drills || []).length === 0;
 
             return (
               <div
@@ -720,7 +869,7 @@ export default function WeeklyPeriodization({
 
                     {/* Drills Preview */}
                     <div className="mt-auto space-y-1.5 pt-2">
-                      {day.drills.map((drill, idx) => (
+                      {(day.drills || []).map((drill: any, idx: number) => (
                         <div
                           key={drill.id}
                           className="text-xs font-bold text-slate-700 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100 flex justify-between items-center"
@@ -746,12 +895,12 @@ export default function WeeklyPeriodization({
                           <Plus size={14} /> Add Drill
                         </button>
                       )}
-                      {day.drills.length > 0 && (
+                      {(day.drills || []).length > 0 && (
                         <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pt-1.5 border-t border-slate-100 flex justify-between items-center mt-1">
                           <span>Total Session</span>
                           <span className="text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full">
-                            {day.drills.reduce(
-                              (sum, d) => sum + (d.duration || 0),
+                            {(day.drills || []).reduce(
+                              (sum: number, d: any) => sum + (d.duration || 0),
                               0,
                             )}{" "}
                             MIN
@@ -776,7 +925,7 @@ export default function WeeklyPeriodization({
                             </div>
                           </div>
                         </div>
-                        {onNavigate && (
+                        {onNavigate && hasEditPermission && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -851,6 +1000,9 @@ export default function WeeklyPeriodization({
           })}
         </div>
       </div>
+      ) : (
+        <MonthlyPeriodization />
+      )}
 
       {/* Edit Modal */}
       {isModalOpen && selectedDay && !isAttendanceModalOpen && (
@@ -879,11 +1031,12 @@ export default function WeeklyPeriodization({
                   <label className="block text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">
                     Theme / Focus
                   </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
                     {(
                       [
                         "Recovery",
                         "Physical",
+                        "Technique",
                         "Tactical",
                         "Match",
                       ] as ThemeType[]
@@ -893,20 +1046,23 @@ export default function WeeklyPeriodization({
                         onClick={() =>
                           setEditForm((prev) => ({ ...prev, theme: t }))
                         }
-                        className={`py-2 px-1 rounded-xl text-xs font-bold border-2 transition-all flex flex-col items-center justify-center gap-1 ${
+                        className={`py-2 px-1 rounded-xl text-[11px] sm:text-xs font-bold border-2 transition-all flex flex-col items-center justify-center gap-1 ${
                           editForm.theme === t
                             ? t === "Recovery"
                               ? "border-emerald-500 bg-emerald-50 text-emerald-700"
                               : t === "Physical"
                                 ? "border-rose-500 bg-rose-50 text-rose-700"
-                                : t === "Tactical"
-                                  ? "border-sky-500 bg-sky-50 text-sky-700"
-                                  : "border-amber-500 bg-amber-50 text-amber-700"
+                                : t === "Technique" || t === "Technical"
+                                  ? "border-purple-500 bg-purple-50 text-purple-700"
+                                  : t === "Tactical"
+                                    ? "border-sky-500 bg-sky-50 text-sky-700"
+                                    : "border-amber-500 bg-amber-50 text-amber-700"
                             : "border-slate-100 bg-slate-50 text-slate-500 hover:border-slate-200"
                         }`}
                       >
                         {t === "Recovery" && <Droplets size={16} />}
                         {t === "Physical" && <Dumbbell size={16} />}
+                        {(t === "Technique" || t === "Technical") && <Zap size={16} />}
                         {t === "Tactical" && <Target size={16} />}
                         {t === "Match" && <Trophy size={16} />}
                         {t}
@@ -967,15 +1123,14 @@ export default function WeeklyPeriodization({
                       Session Drills
                     </label>
                     <span className="text-[10px] text-slate-400 font-bold bg-slate-100 px-2 py-0.5 rounded-md">
-                      {weekDays.find((d) => d.id === selectedDay.id)?.drills
-                        .length || 0}{" "}
+                      {(weekDays.find((d) => d.id === selectedDay.id)?.drills || []).length || 0}{" "}
                       Drills
                     </span>
                   </div>
                   <div className="space-y-2 mb-3 max-h-[150px] overflow-y-auto pr-1">
-                    {weekDays
+                    {(weekDays
                       .find((d) => d.id === selectedDay.id)
-                      ?.drills.map((drill, idx) => (
+                      ?.drills || []).map((drill, idx) => (
                         <div
                           key={drill.id}
                           className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl p-2.5 group"
@@ -1038,7 +1193,7 @@ export default function WeeklyPeriodization({
                           )}
                         </div>
                       ))}
-                    {weekDays.find((d) => d.id === selectedDay.id)?.drills
+                    {(weekDays.find((d) => d.id === selectedDay.id)?.drills || [])
                       .length === 0 && (
                       <div className="text-sm text-slate-400 text-center py-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl font-medium">
                         No drills scheduled
@@ -1112,7 +1267,7 @@ export default function WeeklyPeriodization({
               <div>
                 <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
                   <Calendar size={20} className="text-emerald-600" />
-                  Attendance Checklist
+                  Attendance Checklist ({players.length} players)
                 </h3>
                 <p className="text-xs text-slate-500 font-medium mt-0.5">
                   {selectedDay.dayOfWeek}, {selectedDay.date}
@@ -1163,7 +1318,7 @@ export default function WeeklyPeriodization({
                           />
                         ) : (
                           <span className="text-slate-400 font-bold">
-                            {player.firstName[0]}
+                            {player.firstName ? player.firstName[0] : "?"}
                           </span>
                         )}
                       </div>
@@ -1180,10 +1335,12 @@ export default function WeeklyPeriodization({
                     <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
                       <button
                         onClick={() =>
-                          setCurrentAttendance((prev) => ({
-                            ...prev,
-                            [player.id]: "Present",
-                          }))
+                          setCurrentAttendance((prev) => {
+                            const newAtt = { ...prev };
+                            if (newAtt[player.id] === "Present") delete newAtt[player.id];
+                            else newAtt[player.id] = "Present";
+                            return newAtt;
+                          })
                         }
                         className={`flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-xl border transition-all ${
                           status === "Present"
@@ -1198,10 +1355,12 @@ export default function WeeklyPeriodization({
                       </button>
                       <button
                         onClick={() =>
-                          setCurrentAttendance((prev) => ({
-                            ...prev,
-                            [player.id]: "Late",
-                          }))
+                          setCurrentAttendance((prev) => {
+                            const newAtt = { ...prev };
+                            if (newAtt[player.id] === "Late") delete newAtt[player.id];
+                            else newAtt[player.id] = "Late";
+                            return newAtt;
+                          })
                         }
                         className={`flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-xl border transition-all ${
                           status === "Late"
@@ -1216,10 +1375,12 @@ export default function WeeklyPeriodization({
                       </button>
                       <button
                         onClick={() =>
-                          setCurrentAttendance((prev) => ({
-                            ...prev,
-                            [player.id]: "Absent",
-                          }))
+                          setCurrentAttendance((prev) => {
+                            const newAtt = { ...prev };
+                            if (newAtt[player.id] === "Absent") delete newAtt[player.id];
+                            else newAtt[player.id] = "Absent";
+                            return newAtt;
+                          })
                         }
                         className={`flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-xl border transition-all ${
                           status === "Absent"
@@ -1234,10 +1395,12 @@ export default function WeeklyPeriodization({
                       </button>
                       <button
                         onClick={() =>
-                          setCurrentAttendance((prev) => ({
-                            ...prev,
-                            [player.id]: "Sick",
-                          }))
+                          setCurrentAttendance((prev) => {
+                            const newAtt = { ...prev };
+                            if (newAtt[player.id] === "Sick") delete newAtt[player.id];
+                            else newAtt[player.id] = "Sick";
+                            return newAtt;
+                          })
                         }
                         className={`flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-xl border transition-all ${
                           status === "Sick"
@@ -1252,10 +1415,12 @@ export default function WeeklyPeriodization({
                       </button>
                       <button
                         onClick={() =>
-                          setCurrentAttendance((prev) => ({
-                            ...prev,
-                            [player.id]: "Injured",
-                          }))
+                          setCurrentAttendance((prev) => {
+                            const newAtt = { ...prev };
+                            if (newAtt[player.id] === "Injured") delete newAtt[player.id];
+                            else newAtt[player.id] = "Injured";
+                            return newAtt;
+                          })
                         }
                         className={`flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-xl border transition-all ${
                           status === "Injured"

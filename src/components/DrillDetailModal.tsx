@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   X,
   Clock,
@@ -10,8 +10,13 @@ import {
   LayoutGrid,
   Users,
   FileText,
+  Brain,
 } from "lucide-react";
 import { Drill } from "../hooks/useDrillDatabase";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../lib/firebase";
+import { useAuth } from "../contexts/AuthContext";
+import CoachingQuestionsModal from "./CoachingQuestionsModal";
 
 interface DrillDetailModalProps {
   drill: Drill;
@@ -31,6 +36,58 @@ export default function DrillDetailModal({
   onDelete,
 }: DrillDetailModalProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showCoachingAssistant, setShowCoachingAssistant] = useState(false);
+  const { currentUser: authUser } = useAuth();
+  const [creatorName, setCreatorName] = useState<string>("");
+
+  useEffect(() => {
+    let active = true;
+    async function fetchCreatorName() {
+      if (!drill.created_by) {
+        setCreatorName("-");
+        return;
+      }
+      
+      // If it matches the current logged in user, use their name directly
+      if (drill.created_by === authUser?.id) {
+        setCreatorName(authUser.name);
+        return;
+      }
+
+      // If drill has pre-saved created_by_name, use it
+      if (drill.created_by_name) {
+        setCreatorName(drill.created_by_name);
+        return;
+      }
+
+      // Check if drill.created_by is a Firebase UID (28 characters, alphanumeric)
+      const isUid = /^[a-zA-Z0-9]{28}$/.test(drill.created_by);
+      if (!isUid) {
+        setCreatorName(drill.created_by);
+        return;
+      }
+
+      try {
+        const userDoc = await getDoc(doc(db, "users", drill.created_by));
+        if (userDoc.exists() && active) {
+          const userData = userDoc.data();
+          setCreatorName(userData.name || "โค้ช");
+        } else if (active) {
+          setCreatorName("ไม่พบชื่อโค้ช");
+        }
+      } catch (err) {
+        console.error("Error fetching creator name:", err);
+        if (active) setCreatorName("ไม่พบชื่อโค้ช");
+      }
+    }
+
+    if (isOpen) {
+      fetchCreatorName();
+    }
+    return () => {
+      active = false;
+    };
+  }, [drill.created_by, drill.created_by_name, authUser, isOpen]);
 
   if (!isOpen) return null;
 
@@ -45,7 +102,16 @@ export default function DrillDetailModal({
       {/* Modal panel */}
       <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-full animate-in zoom-in-95 duration-200">
         {/* Actions Bar & Close Button */}
-        <div className="absolute top-4 right-4 flex items-center gap-2 z-10 bg-white/80 backdrop-blur-sm px-2 py-1.5 rounded-full border border-slate-100 shadow-sm">
+        <div className="absolute top-4 right-4 flex items-center gap-2 z-10 bg-white/90 backdrop-blur-md px-2.5 py-1.5 rounded-full border border-slate-200/80 shadow-md">
+          <button
+            onClick={() => setShowCoachingAssistant(true)}
+            className="px-3.5 py-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-full transition-all text-xs font-black shadow-sm flex items-center gap-1.5 cursor-pointer"
+            title="ผู้ช่วยเตรียมคำถามการสอนตามจังหวะในสนาม"
+          >
+            <Brain size={14} className="text-yellow-300 animate-pulse" />
+            <span>🧠 Coaching Questions</span>
+          </button>
+          <div className="w-px h-4 bg-slate-200"></div>
           {currentUser === drill.created_by && (
             <>
               <button
@@ -127,8 +193,8 @@ export default function DrillDetailModal({
                 <FileText size={16} />
                 <span className="text-xs font-bold">โค้ชผู้ฝึกสอน</span>
               </div>
-              <div className="font-medium text-slate-800 text-sm">
-                {drill.created_by}
+              <div className="font-medium text-slate-800 text-sm break-all">
+                {creatorName || "กำลังโหลด..."}
               </div>
             </div>
             <div>
@@ -267,6 +333,14 @@ export default function DrillDetailModal({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Coaching Questions Assistant Modal */}
+      {showCoachingAssistant && (
+        <CoachingQuestionsModal
+          drill={drill}
+          onClose={() => setShowCoachingAssistant(false)}
+        />
       )}
     </div>
   );

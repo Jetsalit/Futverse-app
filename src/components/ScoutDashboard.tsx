@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../contexts/AuthContext";
+import { useAcademy } from "../contexts/AcademyContext";
 import {
   Search,
   ArrowLeft,
@@ -53,13 +54,14 @@ interface ScoutPlayer {
 
 export default function ScoutDashboard({ onBack }: { onBack: () => void }) {
   const { hasPermission } = useAuth();
+  const { getAcademyCollection } = useAcademy();
   const canEdit = hasPermission(["SUPERADMIN"]) || hasPermission(["ADMIN"]);
   
   const [players, setPlayers] = useState<ScoutPlayer[]>([]);
   const [editingPlayer, setEditingPlayer] = useState<ScoutPlayer | null>(null);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "scoutPlayers"), (snapshot) => {
+    const unsub = onSnapshot(getAcademyCollection("scoutPlayers"), (snapshot) => {
       const data = snapshot.docs.map(doc => {
         const d = doc.data();
         return { 
@@ -337,7 +339,7 @@ export default function ScoutDashboard({ onBack }: { onBack: () => void }) {
                     }}
                     onDelete={async () => {
                       if (confirm("Are you sure you want to delete this player?")) {
-                        await deleteDoc(doc(db, "scoutPlayers", player.id));
+                        await deleteDoc(doc(getAcademyCollection("scoutPlayers"), player.id));
                       }
                     }}
                   />
@@ -359,9 +361,9 @@ export default function ScoutDashboard({ onBack }: { onBack: () => void }) {
           onSave={async (p) => {
             try {
               if (editingPlayer && editingPlayer.id) {
-                await updateDoc(doc(db, "scoutPlayers", editingPlayer.id), p as any);
+                await updateDoc(doc(getAcademyCollection("scoutPlayers"), editingPlayer.id), p as any);
               } else {
-                await addDoc(collection(db, "scoutPlayers"), {
+                await addDoc(getAcademyCollection("scoutPlayers"), {
                   ...p,
                   status: p.status || "Pending",
                   grade: p.grade || "C",

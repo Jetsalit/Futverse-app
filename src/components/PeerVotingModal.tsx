@@ -1,37 +1,75 @@
-import React, { useState } from "react";
-import { X, Star, Shield, Zap, ChevronDown, CheckCircle2 } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { X, Star, Shield, Zap, CheckCircle2, Target, Users, Sparkles, ChevronRight, Trophy } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { motion, AnimatePresence } from "motion/react";
 
 interface PeerVotingModalProps {
   isOpen: boolean;
   onClose: () => void;
   teammates: { id: string; name: string; avatar: string; position: string }[];
+  onSubmitVote: (votes: { playerId: string; badgeId: string }[]) => Promise<void>;
 }
 
 const BADGES = [
   {
     id: "mvp",
-    name: "MVP (นักเตะยอดเยี่ยม)",
+    name: "Match MVP",
+    desc: "โดดเด่นที่สุดในเกม",
     icon: Star,
     color: "text-yellow-500",
     bg: "bg-yellow-50",
     border: "border-yellow-200",
+    glow: "shadow-[0_0_15px_rgba(234,179,8,0.5)]",
   },
   {
     id: "defender",
-    name: "เกมรับยอดเยี่ยม",
+    name: "The Wall",
+    desc: "เกมรับดั่งกำแพงเหล็ก",
     icon: Shield,
     color: "text-blue-500",
     bg: "bg-blue-50",
     border: "border-blue-200",
+    glow: "shadow-[0_0_15px_rgba(59,130,246,0.5)]",
   },
   {
-    id: "hardworker",
-    name: "จอมขยัน",
+    id: "playmaker",
+    name: "Playmaker",
+    desc: "จอมสร้างโอกาส",
+    icon: Sparkles,
+    color: "text-purple-500",
+    bg: "bg-purple-50",
+    border: "border-purple-200",
+    glow: "shadow-[0_0_15px_rgba(168,85,247,0.5)]",
+  },
+  {
+    id: "flash",
+    name: "The Flash",
+    desc: "สปีดไม่มีตก",
     icon: Zap,
-    color: "text-amber-600",
+    color: "text-amber-500",
     bg: "bg-amber-50",
     border: "border-amber-200",
+    glow: "shadow-[0_0_15px_rgba(245,158,11,0.5)]",
+  },
+  {
+    id: "spirit",
+    name: "Team Spirit",
+    desc: "ทัศนคติยอดเยี่ยม",
+    icon: Users,
+    color: "text-emerald-500",
+    bg: "bg-emerald-50",
+    border: "border-emerald-200",
+    glow: "shadow-[0_0_15px_rgba(16,185,129,0.5)]",
+  },
+  {
+    id: "sniper",
+    name: "The Sniper",
+    desc: "ยิงคมดั่งจับวาง",
+    icon: Target,
+    color: "text-rose-500",
+    bg: "bg-rose-50",
+    border: "border-rose-200",
+    glow: "shadow-[0_0_15px_rgba(244,63,94,0.5)]",
   },
 ];
 
@@ -39,195 +77,284 @@ export default function PeerVotingModal({
   isOpen,
   onClose,
   teammates,
+  onSubmitVote,
 }: PeerVotingModalProps) {
   const { currentUser } = useAuth();
-  const [selectedPlayer, setSelectedPlayer] = useState<string>("");
-  const [selectedBadge, setSelectedBadge] = useState<string>("");
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [isSubmitted, setIsSubmitted] = useState(false);
-  const [hasVoted, setHasVoted] = useState(false); // Simulate voting 1 time per match
+  
+  // Voting state
+  const [votes, setVotes] = useState<{ playerId: string; badgeId: string }[]>([]);
+  const [step, setStep] = useState<"SELECT_BADGE" | "SELECT_PLAYER" | "ANIMATING" | "SUBMITTED">("SELECT_BADGE");
+  const [currentBadge, setCurrentBadge] = useState<string | null>(null);
+  const [currentPlayer, setCurrentPlayer] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Filter out the current user and players who already received a vote
+  const availableTeammates = teammates.filter(
+    (t) => t.name !== currentUser?.name && !votes.some(v => v.playerId === t.id)
+  );
+
+  // Available badges to pick from (can't pick the same badge twice)
+  const availableBadges = BADGES.filter(b => !votes.some(v => v.badgeId === b.id));
+
+  // Reset state when opened
+  useEffect(() => {
+    if (isOpen) {
+      setVotes([]);
+      setStep("SELECT_BADGE");
+      setCurrentBadge(null);
+      setCurrentPlayer(null);
+      setIsSubmitting(false);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
-  // Filter out the current user (using name matching as mock)
-  const availableTeammates = teammates.filter(
-    (t) => t.name !== currentUser?.name,
-  );
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedPlayer || !selectedBadge || hasVoted) return;
-    setIsSubmitted(true);
-    setHasVoted(true);
-    setTimeout(() => {
-      onClose();
-      setIsSubmitted(false);
-      setSelectedPlayer("");
-      setSelectedBadge("");
-    }, 2000);
+  const handleSelectBadge = (badgeId: string) => {
+    setCurrentBadge(badgeId);
+    setStep("SELECT_PLAYER");
   };
 
-  const selectedPlayerData = availableTeammates.find(
-    (t) => t.id === selectedPlayer,
-  );
+  const handleSelectPlayer = (playerId: string) => {
+    if (!currentBadge) return;
+    setCurrentPlayer(playerId);
+    setStep("ANIMATING");
+    
+    // Simulate animation delay before finalizing the vote
+    setTimeout(() => {
+      setVotes(prev => [...prev, { playerId, badgeId: currentBadge }]);
+      setCurrentBadge(null);
+      setCurrentPlayer(null);
+      if (votes.length >= 2 || availableTeammates.length <= 1) {
+        // Max 3 votes or ran out of players
+        submitAllVotes([...votes, { playerId, badgeId: currentBadge }]);
+      } else {
+        setStep("SELECT_BADGE");
+      }
+    }, 1500);
+  };
+
+  const submitAllVotes = async (finalVotes = votes) => {
+    if (finalVotes.length === 0) return;
+    setIsSubmitting(true);
+    try {
+      await onSubmitVote(finalVotes);
+      setStep("SUBMITTED");
+      setTimeout(() => {
+        onClose();
+      }, 3000);
+    } catch (error) {
+      console.error("Voting error", error);
+      alert("เกิดข้อผิดพลาดในการส่งผลโหวต");
+      setIsSubmitting(false);
+    }
+  };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
-        <div className="relative h-32 bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-center">
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 text-white/70 hover:text-white bg-black/10 hover:bg-black/20 p-2 rounded-full transition-colors"
-          >
-            <X size={20} />
-          </button>
-          <div className="text-center text-white p-6">
-            <h2 className="text-xl font-black tracking-tight drop-shadow-md">
-              โหวตนักเตะยอดเยี่ยมประจำแมตช์
-            </h2>
-            <p className="text-sm font-medium text-white/80 mt-1">
-              Teammate Endorsement
-            </p>
-          </div>
-        </div>
-
-        {isSubmitted ? (
-          <div className="p-8 flex flex-col items-center justify-center text-center">
-            <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-6">
-              <CheckCircle2 size={40} />
-            </div>
-            <h3 className="text-2xl font-black text-slate-800 mb-2">
-              โหวตสำเร็จ!
-            </h3>
-            <p className="text-slate-500 font-medium">
-              ขอบคุณที่ร่วมโหวตให้เพื่อนร่วมทีมของคุณ
-            </p>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="p-6 md:p-8 space-y-6">
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">
-                  1. เลือกเพื่อนร่วมทีมที่โดดเด่น
-                </label>
-                <div className="relative">
-                  <div
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-center justify-between cursor-pointer hover:border-indigo-400 transition-colors"
-                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                  >
-                    {selectedPlayerData ? (
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={selectedPlayerData.avatar}
-                          alt={selectedPlayerData.name}
-                          className="w-8 h-8 rounded-full bg-slate-200"
-                        />
-                        <div>
-                          <div className="font-bold text-slate-800 leading-none">
-                            {selectedPlayerData.name}
-                          </div>
-                          <div className="text-xs text-slate-500 mt-1">
-                            {selectedPlayerData.position}
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <span className="text-slate-400 font-medium">
-                        -- เลือกผู้เล่นรายบุคคล --
-                      </span>
-                    )}
-                    <ChevronDown
-                      size={20}
-                      className={`text-slate-400 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`}
-                    />
-                  </div>
-
-                  {isDropdownOpen && (
-                    <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-100 rounded-2xl shadow-xl overflow-hidden z-10 max-h-60 overflow-y-auto">
-                      {availableTeammates.map((player) => (
-                        <div
-                          key={player.id}
-                          className={`p-3 flex items-center gap-3 hover:bg-indigo-50 cursor-pointer transition-colors border-b border-slate-50 last:border-0 ${selectedPlayer === player.id ? "bg-indigo-50" : ""}`}
-                          onClick={() => {
-                            setSelectedPlayer(player.id);
-                            setIsDropdownOpen(false);
-                          }}
-                        >
-                          <img
-                            src={player.avatar}
-                            alt={player.name}
-                            className="w-8 h-8 rounded-full bg-slate-200"
-                          />
-                          <div>
-                            <div className="font-bold text-slate-800 text-sm leading-none">
-                              {player.name}
-                            </div>
-                            <div className="text-[10px] text-slate-500 uppercase font-bold mt-1 tracking-wider">
-                              {player.position}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-slate-900/95 backdrop-blur-md z-50 flex flex-col"
+        >
+          {/* Header */}
+          <div className="p-6 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-indigo-500/20 rounded-xl flex items-center justify-center">
+                <Trophy className="text-indigo-400" size={24} />
               </div>
+              <div>
+                <h2 className="text-white font-black text-xl leading-none">Matchday Awards</h2>
+                <p className="text-slate-400 text-sm mt-1">โหวตให้เพื่อนร่วมทีม ({votes.length}/3)</p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="w-10 h-10 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center text-white transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
 
-              <div
-                className={`transition-all duration-300 ${selectedPlayer ? "opacity-100 translate-y-0" : "opacity-50 pointer-events-none translate-y-2"}`}
+          {/* Main Content Area */}
+          <div className="flex-1 flex flex-col items-center justify-center p-6 max-w-4xl mx-auto w-full overflow-y-auto">
+            
+            {step === "SELECT_BADGE" && (
+              <motion.div 
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                className="w-full text-center py-8"
               >
-                <label className="block text-sm font-bold text-slate-700 mb-3">
-                  2. เลือกเหรียญตราที่เมหาะสม
-                </label>
-                <div className="grid grid-cols-1 gap-3">
-                  {BADGES.map((badge) => (
-                    <label
+                <h3 className="text-3xl font-black text-white mb-2">เลือกรางวัลที่จะมอบให้</h3>
+                <p className="text-slate-400 mb-8">คุณสามารถมอบรางวัลให้เพื่อนได้อีก {3 - votes.length} รางวัล</p>
+                
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {availableBadges.map(badge => (
+                    <motion.button
                       key={badge.id}
-                      className={`flex items-center gap-4 p-4 rounded-2xl border-2 cursor-pointer transition-all ${
-                        selectedBadge === badge.id
-                          ? `border-indigo-600 bg-indigo-50 shadow-sm`
-                          : "border-slate-100 hover:border-indigo-200 hover:bg-slate-50"
-                      }`}
+                      whileHover={{ scale: 1.02, y: -2 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => handleSelectBadge(badge.id)}
+                      className={`relative p-6 rounded-3xl border border-slate-700 bg-slate-800/50 hover:bg-slate-800 flex flex-col items-center gap-4 transition-all group`}
                     >
-                      <input
-                        type="radio"
-                        name="badge"
-                        value={badge.id}
-                        checked={selectedBadge === badge.id}
-                        onChange={() => setSelectedBadge(badge.id)}
-                        className="sr-only"
-                      />
-                      <div
-                        className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${badge.bg} ${badge.color}`}
-                      >
-                        <badge.icon size={24} />
+                      <div className={`w-20 h-20 rounded-full flex items-center justify-center ${badge.bg} ${badge.color} group-hover:${badge.glow} transition-shadow duration-300`}>
+                        <badge.icon size={40} />
                       </div>
-                      <div className="flex-1 font-bold text-slate-800">
-                        {badge.name}
+                      <div>
+                        <div className="font-bold text-white text-lg">{badge.name}</div>
+                        <div className="text-sm text-slate-400">{badge.desc}</div>
                       </div>
-                      <div
-                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedBadge === badge.id ? "border-indigo-600" : "border-slate-300"}`}
-                      >
-                        {selectedBadge === badge.id && (
-                          <div className="w-2.5 h-2.5 bg-indigo-600 rounded-full"></div>
-                        )}
-                      </div>
-                    </label>
+                    </motion.button>
                   ))}
                 </div>
-              </div>
-            </div>
+                
+                {votes.length > 0 && (
+                  <div className="mt-12">
+                    <button 
+                      onClick={() => submitAllVotes()}
+                      className="px-8 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full font-bold text-lg shadow-lg shadow-indigo-600/20 transition-all flex items-center gap-2 mx-auto"
+                    >
+                      พอแค่นี้ ยืนยันผลโหวตเลย <ChevronRight size={20} />
+                    </button>
+                  </div>
+                )}
+              </motion.div>
+            )}
 
-            <button
-              type="submit"
-              disabled={!selectedPlayer || !selectedBadge}
-              className="w-full py-4 bg-slate-900 border-2 border-slate-900 text-white rounded-2xl font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-indigo-600 hover:border-indigo-600 transition-colors shadow-xl shadow-slate-900/10"
-            >
-              ส่งผลโหวต
-            </button>
-          </form>
-        )}
-      </div>
-    </div>
+            {step === "SELECT_PLAYER" && currentBadge && (
+              <motion.div 
+                initial={{ x: 20, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                className="w-full text-center py-8"
+              >
+                {/* Selected Badge Preview */}
+                <div className="flex flex-col items-center mb-8">
+                  <span className="text-slate-400 font-medium mb-3">คุณกำลังมอบรางวัล</span>
+                  {BADGES.filter(b => b.id === currentBadge).map(badge => (
+                    <div key={badge.id} className="flex items-center gap-3">
+                      <div className={`w-16 h-16 rounded-full flex items-center justify-center ${badge.bg} ${badge.color} ${badge.glow}`}>
+                        <badge.icon size={32} />
+                      </div>
+                      <div className="text-left">
+                        <div className="font-bold text-white text-2xl">{badge.name}</div>
+                        <div className={`text-md ${badge.color}`}>{badge.desc}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <h3 className="text-2xl font-black text-white mb-6">เลือกเพื่อนร่วมทีม</h3>
+                
+                <div className="flex flex-wrap justify-center gap-4 max-w-3xl mx-auto">
+                  {availableTeammates.map(player => (
+                    <motion.button
+                      key={player.id}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => handleSelectPlayer(player.id)}
+                      className="w-32 flex flex-col items-center p-4 bg-slate-800/80 border border-slate-700 rounded-3xl hover:border-indigo-500 hover:bg-slate-800 transition-all"
+                    >
+                      <img src={player.avatar} alt={player.name} className="w-16 h-16 rounded-full object-cover mb-3 border-2 border-slate-600" />
+                      <div className="font-bold text-white leading-tight text-center text-sm">{player.name}</div>
+                      <div className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-wider">{player.position}</div>
+                    </motion.button>
+                  ))}
+                </div>
+
+                <button 
+                  onClick={() => setStep("SELECT_BADGE")}
+                  className="mt-8 text-slate-400 hover:text-white font-medium px-4 py-2 rounded-full hover:bg-white/5 transition-colors"
+                >
+                  ย้อนกลับไปเปลี่ยนรางวัล
+                </button>
+              </motion.div>
+            )}
+
+            {step === "ANIMATING" && currentBadge && currentPlayer && (
+              <motion.div 
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="flex flex-col items-center justify-center text-center"
+              >
+                {/* Gamified Assignment Animation */}
+                {BADGES.filter(b => b.id === currentBadge).map(badge => (
+                  <motion.div 
+                    key={badge.id}
+                    animate={{ 
+                      y: [0, -20, 0],
+                      scale: [1, 1.2, 1]
+                    }}
+                    transition={{ duration: 1, ease: "easeInOut" }}
+                    className={`w-32 h-32 rounded-full flex items-center justify-center mb-8 ${badge.bg} ${badge.color} ${badge.glow}`}
+                  >
+                    <badge.icon size={64} />
+                  </motion.div>
+                ))}
+                
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.5 }}
+                >
+                  <h3 className="text-3xl font-black text-white mb-2">ยอดเยี่ยม!</h3>
+                  <p className="text-slate-300 text-lg">
+                    มอบรางวัลให้ <span className="font-bold text-white">{availableTeammates.find(t => t.id === currentPlayer)?.name}</span> เรียบร้อยแล้ว
+                  </p>
+                </motion.div>
+              </motion.div>
+            )}
+
+            {step === "SUBMITTED" && (
+              <motion.div 
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="flex flex-col items-center text-center"
+              >
+                <div className="w-24 h-24 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mb-6">
+                  <CheckCircle2 size={48} />
+                </div>
+                <h3 className="text-4xl font-black text-white mb-4">ส่งผลโหวตสำเร็จ!</h3>
+                <p className="text-slate-400 text-lg mb-8 max-w-md">
+                  คุณได้มอบรางวัลให้เพื่อนร่วมทีมทั้งหมด {votes.length} คน ขอบคุณที่ร่วมส่งต่อกำลังใจให้ทีม!
+                </p>
+
+                {/* Summary of awarded badges */}
+                <div className="flex flex-wrap justify-center gap-4">
+                  {votes.map((v, i) => {
+                    const badge = BADGES.find(b => b.id === v.badgeId);
+                    const player = teammates.find(t => t.id === v.playerId);
+                    if (!badge || !player) return null;
+                    return (
+                      <motion.div 
+                        key={i}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: i * 0.1 }}
+                        className="bg-slate-800/80 border border-slate-700 rounded-2xl p-4 flex items-center gap-4"
+                      >
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center ${badge.bg} ${badge.color}`}>
+                          <badge.icon size={24} />
+                        </div>
+                        <div className="text-left">
+                          <div className="font-bold text-white text-sm">{badge.name}</div>
+                          <div className="text-slate-400 text-xs">{player.name}</div>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            )}
+
+            {isSubmitting && step !== "SUBMITTED" && (
+              <div className="absolute inset-0 bg-slate-900/80 flex items-center justify-center z-10 backdrop-blur-sm">
+                <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-indigo-500"></div>
+              </div>
+            )}
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

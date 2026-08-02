@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { ThaiDatePicker } from "./ThaiDatePicker";
 import { useAuth } from "../contexts/AuthContext";
 import {
   Shield,
@@ -9,13 +10,20 @@ import {
   ChevronRight,
   X,
   AlertCircle,
+  Users,
 } from "lucide-react";
 
 export default function SubscriptionPaywall() {
   const { currentUser, submitSubscription, logout } = useAuth();
-  const [selectedPlan, setSelectedPlan] = useState<"monthly" | "yearly">(
-    "monthly",
-  );
+  
+  const plans = [
+    { id: "size_50", name: "Size S", desc: "สูงสุด 50 คน", price: 99, maxPlayers: 50 },
+    { id: "size_100", name: "Size M", desc: "สูงสุด 100 คน", price: 159, maxPlayers: 100 },
+    { id: "size_150", name: "Size L", desc: "สูงสุด 150 คน", price: 209, maxPlayers: 150 },
+    { id: "size_unlimited", name: "Size XL", desc: "ไม่จำกัดจำนวน (Unlimited)", price: 299, maxPlayers: 9999, isBestValue: true },
+  ];
+
+  const [selectedPlanId, setSelectedPlanId] = useState<string>("size_50");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [slipUrl, setSlipUrl] = useState("");
@@ -37,10 +45,16 @@ export default function SubscriptionPaywall() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!date || !time || !slipUrl) return;
-    submitSubscription(selectedPlan, date, time, slipUrl);
+    
+    const selected = plans.find(p => p.id === selectedPlanId);
+    if (selected) {
+      submitSubscription(selected.id, selected.maxPlayers, date, time, slipUrl);
+    }
   };
 
   if (currentUser?.status === "Pending") {
+    const pendingPlan = plans.find(p => p.id === currentUser.subscriptionPlan) || plans[0];
+    
     return (
       <div className="flex h-screen w-full bg-slate-50 items-center justify-center p-4">
         <div className="max-w-md w-full bg-white p-8 rounded-3xl border border-slate-200 shadow-sm text-center">
@@ -53,9 +67,7 @@ export default function SubscriptionPaywall() {
           <p className="text-slate-500 font-medium mb-8 leading-relaxed">
             ระบบได้รับข้อมูลการโอนเงินหน้าแพ็กเกจ{" "}
             <span className="font-bold text-slate-700">
-              {currentUser.subscriptionPlan === "yearly"
-                ? "รายปี (Yearly)"
-                : "รายเดือน (Monthly)"}
+              {pendingPlan.name} ({pendingPlan.desc})
             </span>{" "}
             ของคุณแล้ว
             <br />
@@ -74,93 +86,76 @@ export default function SubscriptionPaywall() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col py-12 px-4 sm:px-6">
-      <div className="max-w-4xl mx-auto w-full">
+      <div className="max-w-6xl mx-auto w-full">
         {/* Header */}
         <div className="text-center mb-12">
           <div className="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
-            <Shield size={32} />
+            <Users size={32} />
           </div>
           <h1 className="text-3xl sm:text-4xl font-black text-slate-900 mb-4 tracking-tight">
-            Upgrade Your Plan
+            Choose Your Academy Size
           </h1>
           <p className="text-lg text-slate-500 font-medium max-w-xl mx-auto">
-            Choose a subscription plan to continue accessing FUTVERSE Command
-            Center.
+            เลือกแพ็กเกจที่เหมาะสมกับจำนวนนักกีฬาในอคาเดมี่ของคุณ
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
           {/* Plan Selection */}
-          <div className="space-y-4">
-            <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest pl-1 mb-2">
-              Select Package
-            </h2>
-
-            <button
-              onClick={() => setSelectedPlan("monthly")}
-              className={`w-full p-6 rounded-2xl border-2 text-left transition-all ${
-                selectedPlan === "monthly"
-                  ? "border-indigo-500 bg-indigo-50/50 shadow-sm"
-                  : "border-slate-200 bg-white hover:border-indigo-200"
-              }`}
-            >
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-lg font-bold text-slate-800">
-                  รายเดือน (Monthly)
-                </span>
-                {selectedPlan === "monthly" && (
-                  <CheckCircle className="text-indigo-600" size={24} />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="sm:col-span-2">
+              <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest pl-1 mb-2">
+                Select Package
+              </h2>
+            </div>
+            
+            {plans.map((plan) => (
+              <button
+                key={plan.id}
+                onClick={() => setSelectedPlanId(plan.id)}
+                className={`w-full p-5 rounded-2xl border-2 text-left relative transition-all ${
+                  selectedPlanId === plan.id
+                    ? "border-indigo-500 bg-indigo-50/50 shadow-sm"
+                    : "border-slate-200 bg-white hover:border-indigo-200"
+                }`}
+              >
+                {plan.isBestValue && (
+                  <div className="absolute -top-3 right-4 bg-emerald-500 text-white text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full">
+                    Best Value
+                  </div>
                 )}
-              </div>
-              <div className="text-3xl font-black text-indigo-600 mb-2">
-                ฿990{" "}
-                <span className="text-sm font-medium text-slate-500">/mo</span>
-              </div>
-              <p className="text-sm text-slate-500 font-medium">
-                เข้าถึงฟีเจอร์พื้นฐานทั้งหมด ใช้งานได้ 1 เดือน
-              </p>
-            </button>
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <span className="text-lg font-bold text-slate-800 block">
+                      {plan.name}
+                    </span>
+                    <span className="text-sm font-medium text-slate-500">
+                      {plan.desc}
+                    </span>
+                  </div>
+                  {selectedPlanId === plan.id && (
+                    <CheckCircle className="text-indigo-600 shrink-0" size={24} />
+                  )}
+                </div>
+                <div className="text-3xl font-black text-indigo-600 mt-4">
+                  ฿{plan.price}{" "}
+                  <span className="text-sm font-medium text-slate-500">/mo</span>
+                </div>
+              </button>
+            ))}
 
-            <button
-              onClick={() => setSelectedPlan("yearly")}
-              className={`w-full p-6 rounded-2xl border-2 text-left relative transition-all ${
-                selectedPlan === "yearly"
-                  ? "border-indigo-500 bg-indigo-50/50 shadow-sm"
-                  : "border-slate-200 bg-white hover:border-indigo-200"
-              }`}
-            >
-              <div className="absolute -top-3 right-6 bg-emerald-500 text-white text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full">
-                Best Value / ประหยัดกว่า
-              </div>
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-lg font-bold text-slate-800">
-                  รายปี (Yearly)
-                </span>
-                {selectedPlan === "yearly" && (
-                  <CheckCircle className="text-indigo-600" size={24} />
-                )}
-              </div>
-              <div className="text-3xl font-black text-indigo-600 mb-2">
-                ฿9,900{" "}
-                <span className="text-sm font-medium text-slate-500">
-                  /year
-                </span>
-              </div>
-              <p className="text-sm text-slate-500 font-medium">
-                เซฟไป 2 เดือน เข้าถึงฟีเจอร์พรีเมียมแบบเต็มประสิทธิภาพ
-              </p>
-            </button>
-
-            <button
-              onClick={logout}
-              className="w-full text-center py-4 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors"
-            >
-              กลับหน้า Login
-            </button>
+            <div className="sm:col-span-2 mt-4">
+              <button
+                onClick={logout}
+                className="w-full text-center py-4 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors"
+              >
+                กลับหน้า Login
+              </button>
+            </div>
           </div>
 
           {/* Payment Info */}
-          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm h-full">
             <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest pl-1 mb-6 flex items-center gap-2">
               <CreditCard size={18} /> Payment Information
             </h2>
@@ -245,12 +240,11 @@ export default function SubscriptionPaywall() {
                     <label className="block text-sm font-bold text-slate-700 mb-1.5">
                       วันที่โอน <span className="text-rose-500">*</span>
                     </label>
-                    <input
-                      type="date"
+                    <ThaiDatePicker
                       required
                       value={date}
                       onChange={(e) => setDate(e.target.value)}
-                      className="w-full p-3 bg-slate-50 border border-slate-200 outline-none rounded-xl text-sm font-medium focus:ring-2 focus:ring-indigo-500"
+                      className="w-full p-3 bg-slate-50 border border-slate-200 outline-none rounded-xl text-sm font-medium focus-within:ring-2 focus-within:ring-indigo-500"
                     />
                   </div>
                   <div>

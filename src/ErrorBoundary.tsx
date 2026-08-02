@@ -1,4 +1,6 @@
 import React, { Component, ErrorInfo, ReactNode } from "react";
+import { db } from "./lib/firebase";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 
 interface Props {
   children?: ReactNode;
@@ -20,6 +22,20 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Uncaught error:", error, errorInfo);
+
+    try {
+      addDoc(collection(db, "error_logs"), {
+        type: "REACT_ERROR_BOUNDARY",
+        message: error.message,
+        stack: error.stack,
+        componentStack: errorInfo.componentStack,
+        url: window.location.href,
+        userAgent: navigator.userAgent,
+        timestamp: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error("Failed to log error to Firestore:", e);
+    }
   }
 
   public render() {

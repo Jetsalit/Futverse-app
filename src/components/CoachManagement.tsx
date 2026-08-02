@@ -17,11 +17,14 @@ import {
   deleteDoc,
   addDoc,
   updateDoc,
+  query,
+  where,
 } from "firebase/firestore";
 import { useAcademy } from "../contexts/AcademyContext";
+import { useAuth } from "../contexts/AuthContext";
 import { EmptyState } from "./common/EmptyState";
 
-const LICENSES = ["Pro", "A", "B", "C", "ไม่มี"];
+const LICENSES = ["Pro", "A", "B", "C", "G", "ไม่มี"];
 
 interface Coach {
   id: string;
@@ -32,39 +35,23 @@ interface Coach {
   license: string;
   teams: string[];
   avatar: string;
+  userId?: string;
 }
 
-const MOCK_COACHES: Coach[] = [
-  {
-    id: "c1",
-    firstName: "Pep",
-    lastName: "Guardiola",
-    email: "pep@futverse.com",
-    phone: "081-234-5678",
-    license: "Pro",
-    teams: ["U15", "U17", "First Team"],
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Pep",
-  },
-  {
-    id: "c2",
-    firstName: "Jurgen",
-    lastName: "Klopp",
-    email: "klopp@futverse.com",
-    phone: "082-345-6789",
-    license: "Pro",
-    teams: ["U13", "U15"],
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Jurgen",
-  },
-];
+const MOCK_COACHES: Coach[] = [];
 
 export default function CoachManagement({ onBack }: { onBack: () => void }) {
-  const { settings } = useAcademy();
+  const { settings, getAcademyCollection, academyId } = useAcademy();
+  const { currentUser } = useAuth();
   const [coaches, setCoaches] = useState<Coach[]>(MOCK_COACHES);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [coachToDelete, setCoachToDelete] = useState<string | null>(null);
+  
+  const [pendingClaims, setPendingClaims] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<"coaches" | "claims">("coaches");
 
   const [formData, setFormData] = useState({
     firstName: "",
@@ -77,7 +64,7 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
   });
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "coaches"), (snapshot) => {
+    const unsubscribe = onSnapshot(getAcademyCollection("coaches"), (snapshot) => {
       const loadedCoaches = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
@@ -88,6 +75,57 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!settings.inviteCode) return;
+    const q = query(
+      collection(db, "profile_claims"), 
+      where("inviteCode", "==", settings.inviteCode),
+      where("type", "==", "COACH_JOIN"),
+      where("status", "==", "PENDING")
+    );
+    const unsub = onSnapshot(q, (snapshot) => {
+      setPendingClaims(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsub();
+  }, [settings.inviteCode]);
+
+  const handleApproveClaim = async (claim: any) => {
+    try {
+      // 1. Update the user doc to link to this academy and activate them
+      await updateDoc(doc(db, "users", claim.userId), {
+        academyId: academyId,
+        role: "COACH",
+        status: "Active"
+      });
+      // 2. Mark claim as APPROVED
+      await updateDoc(doc(db, "profile_claims", claim.id), { status: "APPROVED" });
+      // 3. Automatically add them to the local academy coaches list
+      await addDoc(getAcademyCollection("coaches"), {
+        userId: claim.userId,
+        firstName: claim.userName?.split(" ")[0] || "Coach",
+        lastName: claim.userName?.split(" ").slice(1).join(" ") || "",
+        email: claim.userEmail,
+        phone: "",
+        license: "C",
+        teams: [],
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${claim.userEmail}`
+      });
+      alert("Coach approved successfully!");
+    } catch (error) {
+      console.error("Error approving claim", error);
+      alert("Failed to approve coach");
+    }
+  };
+
+  const handleRejectClaim = async (claimId: string) => {
+    try {
+      await updateDoc(doc(db, "profile_claims", claimId), { status: "REJECTED" });
+      alert("Coach request rejected");
+    } catch (error) {
+      console.error("Error rejecting claim", error);
+    }
+  };
 
   const openAddModal = () => {
     setEditingId(null);
@@ -129,10 +167,37 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setFormData((prev) => ({
-          ...prev,
-          avatarUrl: reader.result as string,
-        }));
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const MAX_SIZE = 500;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_SIZE) {
+              height *= MAX_SIZE / width;
+              width = MAX_SIZE;
+            }
+          } else {
+            if (height > MAX_SIZE) {
+              width *= MAX_SIZE / height;
+              height = MAX_SIZE;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx?.drawImage(img, 0, 0, width, height);
+          
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+          setFormData((prev) => ({
+            ...prev,
+            avatarUrl: dataUrl,
+          }));
+        };
+        img.src = reader.result as string;
       };
       reader.readAsDataURL(file);
     }
@@ -153,7 +218,15 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const coachData = {
+      const currentCoachDoc = editingId ? coaches.find(c => c.id === editingId) : null;
+      let matchedUserId = currentCoachDoc?.userId;
+
+      if (!matchedUserId && currentUser?.email && formData.email.trim().toLowerCase() === currentUser.email.trim().toLowerCase()) {
+        matchedUserId = (currentUser as any).uid || (currentUser as any).id;
+      }
+
+      const coachData: any = {
+        ...(matchedUserId && { userId: matchedUserId }),
         firstName: formData.firstName,
         lastName: formData.lastName,
         email: formData.email,
@@ -166,9 +239,9 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
       };
 
       if (editingId) {
-        await updateDoc(doc(db, "coaches", editingId), coachData);
+        await updateDoc(doc(getAcademyCollection("coaches"), editingId), coachData);
       } else {
-        await addDoc(collection(db, "coaches"), coachData);
+        await addDoc(getAcademyCollection("coaches"), coachData);
       }
       
       setIsModalOpen(false);
@@ -194,7 +267,7 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
   const handleConfirmDelete = async () => {
     if (coachToDelete) {
       try {
-        await deleteDoc(doc(db, "coaches", coachToDelete));
+        await deleteDoc(doc(getAcademyCollection("coaches"), coachToDelete));
         setCoachToDelete(null);
       } catch (error) {
         console.error("Error deleting coach:", error);
@@ -252,7 +325,71 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
         </button>
       </div>
 
-      {coaches.length === 0 ? (
+      {/* Tabs */}
+      <div className="flex gap-4 mb-6 border-b border-slate-200">
+        <button
+          onClick={() => setActiveTab("coaches")}
+          className={`pb-3 text-sm font-bold transition-colors relative ${
+            activeTab === "coaches"
+              ? "text-blue-600 border-b-2 border-blue-600"
+              : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Coaches List
+        </button>
+        <button
+          onClick={() => setActiveTab("claims")}
+          className={`pb-3 text-sm font-bold transition-colors relative ${
+            activeTab === "claims"
+              ? "text-blue-600 border-b-2 border-blue-600"
+              : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Pending Requests
+          {pendingClaims.length > 0 && (
+            <span className="absolute -top-1 -right-4 bg-rose-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full">
+              {pendingClaims.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {activeTab === "claims" ? (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden p-6">
+          <h2 className="text-lg font-bold text-slate-800 mb-4">Pending Join Requests</h2>
+          {pendingClaims.length === 0 ? (
+            <div className="text-center py-10 text-slate-500">
+              No pending requests at the moment.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {pendingClaims.map((claim) => (
+                <div key={claim.id} className="flex items-center justify-between p-4 border border-slate-100 rounded-xl bg-slate-50">
+                  <div>
+                    <h3 className="font-bold text-slate-800">{claim.userName || "Unknown"}</h3>
+                    <p className="text-sm text-slate-500">{claim.userEmail}</p>
+                    <p className="text-xs text-slate-400 mt-1">Requested on {new Date(claim.createdAt).toLocaleDateString()}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleApproveClaim(claim)}
+                      className="px-4 py-2 bg-emerald-100 text-emerald-700 font-bold rounded-lg text-sm hover:bg-emerald-200 transition-colors"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => handleRejectClaim(claim.id)}
+                      className="px-4 py-2 bg-rose-100 text-rose-700 font-bold rounded-lg text-sm hover:bg-rose-200 transition-colors"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : coaches.length === 0 ? (
         <EmptyState
           icon={Users}
           title="No Coaches Yet"
@@ -405,25 +542,26 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
 
             <form onSubmit={handleSave} className="p-6 overflow-y-auto">
               <div className="flex flex-col items-center justify-center mb-6">
-                <label className="w-20 h-20 rounded-full border-2 border-dashed border-slate-300 bg-slate-50 flex flex-col items-center justify-center text-slate-400 cursor-pointer hover:bg-slate-100 hover:border-slate-400 transition-colors group relative overflow-hidden">
+                <label htmlFor="coach-photo-upload" className="w-20 h-20 rounded-full border-2 border-dashed border-slate-300 bg-slate-50 flex flex-col items-center justify-center text-slate-400 cursor-pointer hover:bg-slate-100 hover:border-slate-400 transition-colors group relative overflow-hidden">
                   {formData.avatarUrl ? (
                     <img
                       src={formData.avatarUrl}
                       alt="Preview"
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-cover pointer-events-none"
                     />
                   ) : (
                     <>
                       <Upload
                         size={20}
-                        className="mb-1 group-hover:-translate-y-1 transition-transform"
+                        className="mb-1 group-hover:-translate-y-1 transition-transform pointer-events-none"
                       />
-                      <span className="text-[10px] font-medium uppercase tracking-wider">
+                      <span className="text-[10px] font-medium uppercase tracking-wider pointer-events-none">
                         รููปภาพ
                       </span>
                     </>
                   )}
                   <input
+                    id="coach-photo-upload"
                     type="file"
                     accept="image/*"
                     className="hidden"

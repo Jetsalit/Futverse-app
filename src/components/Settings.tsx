@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Building,
   Activity,
@@ -11,17 +11,23 @@ import {
   ToggleRight,
   X,
   Plus,
+  Award,
+  Calendar,
+  Users,
+  Sliders
 } from "lucide-react";
+import ObservationProfileManager from "../modules/parent-observation/components/ObservationProfileManager";
 import { useLanguage } from "../contexts/LanguageContext";
 import { useAcademy } from "../contexts/AcademyContext";
 
-type TabId = "profile" | "fitness" | "privacy" | "system";
+type TabId = "academy" | "season" | "roles" | "age_groups" | "system" | "observation-profile";
 
 interface SettingsProps {
   onBack: () => void;
   setLanguage: (lang: "en" | "th") => void;
   currentLanguage: "en" | "th";
   pendingSyncs: number;
+  initialTab?: TabId;
 }
 
 export default function Settings({
@@ -29,24 +35,44 @@ export default function Settings({
   setLanguage: _setLanguageProp,
   currentLanguage,
   pendingSyncs,
+  initialTab
 }: SettingsProps) {
   const { t, language, setLanguage } = useLanguage();
-  const { settings, updateSettings } = useAcademy();
-  const [activeTab, setActiveTab] = useState<TabId>("profile");
+  const { settings, updateSettings, academyId } = useAcademy();
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab || "academy");
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   // Profile State
   const [academyName, setAcademyName] = useState(settings.name);
   const [squads, setSquads] = useState<string[]>(
     settings.squads || ["U11", "U13", "U15", "PRO"],
   );
+  const [inviteCode, setInviteCode] = useState<string>(settings.inviteCode || "");
   const [newSquadInput, setNewSquadInput] = useState("");
   const [logoUrl, setLogoUrl] = useState<string | null>(settings.logoUrl);
+  const [licenseLevel, setLicenseLevel] = useState<"Gold" | "Silver" | "Bronze" | "None">(
+    settings.licenseLevel || "None"
+  );
 
   // Update local state if settings load from Firestore
   React.useEffect(() => {
     setAcademyName(settings.name);
     setSquads(settings.squads || ["U11", "U13", "U15", "PRO"]);
+    if (settings.inviteCode) {
+      setInviteCode(settings.inviteCode);
+    } else {
+      // Auto-generate invite code if not exists
+      const newCode = `FUT-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+      setInviteCode(newCode);
+      // We will save it when they click Save
+    }
     setLogoUrl(settings.logoUrl);
+    setLicenseLevel(settings.licenseLevel || "None");
   }, [settings]);
 
   // Privacy State
@@ -55,15 +81,18 @@ export default function Settings({
 
   // Fitness Benchmarks State
   const [benchmarks, setBenchmarks] = useState([
-    { id: "u11", group: "U11", sprint: "5.2", yoyo: "14.1" },
-    { id: "u13", group: "U13", sprint: "4.8", yoyo: "15.2" },
-    { id: "u15", group: "U15", sprint: "4.5", yoyo: "16.5" },
-    { id: "pro", group: "Pro", sprint: "4.1", yoyo: "19.1" },
+    { id: "8-9", group: "8-9", sprint: "5.8", beep: "5.5", vo2max: "31.4" },
+    { id: "10-11", group: "10-11", sprint: "5.4", beep: "6.5", vo2max: "34.3" },
+    { id: "12-13", group: "12-13", sprint: "5.1", beep: "8.5", vo2max: "40.2" },
+    { id: "14-15", group: "14-15", sprint: "4.7", beep: "10.5", vo2max: "47.4" },
+    { id: "16-17", group: "16-17", sprint: "4.4", beep: "12.5", vo2max: "53.7" },
+    { id: "18-25", group: "18-25", sprint: "4.1", beep: "14.1", vo2max: "58.2" },
+    { id: "26-35", group: "26-35", sprint: "4.3", beep: "13.1", vo2max: "55.5" },
   ]);
 
   const handleBenchmarkChange = (
     id: string,
-    field: "sprint" | "yoyo",
+    field: "sprint" | "beep" | "vo2max",
     value: string,
   ) => {
     setBenchmarks((prev) =>
@@ -73,12 +102,14 @@ export default function Settings({
 
   const handleSave = async () => {
     try {
-      if (activeTab === "profile") {
+      if (activeTab === "academy") {
         await updateSettings({
           name: academyName,
           shortName: academyName,
           logoUrl: logoUrl,
           squads: squads,
+          inviteCode: inviteCode,
+          licenseLevel: licenseLevel,
         });
       }
       alert(`Settings saved successfully for ${activeTab}!`);
@@ -146,10 +177,12 @@ export default function Settings({
   };
 
   const tabs = [
-    { id: "profile" as TabId, label: "Academy Profile", icon: Building },
-    { id: "fitness" as TabId, label: "Fitness Benchmarks", icon: Activity },
-    { id: "privacy" as TabId, label: "Privacy & Roles", icon: ShieldCheck },
-    { id: "system" as TabId, label: "System & Sync", icon: HardDrive },
+    { id: "academy" as TabId, label: "Academy Settings", icon: Building },
+    { id: "observation-profile" as TabId, label: "Observation Profile", icon: Sliders },
+    { id: "season" as TabId, label: "Season Management", icon: Calendar },
+    { id: "roles" as TabId, label: "Roles & Permissions", icon: ShieldCheck },
+    { id: "age_groups" as TabId, label: "Age Groups", icon: Users },
+    { id: "system" as TabId, label: "System Settings", icon: HardDrive },
   ];
 
   return (
@@ -184,15 +217,15 @@ export default function Settings({
 
         {/* Tab Content Area (Right) */}
         <div className="flex-1 bg-white rounded-2xl border border-slate-200 p-6 md:p-8 flex flex-col min-h-[500px]">
-          {/* === Academy Profile === */}
-          {activeTab === "profile" && (
+          {/* === Academy Settings === */}
+          {activeTab === "academy" && (
             <div className="flex flex-col h-full animate-in fade-in duration-300">
               <div className="mb-6 border-b border-slate-100 pb-4">
                 <h2 className="text-lg font-black text-slate-800">
-                  Academy Profile
+                  Academy Settings
                 </h2>
                 <p className="text-sm text-slate-500 font-medium">
-                  General information and age group management
+                  General information and academy branding
                 </p>
               </div>
 
@@ -243,7 +276,108 @@ export default function Settings({
                   />
                 </div>
 
-                {/* Age Groups Active */}
+                {/* Academy Licensing */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">
+                    Academy Licensing
+                  </label>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setLicenseLevel("Gold")}
+                      className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${
+                        licenseLevel === "Gold"
+                          ? "border-amber-400 bg-amber-50 shadow-md shadow-amber-400/20"
+                          : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                      }`}
+                    >
+                      <Award size={32} className={licenseLevel === "Gold" ? "text-amber-500" : "text-slate-400"} />
+                      <span className={`mt-2 font-bold text-sm ${licenseLevel === "Gold" ? "text-amber-600" : "text-slate-500"}`}>Gold</span>
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={() => setLicenseLevel("Silver")}
+                      className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${
+                        licenseLevel === "Silver"
+                          ? "border-slate-400 bg-slate-50 shadow-md shadow-slate-400/20"
+                          : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                      }`}
+                    >
+                      <Award size={32} className={licenseLevel === "Silver" ? "text-slate-500" : "text-slate-400"} />
+                      <span className={`mt-2 font-bold text-sm ${licenseLevel === "Silver" ? "text-slate-600" : "text-slate-500"}`}>Silver</span>
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={() => setLicenseLevel("Bronze")}
+                      className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${
+                        licenseLevel === "Bronze"
+                          ? "border-orange-400 bg-orange-50 shadow-md shadow-orange-400/20"
+                          : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                      }`}
+                    >
+                      <Award size={32} className={licenseLevel === "Bronze" ? "text-orange-500" : "text-slate-400"} />
+                      <span className={`mt-2 font-bold text-sm ${licenseLevel === "Bronze" ? "text-orange-600" : "text-slate-500"}`}>Bronze</span>
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={() => setLicenseLevel("None")}
+                      className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${
+                        licenseLevel === "None"
+                          ? "border-indigo-400 bg-indigo-50 shadow-md shadow-indigo-400/20"
+                          : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                      }`}
+                    >
+                      <X size={32} className={licenseLevel === "None" ? "text-indigo-500" : "text-slate-400"} />
+                      <span className={`mt-2 font-bold text-sm ${licenseLevel === "None" ? "text-indigo-600" : "text-slate-500"}`}>None</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Invite Code */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 flex justify-between">
+                    <span>Academy Join Code (For Coaches)</span>
+                    <span className="text-emerald-600">Give this to your assistant coaches</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={inviteCode}
+                      readOnly
+                      className="flex-1 bg-slate-100 border border-slate-200 rounded-xl px-4 py-3 text-lg font-black text-slate-800 font-mono tracking-widest outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(inviteCode);
+                        alert("Copied to clipboard!");
+                      }}
+                      className="px-6 bg-slate-800 text-white font-bold rounded-xl hover:bg-slate-700 transition-colors"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* === Age Groups === */}
+          {activeTab === "age_groups" && (
+            <div className="flex flex-col h-full animate-in fade-in duration-300">
+              <div className="mb-6 border-b border-slate-100 pb-4">
+                <h2 className="text-lg font-black text-slate-800">
+                  Age Groups
+                </h2>
+                <p className="text-sm text-slate-500 font-medium">
+                  Manage active squads and age categories for your academy
+                </p>
+              </div>
+
+              <div className="space-y-6 flex-1">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">
                     Active Squads & Age Groups
@@ -285,90 +419,39 @@ export default function Settings({
             </div>
           )}
 
-          {/* === Fitness Benchmarks === */}
-          {activeTab === "fitness" && (
+          {/* === Season Management === */}
+          {activeTab === "season" && (
             <div className="flex flex-col h-full animate-in fade-in duration-300">
               <div className="mb-6 border-b border-slate-100 pb-4">
                 <h2 className="text-lg font-black text-slate-800">
-                  Fitness Benchmarks
+                  Season Management
                 </h2>
                 <p className="text-sm text-slate-500 font-medium">
-                  Set target passing scores for physical tests across age groups
+                  Configure training blocks, seasons, and academic years
                 </p>
               </div>
 
-              <div className="flex-1 overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr>
-                      <th className="pb-3 text-xs font-bold text-slate-500 uppercase tracking-widest border-b border-slate-200">
-                        Age Group
-                      </th>
-                      <th className="pb-3 text-xs font-bold text-slate-500 uppercase tracking-widest border-b border-slate-200">
-                        30m Sprint Target (sec)
-                      </th>
-                      <th className="pb-3 text-xs font-bold text-slate-500 uppercase tracking-widest border-b border-slate-200">
-                        Yo-Yo Test Target (level)
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {benchmarks.map((b) => (
-                      <tr
-                        key={b.id}
-                        className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors"
-                      >
-                        <td className="py-4 text-sm font-black text-slate-800">
-                          {b.group}
-                        </td>
-                        <td className="py-4 pr-4">
-                          <input
-                            type="number"
-                            step="0.1"
-                            value={b.sprint}
-                            onChange={(e) =>
-                              handleBenchmarkChange(
-                                b.id,
-                                "sprint",
-                                e.target.value,
-                              )
-                            }
-                            className="bg-white border border-slate-200 rounded-lg px-3 py-2 w-full max-w-[120px] text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors"
-                          />
-                        </td>
-                        <td className="py-4">
-                          <input
-                            type="number"
-                            step="0.1"
-                            value={b.yoyo}
-                            onChange={(e) =>
-                              handleBenchmarkChange(
-                                b.id,
-                                "yoyo",
-                                e.target.value,
-                              )
-                            }
-                            className="bg-white border border-slate-200 rounded-lg px-3 py-2 w-full max-w-[120px] text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors"
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="flex-1 flex flex-col items-center justify-center text-center p-10 bg-slate-50 rounded-xl border border-slate-200 border-dashed">
+                <div className="w-16 h-16 bg-white shadow-sm rounded-full flex items-center justify-center text-indigo-500 mb-4">
+                  <Calendar size={32} />
+                </div>
+                <h3 className="text-base font-bold text-slate-800 mb-1">Coming Soon</h3>
+                <p className="text-sm text-slate-500 max-w-sm">
+                  Advanced season management is currently in development. You will soon be able to manage periods, macrocycles, and active seasons here.
+                </p>
               </div>
             </div>
           )}
 
           {/* === Privacy & Roles === */}
-          {activeTab === "privacy" && (
+          {activeTab === "roles" && (
             <div className="flex flex-col h-full animate-in fade-in duration-300">
               <div className="mb-6 border-b border-slate-100 pb-4">
                 <h2 className="text-lg font-black text-slate-800">
-                  Privacy & Roles
+                  Roles & Permissions
                 </h2>
                 <p className="text-sm text-slate-500 font-medium">
-                  Manage visibility of sensitive data and configure system
-                  access
+                  Manage visibility of sensitive data and configure system access
                 </p>
               </div>
 
@@ -520,15 +603,24 @@ export default function Settings({
             </div>
           )}
 
+          {/* === Observation Profile Settings === */}
+          {activeTab === "observation-profile" && academyId && (
+            <div className="h-full animate-in fade-in duration-300">
+              <ObservationProfileManager academyId={academyId} />
+            </div>
+          )}
+
           {/* Action Footer (Save Button) */}
-          <div className="mt-8 pt-6 border-t border-slate-200 flex justify-end shrink-0">
-            <button
-              onClick={handleSave}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl font-bold text-sm transition-colors shadow-lg shadow-indigo-900/20"
-            >
-              <Save size={18} /> Save Changes
-            </button>
-          </div>
+          {activeTab !== "observation-profile" && (
+            <div className="mt-8 pt-6 border-t border-slate-200 flex justify-end shrink-0">
+              <button
+                onClick={handleSave}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl font-bold text-sm transition-colors shadow-lg shadow-indigo-900/20"
+              >
+                <Save size={18} /> Save Changes
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

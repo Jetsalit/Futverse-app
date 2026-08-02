@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
+import { ThaiDatePicker } from "./ThaiDatePicker";
 import {
   ArrowLeft,
   UserCircle,
@@ -11,10 +12,13 @@ import {
   ChevronRight,
   X,
   HeartPulse,
+  Flame,
 } from "lucide-react";
 import { db } from "../lib/firebase";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, onSnapshot, doc, getDocs } from "firebase/firestore";
+import { useAcademy } from "../contexts/AcademyContext";
 import { EmptyState } from "./common/EmptyState";
+import { injectMockData } from "../utils/mockDataInjector";
 
 interface InjuredPlayer {
   id: string;
@@ -34,31 +38,13 @@ interface WellnessPlayer {
   muscleSoreness: number; // 1-5 (5 = worst)
   sleepQuality: number; // 1-5 (1 = worst, 5 = best)
   fatigue: number; // 1-5 (5 = worst)
+  recentLoad: number; // 7-Day Rolling Load
+  hasData: boolean;
 }
 
-const MOCK_INJURED: InjuredPlayer[] = [
-  {
-    id: "inj1",
-    name: "Supachok Sarachat",
-    image: "https://api.dicebear.com/7.x/avataaars/svg?seed=Supachok",
-    injury: "Hamstring Strain",
-    startDate: "2024-03-01",
-    expectedReturn: "2024-03-15",
-    status: "Rehab",
-    notes: "Light jogging allowed",
-  },
-];
+const MOCK_INJURED: InjuredPlayer[] = [];
 
-const MOCK_WELLNESS: WellnessPlayer[] = [
-  {
-    id: "w1",
-    name: "Chanathip S.",
-    image: "https://api.dicebear.com/7.x/avataaars/svg?seed=Chanathip",
-    muscleSoreness: 3,
-    sleepQuality: 4,
-    fatigue: 2,
-  },
-];
+const MOCK_WELLNESS: WellnessPlayer[] = [];
 
 export default function RecoveryDashboard({
   onBack,
@@ -67,14 +53,108 @@ export default function RecoveryDashboard({
   onBack: () => void;
   teamName: string;
 }) {
+  const { academyId } = useAcademy();
   const [filterTeam, setFilterTeam] = useState(teamName);
   const [injuredPlayers, setInjuredPlayers] = useState<InjuredPlayer[]>(MOCK_INJURED);
-  const [wellnessPlayers, setWellnessPlayers] = useState<WellnessPlayer[]>(MOCK_WELLNESS);
+  const [wellnessPlayers, setWellnessPlayers] = useState<WellnessPlayer[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // Mock data
-  }, []);
+    if (!academyId) return;
+
+    let isSubscribed = true;
+    
+    // Fetch all players for wellness mapping
+    const fetchWellness = async () => {
+      setLoading(true);
+      try {
+        const playersRef = collection(db, `academies/${academyId}/players`);
+        const snapshot = await getDocs(playersRef);
+        
+        const playersData: WellnessPlayer[] = [];
+        const today = new Date().toISOString().split("T")[0];
+
+        // 1. Calculate Recent Loads (Matches & Training)
+        const playerLoads: Record<string, number> = {};
+        
+        // Matches Load
+        const matchesRef = collection(db, `academies/${academyId}/matches`);
+        const matchSnap = await getDocs(matchesRef);
+        matchSnap.forEach(docSnap => {
+          const m = docSnap.data();
+          const matchDate = new Date(m.matchDate);
+          if (matchDate >= new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)) {
+            if (m.playersData) {
+              Object.keys(m.playersData).forEach(pid => {
+                const mins = Number(m.playersData[pid].minutesPlayed || m.playersData[pid].metrics?.minutes || 0);
+                playerLoads[pid] = (playerLoads[pid] || 0) + (mins * 9);
+              });
+            }
+            if (m.players) {
+              m.players.forEach((p:any) => {
+                const mins = Number(p.minutesPlayed || p.metrics?.minutes || 0);
+                playerLoads[p.id] = (playerLoads[p.id] || 0) + (mins * 9);
+              });
+            }
+          }
+        });
+
+        // Training Load
+        const twRef = collection(db, `academies/${academyId}/training_weeks`);
+        const twSnap = await getDocs(twRef);
+        twSnap.forEach(docSnap => {
+          const docDate = new Date(docSnap.id);
+          if (docDate >= new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)) {
+            const data = docSnap.data();
+            const trainingLogsDB = data.trainingLogsDB || {};
+            Object.values(trainingLogsDB).forEach((dayLogs: any) => {
+              Object.keys(dayLogs).forEach(pid => {
+                const log = dayLogs[pid];
+                playerLoads[pid] = (playerLoads[pid] || 0) + ((log.minutes || 0) * (log.rpe || 0));
+              });
+            });
+          }
+        });
+
+        for (const playerDoc of snapshot.docs) {
+          const pd = playerDoc.data();
+          const wellnessRef = collection(db, `academies/${academyId}/players/${playerDoc.id}/daily_wellness`);
+          const wellSnap = await getDocs(wellnessRef);
+          const todayWellness = wellSnap.docs.find(d => d.id === today);
+          
+          const load = playerLoads[playerDoc.id] || 0;
+
+          if (todayWellness || load > 0) {
+            const wData = todayWellness ? todayWellness.data() : { pain: 1, sleepHours: 8, fatigue: 1 };
+            playersData.push({
+              id: playerDoc.id,
+              name: `${pd.firstName || ""} ${pd.lastName || ""}`.trim() || "Unknown Player",
+              image: pd.photoUrl || `https://ui-avatars.com/api/?name=${pd.firstName || "Player"}&background=random`,
+              muscleSoreness: wData.pain || 1,
+              sleepQuality: wData.sleepHours || 8,
+              fatigue: wData.fatigue || 1,
+              recentLoad: load,
+              hasData: !!todayWellness
+            });
+          }
+        }
+
+        if (isSubscribed) {
+          setWellnessPlayers(playersData);
+        }
+      } catch (error) {
+        console.error("Error fetching wellness:", error);
+      } finally {
+        if (isSubscribed) setLoading(false);
+      }
+    };
+
+    fetchWellness();
+
+    return () => {
+      isSubscribed = false;
+    };
+  }, [academyId, filterTeam]);
 
   const [selectedInjured, setSelectedInjured] = useState<InjuredPlayer | null>(
     null,
@@ -91,12 +171,12 @@ export default function RecoveryDashboard({
 
   // Status computation for Wellness
   const getWellnessRisk = (p: WellnessPlayer) => {
-    // Arbitrary risk calculation
-    // High risk: sleep <= 2 or soreness >= 4 or fatigue >= 4
-    if (p.sleepQuality <= 2 || p.muscleSoreness >= 4 || p.fatigue >= 4)
+    if (!p.hasData) return "gray";
+    // High risk: sleep < 6 or soreness >= 4 or fatigue >= 4
+    if (p.sleepQuality < 6 || p.muscleSoreness >= 4 || p.fatigue >= 4)
       return "red";
-    // Warning: any score is slightly off
-    if (p.sleepQuality <= 3 || p.muscleSoreness >= 3 || p.fatigue >= 3)
+    // Warning: sleep <= 7 or soreness >= 3 or fatigue >= 3
+    if (p.sleepQuality <= 7 || p.muscleSoreness >= 3 || p.fatigue >= 3)
       return "yellow";
     return "green";
   };
@@ -107,6 +187,8 @@ export default function RecoveryDashboard({
         return "bg-rose-50 border-rose-200";
       case "yellow":
         return "bg-amber-50 border-amber-200";
+      case "gray":
+        return "bg-slate-50 border-slate-200 opacity-80";
       default:
         return "bg-white border-slate-100 hover:bg-slate-50";
     }
@@ -152,6 +234,14 @@ export default function RecoveryDashboard({
             <div>
               <h1 className="text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
                 <HeartPulse className="text-rose-500" /> Recovery & Medical
+                <button onClick={() => {
+                  alert("กำลังเริ่มสร้างข้อมูลจำลอง... (Academy ID: " + academyId + ")");
+                  if (academyId) {
+                    injectMockData(academyId).then(() => console.log("Done")).catch(e => alert("Error: " + e.message));
+                  }
+                }} className="ml-4 text-[10px] bg-slate-200 hover:bg-slate-300 text-slate-600 px-2 py-1 rounded-md transition-colors shadow-sm font-bold uppercase tracking-wider">
+                  Generate Mock Data
+                </button>
               </h1>
               <p className="text-xs text-slate-500 font-medium uppercase tracking-widest mt-1">
                 U19 Elite Squad • Player Health Status
@@ -183,6 +273,14 @@ export default function RecoveryDashboard({
           <div>
             <h1 className="text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
               <HeartPulse className="text-rose-500" /> Recovery & Medical
+              <button onClick={() => {
+                alert("กำลังเริ่มสร้างข้อมูลจำลอง... (Academy ID: " + academyId + ")");
+                if (academyId) {
+                  injectMockData(academyId).then(() => console.log("Done")).catch(e => alert("Error: " + e.message));
+                }
+              }} className="ml-4 text-[10px] bg-slate-200 hover:bg-slate-300 text-slate-600 px-2 py-1 rounded-md transition-colors shadow-sm font-bold uppercase tracking-wider">
+                Generate Mock Data
+              </button>
             </h1>
             <p className="text-xs text-slate-500 font-medium uppercase tracking-widest mt-1">
               Injury Management & Daily Wellness
@@ -337,132 +435,71 @@ export default function RecoveryDashboard({
               Pre-training fatigue & soreness assessment
             </p>
           </div>
-
-          <div className="p-5 overflow-y-auto space-y-6 flex-1">
-            {/* [1] Sleep Tracker */}
-            <div>
-              <label className="flex items-center justify-between mb-3">
-                <span className="font-bold text-slate-800 flex items-center gap-2">
-                  <span className="text-xl">😴</span> Sleep Quality
-                </span>
-                <span
-                  className={`text-sm font-black px-2.5 py-1 rounded-lg ${
-                    sleepHours < 6
-                      ? "bg-rose-100 text-rose-700"
-                      : sleepHours <= 7
-                        ? "bg-amber-100 text-amber-700"
-                        : "bg-emerald-100 text-emerald-700"
-                  }`}
-                >
-                  {sleepHours} h
-                </span>
-              </label>
-              <input
-                type="range"
-                min="4"
-                max="12"
-                step="1"
-                value={sleepHours}
-                onChange={(e) => setSleepHours(parseInt(e.target.value))}
-                className="w-full accent-indigo-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
-              />
-              <div className="flex justify-between text-xs font-bold text-slate-400 mt-2 px-1">
-                <span>4h</span>
-                <span>8h</span>
-                <span>12h</span>
+          <div className="p-5 overflow-y-auto space-y-4 flex-1">
+            {wellnessPlayers.length === 0 ? (
+              <div className="text-center py-10 text-slate-400 font-medium border-2 border-dashed border-slate-100 rounded-xl">
+                ยังไม่มีข้อมูลการรายงานสภาพร่างกายในวันนี้
               </div>
-            </div>
-
-            {/* [2] Hydration Tracker */}
-            <div>
-              <label className="flex items-center justify-between mb-3">
-                <span className="font-bold text-slate-800 flex items-center gap-2">
-                  <span className="text-xl">💧</span> Hydration Level
-                </span>
-                <span
-                  className={`text-sm font-black ${hydrationCount < 4 ? "text-orange-600" : "text-sky-600"}`}
-                >
-                  {hydrationCount} / 8
-                </span>
-              </label>
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={() =>
-                    setHydrationCount(Math.max(0, hydrationCount - 1))
-                  }
-                  className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-600 font-black text-xl hover:bg-slate-200 active:bg-slate-300 transition-colors flex items-center justify-center shrink-0"
-                >
-                  -
-                </button>
-                <div className="flex-1 bg-slate-100 h-4 rounded-full overflow-hidden">
+            ) : (
+              wellnessPlayers.map((player) => {
+                const risk = getWellnessRisk(player);
+                const colorClass = getRiskColor(risk);
+                return (
                   <div
-                    className={`h-full transition-all duration-300 ${hydrationCount < 4 ? "bg-orange-400" : "bg-sky-500"}`}
-                    style={{
-                      width: `${Math.min(100, (hydrationCount / 8) * 100)}%`,
-                    }}
-                  ></div>
-                </div>
-                <button
-                  onClick={() => setHydrationCount(hydrationCount + 1)}
-                  className="w-12 h-12 rounded-2xl bg-sky-100 text-sky-600 font-black text-xl hover:bg-sky-200 active:bg-sky-300 transition-colors flex items-center justify-center shrink-0"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-
-            {/* [3] Muscle Soreness */}
-            <div>
-              <label className="font-bold text-slate-800 flex items-center gap-2 mb-3">
-                <span className="text-xl">🦵</span> Muscle Soreness
-              </label>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setSorenessLevel("fresh")}
-                  className={`flex-1 py-3 px-1 rounded-xl border-2 font-bold text-xs sm:text-sm flex flex-col items-center gap-1 transition-all ${
-                    sorenessLevel === "fresh"
-                      ? "bg-emerald-50 border-emerald-500 text-emerald-700 shadow-sm"
-                      : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
-                  }`}
-                >
-                  <span className="text-2xl">🟢</span>
-                  <span>Fresh</span>
-                </button>
-                <button
-                  onClick={() => setSorenessLevel("slightly_sore")}
-                  className={`flex-1 py-3 px-1 rounded-xl border-2 font-bold text-xs sm:text-sm flex flex-col items-center gap-1 transition-all ${
-                    sorenessLevel === "slightly_sore"
-                      ? "bg-amber-50 border-amber-500 text-amber-700 shadow-sm"
-                      : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
-                  }`}
-                >
-                  <span className="text-2xl">🟡</span>
-                  <span className="whitespace-nowrap">Slightly Sore</span>
-                </button>
-                <button
-                  onClick={() => setSorenessLevel("heavy_sore")}
-                  className={`flex-1 py-3 px-1 rounded-xl border-2 font-bold text-xs sm:text-sm flex flex-col items-center gap-1 transition-all ${
-                    sorenessLevel === "heavy_sore"
-                      ? "bg-rose-50 border-rose-500 text-rose-700 shadow-sm"
-                      : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
-                  }`}
-                >
-                  <span className="text-2xl">🔴</span>
-                  <span>Heavy/Sore</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="p-5 border-t border-slate-100 shrink-0">
-            <button
-              className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-base shadow-sm transition-colors active:scale-[0.98]"
-              onClick={() => {
-                alert("Wellness report saved!");
-              }}
-            >
-              Save Wellness Report
-            </button>
+                    key={player.id}
+                    className={`p-4 rounded-xl border flex items-center justify-between ${colorClass} transition-colors`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={player.image}
+                        alt={player.name}
+                        className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm bg-white"
+                      />
+                      <div>
+                        <h3 className="font-bold text-slate-800 text-sm">
+                          {player.name}
+                        </h3>
+                        <div className="flex items-center gap-3 mt-1 text-xs font-bold text-slate-500">
+                          {player.hasData ? (
+                            <>
+                              <span className="flex items-center gap-1">
+                                <Moon size={12} className={player.sleepQuality < 6 ? "text-rose-500" : ""} /> {player.sleepQuality}h
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Battery size={12} className={player.fatigue >= 4 ? "text-amber-500" : ""} /> ล้า {player.fatigue}/5
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Activity size={12} className={player.muscleSoreness >= 4 ? "text-rose-500" : ""} /> ปวด {player.muscleSoreness}/5
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-slate-400 italic">No daily report</span>
+                          )}
+                          <span className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700 ml-1">
+                            <Flame size={12} className={player.recentLoad > 500 ? "text-rose-500" : "text-slate-400"} /> Load {player.recentLoad}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    {risk === "red" && (
+                      <div className="w-8 h-8 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                        <AlertCircle size={16} />
+                      </div>
+                    )}
+                    {risk === "yellow" && (
+                      <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                        <AlertCircle size={16} />
+                      </div>
+                    )}
+                    {risk === "green" && (
+                      <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
+                        <CheckCircle2 size={16} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       </div>
@@ -661,26 +698,24 @@ function LogInjuryModal({
                 <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">
                   Date Injured
                 </label>
-                <input
-                  type="date"
+                <ThaiDatePicker
                   value={formData.startDate}
                   onChange={(e) =>
                     setFormData({ ...formData, startDate: e.target.value })
                   }
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-sky-500"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus-within:border-sky-500"
                 />
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">
                   Expected Return
                 </label>
-                <input
-                  type="date"
+                <ThaiDatePicker
                   value={formData.expectedReturn}
                   onChange={(e) =>
                     setFormData({ ...formData, expectedReturn: e.target.value })
                   }
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-sky-500"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus-within:border-sky-500"
                 />
               </div>
             </div>
