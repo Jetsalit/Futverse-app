@@ -136,7 +136,11 @@ export default function Login() {
         }
       } catch (err: any) {
         console.error("Redirect result error:", err);
-        if (err.code !== "auth/popup-blocked") {
+        if (
+          err.code !== "auth/popup-blocked" &&
+          err.code !== "auth/popup-closed-by-user" &&
+          err.code !== "auth/cancelled-popup-request"
+        ) {
           setError(err.message || "Google Sign-In failed.");
         }
       }
@@ -239,6 +243,16 @@ export default function Login() {
       }
     } catch (err: any) {
       console.error(err);
+      
+      // Ignore user cancellations, don't show scary errors
+      if (
+        err.code === "auth/popup-closed-by-user" || 
+        err.code === "auth/cancelled-popup-request"
+      ) {
+        // Do nothing, just let them try again if they want
+        return;
+      }
+      
       setError(err.message || "Google Sign-In failed. Please try again.");
     } finally {
       setIsSubmitting(false);

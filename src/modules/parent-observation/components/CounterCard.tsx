@@ -21,17 +21,26 @@ export default function CounterCard({
   onDecrement
 }: CounterCardProps) {
   const [isAnimating, setIsAnimating] = useState(false);
+  const [isDisabled, setIsDisabled] = useState(false);
 
   const handleTap = () => {
+    if (isDisabled) return;
     setIsAnimating(true);
+    setIsDisabled(true);
     onIncrement(id);
-    setTimeout(() => setIsAnimating(false), 200);
+    
+    // Cooldown logic to prevent spamming
+    setTimeout(() => {
+      setIsAnimating(false);
+      setIsDisabled(false);
+    }, 1000); // 1-second cooldown
   };
 
   return (
     <button
       onClick={handleTap}
-      className={`relative flex flex-col items-center justify-center p-2 md:p-4 min-h-[90px] md:min-h-0 rounded-xl md:rounded-2xl border-2 transition-all select-none w-full ${
+      disabled={isDisabled}
+      className={`relative flex flex-col items-center justify-center p-2 md:p-4 min-h-[90px] md:min-h-0 rounded-xl md:rounded-2xl border-2 transition-all select-none w-full ${isDisabled ? 'opacity-75 cursor-not-allowed' : ''} ${
         count > 0 
           ? `border-indigo-500 bg-indigo-50 shadow-sm md:shadow-md ring-1 md:ring-2 ring-indigo-200 ring-offset-1 md:ring-offset-2 ${isAnimating ? 'scale-95' : 'scale-100'}` 
           : `border-slate-200 hover:border-slate-300 hover:bg-slate-50 ${isAnimating ? 'scale-95' : 'scale-100'}`

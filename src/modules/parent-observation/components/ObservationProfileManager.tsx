@@ -12,6 +12,7 @@ import {
 } from "../firebase/api";
 import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../../../lib/firebase";
+import { useToast } from "../../../contexts/ToastContext";
 
 interface ProfileManagerProps {
   academyId: string;
@@ -159,25 +160,23 @@ export default function ObservationProfileManager({ academyId }: ProfileManagerP
   };
 
   const activateProfile = async (profile: ObservationProfile) => {
-    // Only one profile should be active. Deactivate others.
+    if (!profile.id) return;
     try {
-      // 1. Deactivate current active profiles
-      const activeProfiles = profiles.filter(p => p.status === "ACTIVE");
-      for (const p of activeProfiles) {
+      const activeRef = doc(db, `academies/${academyId}/observation_profiles`, profile.id);
+      await updateDoc(activeRef, { status: "ACTIVE", updatedAt: serverTimestamp() });
+      
+      const otherProfiles = profiles.filter(p => p.id !== profile.id && p.status === "ACTIVE");
+      for (const p of otherProfiles) {
         if (p.id) {
-          const docRef = doc(db, `academies/${academyId}/observation_profiles`, p.id);
-          await updateDoc(docRef, { status: "ARCHIVED", updatedAt: serverTimestamp() });
+          const pRef = doc(db, `academies/${academyId}/observation_profiles`, p.id);
+          await updateDoc(pRef, { status: "ARCHIVED", updatedAt: serverTimestamp() });
         }
       }
-      // 2. Activate the selected profile
-      if (profile.id) {
-        const docRef = doc(db, `academies/${academyId}/observation_profiles`, profile.id);
-        await updateDoc(docRef, { status: "ACTIVE", updatedAt: serverTimestamp() });
-      }
       fetchData();
+      addToast("เปิดใช้งาน Profile สำเร็จ", "success");
     } catch (error: any) {
-      console.error("Error activating profile", error);
-      alert("Activate ไม่สำเร็จ: " + (error?.message || "Unknown error"));
+      console.error("Error activating", error);
+      addToast("Activate ไม่สำเร็จ: " + (error?.message || "Unknown error"), "error");
     }
   };
 

@@ -9,6 +9,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { ErrorBoundary } from "./ErrorBoundary.tsx";
 import { db } from "./lib/firebase";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { ToastProvider } from "./contexts/ToastContext";
 
 window.addEventListener("error", (event) => {
   console.error(
@@ -30,7 +31,7 @@ window.addEventListener("error", (event) => {
       stack: event.error?.stack || null,
       userAgent: navigator.userAgent,
       url: window.location.href,
-      type: "uncaughtException",
+      type: "error",
       timestamp: serverTimestamp(),
     });
   } catch (e) {
@@ -44,7 +45,10 @@ window.addEventListener("unhandledrejection", (event) => {
   try {
     const errorLogsRef = collection(db, "error_logs");
     addDoc(errorLogsRef, {
-      message: event.reason?.message || String(event.reason),
+      message:
+        typeof event.reason === "string"
+          ? event.reason
+          : event.reason?.message || "Unknown rejection",
       stack: event.reason?.stack || null,
       userAgent: navigator.userAgent,
       url: window.location.href,
@@ -59,15 +63,17 @@ window.addEventListener("unhandledrejection", (event) => {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary>
-      <AuthProvider>
-        <AcademyProvider>
-          <LanguageProvider>
-            <ThemeProvider>
-              <App />
-            </ThemeProvider>
-          </LanguageProvider>
-        </AcademyProvider>
-      </AuthProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <AcademyProvider>
+            <LanguageProvider>
+              <ThemeProvider>
+                <App />
+              </ThemeProvider>
+            </LanguageProvider>
+          </AcademyProvider>
+        </AuthProvider>
+      </ToastProvider>
     </ErrorBoundary>
   </StrictMode>,
 );

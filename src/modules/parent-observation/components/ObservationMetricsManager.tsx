@@ -10,6 +10,7 @@ import {
   updateSystemMetric, 
   archiveSystemMetric 
 } from "../firebase/api";
+import { useToast } from "../../../contexts/ToastContext";
 
 const PRESET_COLORS = [
   "bg-emerald-50 text-emerald-600 border-emerald-200",
@@ -22,6 +23,7 @@ const PRESET_COLORS = [
 ];
 
 export default function ObservationMetricsManager() {
+  const { addToast } = useToast();
   const [metrics, setMetrics] = useState<ObservationMetric[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState<string | null>(null);
@@ -70,7 +72,7 @@ export default function ObservationMetricsManager() {
 
   const handleSave = async () => {
     if (!formData.metricCode?.trim() || !formData.metricName?.trim()) {
-      alert("กรุณากรอก Metric Code และ Display Name ให้ครบถ้วน");
+      addToast("กรุณากรอก Metric Code และ Display Name ให้ครบถ้วน", "warning");
       return;
     }
 
@@ -79,17 +81,19 @@ export default function ObservationMetricsManager() {
         // Strip id from create payload
         const { id, ...createData } = formData;
         await createSystemMetric(createData as Omit<ObservationMetric, "id">);
+        addToast("สร้าง Metric สำเร็จ", "success");
       } else if (isEditing) {
         // Enforce Immutable metricCode by stripping it from update payload
         // Also strip id to avoid Firestore field conflicts
         const { metricCode, id, ...safeUpdateData } = formData;
         await updateSystemMetric(isEditing, safeUpdateData);
+        addToast("อัปเดต Metric สำเร็จ", "success");
       }
       setIsEditing(null);
       fetchMetrics();
     } catch (error) {
       console.error("Error saving metric", error);
-      alert("เกิดข้อผิดพลาดในการบันทึก: " + (error as any)?.message);
+      addToast("เกิดข้อผิดพลาดในการบันทึก: " + (error as any)?.message, "error");
     }
   };
 

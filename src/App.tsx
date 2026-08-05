@@ -212,7 +212,7 @@ export default function App() {
       icon: FileSpreadsheet,
       roles: ["SUPERADMIN", "ADMIN", "COACH", "PLAYER", "PARENT"],
       subItems: [
-        { id: "evaluation", label: "Performance Evaluation", roles: ["SUPERADMIN", "ADMIN", "COACH", "PLAYER", "PARENT"] },
+        { id: "player_evaluation", label: "Performance Evaluation", roles: ["SUPERADMIN", "ADMIN", "COACH", "PLAYER", "PARENT"] },
         { id: "idp_dashboard", label: "Individual Development Plan", roles: ["SUPERADMIN", "ADMIN", "COACH"] }
       ]
     },
@@ -223,7 +223,7 @@ export default function App() {
       roles: ["SUPERADMIN", "ADMIN", "COACH", "SCOUT", "DATA_ADMIN", "PLAYER", "PARENT"],
       subItems: [
         { id: "drills", label: "Drill Library", roles: ["SUPERADMIN", "ADMIN", "COACH"] },
-        { id: "tactics", label: "Tactical Board", roles: ["SUPERADMIN", "ADMIN", "COACH"] },
+        { id: "tactic", label: "Tactical Board", roles: ["SUPERADMIN", "ADMIN", "COACH"] },
         { id: "assets", label: "Assets", roles: ["SUPERADMIN", "ADMIN", "COACH"] },
         { id: "downloads", label: "Downloads", roles: ["SUPERADMIN", "ADMIN", "COACH", "SCOUT", "DATA_ADMIN", "PLAYER", "PARENT"] }
       ]

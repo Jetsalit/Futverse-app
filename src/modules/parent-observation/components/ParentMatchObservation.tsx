@@ -24,6 +24,7 @@ import ParentSummary from "./ParentSummary";
 import { doc, getDoc, deleteDoc } from "firebase/firestore";
 import { db } from "../../../lib/firebase";
 import { Match } from "../../../types/Match";
+import { useToast } from "../../../contexts/ToastContext";
 
 export default function ParentMatchObservation({ 
   matchId, 
@@ -305,6 +306,8 @@ export default function ParentMatchObservation({
     }
   };
 
+  const { addToast } = useToast();
+  
   const saveFinalReflection = async () => {
     const effectiveAcademyId = resolvedAcademyId || academyId;
     if (!session || !currentUser?.id || !effectiveAcademyId) return;
@@ -346,11 +349,11 @@ export default function ParentMatchObservation({
         completedAt: new Date()
       });
 
-      alert("Observation session completed and saved successfully!");
+      addToast("บันทึกสถิติและผลการประเมินเสร็จสิ้น!", "success");
       onBack();
     } catch (error) {
       console.error("Error saving final reflection", error);
-      alert("Failed to save final observation.");
+      addToast("การบันทึกขัดข้อง ข้อมูลบางส่วนอาจบันทึกไว้ในเครื่องแล้ว", "error");
     } finally {
       setIsSaving(false);
     }
