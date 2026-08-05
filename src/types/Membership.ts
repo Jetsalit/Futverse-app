@@ -23,9 +23,20 @@ export interface Membership {
   role: TenantRole;
   status: MembershipStatus;
   source: MembershipSource;
+  approvalClaimId?: string;
   joinedAt: MembershipDate;
   joinedBy: string;
   updatedAt: MembershipDate;
+}
+
+export interface AcademyInvite {
+  inviteCode: string;
+  academyId: string;
+  status: "ACTIVE" | "REVOKED";
+  createdAt?: MembershipDate;
+  createdBy?: string;
+  updatedAt?: MembershipDate;
+  updatedBy?: string;
 }
 
 export interface AcademyJoinClaim {
@@ -36,6 +47,7 @@ export interface AcademyJoinClaim {
   userName?: string;
   requestedRole?: TenantRole;
   inviteCode: string;
+  requestedAcademyId?: string;
   requestedAcademyName?: string;
   status: "PENDING" | "APPROVED" | "REJECTED";
   createdAt?: MembershipDate;
@@ -87,6 +99,7 @@ export interface MembershipActivationValidationInput {
   uid: string;
   membership: Membership;
   claim: AcademyJoinClaim;
+  invite: AcademyInvite;
 }
 
 export interface ActivateApprovedMembershipResult {

@@ -27,6 +27,35 @@ service cloud.firestore {
       return currentUserData().get('activeAcademyId', '');
     }
 
+    function validInviteCode(inviteCode) {
+      return inviteCode is string
+        && inviteCode.size() <= 32
+        && inviteCode.matches('^FUT-[A-Z0-9-]+$');
+    }
+
+    function exactDocumentId(value) {
+      return value is string
+        && value.size() > 0
+        && value.matches('^[^/]+$');
+    }
+
+    function activeInviteMatchesAcademy(inviteCode, academyId) {
+      return validInviteCode(inviteCode)
+        && exactDocumentId(academyId)
+        && exists(
+          /databases/$(database)/documents/academy_invites/$(inviteCode)
+        )
+        && get(
+          /databases/$(database)/documents/academy_invites/$(inviteCode)
+        ).data.get('inviteCode', '') == inviteCode
+        && get(
+          /databases/$(database)/documents/academy_invites/$(inviteCode)
+        ).data.get('academyId', '') == academyId
+        && get(
+          /databases/$(database)/documents/academy_invites/$(inviteCode)
+        ).data.get('status', '') == 'ACTIVE';
+    }
+
     function isActiveAcademyMember(academyId) {
       let membership = get(
         /databases/$(database)/documents/academies/$(academyId)/members/$(request.auth.uid)
@@ -59,10 +88,7 @@ service cloud.firestore {
         'lastLogin',
         'updatedAt',
         'pdpaAccepted',
-        'pdpaAcceptedAt',
-        'subscriptionPlan',
-        'maxPlayers',
-        'paymentDetails'
+        'pdpaAcceptedAt'
       ]);
     }
 
@@ -71,6 +97,11 @@ service cloud.firestore {
         && request.resource.data.get('academyId', null) == null
         && request.resource.data.get('activeAcademyId', null) == null
         && request.resource.data.get('tenantRole', null) == null
+        && request.resource.data.get('subscriptionPlan', 'FREE') == 'FREE'
+        && !request.resource.data.keys().hasAny([
+          'maxPlayers',
+          'paymentDetails'
+        ])
         && request.resource.data.get('role', '') in ['USER', 'PLAYER']
         && (
           (
@@ -89,6 +120,7 @@ service cloud.firestore {
       let membership = get(
         /databases/$(database)/documents/academies/$(academyId)/members/$(uid)
       ).data;
+      let claimId = membership.get('approvalClaimId', '');
       return academyId != ''
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'activeAcademyId',
@@ -105,6 +137,35 @@ service cloud.firestore {
         && membership.get('userId', '') == uid
         && membership.get('academyId', '') == academyId
         && membership.get('role', '') in ['ADMIN', 'COACH']
+        && membership.get('source', '') == 'CLAIM_APPROVAL'
+        && exactDocumentId(claimId)
+        && exists(
+          /databases/$(database)/documents/profile_claims/$(claimId)
+        )
+        && get(
+          /databases/$(database)/documents/profile_claims/$(claimId)
+        ).data.get('status', '') == 'APPROVED'
+        && get(
+          /databases/$(database)/documents/profile_claims/$(claimId)
+        ).data.get('userId', '') == uid
+        && get(
+          /databases/$(database)/documents/profile_claims/$(claimId)
+        ).data.get('approvedAcademyId', '') == academyId
+        && get(
+          /databases/$(database)/documents/profile_claims/$(claimId)
+        ).data.get('approvedRole', '') == membership.get('role', '')
+        && activeInviteMatchesAcademy(
+          get(
+            /databases/$(database)/documents/profile_claims/$(claimId)
+          ).data.get('inviteCode', ''),
+          academyId
+        )
+        && get(
+          /databases/$(database)/documents/profile_claims/$(claimId)
+        ).data.get(
+          'requestedAcademyId',
+          academyId
+        ) == academyId
         && request.resource.data.get('academyId', '') == academyId
         && request.resource.data.get('tenantRole', '') == membership.role
         && request.resource.data.get('role', '') == membership.role
@@ -119,7 +180,7 @@ service cloud.firestore {
         ])
         && request.resource.data.keys().hasOnly([
           'userId', 'academyId', 'role', 'status', 'source',
-          'joinedAt', 'joinedBy', 'updatedAt'
+          'approvalClaimId', 'joinedAt', 'joinedBy', 'updatedAt'
         ])
         && request.resource.data.userId == uid
         && request.resource.data.academyId == academyId
@@ -132,7 +193,19 @@ service cloud.firestore {
           'SUPERADMIN_ASSIGNMENT',
           'LEGACY_MIGRATION',
           'INVITE'
-        ];
+        ]
+        && (
+          (
+            request.resource.data.source == 'CLAIM_APPROVAL'
+            && exactDocumentId(
+              request.resource.data.get('approvalClaimId', '')
+            )
+          )
+          || (
+            request.resource.data.source != 'CLAIM_APPROVAL'
+            && !request.resource.data.keys().hasAny(['approvalClaimId'])
+          )
+        );
     }
 
     function claimRole(claim) {
@@ -146,17 +219,19 @@ service cloud.firestore {
     }
 
     function isMatchingAcademyAdminForClaim(claim) {
-      let academyId = currentActiveAcademyId();
-      return academyId != ''
-        && hasAcademyRole(academyId, ['ADMIN'])
-        && get(
-          /databases/$(database)/documents/academies/$(academyId)
-        ).data.get('inviteCode', '') == claim.get('inviteCode', '');
+      let inviteCode = claim.get('inviteCode', '');
+      let invite = get(
+        /databases/$(database)/documents/academy_invites/$(inviteCode)
+      ).data;
+      let academyId = invite.get('academyId', '');
+      return activeInviteMatchesAcademy(inviteCode, academyId)
+        && claim.get('requestedAcademyId', academyId) == academyId
+        && hasAcademyRole(academyId, ['ADMIN']);
     }
 
-    function validNewClaim() {
+    function validNewClaim(claimId) {
       return request.resource.data.keys().hasAll([
-          'type', 'userId', 'requestedRole', 'inviteCode',
+          'type', 'userId', 'requestedRole', 'inviteCode', 'requestedAcademyId',
           'status', 'createdAt', 'updatedAt'
         ])
         && request.resource.data.keys().hasOnly([
@@ -166,6 +241,7 @@ service cloud.firestore {
           'userName',
           'requestedRole',
           'inviteCode',
+          'requestedAcademyId',
           'requestedAcademyName',
           'status',
           'createdAt',
@@ -175,9 +251,15 @@ service cloud.firestore {
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.requestedRole in ['ADMIN', 'COACH']
         && request.resource.data.status == 'PENDING'
-        && request.resource.data.inviteCode is string
-        && request.resource.data.inviteCode.size() <= 32
-        && request.resource.data.inviteCode.matches('^FUT-.+$')
+        && validInviteCode(request.resource.data.inviteCode)
+        && exactDocumentId(request.resource.data.requestedAcademyId)
+        && activeInviteMatchesAcademy(
+          request.resource.data.inviteCode,
+          request.resource.data.requestedAcademyId
+        )
+        && claimId == request.resource.data.userId
+          + '_' + request.resource.data.requestedRole
+          + '_' + request.resource.data.inviteCode
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time;
     }
@@ -195,7 +277,7 @@ service cloud.firestore {
       ]);
     }
 
-    function approvedClaimMatchesMembership() {
+    function approvedClaimMatchesMembership(claimId) {
       let academyId = request.resource.data.get('approvedAcademyId', '');
       let uid = resource.data.get('userId', '');
       let membership = getAfter(
@@ -205,18 +287,24 @@ service cloud.firestore {
         && membership.get('userId', '') == uid
         && membership.get('academyId', '') == academyId
         && membership.get('status', '') == 'ACTIVE'
-        && membership.get('role', '') == claimRole(resource.data);
+        && membership.get('role', '') == claimRole(resource.data)
+        && membership.get('source', '') == 'CLAIM_APPROVAL'
+        && membership.get('approvalClaimId', '') == claimId;
     }
 
-    function validClaimApproval() {
-      let academyId = request.resource.data.get('approvedAcademyId', '');
+    function validClaimApproval(claimId) {
+      let inviteCode = resource.data.get('inviteCode', '');
+      let invite = get(
+        /databases/$(database)/documents/academy_invites/$(inviteCode)
+      ).data;
+      let academyId = invite.get('academyId', '');
       return request.resource.data.status == 'APPROVED'
+        && activeInviteMatchesAcademy(inviteCode, academyId)
+        && resource.data.get('requestedAcademyId', academyId) == academyId
+        && request.resource.data.get('approvedAcademyId', '') == academyId
         && request.resource.data.get('approvedRole', '') == claimRole(resource.data)
         && request.resource.data.updatedAt == request.time
-        && get(
-          /databases/$(database)/documents/academies/$(academyId)
-        ).data.get('inviteCode', '') == resource.data.get('inviteCode', '')
-        && approvedClaimMatchesMembership()
+        && approvedClaimMatchesMembership(claimId)
         && (
           (
             resource.data.status == 'PENDING'
@@ -242,12 +330,83 @@ service cloud.firestore {
     }
 
     function claimReviewerMayUpdate() {
-      let academyId = request.resource.data.get('approvedAcademyId', currentActiveAcademyId());
       return isSuperAdmin()
+        || isMatchingAcademyAdminForClaim(resource.data);
+    }
+
+    function claimApprovalReferenceMatches(academyId, uid) {
+      let claimId = request.resource.data.get('approvalClaimId', '');
+      let claim = getAfter(
+        /databases/$(database)/documents/profile_claims/$(claimId)
+      ).data;
+      return exactDocumentId(claimId)
+        && existsAfter(
+          /databases/$(database)/documents/profile_claims/$(claimId)
+        )
+        && claim.get('status', '') == 'APPROVED'
+        && claim.get('userId', '') == uid
+        && claim.get('approvedAcademyId', '') == academyId
+        && claim.get('approvedRole', '') == request.resource.data.role
+        && activeInviteMatchesAcademy(
+          claim.get('inviteCode', ''),
+          academyId
+        )
+        && claim.get('requestedAcademyId', academyId) == academyId;
+    }
+
+    function validMembershipApprovalReference(academyId, uid) {
+      return request.resource.data.source != 'CLAIM_APPROVAL'
+        || claimApprovalReferenceMatches(academyId, uid);
+    }
+
+    function membershipApprovalReferenceIsStable() {
+      return (
+          resource.data.get('source', '') == request.resource.data.source
+          && (
+            resource.data.get('approvalClaimId', '')
+              == request.resource.data.get('approvalClaimId', '')
+            || (
+              resource.data.source == 'CLAIM_APPROVAL'
+              && resource.data.get('approvalClaimId', '') == ''
+            )
+          )
+        )
         || (
-          academyId == currentActiveAcademyId()
-          && isMatchingAcademyAdminForClaim(resource.data)
+          resource.data.get('source', '') != 'CLAIM_APPROVAL'
+          && request.resource.data.source == 'CLAIM_APPROVAL'
         );
+    }
+
+    function validAcademyInviteData(inviteCode) {
+      return request.resource.data.keys().hasAll([
+          'inviteCode', 'academyId', 'status',
+          'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'inviteCode', 'academyId', 'status',
+          'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+        ])
+        && validInviteCode(inviteCode)
+        && request.resource.data.inviteCode == inviteCode
+        && exactDocumentId(request.resource.data.academyId)
+        && exists(
+          /databases/$(database)/documents/academies/$(request.resource.data.academyId)
+        )
+        && request.resource.data.status in ['ACTIVE', 'REVOKED']
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid;
+    }
+
+    function validClientRegistrationLog() {
+      return request.resource.data.keys().hasAll([
+          'action', 'userId', 'timestamp'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'action', 'userId', 'email', 'requestedRole', 'timestamp'
+        ])
+        && request.resource.data.action == 'USER_REGISTERED'
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.timestamp == request.time;
     }
 
     function tenantMemberCanRead(academyId) {
@@ -272,6 +431,26 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /academy_invites/{inviteCode} {
+      allow get: if isSuperAdmin()
+        || (
+          isSignedIn()
+          && resource.data.get('inviteCode', '') == inviteCode
+          && resource.data.get('status', '') == 'ACTIVE'
+          && validInviteCode(inviteCode)
+        );
+      allow list: if false;
+      allow create: if isSuperAdmin()
+        && validAcademyInviteData(inviteCode)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update: if isSuperAdmin()
+        && validAcademyInviteData(inviteCode)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.createdBy == resource.data.createdBy;
+      allow delete: if isSuperAdmin();
+    }
+
     match /academies/{academyId} {
       allow read: if tenantMemberCanRead(academyId);
       allow create: if isSuperAdmin();
@@ -282,11 +461,21 @@ service cloud.firestore {
           || isOwnUserDocument(uid)
           || hasAcademyRole(academyId, ['ADMIN']);
         allow create: if validMembershipData(academyId, uid)
+          && validMembershipApprovalReference(academyId, uid)
           && (isSuperAdmin() || hasAcademyRole(academyId, ['ADMIN']))
           && request.resource.data.joinedBy == request.auth.uid
           && request.resource.data.joinedAt == request.time
           && request.resource.data.updatedAt == request.time;
         allow update: if validMembershipData(academyId, uid)
+          && membershipApprovalReferenceIsStable()
+          && (
+            (
+              resource.data.get('source', '') == request.resource.data.source
+              && resource.data.get('approvalClaimId', '')
+                == request.resource.data.get('approvalClaimId', '')
+            )
+            || validMembershipApprovalReference(academyId, uid)
+          )
           && (isSuperAdmin() || hasAcademyRole(academyId, ['ADMIN']))
           && request.resource.data.joinedAt == resource.data.joinedAt
           && request.resource.data.joinedBy == resource.data.joinedBy
@@ -390,7 +579,7 @@ service cloud.firestore {
     }
 
     match /profile_claims/{claimId} {
-      allow create: if isSignedIn() && validNewClaim();
+      allow create: if isSignedIn() && validNewClaim(claimId);
       allow read: if isSignedIn()
         && (
           isClaimOwner(resource.data)
@@ -400,18 +589,19 @@ service cloud.firestore {
       allow update: if isSignedIn()
         && claimIdentityIsUnchanged()
         && claimReviewerMayUpdate()
-        && (validClaimApproval() || validClaimRejection());
+        && (validClaimApproval(claimId) || validClaimRejection());
       allow delete: if false;
     }
 
     match /settings/{document=**} {
-      allow read: if true;
-      allow write: if isSuperAdmin();
+      allow read, write: if false;
     }
 
     match /logs/{document=**} {
       allow read: if isSuperAdmin();
-      allow create: if isSignedIn();
+      allow create: if isSuperAdmin()
+        || (isSignedIn() && validClientRegistrationLog());
+      allow update, delete: if false;
     }
 
     match /drills/{document=**} {
@@ -421,23 +611,45 @@ service cloud.firestore {
 
     match /notifications/{notificationId} {
       allow read: if isSignedIn() && resource.data.get('userId', '') == request.auth.uid;
-      allow create: if isSignedIn();
-      allow update, delete: if isSignedIn()
+      allow create: if isSuperAdmin();
+      allow update: if isSignedIn()
+        && resource.data.get('userId', '') == request.auth.uid
+        && request.resource.data.get('userId', '') == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']);
+      allow delete: if isSignedIn()
         && resource.data.get('userId', '') == request.auth.uid;
     }
 
     match /parent_observation_metrics/{document=**} {
-      allow read: if isSignedIn();
-      allow write: if isSuperAdmin();
+      allow read, write: if isSuperAdmin();
     }
 
     match /parent_match_observations/{document=**} {
-      allow read, write: if isSignedIn();
+      allow read: if isSuperAdmin()
+        || (
+          exactDocumentId(resource.data.get('academyId', ''))
+          && isActiveAcademyMember(resource.data.academyId)
+        );
+      allow create: if isSuperAdmin()
+        || (
+          exactDocumentId(request.resource.data.get('academyId', ''))
+          && isActiveAcademyMember(request.resource.data.academyId)
+        );
+      allow update: if isSuperAdmin()
+        || (
+          request.resource.data.get('academyId', '')
+            == resource.data.get('academyId', '')
+          && request.resource.data.get('parentId', '')
+            == resource.data.get('parentId', '')
+          && request.resource.data.get('playerId', '')
+            == resource.data.get('playerId', '')
+          && isActiveAcademyMember(resource.data.get('academyId', ''))
+        );
+      allow delete: if isSuperAdmin();
     }
 
     match /observation_metrics/{document=**} {
-      allow read: if isSignedIn();
-      allow write: if isSuperAdmin();
+      allow read, write: if isSuperAdmin();
     }
 
     match /{document=**} {

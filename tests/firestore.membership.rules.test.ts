@@ -26,7 +26,11 @@ import {
   normalizeAndValidateInviteCode,
   validateApprovedMembershipActivation,
 } from "../src/services/membershipValidation";
-import type { AcademyJoinClaim, Membership } from "../src/types/Membership";
+import type {
+  AcademyInvite,
+  AcademyJoinClaim,
+  Membership,
+} from "../src/types/Membership";
 
 const PROJECT_ID = "demo-futverse-membership";
 const ACADEMY_A = "academy-a";
@@ -64,13 +68,16 @@ function membershipData(
   role: "ADMIN" | "COACH" = "ADMIN",
   status: Membership["status"] = "ACTIVE",
   joinedBy = ADMIN_A,
+  source: Membership["source"] = "CLAIM_APPROVAL",
+  approvalClaimId = "claim-a",
 ) {
   return {
     userId: uid,
     academyId,
     role,
     status,
-    source: "CLAIM_APPROVAL",
+    source,
+    ...(source === "CLAIM_APPROVAL" ? { approvalClaimId } : {}),
     joinedAt: new Date(),
     joinedBy,
     updatedAt: new Date(),
@@ -82,6 +89,7 @@ function pendingClaim(
   inviteCode: string,
   role: "ADMIN" | "COACH" = "ADMIN",
 ) {
+  const requestedAcademyId = inviteCode === INVITE_A ? ACADEMY_A : ACADEMY_B;
   return {
     type: "ACADEMY_JOIN",
     userId: uid,
@@ -89,9 +97,26 @@ function pendingClaim(
     userName: uid,
     requestedRole: role,
     inviteCode,
+    requestedAcademyId,
     status: "PENDING",
     createdAt: new Date(),
     updatedAt: new Date(),
+  };
+}
+
+function inviteData(
+  inviteCode: string,
+  academyId: string,
+  status: AcademyInvite["status"] = "ACTIVE",
+) {
+  return {
+    inviteCode,
+    academyId,
+    status,
+    createdAt: new Date(),
+    createdBy: "superadmin",
+    updatedAt: new Date(),
+    updatedBy: "superadmin",
   };
 }
 
@@ -133,6 +158,8 @@ async function seedAcademies() {
   await seed([
     [`academies/${ACADEMY_A}`, { name: "Academy A", inviteCode: INVITE_A }],
     [`academies/${ACADEMY_B}`, { name: "Academy B", inviteCode: INVITE_B }],
+    [`academy_invites/${INVITE_A}`, inviteData(INVITE_A, ACADEMY_A)],
+    [`academy_invites/${INVITE_B}`, inviteData(INVITE_B, ACADEMY_B)],
   ]);
 }
 
@@ -145,6 +172,74 @@ async function seedAdminA() {
       membershipData(ADMIN_A, ACADEMY_A, "ADMIN"),
     ],
   ]);
+}
+
+async function approveClaimTransaction(
+  db: Firestore,
+  claimId: string,
+  uid: string,
+  academyId: string,
+  role: "ADMIN" | "COACH",
+  createCoach = false,
+) {
+  await runTransaction(db, async (transaction) => {
+    const membershipRef = doc(db, "academies", academyId, "members", uid);
+    const claimRef = doc(db, "profile_claims", claimId);
+    const coachRef = doc(db, "academies", academyId, "coaches", uid);
+    const membershipSnapshot = await transaction.get(membershipRef);
+    const claimSnapshot = await transaction.get(claimRef);
+    const coachSnapshot = createCoach ? await transaction.get(coachRef) : null;
+    const timestamp = serverTimestamp();
+
+    transaction.set(membershipRef, {
+      userId: uid,
+      academyId,
+      role,
+      status: "ACTIVE",
+      source: "CLAIM_APPROVAL",
+      approvalClaimId: claimId,
+      joinedAt: membershipSnapshot.exists()
+        ? membershipSnapshot.data().joinedAt
+        : timestamp,
+      joinedBy: membershipSnapshot.exists()
+        ? membershipSnapshot.data().joinedBy
+        : ADMIN_A,
+      updatedAt: timestamp,
+    });
+    transaction.update(claimRef, {
+      status: "APPROVED",
+      approvedAt: claimSnapshot.data()?.status === "APPROVED"
+        ? claimSnapshot.data()?.approvedAt
+        : timestamp,
+      approvedBy: claimSnapshot.data()?.status === "APPROVED"
+        ? claimSnapshot.data()?.approvedBy
+        : ADMIN_A,
+      approvedAcademyId: academyId,
+      approvedRole: role,
+      updatedAt: timestamp,
+    });
+    if (createCoach) {
+      transaction.set(coachRef, coachSnapshot?.exists()
+        ? { userId: uid }
+        : {
+            userId: uid,
+            firstName: "Coach",
+            lastName: uid,
+            email: `${uid}@example.com`,
+          }, { merge: true });
+    }
+  });
+}
+
+function activatePointers(uid: string, academyId: string, role: "ADMIN" | "COACH") {
+  return updateDoc(doc(authedDb(uid), "users", uid), {
+    activeAcademyId: academyId,
+    academyId,
+    tenantRole: role,
+    role,
+    status: "Active",
+    updatedAt: serverTimestamp(),
+  });
 }
 
 before(async () => {
@@ -207,6 +302,7 @@ test("3. user cannot self-approve Claim", async () => {
 });
 
 test("4. user can create their own PENDING Claim", async () => {
+  await seedAcademies();
   await seed([[`users/${USER_A}`, userData(USER_A)]]);
   const db = authedDb(USER_A);
   await assertSucceeds(setDoc(doc(db, "profile_claims", `${USER_A}_ADMIN_${INVITE_A}`), {
@@ -248,7 +344,15 @@ test("7. Academy A Admin cannot approve Academy B Claim", async () => {
     transaction.set(
       doc(db, "academies", ACADEMY_B, "members", ADMIN_B),
       {
-        ...membershipData(ADMIN_B, ACADEMY_B),
+        ...membershipData(
+          ADMIN_B,
+          ACADEMY_B,
+          "ADMIN",
+          "ACTIVE",
+          ADMIN_A,
+          "CLAIM_APPROVAL",
+          "claim-b",
+        ),
         joinedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       },
@@ -387,7 +491,14 @@ test("15. ACTIVE ADMIN can manage Academy settings and Memberships", async () =>
   const db = authedDb(ADMIN_A);
   await assertSucceeds(updateDoc(doc(db, "academies", ACADEMY_A), { shortName: "A" }));
   await assertSucceeds(setDoc(doc(db, "academies", ACADEMY_A, "members", ADMIN_B), {
-    ...membershipData(ADMIN_B, ACADEMY_A),
+    ...membershipData(
+      ADMIN_B,
+      ACADEMY_A,
+      "ADMIN",
+      "ACTIVE",
+      ADMIN_A,
+      "INVITE",
+    ),
     joinedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   }));
@@ -434,6 +545,7 @@ test("18. rejected Claim cannot pass application activation validation", () => {
     uid: ADMIN_B,
     membership,
     claim,
+    invite: inviteData(INVITE_A, ACADEMY_A) as AcademyInvite,
   }), /not APPROVED/);
 });
 
@@ -471,4 +583,241 @@ test("20. repeated pointer activation is idempotent", async () => {
     ...activation,
     updatedAt: serverTimestamp(),
   }));
+});
+
+test("21. ACTIVE Membership without approvalClaimId cannot activate", async () => {
+  await seedAcademies();
+  const membership = membershipData(ADMIN_B, ACADEMY_A);
+  delete (membership as Partial<Membership>).approvalClaimId;
+  await seed([
+    [`users/${ADMIN_B}`, userData(ADMIN_B)],
+    [`academies/${ACADEMY_A}/members/${ADMIN_B}`, membership],
+  ]);
+  await assertFails(activatePointers(ADMIN_B, ACADEMY_A, "ADMIN"));
+});
+
+test("22. ACTIVE Membership with missing Claim cannot activate", async () => {
+  await seedAcademies();
+  await seed([
+    [`users/${ADMIN_B}`, userData(ADMIN_B)],
+    [`academies/${ACADEMY_A}/members/${ADMIN_B}`,
+      membershipData(ADMIN_B, ACADEMY_A, "ADMIN", "ACTIVE", ADMIN_A, "CLAIM_APPROVAL", "missing-claim")],
+  ]);
+  await assertFails(activatePointers(ADMIN_B, ACADEMY_A, "ADMIN"));
+});
+
+test("23. ACTIVE Membership with PENDING Claim cannot activate", async () => {
+  await seedAcademies();
+  await seed([
+    [`users/${ADMIN_B}`, userData(ADMIN_B)],
+    [`academies/${ACADEMY_A}/members/${ADMIN_B}`,
+      membershipData(ADMIN_B, ACADEMY_A, "ADMIN", "ACTIVE", ADMIN_A, "CLAIM_APPROVAL", "claim-pending")],
+    [`profile_claims/claim-pending`, pendingClaim(ADMIN_B, INVITE_A)],
+  ]);
+  await assertFails(activatePointers(ADMIN_B, ACADEMY_A, "ADMIN"));
+});
+
+test("24. ACTIVE Membership with APPROVED Claim for another user cannot activate", async () => {
+  await seedAcademies();
+  await seed([
+    [`users/${ADMIN_B}`, userData(ADMIN_B)],
+    [`academies/${ACADEMY_A}/members/${ADMIN_B}`,
+      membershipData(ADMIN_B, ACADEMY_A, "ADMIN", "ACTIVE", ADMIN_A, "CLAIM_APPROVAL", "claim-other-user")],
+    [`profile_claims/claim-other-user`, approvedClaim("claim-other-user", USER_A, ACADEMY_A, INVITE_A)],
+  ]);
+  await assertFails(activatePointers(ADMIN_B, ACADEMY_A, "ADMIN"));
+});
+
+test("25. ACTIVE Membership with APPROVED Claim for another Academy cannot activate", async () => {
+  await seedAcademies();
+  await seed([
+    [`users/${ADMIN_B}`, userData(ADMIN_B)],
+    [`academies/${ACADEMY_A}/members/${ADMIN_B}`,
+      membershipData(ADMIN_B, ACADEMY_A, "ADMIN", "ACTIVE", ADMIN_A, "CLAIM_APPROVAL", "claim-other-academy")],
+    [`profile_claims/claim-other-academy`, approvedClaim("claim-other-academy", ADMIN_B, ACADEMY_B, INVITE_B)],
+  ]);
+  await assertFails(activatePointers(ADMIN_B, ACADEMY_A, "ADMIN"));
+});
+
+test("26. Membership role and approvedRole mismatch cannot activate", async () => {
+  await seedAcademies();
+  await seed([
+    [`users/${ADMIN_B}`, userData(ADMIN_B)],
+    [`academies/${ACADEMY_A}/members/${ADMIN_B}`,
+      membershipData(ADMIN_B, ACADEMY_A, "ADMIN", "ACTIVE", ADMIN_A, "CLAIM_APPROVAL", "claim-role-mismatch")],
+    [`profile_claims/claim-role-mismatch`, approvedClaim("claim-role-mismatch", ADMIN_B, ACADEMY_A, INVITE_A, "COACH")],
+  ]);
+  await assertFails(activatePointers(ADMIN_B, ACADEMY_A, "ADMIN"));
+});
+
+test("27. duplicate invite codes cannot map to two Academies", async () => {
+  await seedAcademies();
+  await seed([[`users/superadmin`, userData("superadmin", "SUPERADMIN")]]);
+  await assertFails(setDoc(
+    doc(authedDb("superadmin"), "academy_invites", "FUT-DUPLICATE-SLOT"),
+    {
+      ...inviteData(INVITE_A, ACADEMY_B),
+      createdAt: serverTimestamp(),
+      createdBy: "superadmin",
+      updatedAt: serverTimestamp(),
+      updatedBy: "superadmin",
+    },
+  ));
+});
+
+test("28. Claim requestedAcademyId must match canonical invite registry", async () => {
+  await seedAcademies();
+  await seed([[`users/${USER_A}`, userData(USER_A)]]);
+  await assertFails(setDoc(
+    doc(authedDb(USER_A), "profile_claims", `${USER_A}_ADMIN_${INVITE_A}`),
+    {
+      ...pendingClaim(USER_A, INVITE_A),
+      requestedAcademyId: ACADEMY_B,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    },
+  ));
+});
+
+test("29. Academy A Admin cannot read or approve Academy B exact-bound Claim", async () => {
+  await seedAdminA();
+  await seed([
+    [`users/${ADMIN_B}`, userData(ADMIN_B)],
+    [`profile_claims/claim-b`, pendingClaim(ADMIN_B, INVITE_B)],
+  ]);
+  const db = authedDb(ADMIN_A);
+  await assertFails(getDoc(doc(db, "profile_claims", "claim-b")));
+  await assertFails(approveClaimTransaction(db, "claim-b", ADMIN_B, ACADEMY_B, "ADMIN"));
+});
+
+test("30. Claim approval atomically writes matching approvalClaimId", async () => {
+  await seedAdminA();
+  await seed([
+    [`users/${ADMIN_B}`, userData(ADMIN_B)],
+    [`profile_claims/claim-a`, pendingClaim(ADMIN_B, INVITE_A)],
+  ]);
+  await assertSucceeds(approveClaimTransaction(
+    authedDb(ADMIN_A),
+    "claim-a",
+    ADMIN_B,
+    ACADEMY_A,
+    "ADMIN",
+  ));
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const membership = await getDoc(doc(
+      context.firestore() as unknown as Firestore,
+      "academies",
+      ACADEMY_A,
+      "members",
+      ADMIN_B,
+    ));
+    assert.equal(membership.data()?.approvalClaimId, "claim-a");
+  });
+});
+
+test("31. Global ADMIN without Membership cannot access Academy data", async () => {
+  await seedAcademies();
+  await seed([[`users/${ADMIN_B}`, userData(ADMIN_B, "ADMIN", ACADEMY_A)]]);
+  await assertFails(getDoc(doc(authedDb(ADMIN_B), "academies", ACADEMY_A)));
+});
+
+test("32. REVOKED Membership cannot access tenant data", async () => {
+  await seedAcademies();
+  await seed([
+    [`users/${COACH_A}`, userData(COACH_A, "COACH", ACADEMY_A)],
+    [`academies/${ACADEMY_A}/members/${COACH_A}`,
+      membershipData(COACH_A, ACADEMY_A, "COACH", "REVOKED")],
+    [`academies/${ACADEMY_A}/players/player-1`, { name: "Player 1" }],
+  ]);
+  await assertFails(getDoc(doc(authedDb(COACH_A), "academies", ACADEMY_A, "players", "player-1")));
+});
+
+test("33. LEFT Membership cannot access tenant data", async () => {
+  await seedAcademies();
+  await seed([
+    [`users/${COACH_A}`, userData(COACH_A, "COACH", ACADEMY_A)],
+    [`academies/${ACADEMY_A}/members/${COACH_A}`,
+      membershipData(COACH_A, ACADEMY_A, "COACH", "LEFT")],
+    [`academies/${ACADEMY_A}/players/player-1`, { name: "Player 1" }],
+  ]);
+  await assertFails(getDoc(doc(authedDb(COACH_A), "academies", ACADEMY_A, "players", "player-1")));
+});
+
+test("34. ADMIN approval produces no Coach profile", async () => {
+  await seedAdminA();
+  await seed([
+    [`users/${ADMIN_B}`, userData(ADMIN_B)],
+    [`profile_claims/claim-a`, pendingClaim(ADMIN_B, INVITE_A)],
+  ]);
+  const db = authedDb(ADMIN_A);
+  await assertSucceeds(approveClaimTransaction(db, "claim-a", ADMIN_B, ACADEMY_A, "ADMIN"));
+  const coaches = await assertSucceeds(getDocs(collection(db, "academies", ACADEMY_A, "coaches")));
+  assert.equal(coaches.size, 0);
+});
+
+test("35. repeated COACH approval does not produce duplicate Coach profiles", async () => {
+  await seedAdminA();
+  await seed([
+    [`users/${COACH_A}`, userData(COACH_A)],
+    [`profile_claims/claim-coach`, pendingClaim(COACH_A, INVITE_A, "COACH")],
+  ]);
+  const db = authedDb(ADMIN_A);
+  await assertSucceeds(approveClaimTransaction(db, "claim-coach", COACH_A, ACADEMY_A, "COACH", true));
+  await assertSucceeds(approveClaimTransaction(db, "claim-coach", COACH_A, ACADEMY_A, "COACH", true));
+  const coaches = await assertSucceeds(getDocs(collection(db, "academies", ACADEMY_A, "coaches")));
+  assert.equal(coaches.size, 1);
+  assert.equal(coaches.docs[0].id, COACH_A);
+});
+
+test("36. Owner cannot modify subscriptionPlan", async () => {
+  await seed([[`users/${USER_A}`, userData(USER_A)]]);
+  await assertFails(updateDoc(doc(authedDb(USER_A), "users", USER_A), {
+    subscriptionPlan: "size_unlimited",
+  }));
+});
+
+test("37. Owner cannot modify maxPlayers", async () => {
+  await seed([[`users/${USER_A}`, userData(USER_A)]]);
+  await assertFails(updateDoc(doc(authedDb(USER_A), "users", USER_A), {
+    maxPlayers: 9999,
+  }));
+});
+
+test("38. Owner cannot modify trusted paymentDetails", async () => {
+  await seed([[`users/${USER_A}`, userData(USER_A)]]);
+  await assertFails(updateDoc(doc(authedDb(USER_A), "users", USER_A), {
+    paymentDetails: { slipUrl: "https://example.com/forged.png" },
+  }));
+});
+
+test("39. signed-in user cannot create arbitrary notification for another user", async () => {
+  await seed([[`users/${USER_A}`, userData(USER_A)]]);
+  await assertFails(setDoc(doc(authedDb(USER_A), "notifications", "forged"), {
+    userId: ADMIN_B,
+    title: "Forged",
+    message: "Forged notification",
+    type: "System",
+    isRead: false,
+    createdAt: serverTimestamp(),
+  }));
+});
+
+test("40. signed-in user cannot read another user's protected observation data", async () => {
+  await seedAcademies();
+  await seed([
+    [`users/${USER_A}`, userData(USER_A)],
+    [`parent_match_observations/protected`, {
+      academyId: ACADEMY_A,
+      matchId: "match-1",
+      playerId: "player-1",
+      parentId: ADMIN_B,
+      metrics: {},
+      comment: "private",
+    }],
+  ]);
+  await assertFails(getDoc(doc(
+    authedDb(USER_A),
+    "parent_match_observations",
+    "protected",
+  )));
 });

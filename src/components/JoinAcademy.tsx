@@ -11,11 +11,13 @@ import {
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../contexts/AuthContext";
-import type { AcademyJoinClaim, TenantRole } from "../types/Membership";
+import type { AcademyInvite, AcademyJoinClaim, TenantRole } from "../types/Membership";
 import {
   activateApprovedMembership,
+  buildAcademyJoinClaimId,
   MAX_INVITE_CODE_LENGTH,
   normalizeAndValidateInviteCode,
+  validateActiveAcademyInvite,
 } from "../services/membershipService";
 
 function getRequestedTenantRole(
@@ -86,13 +88,22 @@ export default function JoinAcademy({ onBack }: { onBack?: () => void }) {
     setIsSubmitting(true);
     try {
       const normalizedInviteCode = normalizeAndValidateInviteCode(inviteCode);
-      const claimId = `${userId}_${requestedRole}_${normalizedInviteCode.replace(/[^A-Z0-9-]/g, "_")}`;
+      const claimId = buildAcademyJoinClaimId(userId, requestedRole, normalizedInviteCode);
       const claimRef = doc(db, "profile_claims", claimId);
+      const inviteRef = doc(db, "academy_invites", normalizedInviteCode);
 
       await runTransaction(db, async (transaction) => {
-        const snapshot = await transaction.get(claimRef);
-        if (snapshot.exists()) {
-          const storedClaim = snapshot.data() as AcademyJoinClaim;
+        const inviteSnapshot = await transaction.get(inviteRef);
+        const claimSnapshot = await transaction.get(claimRef);
+        if (!inviteSnapshot.exists()) {
+          throw new Error("This Academy invite code does not exist.");
+        }
+        const academyId = validateActiveAcademyInvite(
+          inviteSnapshot.data() as AcademyInvite,
+          normalizedInviteCode,
+        );
+        if (claimSnapshot.exists()) {
+          const storedClaim = claimSnapshot.data() as AcademyJoinClaim;
           if (storedClaim.status === "PENDING") return;
           throw new Error("A previous request already exists for this invite code and role.");
         }
@@ -104,6 +115,7 @@ export default function JoinAcademy({ onBack }: { onBack?: () => void }) {
           userName: currentUser.name,
           requestedRole,
           inviteCode: normalizedInviteCode,
+          requestedAcademyId: academyId,
           ...(currentUser.requestedAcademyName
             ? { requestedAcademyName: currentUser.requestedAcademyName }
             : {}),
@@ -133,7 +145,6 @@ export default function JoinAcademy({ onBack }: { onBack?: () => void }) {
       await activateApprovedMembership(
         existingClaim.approvedAcademyId,
         userId,
-        existingClaim.id,
       );
       setActivationComplete(true);
     } catch (activationError) {
