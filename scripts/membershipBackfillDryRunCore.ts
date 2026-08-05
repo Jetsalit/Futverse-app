@@ -21,7 +21,9 @@ export type BlockerCode =
   | "DISPLAY_NAME_ONLY_MAPPING"
   | "INVALID_EXISTING_MEMBERSHIP"
   | "DUPLICATE_UID"
-  | "DUPLICATE_ACADEMY_ID";
+  | "DUPLICATE_ACADEMY_ID"
+  | "CONFLICTING_USER_IDENTITY"
+  | "DUPLICATE_MEMBERSHIP_PATH";
 
 export interface OfflineAcademy {
   id: string;
@@ -130,14 +132,6 @@ export class InputValidationError extends Error {
 }
 
 const SUPPORTED_ROLES = new Set<TenantRole>(["ADMIN", "COACH"]);
-const KNOWN_NON_TENANT_ROLES = new Set([
-  "",
-  "USER",
-  "PLAYER",
-  "PARENT",
-  "SUPERADMIN",
-  "DATA_ADMIN",
-]);
 const VALID_MEMBERSHIP_STATUSES = new Set([
   "PENDING",
   "ACTIVE",
@@ -153,7 +147,10 @@ const VALID_MEMBERSHIP_SOURCES = new Set([
 ]);
 
 function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
+  return value !== null
+      && typeof value === "object"
+      && !Array.isArray(value)
+      && Object.getPrototypeOf(value) === Object.prototype
     ? value as Record<string, unknown>
     : null;
 }
@@ -166,8 +163,14 @@ function normalizeUpper(value: unknown): string {
   return normalizeText(value).toUpperCase();
 }
 
-function exactDocumentId(value: string): boolean {
-  return value.length > 0 && !value.includes("/") && value.trim() === value;
+export function isExactFirestoreIdentifier(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && value !== "."
+    && value !== ".."
+    && !value.includes("/")
+    && value.trim() === value
+    && Buffer.byteLength(value, "utf8") <= 1_500;
 }
 
 export function normalizeInviteCode(value: unknown): string {
@@ -198,6 +201,24 @@ function inputBlocker(
   };
 }
 
+function presentIdentifier(value: unknown): boolean {
+  return value !== undefined && value !== null;
+}
+
+function assertExactIdentifier(value: unknown, location: string): asserts value is string {
+  if (!isExactFirestoreIdentifier(value)) {
+    throw new InputValidationError(
+      `${location} must be an exact Firestore identifier: a trimmed non-empty string without /, . or .., up to 1,500 UTF-8 bytes.`,
+    );
+  }
+}
+
+function userIdentifier(user: OfflineUser): string {
+  if (presentIdentifier(user.uid)) return user.uid as string;
+  if (presentIdentifier(user.id)) return user.id as string;
+  return "";
+}
+
 export function parseOfflineExport(raw: string): OfflineExport {
   let parsed: unknown;
   try {
@@ -215,6 +236,13 @@ export function parseOfflineExport(raw: string): OfflineExport {
     if (!Array.isArray(record[field])) {
       throw new InputValidationError(`Input field ${field} must be an array.`);
     }
+    for (const [index, item] of record[field].entries()) {
+      if (!asRecord(item)) {
+        throw new InputValidationError(
+          `Input field ${field}[${index}] must be a plain, non-null object.`,
+        );
+      }
+    }
   }
   if (typeof record.exportedAt !== "string") {
     throw new InputValidationError("Input field exportedAt must be a string.");
@@ -224,11 +252,9 @@ export function parseOfflineExport(raw: string): OfflineExport {
   const users = record.users as OfflineUser[];
   const fatalIssues: Blocker[] = [];
   const academyIds = new Set<string>();
-  for (const academy of academies) {
-    const academyId = normalizeText(academy?.id);
-    if (!exactDocumentId(academyId)) {
-      throw new InputValidationError("Every Academy must have an exact document ID.");
-    }
+  for (const [index, academy] of academies.entries()) {
+    assertExactIdentifier(academy.id, `academies[${index}].id`);
+    const academyId = academy.id;
     if (academyIds.has(academyId)) {
       fatalIssues.push(inputBlocker(
         "DUPLICATE_ACADEMY_ID",
@@ -240,8 +266,31 @@ export function parseOfflineExport(raw: string): OfflineExport {
   }
 
   const userIds = new Set<string>();
-  for (const user of users) {
-    const uid = normalizeText(user?.uid || user?.id);
+  for (const [index, user] of users.entries()) {
+    const hasUid = presentIdentifier(user.uid);
+    const hasId = presentIdentifier(user.id);
+    if (hasUid) assertExactIdentifier(user.uid, `users[${index}].uid`);
+    if (hasId) assertExactIdentifier(user.id, `users[${index}].id`);
+    if (presentIdentifier(user.academyId)) {
+      assertExactIdentifier(user.academyId, `users[${index}].academyId`);
+    }
+    if (presentIdentifier(user.activeAcademyId)) {
+      assertExactIdentifier(user.activeAcademyId, `users[${index}].activeAcademyId`);
+    }
+    if (hasUid && hasId && user.uid !== user.id) {
+      const label = reviewLabel(user);
+      fatalIssues.push({
+        code: "CONFLICTING_USER_IDENTITY",
+        entityType: "INPUT",
+        entityId: label,
+        reviewLabel: label,
+        currentValues: { uid: user.uid, id: user.id, email: user.email ?? null, name: user.name ?? null },
+        reason: "User uid and id are both present but are not exactly equal.",
+        recommendedManualAction: "Determine the authoritative Firebase Auth UID and make uid and id exactly equal before rerunning.",
+      });
+      continue;
+    }
+    const uid = userIdentifier(user);
     if (!uid) continue;
     if (userIds.has(uid)) {
       fatalIssues.push(inputBlocker(
@@ -252,16 +301,50 @@ export function parseOfflineExport(raw: string): OfflineExport {
     }
     userIds.add(uid);
   }
+
+  const membershipPathRecords = new Map<string, Array<{ index: number; record: OfflineMembership }>>();
+  const memberships = record.memberships as OfflineMembership[];
+  for (const [index, membership] of memberships.entries()) {
+    if (isExactFirestoreIdentifier(membership.academyId)
+      && isExactFirestoreIdentifier(membership.userId)) {
+      const path = `academies/${membership.academyId}/members/${membership.userId}`;
+      const pathRecords = membershipPathRecords.get(path) || [];
+      pathRecords.push({ index, record: membership });
+      membershipPathRecords.set(path, pathRecords);
+    }
+  }
+  for (const [path, pathRecords] of membershipPathRecords) {
+    if (pathRecords.length < 2) continue;
+    fatalIssues.push({
+      code: "DUPLICATE_MEMBERSHIP_PATH",
+      entityType: "INPUT",
+      entityId: path,
+      reviewLabel: path,
+      currentValues: {
+        path,
+        records: pathRecords.map(({ index, record: membership }) => ({ index, record: membership })),
+      },
+      reason: "Multiple exported Membership records resolve to the same Firestore document path.",
+      recommendedManualAction: "Recreate the export so each Firestore Membership path appears exactly once.",
+    });
+  }
+
+  const academyInvites = record.academyInvites as OfflineAcademyInvite[];
+  for (const [index, invite] of academyInvites.entries()) {
+    if (presentIdentifier(invite.academyId)) {
+      assertExactIdentifier(invite.academyId, `academyInvites[${index}].academyId`);
+    }
+  }
   if (fatalIssues.length > 0) {
-    throw new InputValidationError("Duplicate identity records make the input unsafe.", fatalIssues);
+    throw new InputValidationError("Fatal input-integrity conflicts make the input unsafe.", fatalIssues);
   }
 
   return {
     exportedAt: record.exportedAt,
     academies,
     users,
-    memberships: record.memberships as OfflineMembership[],
-    academyInvites: record.academyInvites as OfflineAcademyInvite[],
+    memberships,
+    academyInvites,
   };
 }
 
@@ -287,19 +370,18 @@ function compareClassified(a: ClassifiedRecord, b: ClassifiedRecord): number {
 }
 
 function reviewLabel(user: OfflineUser): string {
-  return normalizeText(user.email) || normalizeText(user.name) || normalizeText(user.uid || user.id) || "UNKNOWN_USER";
+  return normalizeText(user.email) || normalizeText(user.name) || userIdentifier(user) || "UNKNOWN_USER";
 }
 
 function membershipIsStructurallyValid(membership: OfflineMembership): boolean {
-  const userId = normalizeText(membership.userId);
-  const academyId = normalizeText(membership.academyId);
   const role = normalizeUpper(membership.role);
   const status = normalizeUpper(membership.status);
   const source = normalizeUpper(membership.source);
-  if (!exactDocumentId(userId) || !exactDocumentId(academyId)) return false;
+  if (!isExactFirestoreIdentifier(membership.userId)
+    || !isExactFirestoreIdentifier(membership.academyId)) return false;
   if (!SUPPORTED_ROLES.has(role as TenantRole)) return false;
   if (!VALID_MEMBERSHIP_STATUSES.has(status) || !VALID_MEMBERSHIP_SOURCES.has(source)) return false;
-  if (source === "CLAIM_APPROVAL" && !exactDocumentId(normalizeText(membership.approvalClaimId))) return false;
+  if (source === "CLAIM_APPROVAL" && !isExactFirestoreIdentifier(membership.approvalClaimId)) return false;
   if (source !== "CLAIM_APPROVAL" && normalizeText(membership.approvalClaimId)) return false;
   return true;
 }
@@ -401,7 +483,7 @@ export function planDryRun(
     const academy = group[0];
     const registryRecords = registryGroups.get(code) || [];
     const registryConflict = registryRecords.length > 1
-      || registryRecords.some((record) => normalizeText(record.academyId) !== academy.id)
+      || registryRecords.some((record) => record.academyId !== academy.id)
       || registryRecords.some((record) => !["ACTIVE", "REVOKED"].includes(normalizeUpper(record.status)));
     if (registryConflict) {
       addBlocker({
@@ -477,7 +559,7 @@ export function planDryRun(
           code: "INVITE_REGISTRY_CONFLICT",
           entityType: "ACADEMY_INVITE",
           entityId: code,
-          reviewLabel: normalizeText(record.academyId) || code,
+          reviewLabel: typeof record.academyId === "string" ? record.academyId : code,
           currentValues: {
             inviteCode: code,
             academyId: record.academyId ?? null,
@@ -494,9 +576,11 @@ export function planDryRun(
   const invalidMembershipUserIds = new Set<string>();
   for (const membership of input.memberships) {
     if (!membershipIsStructurallyValid(membership)) {
-      const invalidMembershipUserId = normalizeText(membership.userId);
+      const invalidMembershipUserId = isExactFirestoreIdentifier(membership.userId)
+        ? membership.userId
+        : "";
       if (invalidMembershipUserId) invalidMembershipUserIds.add(invalidMembershipUserId);
-      const entityId = `${normalizeText(membership.userId) || "MISSING_UID"}@${normalizeText(membership.academyId) || "MISSING_ACADEMY"}`;
+      const entityId = `${isExactFirestoreIdentifier(membership.userId) ? membership.userId : "MISSING_UID"}@${isExactFirestoreIdentifier(membership.academyId) ? membership.academyId : "MISSING_ACADEMY"}`;
       addBlocker({
         code: "INVALID_EXISTING_MEMBERSHIP",
         entityType: "MEMBERSHIP",
@@ -520,21 +604,21 @@ export function planDryRun(
 
   const membershipsByUser = new Map<string, OfflineMembership[]>();
   for (const membership of validMemberships) {
-    const uid = normalizeText(membership.userId);
+    const uid = membership.userId as string;
     const group = membershipsByUser.get(uid) || [];
     group.push(membership);
     membershipsByUser.set(uid, group);
   }
 
   const users = [...input.users].sort((a, b) => {
-    const uidA = normalizeText(a.uid || a.id);
-    const uidB = normalizeText(b.uid || b.id);
+    const uidA = userIdentifier(a);
+    const uidB = userIdentifier(b);
     return compareText(uidA || reviewLabel(a), uidB || reviewLabel(b));
   });
   for (const user of users) {
-    const uid = normalizeText(user.uid || user.id);
+    const uid = userIdentifier(user);
     const label = reviewLabel(user);
-    if (!uid || !exactDocumentId(uid)) {
+    if (!isExactFirestoreIdentifier(uid)) {
       addBlocker({
         code: "MISSING_UID",
         entityType: "USER",
@@ -547,40 +631,24 @@ export function planDryRun(
       continue;
     }
 
-    const rawRoles = [user.role, user.requestedRole, user.tenantRole]
-      .map(normalizeUpper)
-      .filter(Boolean);
-    const supportedRoles = [...new Set(rawRoles.filter((role) => SUPPORTED_ROLES.has(role as TenantRole)))] as TenantRole[];
-    if (supportedRoles.length === 0) {
-      const hasUnknownRole = rawRoles.some((role) => !KNOWN_NON_TENANT_ROLES.has(role));
-      if (hasUnknownRole) {
-        addBlocker({
-          code: "UNSUPPORTED_ROLE",
-          entityType: "USER",
-          entityId: uid,
-          reviewLabel: label,
-          currentValues: { role: user.role ?? null, requestedRole: user.requestedRole ?? null, tenantRole: user.tenantRole ?? null },
-          reason: "User has an unsupported role and cannot be mapped to ADMIN or COACH.",
-          recommendedManualAction: "Resolve the role manually; do not infer a tenant role from display data.",
-        });
-      }
-      continue;
-    }
-    if (supportedRoles.length > 1) {
+    const globalRole = typeof user.role === "string" ? user.role : "";
+    if (!SUPPORTED_ROLES.has(globalRole as TenantRole)) {
       addBlocker({
-        code: "ROLE_CONFLICT",
+        code: "UNSUPPORTED_ROLE",
         entityType: "USER",
         entityId: uid,
         reviewLabel: label,
         currentValues: { role: user.role ?? null, requestedRole: user.requestedRole ?? null, tenantRole: user.tenantRole ?? null },
-        reason: "User role fields resolve to more than one tenant role.",
-        recommendedManualAction: "Confirm the intended ADMIN or COACH role and correct the source export.",
+        reason: "Current authoritative global role is not exactly ADMIN or COACH.",
+        recommendedManualAction: "Review the current global role manually; requestedRole and tenantRole cannot grant eligibility.",
       });
       continue;
     }
-    const role = supportedRoles[0];
-    const tenantRole = normalizeUpper(user.tenantRole);
-    if (tenantRole && tenantRole !== role) {
+    const role = globalRole as TenantRole;
+    const tenantRolePresent = user.tenantRole !== undefined
+      && user.tenantRole !== null
+      && user.tenantRole !== "";
+    if (tenantRolePresent && user.tenantRole !== role) {
       addBlocker({
         code: "ROLE_CONFLICT",
         entityType: "USER",
@@ -606,8 +674,8 @@ export function planDryRun(
       continue;
     }
 
-    const academyId = normalizeText(user.academyId);
-    const activeAcademyId = normalizeText(user.activeAcademyId);
+    const academyId = typeof user.academyId === "string" ? user.academyId : "";
+    const activeAcademyId = typeof user.activeAcademyId === "string" ? user.activeAcademyId : "";
     if (academyId && activeAcademyId && academyId !== activeAcademyId) {
       addBlocker({
         code: "ACADEMY_POINTER_CONFLICT",
@@ -640,7 +708,7 @@ export function planDryRun(
       });
       continue;
     }
-    if (!exactDocumentId(proposedAcademyId) || !academyById.has(proposedAcademyId)) {
+    if (!isExactFirestoreIdentifier(proposedAcademyId) || !academyById.has(proposedAcademyId)) {
       addBlocker({
         code: "ACADEMY_NOT_FOUND",
         entityType: "USER",
@@ -658,7 +726,7 @@ export function planDryRun(
     }
 
     const existingMemberships = membershipsByUser.get(uid) || [];
-    const existingAcademyIds = [...new Set(existingMemberships.map((membership) => normalizeText(membership.academyId)))];
+    const existingAcademyIds = [...new Set(existingMemberships.map((membership) => membership.academyId as string))];
     if (existingAcademyIds.length > 1) {
       addBlocker({
         code: "MULTIPLE_ACADEMY_ASSIGNMENTS",
@@ -673,7 +741,7 @@ export function planDryRun(
     }
     if (existingMemberships.length > 0) {
       const existing = existingMemberships[0];
-      const existingAcademyId = normalizeText(existing.academyId);
+      const existingAcademyId = existing.academyId as string;
       const existingRole = normalizeUpper(existing.role);
       const existingStatus = normalizeUpper(existing.status);
       const path = `academies/${existingAcademyId}/members/${uid}`;

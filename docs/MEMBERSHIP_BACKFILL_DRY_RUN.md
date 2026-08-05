@@ -54,12 +54,27 @@ Academy document IDs are authoritative. Academy display names, requested Academy
 
 Existing `CLAIM_APPROVAL` Memberships must include `approvalClaimId`. A proposed `LEGACY_MIGRATION` Membership never includes it.
 
+### Exact identifier policy
+
+Authoritative Firestore identifiers (`Academy.id`, User `uid`/fallback `id`, Academy pointers, Membership IDs, and invite-registry Academy IDs) must be strings that:
+
+- are non-empty and already trimmed
+- are neither `.` nor `..`
+- contain no `/`
+- are no more than 1,500 UTF-8 bytes
+
+UIDs and Academy IDs are never whitespace-normalized. Values such as `" user-1"`, `"academy-a "`, or `"academy/a"` are rejected. Invite codes are different: they are intentionally trimmed and uppercased before canonical validation.
+
+When both User `uid` and `id` exist, they must be exactly equal; a conflict is fatal. The current global `role` is the only source of backfill eligibility and must be exactly `ADMIN` or `COACH`. `requestedRole` is review metadata and never grants or elevates a Membership. If `tenantRole` exists, it must exactly match the eligible global role.
+
+Duplicate exported Membership records for the same `academies/{academyId}/members/{userId}` path are fatal, even when their fields are identical. A real Firestore export cannot contain two independent documents at one path.
+
 ## Command
 
 Use only an offline fixture or a separately obtained read-only export:
 
 ```powershell
-npx.cmd tsx scripts/membershipBackfillDryRun.ts --input tests/fixtures/membership-backfill/valid.json --output .tmp/membership-backfill-review
+npx.cmd tsx scripts/membershipBackfillDryRun.ts --input tests/fixtures/membership-backfill/valid.json --output C:\secure-review\membership-backfill-review-001
 ```
 
 Exit codes:
@@ -69,6 +84,10 @@ Exit codes:
 - `2`: plans generated, but manual blockers exist
 
 The command does not read Firebase configuration and does not accept project IDs or credentials.
+
+The input must be an existing regular file, not a symlink. The requested output path must have an existing non-symlink parent and must not already exist or be a symlink. Always use a new, access-controlled output path for each run.
+
+Artifacts are first written to a randomly suffixed temporary sibling directory. The tool validates exactly nine regular files, parses every JSON artifact, checks both CSV headers, and verifies the summary SHA-256 against the exact input bytes. Only then is the temporary directory atomically renamed to the requested output path. Any failure removes the temporary directory and publishes no partial output. Existing directories are never deleted, reused, or overwritten.
 
 ## Output files
 
@@ -104,6 +123,8 @@ CSV cells beginning with `=`, `+`, `-`, `@`, tab, or carriage return are prefixe
 | `INVALID_EXISTING_MEMBERSHIP` | Existing Membership violates the required schema |
 | `DUPLICATE_UID` | Fatal duplicate user identity in input |
 | `DUPLICATE_ACADEMY_ID` | Fatal duplicate Academy document ID in input |
+| `CONFLICTING_USER_IDENTITY` | Fatal mismatch between a User's `uid` and `id` |
+| `DUPLICATE_MEMBERSHIP_PATH` | Fatal duplicate exported Membership document path |
 
 ## Review procedure
 
@@ -117,3 +138,5 @@ CSV cells beginning with `=`, `+`, `-`, `@`, tab, or carriage return are prefixe
 8. Obtain approval for a separate execution design.
 
 Do not convert these plans into writes automatically. Before any future execution, back up Firestore, approve the exact write set, define rollback procedures, and revalidate that every user and Academy is still current. This Sprint does not perform that execution.
+
+A real production export is not authorized during Sprint 1E. Keep any future approved export and its reports outside Git in encrypted or equivalently access-controlled storage.
