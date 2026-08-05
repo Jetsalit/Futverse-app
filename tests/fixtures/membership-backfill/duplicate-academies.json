@@ -1,0 +1,10 @@
+{
+  "exportedAt": "2026-08-05T00:00:00.000Z",
+  "academies": [
+    { "id": "academy-duplicate", "name": "First", "inviteCode": "FUT-FIRST" },
+    { "id": "academy-duplicate", "name": "Second", "inviteCode": "FUT-SECOND" }
+  ],
+  "users": [],
+  "memberships": [],
+  "academyInvites": []
+}

@@ -1,0 +1,10 @@
+{
+  "exportedAt": "2026-08-05T00:00:00.000Z",
+  "academies": [{ "id": "academy-a", "name": "Academy A", "inviteCode": "FUT-A" }],
+  "users": [
+    { "uid": "duplicate", "email": "one@example.com", "role": "ADMIN", "status": "Active", "academyId": "academy-a" },
+    { "id": "duplicate", "email": "two@example.com", "role": "COACH", "status": "Active", "academyId": "academy-a" }
+  ],
+  "memberships": [],
+  "academyInvites": []
+}
