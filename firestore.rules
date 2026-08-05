@@ -1,149 +1,447 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if false;
+    function isSignedIn() {
+      return request.auth != null;
     }
 
-    function isSignedIn() { return request.auth != null; }
+    function userExists(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function currentUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
 
     function isSuperAdmin() {
-      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'SUPERADMIN';
+      return isSignedIn()
+        && userExists(request.auth.uid)
+        && currentUserData().get('role', '') == 'SUPERADMIN';
     }
 
-    function isAdmin() {
-      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['SUPERADMIN', 'ADMIN'];
+    function isOwnUserDocument(uid) {
+      return isSignedIn() && request.auth.uid == uid;
     }
 
-    function isTenantAdmin(academyId) {
-      let user = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-      return isSignedIn() && user.role == 'ADMIN' && user.academyId == academyId;
+    function currentActiveAcademyId() {
+      return currentUserData().get('activeAcademyId', '');
     }
 
-    function belongsToAcademy(academyId) {
-      let user = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-      return isSignedIn() && (user.academyId == academyId || isSuperAdmin() || user.role == 'PARENT');
+    function isActiveAcademyMember(academyId) {
+      let membership = get(
+        /databases/$(database)/documents/academies/$(academyId)/members/$(request.auth.uid)
+      ).data;
+      return isSignedIn()
+        && userExists(request.auth.uid)
+        && exists(
+          /databases/$(database)/documents/academies/$(academyId)/members/$(request.auth.uid)
+        )
+        && membership.get('userId', '') == request.auth.uid
+        && membership.get('academyId', '') == academyId
+        && membership.get('status', '') == 'ACTIVE'
+        && membership.get('role', '') in ['ADMIN', 'COACH'];
     }
 
-    match /users/{userId} {
-      allow read: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin() || isAdmin());
-      allow create: if isSignedIn() && request.auth.uid == userId;
-      allow update: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin());
+    function hasAcademyRole(academyId, roles) {
+      return isActiveAcademyMember(academyId)
+        && get(
+          /databases/$(database)/documents/academies/$(academyId)/members/$(request.auth.uid)
+        ).data.role in roles;
+    }
+
+    function safeOwnerProfileUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'name',
+        'displayName',
+        'photoURL',
+        'country',
+        'phone',
+        'lastLogin',
+        'updatedAt',
+        'pdpaAccepted',
+        'pdpaAcceptedAt',
+        'subscriptionPlan',
+        'maxPlayers',
+        'paymentDetails'
+      ]);
+    }
+
+    function validRegistrationUser(uid) {
+      return request.resource.data.get('uid', '') == uid
+        && request.resource.data.get('academyId', null) == null
+        && request.resource.data.get('activeAcademyId', null) == null
+        && request.resource.data.get('tenantRole', null) == null
+        && request.resource.data.get('role', '') in ['USER', 'PLAYER']
+        && (
+          (
+            request.resource.data.role == 'USER'
+            && request.resource.data.get('status', '') == 'Inactive'
+          )
+          || (
+            request.resource.data.role == 'PLAYER'
+            && request.resource.data.get('status', '') == 'Active'
+          )
+        );
+    }
+
+    function userPointerUpdateMatchesActiveMembership(uid) {
+      let academyId = request.resource.data.get('activeAcademyId', '');
+      let membership = get(
+        /databases/$(database)/documents/academies/$(academyId)/members/$(uid)
+      ).data;
+      return academyId != ''
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'activeAcademyId',
+          'academyId',
+          'tenantRole',
+          'role',
+          'status',
+          'updatedAt'
+        ])
+        && exists(
+          /databases/$(database)/documents/academies/$(academyId)/members/$(uid)
+        )
+        && membership.get('status', '') == 'ACTIVE'
+        && membership.get('userId', '') == uid
+        && membership.get('academyId', '') == academyId
+        && membership.get('role', '') in ['ADMIN', 'COACH']
+        && request.resource.data.get('academyId', '') == academyId
+        && request.resource.data.get('tenantRole', '') == membership.role
+        && request.resource.data.get('role', '') == membership.role
+        && request.resource.data.get('status', '') == 'Active'
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function validMembershipData(academyId, uid) {
+      return request.resource.data.keys().hasAll([
+          'userId', 'academyId', 'role', 'status', 'source',
+          'joinedAt', 'joinedBy', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'userId', 'academyId', 'role', 'status', 'source',
+          'joinedAt', 'joinedBy', 'updatedAt'
+        ])
+        && request.resource.data.userId == uid
+        && request.resource.data.academyId == academyId
+        && request.resource.data.role in ['ADMIN', 'COACH']
+        && request.resource.data.status in [
+          'PENDING', 'ACTIVE', 'SUSPENDED', 'LEFT', 'REVOKED'
+        ]
+        && request.resource.data.source in [
+          'CLAIM_APPROVAL',
+          'SUPERADMIN_ASSIGNMENT',
+          'LEGACY_MIGRATION',
+          'INVITE'
+        ];
+    }
+
+    function claimRole(claim) {
+      return claim.get('type', '') == 'COACH_JOIN'
+        ? 'COACH'
+        : claim.get('requestedRole', '');
+    }
+
+    function isClaimOwner(claim) {
+      return isSignedIn() && claim.get('userId', '') == request.auth.uid;
+    }
+
+    function isMatchingAcademyAdminForClaim(claim) {
+      let academyId = currentActiveAcademyId();
+      return academyId != ''
+        && hasAcademyRole(academyId, ['ADMIN'])
+        && get(
+          /databases/$(database)/documents/academies/$(academyId)
+        ).data.get('inviteCode', '') == claim.get('inviteCode', '');
+    }
+
+    function validNewClaim() {
+      return request.resource.data.keys().hasAll([
+          'type', 'userId', 'requestedRole', 'inviteCode',
+          'status', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'type',
+          'userId',
+          'userEmail',
+          'userName',
+          'requestedRole',
+          'inviteCode',
+          'requestedAcademyName',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.type == 'ACADEMY_JOIN'
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.requestedRole in ['ADMIN', 'COACH']
+        && request.resource.data.status == 'PENDING'
+        && request.resource.data.inviteCode is string
+        && request.resource.data.inviteCode.size() <= 32
+        && request.resource.data.inviteCode.matches('^FUT-.+$')
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function claimIdentityIsUnchanged() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'status',
+        'approvedAt',
+        'approvedBy',
+        'approvedAcademyId',
+        'approvedRole',
+        'rejectedAt',
+        'rejectedBy',
+        'updatedAt'
+      ]);
+    }
+
+    function approvedClaimMatchesMembership() {
+      let academyId = request.resource.data.get('approvedAcademyId', '');
+      let uid = resource.data.get('userId', '');
+      let membership = getAfter(
+        /databases/$(database)/documents/academies/$(academyId)/members/$(uid)
+      ).data;
+      return academyId != ''
+        && membership.get('userId', '') == uid
+        && membership.get('academyId', '') == academyId
+        && membership.get('status', '') == 'ACTIVE'
+        && membership.get('role', '') == claimRole(resource.data);
+    }
+
+    function validClaimApproval() {
+      let academyId = request.resource.data.get('approvedAcademyId', '');
+      return request.resource.data.status == 'APPROVED'
+        && request.resource.data.get('approvedRole', '') == claimRole(resource.data)
+        && request.resource.data.updatedAt == request.time
+        && get(
+          /databases/$(database)/documents/academies/$(academyId)
+        ).data.get('inviteCode', '') == resource.data.get('inviteCode', '')
+        && approvedClaimMatchesMembership()
+        && (
+          (
+            resource.data.status == 'PENDING'
+            && request.resource.data.approvedAt == request.time
+            && request.resource.data.approvedBy == request.auth.uid
+          )
+          || (
+            resource.data.status == 'APPROVED'
+            && request.resource.data.approvedAt == resource.data.approvedAt
+            && request.resource.data.approvedBy == resource.data.approvedBy
+            && request.resource.data.approvedAcademyId == resource.data.approvedAcademyId
+            && request.resource.data.approvedRole == resource.data.approvedRole
+          )
+        );
+    }
+
+    function validClaimRejection() {
+      return resource.data.status == 'PENDING'
+        && request.resource.data.status == 'REJECTED'
+        && request.resource.data.rejectedAt == request.time
+        && request.resource.data.rejectedBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function claimReviewerMayUpdate() {
+      let academyId = request.resource.data.get('approvedAcademyId', currentActiveAcademyId());
+      return isSuperAdmin()
+        || (
+          academyId == currentActiveAcademyId()
+          && isMatchingAcademyAdminForClaim(resource.data)
+        );
+    }
+
+    function tenantMemberCanRead(academyId) {
+      return isSuperAdmin() || isActiveAcademyMember(academyId);
+    }
+
+    function tenantFootballCanWrite(academyId) {
+      return isSuperAdmin() || hasAcademyRole(academyId, ['ADMIN', 'COACH']);
+    }
+
+    match /users/{uid} {
+      allow read: if isOwnUserDocument(uid) || isSuperAdmin();
+      allow create: if isOwnUserDocument(uid) && validRegistrationUser(uid);
+      allow update: if isSuperAdmin()
+        || (
+          isOwnUserDocument(uid)
+          && (
+            safeOwnerProfileUpdate()
+            || userPointerUpdateMatchesActiveMembership(uid)
+          )
+        );
+      allow delete: if false;
+    }
+
+    match /academies/{academyId} {
+      allow read: if tenantMemberCanRead(academyId);
+      allow create: if isSuperAdmin();
+      allow update, delete: if isSuperAdmin() || hasAcademyRole(academyId, ['ADMIN']);
+
+      match /members/{uid} {
+        allow read: if isSuperAdmin()
+          || isOwnUserDocument(uid)
+          || hasAcademyRole(academyId, ['ADMIN']);
+        allow create: if validMembershipData(academyId, uid)
+          && (isSuperAdmin() || hasAcademyRole(academyId, ['ADMIN']))
+          && request.resource.data.joinedBy == request.auth.uid
+          && request.resource.data.joinedAt == request.time
+          && request.resource.data.updatedAt == request.time;
+        allow update: if validMembershipData(academyId, uid)
+          && (isSuperAdmin() || hasAcademyRole(academyId, ['ADMIN']))
+          && request.resource.data.joinedAt == resource.data.joinedAt
+          && request.resource.data.joinedBy == resource.data.joinedBy
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if false;
+      }
+
+      match /coaches/{coachProfileId} {
+        allow read: if tenantMemberCanRead(academyId);
+        allow create, update: if isSuperAdmin() || hasAcademyRole(academyId, ['ADMIN']);
+        allow delete: if isSuperAdmin() || hasAcademyRole(academyId, ['ADMIN']);
+      }
+
+      match /players/{playerId} {
+        allow read: if tenantMemberCanRead(academyId);
+        allow create, update, delete: if tenantFootballCanWrite(academyId);
+
+        match /{playerCollection}/{document=**} {
+          allow read: if tenantMemberCanRead(academyId);
+          allow write: if tenantFootballCanWrite(academyId);
+        }
+      }
+
+      match /matches/{document=**} {
+        allow read: if tenantMemberCanRead(academyId);
+        allow write: if tenantFootballCanWrite(academyId);
+      }
+
+      match /training_weeks/{document=**} {
+        allow read: if tenantMemberCanRead(academyId);
+        allow write: if tenantFootballCanWrite(academyId);
+      }
+
+      match /idps/{document=**} {
+        allow read: if tenantMemberCanRead(academyId);
+        allow write: if tenantFootballCanWrite(academyId);
+      }
+
+      match /player_evaluations/{document=**} {
+        allow read: if tenantMemberCanRead(academyId);
+        allow write: if tenantFootballCanWrite(academyId);
+      }
+
+      match /fitness_tests/{document=**} {
+        allow read: if tenantMemberCanRead(academyId);
+        allow write: if tenantFootballCanWrite(academyId);
+      }
+
+      match /attendance/{document=**} {
+        allow read: if tenantMemberCanRead(academyId);
+        allow write: if tenantFootballCanWrite(academyId);
+      }
+
+      match /tournaments/{document=**} {
+        allow read: if tenantMemberCanRead(academyId);
+        allow write: if tenantFootballCanWrite(academyId);
+      }
+
+      match /observation_profiles/{document=**} {
+        allow read: if tenantMemberCanRead(academyId);
+        allow write: if isSuperAdmin() || hasAcademyRole(academyId, ['ADMIN']);
+      }
+
+      match /observation_sessions/{document=**} {
+        allow read: if tenantMemberCanRead(academyId);
+        allow write: if tenantFootballCanWrite(academyId);
+      }
+
+      match /observation_live_events/{document=**} {
+        allow read: if tenantMemberCanRead(academyId);
+        allow write: if tenantFootballCanWrite(academyId);
+      }
+
+      match /observation_reflections/{document=**} {
+        allow read: if tenantMemberCanRead(academyId);
+        allow write: if tenantFootballCanWrite(academyId);
+      }
+
+      match /{collectionName}/{document=**} {
+        allow read: if collectionName in [
+            'messages',
+            'proPlayers',
+            'events',
+            'activity_logs',
+            'evaluation_criteria',
+            'match_plans',
+            'scoutPlayers'
+          ]
+          && tenantMemberCanRead(academyId);
+        allow write: if collectionName in [
+            'messages',
+            'proPlayers',
+            'events',
+            'activity_logs',
+            'evaluation_criteria',
+            'match_plans',
+            'scoutPlayers'
+          ]
+          && tenantFootballCanWrite(academyId);
+      }
+    }
+
+    match /profile_claims/{claimId} {
+      allow create: if isSignedIn() && validNewClaim();
+      allow read: if isSignedIn()
+        && (
+          isClaimOwner(resource.data)
+          || isMatchingAcademyAdminForClaim(resource.data)
+          || isSuperAdmin()
+        );
+      allow update: if isSignedIn()
+        && claimIdentityIsUnchanged()
+        && claimReviewerMayUpdate()
+        && (validClaimApproval() || validClaimRejection());
       allow delete: if false;
     }
 
     match /settings/{document=**} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isSuperAdmin();
     }
-    
-    match /academies/{academyId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
-      
-      // ============================================================
-      // OBSERVATION ENGINE (Rev 3.9.2) - Tenant Collections
-      // ============================================================
-      match /observation_profiles/{profileId} {
-        allow read: if belongsToAcademy(academyId);
-        allow write: if isSuperAdmin() || isTenantAdmin(academyId);
-      }
-      
-      match /observation_sessions/{sessionId} {
-        allow read: if belongsToAcademy(academyId);
-        allow write: if belongsToAcademy(academyId);
-      }
-      
-      match /observation_live_events/{eventId} {
-        allow read: if belongsToAcademy(academyId);
-        allow write: if belongsToAcademy(academyId);
-      }
-      
-      match /observation_reflections/{reflectionId} {
-        allow read: if belongsToAcademy(academyId);
-        allow write: if belongsToAcademy(academyId);
-      }
 
-      // Legacy fallback
-      match /{collection}/{document=**} {
-        allow read: if isSignedIn();
-        // Prevent wildcard from bypassing strict observation rules
-        allow write: if isSignedIn() && !(collection in ['observation_profiles', 'observation_sessions', 'observation_live_events', 'observation_reflections']);
-      }
-    }
-    
-    match /coaches/{document=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
-    }
-    
     match /logs/{document=**} {
       allow read: if isSuperAdmin();
-      allow create: if true;
+      allow create: if isSignedIn();
     }
-    
-    match /players/{document=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
-    }
-    
+
     match /drills/{document=**} {
       allow read: if isSignedIn();
-      allow write: if isSignedIn();
+      allow write: if isSuperAdmin();
     }
-    
-    match /proPlayers/{document=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
-    }
-    
-    match /scoutPlayers/{document=**} {
-      allow read: if isSignedIn();
+
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn() && resource.data.get('userId', '') == request.auth.uid;
       allow create: if isSignedIn();
-      allow update, delete: if isSuperAdmin() || isAdmin();
+      allow update, delete: if isSignedIn()
+        && resource.data.get('userId', '') == request.auth.uid;
     }
-    
-    match /evaluation_criteria/{document=**} {
-      allow read: if isSignedIn();
-      allow write: if isSuperAdmin() || isAdmin() || isSignedIn();
-    }
-    
-    match /player_evaluations/{document=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
-    }
-    
-    match /fitness_tests/{document=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
-    }
-    
-    match /profile_claims/{document=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
-    }
-    
-    match /notifications/{document=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
-    }
-    
+
     match /parent_observation_metrics/{document=**} {
       allow read: if isSignedIn();
       allow write: if isSuperAdmin();
     }
-    
+
     match /parent_match_observations/{document=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
+      allow read, write: if isSignedIn();
     }
 
-    // ============================================================
-    // OBSERVATION ENGINE (Rev 3.8) - New Collections
-    // ============================================================
     match /observation_metrics/{document=**} {
       allow read: if isSignedIn();
       allow write: if isSuperAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

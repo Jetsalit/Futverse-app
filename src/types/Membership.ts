@@ -42,6 +42,10 @@ export interface AcademyJoinClaim {
   updatedAt?: MembershipDate;
   approvedAcademyId?: string;
   approvedRole?: TenantRole;
+  approvedAt?: MembershipDate;
+  approvedBy?: string;
+  rejectedAt?: MembershipDate;
+  rejectedBy?: string;
 }
 
 export type MembershipReadResult =
@@ -74,4 +78,19 @@ export interface ApproveAcademyJoinClaimResult {
   membership: Membership;
   role: TenantRole;
   coachProfileId: string | null;
+  membershipApproved: true;
+  userActivationRequired: true;
+}
+
+export interface MembershipActivationValidationInput {
+  academyId: string;
+  uid: string;
+  membership: Membership;
+  claim: AcademyJoinClaim;
+}
+
+export interface ActivateApprovedMembershipResult {
+  activated: true;
+  academyId: string;
+  role: TenantRole;
 }

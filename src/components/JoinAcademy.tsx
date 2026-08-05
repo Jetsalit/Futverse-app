@@ -12,6 +12,11 @@ import {
 import { db } from "../lib/firebase";
 import { useAuth } from "../contexts/AuthContext";
 import type { AcademyJoinClaim, TenantRole } from "../types/Membership";
+import {
+  activateApprovedMembership,
+  MAX_INVITE_CODE_LENGTH,
+  normalizeAndValidateInviteCode,
+} from "../services/membershipService";
 
 function getRequestedTenantRole(
   requestedRole?: string,
@@ -34,6 +39,8 @@ export default function JoinAcademy({ onBack }: { onBack?: () => void }) {
   const { currentUser, logout } = useAuth();
   const [inviteCode, setInviteCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isActivating, setIsActivating] = useState(false);
+  const [activationComplete, setActivationComplete] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [existingClaim, setExistingClaim] = useState<AcademyJoinClaim | null>(null);
@@ -59,6 +66,7 @@ export default function JoinAcademy({ onBack }: { onBack?: () => void }) {
         );
       setExistingClaim(
         claims.find((claim) => claim.status === "PENDING") ||
+        claims.find((claim) => claim.status === "APPROVED") ||
         claims.find((claim) => claim.status === "REJECTED") ||
         null,
       );
@@ -70,10 +78,6 @@ export default function JoinAcademy({ onBack }: { onBack?: () => void }) {
     e.preventDefault();
     setError("");
     
-    if (!inviteCode.trim() || !inviteCode.toUpperCase().startsWith("FUT-")) {
-      setError("Please enter a valid invite code (e.g., FUT-XXXX)");
-      return;
-    }
     if (!currentUser || !userId || !requestedRole) {
       setError("Only ADMIN or COACH users can submit an Academy join request.");
       return;
@@ -81,7 +85,7 @@ export default function JoinAcademy({ onBack }: { onBack?: () => void }) {
 
     setIsSubmitting(true);
     try {
-      const normalizedInviteCode = inviteCode.toUpperCase().trim();
+      const normalizedInviteCode = normalizeAndValidateInviteCode(inviteCode);
       const claimId = `${userId}_${requestedRole}_${normalizedInviteCode.replace(/[^A-Z0-9-]/g, "_")}`;
       const claimRef = doc(db, "profile_claims", claimId);
 
@@ -117,6 +121,33 @@ export default function JoinAcademy({ onBack }: { onBack?: () => void }) {
     }
   };
 
+  const handleActivate = async () => {
+    setError("");
+    if (!existingClaim?.approvedAcademyId || !userId) {
+      setError("Approved Academy details are missing.");
+      return;
+    }
+
+    setIsActivating(true);
+    try {
+      await activateApprovedMembership(
+        existingClaim.approvedAcademyId,
+        userId,
+        existingClaim.id,
+      );
+      setActivationComplete(true);
+    } catch (activationError) {
+      console.error(activationError);
+      setError(
+        activationError instanceof Error
+          ? activationError.message
+          : "Failed to activate Academy access.",
+      );
+    } finally {
+      setIsActivating(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-4">
       <div className="max-w-md w-full bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
@@ -146,6 +177,35 @@ export default function JoinAcademy({ onBack }: { onBack?: () => void }) {
                   <p className="text-xs text-slate-400 mb-6">
                     Submitted {formatClaimDate(existingClaim.createdAt)}
                   </p>
+                </>
+              ) : existingClaim.status === "APPROVED" ? (
+                <>
+                  <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <CheckCircle2 size={32} className="text-emerald-600" />
+                  </div>
+                  <h3 className="text-xl font-bold text-slate-800 mb-2">
+                    {activationComplete ? "Academy Access Activated" : "Membership Approved"}
+                  </h3>
+                  <p className="text-slate-500 mb-6">
+                    {activationComplete
+                      ? "Your account is refreshing with the approved Academy access."
+                      : "Activate your account pointers after verifying the approved Membership."}
+                  </p>
+                  {!activationComplete && (
+                    <button
+                      type="button"
+                      onClick={handleActivate}
+                      disabled={isActivating}
+                      className="w-full bg-emerald-600 text-white font-bold rounded-xl px-4 py-4 hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isActivating ? "Activating..." : "Activate Academy Access"}
+                    </button>
+                  )}
+                  {error && (
+                    <div className="mt-4 p-4 bg-rose-50 text-rose-600 text-sm font-bold rounded-xl border border-rose-100 text-center">
+                      {error}
+                    </div>
+                  )}
                 </>
               ) : existingClaim.status === "REJECTED" ? (
                 <>
@@ -179,6 +239,7 @@ export default function JoinAcademy({ onBack }: { onBack?: () => void }) {
                   type="text"
                   value={inviteCode}
                   onChange={(e) => setInviteCode(e.target.value)}
+                  maxLength={MAX_INVITE_CODE_LENGTH}
                   placeholder="e.g., FUT-A1B2C3"
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-lg font-bold text-slate-800 text-center uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors"
                   required

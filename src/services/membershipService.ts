@@ -10,8 +10,9 @@ import {
   where,
 } from "firebase/firestore";
 import { FirebaseError } from "firebase/app";
-import { db } from "../lib/firebase";
+import { auth, db } from "../lib/firebase";
 import type {
+  ActivateApprovedMembershipResult,
   AcademyJoinClaim,
   ApproveAcademyJoinClaimInput,
   ApproveAcademyJoinClaimResult,
@@ -21,6 +22,16 @@ import type {
   TenantRole,
   TenantRoleResolution,
 } from "../types/Membership";
+import {
+  normalizeAndValidateInviteCode,
+  validateApprovedMembershipActivation,
+} from "./membershipValidation";
+
+export {
+  MAX_INVITE_CODE_LENGTH,
+  normalizeAndValidateInviteCode,
+  validateApprovedMembershipActivation,
+} from "./membershipValidation";
 
 function requireDocumentId(value: string, field: string) {
   if (!value || value.trim() !== value || value.includes("/")) {
@@ -144,6 +155,7 @@ export async function approveAcademyJoinClaim({
     ...claimSnapshot.data(),
   } as AcademyJoinClaim;
   const requestedRole = normalizeClaimRole(persistedClaim);
+  const persistedInviteCode = normalizeAndValidateInviteCode(persistedClaim.inviteCode);
   if (persistedClaim.userId !== claim.userId) {
     throw new Error("Claim identity changed before approval.");
   }
@@ -154,7 +166,6 @@ export async function approveAcademyJoinClaim({
   return runTransaction(db, async (transaction) => {
     const academyRef = doc(db, "academies", academyId);
     const membershipRef = doc(db, "academies", academyId, "members", claim.userId);
-    const userRef = doc(db, "users", claim.userId);
     const claimRef = doc(db, "profile_claims", claim.id);
     const coachRef = coachProfileId
       ? doc(db, "academies", academyId, "coaches", coachProfileId)
@@ -162,15 +173,11 @@ export async function approveAcademyJoinClaim({
 
     const academySnapshot = await transaction.get(academyRef);
     const membershipSnapshot = await transaction.get(membershipRef);
-    const userSnapshot = await transaction.get(userRef);
     const claimSnapshot = await transaction.get(claimRef);
     const coachSnapshot = coachRef ? await transaction.get(coachRef) : null;
 
     if (!academySnapshot.exists()) {
       throw new Error("The exact Academy document does not exist.");
-    }
-    if (!userSnapshot.exists()) {
-      throw new Error("The claim user document does not exist.");
     }
     if (!claimSnapshot.exists()) {
       throw new Error("The Academy join claim does not exist.");
@@ -178,12 +185,20 @@ export async function approveAcademyJoinClaim({
 
     const storedClaim = { id: claimSnapshot.id, ...claimSnapshot.data() } as AcademyJoinClaim;
     const storedRole = normalizeClaimRole(storedClaim);
+    const storedInviteCode = normalizeAndValidateInviteCode(storedClaim.inviteCode);
+    const academyInviteCode = normalizeAndValidateInviteCode(
+      String(academySnapshot.data().inviteCode || ""),
+    );
     if (
       storedClaim.userId !== claim.userId ||
       storedRole !== requestedRole ||
-      storedClaim.userEmail !== persistedClaim.userEmail
+      storedClaim.userEmail !== persistedClaim.userEmail ||
+      storedInviteCode !== persistedInviteCode
     ) {
       throw new Error("Claim identity or requested role changed before approval.");
+    }
+    if (storedInviteCode !== academyInviteCode) {
+      throw new Error("Claim invite code does not match the current Academy invite code.");
     }
     if (storedClaim.status === "REJECTED") {
       throw new Error("A rejected claim cannot be approved.");
@@ -193,6 +208,9 @@ export async function approveAcademyJoinClaim({
       (storedClaim.approvedAcademyId !== academyId || storedClaim.approvedRole !== requestedRole)
     ) {
       throw new Error("Claim was already approved for a different Academy or role.");
+    }
+    if (storedClaim.status !== "PENDING" && storedClaim.status !== "APPROVED") {
+      throw new Error("Claim is not eligible for approval.");
     }
 
     const existingMembership = membershipSnapshot.exists()
@@ -211,14 +229,6 @@ export async function approveAcademyJoinClaim({
     };
 
     transaction.set(membershipRef, membershipWrite);
-    transaction.set(userRef, {
-      activeAcademyId: academyId,
-      academyId,
-      tenantRole: requestedRole,
-      role: requestedRole,
-      status: "Active",
-      updatedAt: timestamp,
-    }, { merge: true });
     transaction.set(claimRef, {
       status: "APPROVED",
       approvedAt: storedClaim.status === "APPROVED"
@@ -256,6 +266,62 @@ export async function approveAcademyJoinClaim({
       membership: membershipWrite as Membership,
       role: requestedRole,
       coachProfileId,
+      membershipApproved: true,
+      userActivationRequired: true,
     };
+  });
+}
+
+export async function activateApprovedMembership(
+  academyId: string,
+  uid: string,
+  claimId: string,
+): Promise<ActivateApprovedMembershipResult> {
+  requireDocumentId(academyId, "academyId");
+  requireDocumentId(uid, "uid");
+  requireDocumentId(claimId, "claimId");
+
+  if (!auth.currentUser || auth.currentUser.uid !== uid) {
+    throw new Error("Membership activation is allowed only for the authenticated user.");
+  }
+
+  return runTransaction(db, async (transaction) => {
+    const academyRef = doc(db, "academies", academyId);
+    const membershipRef = doc(db, "academies", academyId, "members", uid);
+    const claimRef = doc(db, "profile_claims", claimId);
+    const userRef = doc(db, "users", uid);
+
+    const academySnapshot = await transaction.get(academyRef);
+    const membershipSnapshot = await transaction.get(membershipRef);
+    const claimSnapshot = await transaction.get(claimRef);
+    const userSnapshot = await transaction.get(userRef);
+
+    if (!academySnapshot.exists()) throw new Error("The exact Academy document does not exist.");
+    if (!membershipSnapshot.exists()) throw new Error("Approved Membership was not found.");
+    if (!claimSnapshot.exists()) throw new Error("Approved Academy join claim was not found.");
+    if (!userSnapshot.exists()) throw new Error("Authenticated User document was not found.");
+
+    const membership = membershipSnapshot.data() as Membership;
+    const approvedClaim = {
+      id: claimSnapshot.id,
+      ...claimSnapshot.data(),
+    } as AcademyJoinClaim;
+    const role = validateApprovedMembershipActivation({
+      academyId,
+      uid,
+      membership,
+      claim: approvedClaim,
+    });
+
+    transaction.set(userRef, {
+      activeAcademyId: academyId,
+      academyId,
+      tenantRole: role,
+      role,
+      status: "Active",
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+
+    return { activated: true, academyId, role };
   });
 }

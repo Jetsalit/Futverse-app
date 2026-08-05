@@ -125,7 +125,9 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
         claim,
         approvedBy,
       });
-      alert(`${result.role} approved successfully!`);
+      alert(
+        `${result.role} Membership approved. The user must activate Academy access from their account.`,
+      );
     } catch (error) {
       console.error("Error approving claim", error);
       alert(error instanceof Error ? error.message : "Failed to approve request");
