@@ -7,7 +7,8 @@ import React, {
 } from "react";
 import { auth, db } from "../lib/firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, onSnapshot } from "firebase/firestore";
+import type { TenantRole } from "../types/Membership";
 
 export type UserRole =
   | "SUPERADMIN"
@@ -21,6 +22,7 @@ export type UserRole =
 
 export interface User {
   id?: string;
+  uid?: string;
   name: string;
   email?: string;
   role: UserRole;
@@ -28,7 +30,10 @@ export interface User {
   status?: "ACTIVE" | "INACTIVE" | "PENDING" | "REJECTED" | "Active" | "Inactive" | "Pending";
   country?: string;
   phone?: string;
-  academyId?: string;
+  academyId?: string | null;
+  activeAcademyId?: string | null;
+  requestedAcademyName?: string;
+  tenantRole?: TenantRole;
   createdAt?: string;
   updatedAt?: string;
   approvedBy?: string;
@@ -76,10 +81,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    let unsubscribeUserDoc: (() => void) | undefined;
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      unsubscribeUserDoc?.();
+      unsubscribeUserDoc = undefined;
+
       if (firebaseUser) {
-        try {
-          const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+        const userRef = doc(db, "users", firebaseUser.uid);
+        unsubscribeUserDoc = onSnapshot(userRef, async (userDoc) => {
           if (userDoc.exists()) {
             const userData = userDoc.data() as User;
             
@@ -88,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               userData.role = "SUPERADMIN";
               try {
                 const { updateDoc } = await import("firebase/firestore");
-                await updateDoc(doc(db, "users", firebaseUser.uid), { role: "SUPERADMIN" });
+                await updateDoc(userRef, { role: "SUPERADMIN" });
               } catch (e) {
                 console.error("Failed to auto-promote:", e);
               }
@@ -97,6 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const fullUser = {
               ...userData,
               id: firebaseUser.uid,
+              uid: firebaseUser.uid,
               email: firebaseUser.email || undefined,
             };
             setActualUser(fullUser);
@@ -105,23 +115,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // Default user fallback if document not created yet
             const defaultUser: User = {
               id: firebaseUser.uid,
+              uid: firebaseUser.uid,
               name: firebaseUser.displayName || "User",
               email: firebaseUser.email || undefined,
               role: "USER",
+              academyId: null,
+              activeAcademyId: null,
             };
             setActualUser(defaultUser);
             setCurrentUser(defaultUser);
           }
-        } catch (error) {
+          setIsLoading(false);
+        }, (error) => {
           console.error("Error fetching user data:", error);
-        }
+          setActualUser(null);
+          setCurrentUser(null);
+          setIsLoading(false);
+        });
       } else {
         setActualUser(null);
         setCurrentUser(null);
+        setIsLoading(false);
       }
-      setIsLoading(false);
     });
-    return () => unsubscribe();
+    return () => {
+      unsubscribeUserDoc?.();
+      unsubscribeAuth();
+    };
   }, []);
 
   const setRole = (role: UserRole) => {

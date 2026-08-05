@@ -49,7 +49,7 @@ import TrainingLogManager from "./components/TrainingLogManager";
 import StartingXIBuilder from "./components/StartingXIBuilder";
 import DailyAttendanceSummary from "./components/DailyAttendanceSummary";
 import { useAuth } from "./contexts/AuthContext";
-import { useAcademy } from "./contexts/AcademyContext";
+import { useAcademy, type AcademyAccessState } from "./contexts/AcademyContext";
 import { useTheme } from "./contexts/ThemeContext";
 import PendingApproval from "./components/PendingApproval";
 import JoinAcademy from "./components/JoinAcademy";
@@ -72,6 +72,49 @@ import { collection, onSnapshot, query, where, orderBy } from "firebase/firestor
 import { db } from "./lib/firebase";
 import { AppNotification } from "./lib/notifications";
 
+function AccessResolutionScreen({
+  accessState,
+  error,
+  onLogout,
+}: {
+  accessState: AcademyAccessState;
+  error: Error | null;
+  onLogout: () => void;
+}) {
+  const messages: Record<string, string> = {
+    LOADING: "Resolving your Academy access...",
+    NO_ACADEMY: "No exact Academy workspace is linked to this account.",
+    MEMBERSHIP_MISSING: "Your Academy pointer exists, but no Membership was found.",
+    MEMBERSHIP_PENDING: "Your Academy Membership is pending approval.",
+    MEMBERSHIP_SUSPENDED: "Your Academy Membership is suspended.",
+    MEMBERSHIP_LEFT: "Your Academy Membership has ended.",
+    MEMBERSHIP_REVOKED: "Your Academy Membership was revoked.",
+    ACADEMY_NOT_FOUND: "The exact Academy document linked to this account was not found.",
+    PERMISSION_DENIED: "Permission was denied while resolving Academy access.",
+    ERROR: "Academy access could not be resolved.",
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+      <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-xl">
+        <Shield className="mx-auto mb-5 text-indigo-600" size={44} />
+        <h1 className="text-2xl font-black text-slate-900">Academy Access</h1>
+        <p className="mt-3 text-slate-600">{messages[accessState] || messages.ERROR}</p>
+        {error && <p className="mt-3 text-sm text-rose-600">{error.message}</p>}
+        {accessState !== "LOADING" && (
+          <button
+            type="button"
+            onClick={onLogout}
+            className="mt-7 rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white hover:bg-slate-800"
+          >
+            Log out
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [currentPage, setCurrentPage] = useState("dashboard");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -91,7 +134,10 @@ export default function App() {
     academyId,
     settings: academySettings,
     activeSeason,
-    setActiveSeason
+    setActiveSeason,
+    accessState,
+    loading: academyLoading,
+    error: academyError,
   } = useAcademy();
   const [pendingSyncs, setPendingSyncs] = useState(0);
 
@@ -282,13 +328,36 @@ export default function App() {
     return <PendingApproval />;
   }
 
-  // If they are a new coach without an academy, show the Join Academy screen
+  if (currentUser.role === "SUPERADMIN" && accessState === "NO_ACADEMY") {
+    return <SuperadminPortal onBack={() => navigateTo("dashboard")} />;
+  }
+
+  if (academyLoading || accessState === "LOADING") {
+    return (
+      <AccessResolutionScreen
+        accessState="LOADING"
+        error={academyError}
+        onLogout={logout}
+      />
+    );
+  }
+
+  // New ADMIN and COACH users request access before any subscription gate.
   if (
-    currentUser.status === "Inactive" &&
-    currentUser.requestedRole === "COACH" &&
-    !currentUser.academyId
+    accessState === "NO_ACADEMY" &&
+    (currentUser.requestedRole === "ADMIN" || currentUser.requestedRole === "COACH")
   ) {
     return <JoinAcademy />;
+  }
+
+  if (accessState !== "ACTIVE_MEMBERSHIP" && accessState !== "LEGACY_COMPATIBILITY") {
+    return (
+      <AccessResolutionScreen
+        accessState={accessState}
+        error={academyError}
+        onLogout={logout}
+      />
+    );
   }
 
   // Enable Paywall for new registrations

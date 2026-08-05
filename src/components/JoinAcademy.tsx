@@ -1,8 +1,34 @@
 import React, { useState, useEffect } from "react";
 import { Shield, ArrowRight, CheckCircle2, Clock } from "lucide-react";
-import { collection, addDoc, query, where, onSnapshot } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  onSnapshot,
+  query,
+  runTransaction,
+  serverTimestamp,
+  where,
+} from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../contexts/AuthContext";
+import type { AcademyJoinClaim, TenantRole } from "../types/Membership";
+
+function getRequestedTenantRole(
+  requestedRole?: string,
+  currentRole?: string,
+): TenantRole | null {
+  if (requestedRole === "ADMIN" || requestedRole === "COACH") return requestedRole;
+  if (currentRole === "ADMIN" || currentRole === "COACH") return currentRole;
+  return null;
+}
+
+function formatClaimDate(value: AcademyJoinClaim["createdAt"]) {
+  if (!value) return "recently";
+  const date = typeof value === "object" && "toDate" in value
+    ? value.toDate()
+    : new Date(value as Date | string);
+  return Number.isNaN(date.getTime()) ? "recently" : date.toLocaleDateString();
+}
 
 export default function JoinAcademy({ onBack }: { onBack?: () => void }) {
   const { currentUser, logout } = useAuth();
@@ -10,24 +36,35 @@ export default function JoinAcademy({ onBack }: { onBack?: () => void }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
-  const [existingClaim, setExistingClaim] = useState<any>(null);
+  const [existingClaim, setExistingClaim] = useState<AcademyJoinClaim | null>(null);
+  const requestedRole = getRequestedTenantRole(currentUser?.requestedRole, currentUser?.role);
+  const userId = currentUser?.uid || currentUser?.id;
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!userId || !requestedRole) return;
     const q = query(
       collection(db, "profile_claims"),
-      where("userId", "==", currentUser.id),
-      where("type", "==", "COACH_JOIN")
+      where("userId", "==", userId),
     );
     const unsub = onSnapshot(q, (snapshot) => {
-      if (!snapshot.empty) {
-        setExistingClaim({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
-      } else {
-        setExistingClaim(null);
-      }
+      const claims = snapshot.docs
+        .map((snapshotDoc) => ({
+          id: snapshotDoc.id,
+          ...snapshotDoc.data(),
+        }) as AcademyJoinClaim)
+        .filter((claim) =>
+          claim.type === "COACH_JOIN"
+            ? requestedRole === "COACH"
+            : claim.type === "ACADEMY_JOIN" && claim.requestedRole === requestedRole,
+        );
+      setExistingClaim(
+        claims.find((claim) => claim.status === "PENDING") ||
+        claims.find((claim) => claim.status === "REJECTED") ||
+        null,
+      );
     });
     return () => unsub();
-  }, [currentUser]);
+  }, [requestedRole, userId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,22 +74,44 @@ export default function JoinAcademy({ onBack }: { onBack?: () => void }) {
       setError("Please enter a valid invite code (e.g., FUT-XXXX)");
       return;
     }
+    if (!currentUser || !userId || !requestedRole) {
+      setError("Only ADMIN or COACH users can submit an Academy join request.");
+      return;
+    }
 
     setIsSubmitting(true);
     try {
-      await addDoc(collection(db, "profile_claims"), {
-        type: "COACH_JOIN",
-        userId: currentUser?.id,
-        userEmail: currentUser?.email,
-        userName: currentUser?.name,
-        inviteCode: inviteCode.toUpperCase().trim(),
-        status: "PENDING",
-        createdAt: new Date().toISOString()
+      const normalizedInviteCode = inviteCode.toUpperCase().trim();
+      const claimId = `${userId}_${requestedRole}_${normalizedInviteCode.replace(/[^A-Z0-9-]/g, "_")}`;
+      const claimRef = doc(db, "profile_claims", claimId);
+
+      await runTransaction(db, async (transaction) => {
+        const snapshot = await transaction.get(claimRef);
+        if (snapshot.exists()) {
+          const storedClaim = snapshot.data() as AcademyJoinClaim;
+          if (storedClaim.status === "PENDING") return;
+          throw new Error("A previous request already exists for this invite code and role.");
+        }
+
+        transaction.set(claimRef, {
+          type: "ACADEMY_JOIN",
+          userId,
+          userEmail: currentUser.email || null,
+          userName: currentUser.name,
+          requestedRole,
+          inviteCode: normalizedInviteCode,
+          ...(currentUser.requestedAcademyName
+            ? { requestedAcademyName: currentUser.requestedAcademyName }
+            : {}),
+          status: "PENDING",
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
       });
       setSuccess(true);
     } catch (err: any) {
       console.error(err);
-      setError("Failed to submit request. Please try again.");
+      setError(err.message || "Failed to submit request. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -68,7 +127,7 @@ export default function JoinAcademy({ onBack }: { onBack?: () => void }) {
           </div>
           <h2 className="text-3xl font-black text-white mb-2">Join Academy</h2>
           <p className="text-indigo-100 font-medium text-sm">
-            You need to join an academy to access coach features.
+            Submit an invite code to request {requestedRole || "Academy"} access.
           </p>
         </div>
 
@@ -82,7 +141,10 @@ export default function JoinAcademy({ onBack }: { onBack?: () => void }) {
                   </div>
                   <h3 className="text-xl font-bold text-slate-800 mb-2">Request Pending</h3>
                   <p className="text-slate-500 mb-6">
-                    Your request to join with code <strong className="text-slate-700">{existingClaim.inviteCode}</strong> has been sent to the Head Coach. Please wait for their approval.
+                    Your {requestedRole} request to join with code <strong className="text-slate-700">{existingClaim.inviteCode}</strong> has been sent to the Academy Admin. Please wait for approval.
+                  </p>
+                  <p className="text-xs text-slate-400 mb-6">
+                    Submitted {formatClaimDate(existingClaim.createdAt)}
                   </p>
                 </>
               ) : existingClaim.status === "REJECTED" ? (
@@ -104,7 +166,7 @@ export default function JoinAcademy({ onBack }: { onBack?: () => void }) {
               </div>
               <h3 className="text-xl font-bold text-slate-800 mb-2">Request Sent!</h3>
               <p className="text-slate-500 mb-6">
-                The Head Coach will review your request. Once approved, you can access the academy dashboard.
+                An Academy Admin will review your {requestedRole} request. Access is granted only after approval.
               </p>
             </div>
           ) : (

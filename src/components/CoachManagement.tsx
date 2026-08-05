@@ -19,10 +19,13 @@ import {
   updateDoc,
   query,
   where,
+  serverTimestamp,
 } from "firebase/firestore";
 import { useAcademy } from "../contexts/AcademyContext";
 import { useAuth } from "../contexts/AuthContext";
 import { EmptyState } from "./common/EmptyState";
+import { approveAcademyJoinClaim } from "../services/membershipService";
+import type { AcademyJoinClaim, TenantRole } from "../types/Membership";
 
 const LICENSES = ["Pro", "A", "B", "C", "G", "ไม่มี"];
 
@@ -40,6 +43,21 @@ interface Coach {
 
 const MOCK_COACHES: Coach[] = [];
 
+const getClaimRole = (claim: AcademyJoinClaim): TenantRole | null => {
+  if (claim.type === "COACH_JOIN") return "COACH";
+  return claim.requestedRole === "ADMIN" || claim.requestedRole === "COACH"
+    ? claim.requestedRole
+    : null;
+};
+
+const formatClaimDate = (value: AcademyJoinClaim["createdAt"]) => {
+  if (!value) return "Unknown";
+  const date = typeof value === "object" && "toDate" in value
+    ? value.toDate()
+    : new Date(value as Date | string);
+  return Number.isNaN(date.getTime()) ? "Unknown" : date.toLocaleDateString();
+};
+
 export default function CoachManagement({ onBack }: { onBack: () => void }) {
   const { settings, getAcademyCollection, academyId } = useAcademy();
   const { currentUser } = useAuth();
@@ -50,7 +68,7 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [coachToDelete, setCoachToDelete] = useState<string | null>(null);
   
-  const [pendingClaims, setPendingClaims] = useState<any[]>([]);
+  const [pendingClaims, setPendingClaims] = useState<AcademyJoinClaim[]>([]);
   const [activeTab, setActiveTab] = useState<"coaches" | "claims">("coaches");
 
   const [formData, setFormData] = useState({
@@ -81,47 +99,50 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
     const q = query(
       collection(db, "profile_claims"), 
       where("inviteCode", "==", settings.inviteCode),
-      where("type", "==", "COACH_JOIN"),
       where("status", "==", "PENDING")
     );
     const unsub = onSnapshot(q, (snapshot) => {
-      setPendingClaims(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setPendingClaims(
+        snapshot.docs
+          .map((snapshotDoc) => ({
+            id: snapshotDoc.id,
+            ...snapshotDoc.data(),
+          }) as AcademyJoinClaim)
+          .filter((claim) => getClaimRole(claim) !== null),
+      );
     });
     return () => unsub();
   }, [settings.inviteCode]);
 
-  const handleApproveClaim = async (claim: any) => {
+  const handleApproveClaim = async (claim: AcademyJoinClaim) => {
     try {
-      // 1. Update the user doc to link to this academy and activate them
-      await updateDoc(doc(db, "users", claim.userId), {
-        academyId: academyId,
-        role: "COACH",
-        status: "Active"
+      const approvedBy = currentUser?.uid || currentUser?.id;
+      if (!academyId || !approvedBy) {
+        throw new Error("An exact Academy ID and approving user are required.");
+      }
+      const result = await approveAcademyJoinClaim({
+        academyId,
+        claim,
+        approvedBy,
       });
-      // 2. Mark claim as APPROVED
-      await updateDoc(doc(db, "profile_claims", claim.id), { status: "APPROVED" });
-      // 3. Automatically add them to the local academy coaches list
-      await addDoc(getAcademyCollection("coaches"), {
-        userId: claim.userId,
-        firstName: claim.userName?.split(" ")[0] || "Coach",
-        lastName: claim.userName?.split(" ").slice(1).join(" ") || "",
-        email: claim.userEmail,
-        phone: "",
-        license: "C",
-        teams: [],
-        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${claim.userEmail}`
-      });
-      alert("Coach approved successfully!");
+      alert(`${result.role} approved successfully!`);
     } catch (error) {
       console.error("Error approving claim", error);
-      alert("Failed to approve coach");
+      alert(error instanceof Error ? error.message : "Failed to approve request");
     }
   };
 
   const handleRejectClaim = async (claimId: string) => {
     try {
-      await updateDoc(doc(db, "profile_claims", claimId), { status: "REJECTED" });
-      alert("Coach request rejected");
+      const rejectedBy = currentUser?.uid || currentUser?.id;
+      if (!rejectedBy) throw new Error("An approving user is required.");
+      await updateDoc(doc(db, "profile_claims", claimId), {
+        status: "REJECTED",
+        rejectedAt: serverTimestamp(),
+        rejectedBy,
+        updatedAt: serverTimestamp(),
+      });
+      alert("Academy join request rejected");
     } catch (error) {
       console.error("Error rejecting claim", error);
     }
@@ -368,7 +389,10 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
                   <div>
                     <h3 className="font-bold text-slate-800">{claim.userName || "Unknown"}</h3>
                     <p className="text-sm text-slate-500">{claim.userEmail}</p>
-                    <p className="text-xs text-slate-400 mt-1">Requested on {new Date(claim.createdAt).toLocaleDateString()}</p>
+                    <p className="text-xs font-bold text-indigo-600 mt-1">
+                      Requested role: {getClaimRole(claim)}
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1">Requested on {formatClaimDate(claim.createdAt)}</p>
                   </div>
                   <div className="flex gap-2">
                     <button

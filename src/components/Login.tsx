@@ -63,6 +63,11 @@ const FutVerseLogo = ({ className = "" }: { className?: string }) => (
   </svg>
 );
 
+const GOOGLE_REGISTRATION_KEY = "futverse_google_registration";
+
+const isAcademyRole = (role: string): role is "ADMIN" | "COACH" =>
+  role === "ADMIN" || role === "COACH";
+
 export default function Login() {
   const { login } = useAuth();
   const [isLoginView, setIsLoginView] = useState(true);
@@ -73,10 +78,9 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [country, setCountry] = useState("");
-  const [academyId, setAcademyId] = useState("");
+  const [requestedAcademyName, setRequestedAcademyName] = useState("");
   const [phone, setPhone] = useState("");
   const [requestedRole, setRequestedRole] = useState("PLAYER");
-  const [academySize, setAcademySize] = useState("30");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [inAppBrowserWarning, setInAppBrowserWarning] = useState(false);
@@ -97,9 +101,20 @@ export default function Login() {
           const userRef = doc(db, "users", user.uid);
           const userSnap = await getDoc(userRef);
           if (!userSnap.exists()) {
+            let pendingRegistration: Record<string, string> = {};
+            try {
+              pendingRegistration = JSON.parse(
+                sessionStorage.getItem(GOOGLE_REGISTRATION_KEY) || "{}",
+              );
+            } catch {
+              pendingRegistration = {};
+            }
+            sessionStorage.removeItem(GOOGLE_REGISTRATION_KEY);
             const isSuperAdmin = user.email === "jetsalween@gmail.com";
-            const assignedRole = isSuperAdmin ? "SUPERADMIN" : "USER";
-            const status = isSuperAdmin ? "Active" : "Inactive";
+            const redirectRequestedRole = pendingRegistration.requestedRole || "COACH";
+            const isPlayer = redirectRequestedRole === "PLAYER";
+            const assignedRole = isSuperAdmin ? "SUPERADMIN" : (isPlayer ? "PLAYER" : "USER");
+            const status = isSuperAdmin ? "Active" : (isPlayer ? "Active" : "Inactive");
             const newData: any = {
               uid: user.uid,
               email: user.email,
@@ -112,22 +127,25 @@ export default function Login() {
               createdAt: new Date(),
               updatedAt: new Date(),
               lastLogin: new Date(),
+              academyId: null,
+              activeAcademyId: null,
             };
             if (!isSuperAdmin) {
-              newData.requestedRole = "COACH";
-              newData.country = null;
-              newData.academyId = null;
-              newData.phone = null;
+              newData.requestedRole = redirectRequestedRole;
+              newData.country = pendingRegistration.country || null;
+              newData.phone = pendingRegistration.phone || null;
+              if (isAcademyRole(redirectRequestedRole) && pendingRegistration.requestedAcademyName) {
+                newData.requestedAcademyName = pendingRegistration.requestedAcademyName;
+              }
             } else {
               newData.requestedRole = null;
-              newData.academyId = null;
             }
             await setDoc(userRef, newData, { merge: true });
             await addDoc(collection(db, "logs"), {
               action: "USER_REGISTERED",
               userId: user.uid,
               email: user.email,
-              requestedRole: isSuperAdmin ? "SUPERADMIN" : "COACH",
+              requestedRole: isSuperAdmin ? "SUPERADMIN" : redirectRequestedRole,
               timestamp: serverTimestamp(),
             });
           } else {
@@ -204,16 +222,19 @@ export default function Login() {
             createdAt: new Date(),
             updatedAt: new Date(),
             lastLogin: new Date(),
+            academyId: null,
+            activeAcademyId: null,
           };
 
           if (!isSuperAdmin) {
             newData.requestedRole = requestedRole;
             newData.country = country || null;
-            newData.academyId = academyId || null;
             newData.phone = phone || null;
+            if (isAcademyRole(requestedRole) && requestedAcademyName.trim()) {
+              newData.requestedAcademyName = requestedAcademyName.trim();
+            }
           } else {
             newData.requestedRole = null;
-            newData.academyId = null;
           }
 
           await setDoc(userRef, newData, { merge: true });
@@ -236,6 +257,13 @@ export default function Login() {
         // If popup is blocked or disallowed, fall back to redirect
         if (popupErr.code === "auth/popup-blocked" || popupErr.code === "auth/unauthorized-domain" || popupErr.code === "auth/operation-not-allowed" || popupErr.message?.includes("disallowed_useragent")) {
           const provider = new GoogleAuthProvider();
+          sessionStorage.setItem(GOOGLE_REGISTRATION_KEY, JSON.stringify({
+            requestedRole,
+            requestedAcademyName: requestedAcademyName.trim(),
+            country,
+            phone,
+            name,
+          }));
           await signInWithRedirect(auth, provider);
           return;
         }
@@ -307,19 +335,6 @@ export default function Login() {
         const assignedRole = isSuperAdmin ? "SUPERADMIN" : (isPlayer ? "PLAYER" : "USER");
         const status = isSuperAdmin ? "Active" : (isPlayer ? "Active" : "Inactive");
         
-        let finalAcademyId = academyId || null;
-        if (!isSuperAdmin && requestedRole === "COACH" && academyId) {
-          const academyRef = doc(collection(db, "academies"));
-          await setDoc(academyRef, {
-            name: academyId,
-            max_players: parseInt(academySize) || 30,
-            current_players_count: 0,
-            ownerId: user.uid,
-            createdAt: serverTimestamp(),
-          });
-          finalAcademyId = academyRef.id;
-        }
-
         await setDoc(
           doc(db, "users", user.uid),
           {
@@ -332,7 +347,11 @@ export default function Login() {
             status: status,
             requestedRole: isSuperAdmin ? null : requestedRole,
             country: country || null,
-            academyId: finalAcademyId,
+            academyId: null,
+            activeAcademyId: null,
+            ...(isAcademyRole(requestedRole) && requestedAcademyName.trim()
+              ? { requestedAcademyName: requestedAcademyName.trim() }
+              : {}),
             phone: phone || null,
             subscriptionPlan: "FREE",
             createdAt: new Date(),
@@ -602,7 +621,7 @@ export default function Login() {
 
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1.5 pl-1">
-                      Academy (ถ้ามี)
+                      Academy name (optional, for review only)
                     </label>
                     <div className="relative">
                       <Building2
@@ -611,8 +630,8 @@ export default function Login() {
                       />
                       <input
                         type="text"
-                        value={academyId}
-                        onChange={(e) => setAcademyId(e.target.value)}
+                        value={requestedAcademyName}
+                        onChange={(e) => setRequestedAcademyName(e.target.value)}
                         placeholder="e.g. Elite Football Academy"
                         className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium rounded-xl focus:ring-2 focus:ring-[#E1FF01] focus:border-[#E1FF01] outline-none transition-all placeholder:text-slate-400"
                       />
@@ -625,6 +644,7 @@ export default function Login() {
                     </label>
                     <div className="grid grid-cols-2 gap-3">
                       {[
+                        { id: "ADMIN", label: "Admin" },
                         { id: "COACH", label: "Coach" },
                         { id: "PLAYER", label: "Player" },
                         { id: "SCOUT", label: "Scout" },
@@ -665,21 +685,11 @@ export default function Login() {
                     </div>
                   </div>
 
-                  {!isLoginView && requestedRole === "COACH" && (
+                  {!isLoginView && isAcademyRole(requestedRole) && (
                     <div className="animate-in fade-in zoom-in-95 duration-300">
                       <label className="block text-xs font-bold text-slate-700 mb-2 pl-1">
-                        ขนาดอคาเดมี่ (Academy Size)
+                        Academy name is used for review only. You will join with an invite code.
                       </label>
-                      <select
-                        value={academySize}
-                        onChange={(e) => setAcademySize(e.target.value)}
-                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium rounded-xl focus:ring-2 focus:ring-[#E1FF01] focus:border-[#E1FF01] outline-none transition-all"
-                      >
-                        <option value="30">สูงสุด 30 คน (Max 30 Players)</option>
-                        <option value="50">สูงสุด 50 คน (Max 50 Players)</option>
-                        <option value="100">สูงสุด 100 คน (Max 100 Players)</option>
-                        <option value="150">สูงสุด 150 คน (Max 150 Players)</option>
-                      </select>
                     </div>
                   )}
                 </>
