@@ -35,6 +35,10 @@ import {
   parseOfflineExport,
   planDryRun,
 } from "../scripts/membershipBackfillDryRunCore";
+import {
+  assertReadOnlyExecutableSource,
+  ReadOnlySourceSafetyError,
+} from "../scripts/membershipExportStaticGuard";
 
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PROJECT_ID = "sample-project";
@@ -327,6 +331,18 @@ test("31 generated JSON is accepted by Sprint 1E planDryRun", async () => {
   assert.equal(result.summary.academyCount, 2);
 });
 
+test("31b invalid Membership parent Academy identifier fails", async () => {
+  const source = new FakeSource();
+  source.memberships["academy-a"][0].parentAcademyId = " academy-a";
+  await assert.rejects(() => collect(source), /wrong Academy|parent Academy ID/);
+});
+
+test("31c stored User id presence is preserved only when it matches the document ID", async () => {
+  const users = (await collect()).exportData.users;
+  assert.equal(users.find((user) => user.uid === "user-a")?.id, "user-a");
+  assert.equal(Object.hasOwn(users.find((user) => user.uid === "user-b") ?? {}, "id"), false);
+});
+
 function validArgv(): string[] {
   return [
     "--project-id", PROJECT_ID,
@@ -524,6 +540,27 @@ test("67 manifest excludes credential path and private key", async (t) => {
   assert.equal(manifest.includes(item.credentialPath), false);
 });
 
+const credentialSecretCases: Array<[string, string]> = [
+  ["private_key", "TEST_ONLY_NONFUNCTIONAL_PRIVATE_KEY_SPRINT_1G"],
+  ["private_key_id", "TEST_ONLY_NONFUNCTIONAL_PRIVATE_KEY_ID"],
+  ["token_uri", "https://invalid.example.test/nonfunctional-token-uri"],
+  ["auth_uri", "https://invalid.example.test/nonfunctional-auth-uri"],
+  ["client_x509_cert_url", "https://invalid.example.test/nonfunctional-cert-url"],
+];
+
+for (const [field, syntheticValue] of credentialSecretCases) {
+  test(`67 secret exclusion: all four artifacts exclude ${field}`, async (t) => {
+    const item = fixture(t);
+    writeSyntheticCredential(item.credentialPath, { [field]: syntheticValue });
+    await executeReadOnlyExport(item.options, offlineDependencies(new FakeSource()));
+    for (const artifactName of EXPORT_ARTIFACT_NAMES) {
+      const artifact = readFileSync(join(item.outputDirectory, artifactName), "utf8");
+      assert.equal(artifact.includes(field), false, `${artifactName} contains ${field}`);
+      assert.equal(artifact.includes(syntheticValue), false, `${artifactName} contains synthetic ${field}`);
+    }
+  });
+}
+
 test("68 sensitive README states handling and authorization limits", async (t) => {
   const item = fixture(t);
   await executeReadOnlyExport(item.options, offlineDependencies(new FakeSource()));
@@ -597,6 +634,24 @@ test("75 publish rename failure cleans temporary output", async (t) => {
   assert.equal(readdirSync(item.root).some((name) => name.startsWith("published-output.tmp-")), false);
 });
 
+test("75b explicit export hash mismatch publishes nothing and cleans temporary output", async (t) => {
+  const item = fixture(t);
+  await assert.rejects(() => executeReadOnlyExport(item.options, {
+    ...offlineDependencies(new FakeSource()),
+    writeArtifact: (path, data) => {
+      if (path.endsWith("membership-planning-export.json")) {
+        const altered = Buffer.from(data).toString("utf8")
+          .replace("2026-08-06T01:00:00.000Z", "2026-08-07T01:00:00.000Z");
+        writeFileSync(path, altered);
+        return;
+      }
+      writeFileSync(path, data);
+    },
+  }), /SHA-256 verification failed/);
+  assert.equal(readdirSync(item.root).includes("published-output"), false);
+  assert.equal(readdirSync(item.root).some((name) => name.startsWith("published-output.tmp-")), false);
+});
+
 test("76 invalid credential is rejected before source creation", async (t) => {
   const item = fixture(t);
   writeSyntheticCredential(item.credentialPath, { project_id: "wrong-project" });
@@ -615,6 +670,103 @@ test("77 invalid confirmation is rejected before credential loading and source c
     createSource: async () => { sourceCreated = true; return new FakeSource(); },
   }), /confirmation phrase/);
   assert.equal(sourceCreated, false);
+});
+
+test("77b source initialization remains uncalled for every pre-source validation family", async (t) => {
+  const scenarios: Array<{
+    name: string;
+    prepare: (item: Fixture) => MembershipExportArguments;
+  }> = [
+    { name: "invalid project ID", prepare: (item) => ({ ...item.options, projectId: " project" }) },
+    { name: "invalid database ID", prepare: (item) => ({ ...item.options, databaseId: "database/id" }) },
+    { name: "relative credential path", prepare: (item) => ({ ...item.options, credentialsPath: "credential.json" }) },
+    { name: "relative output path", prepare: (item) => ({ ...item.options, outputDirectory: "output" }) },
+    { name: "wrong confirmation", prepare: (item) => ({ ...item.options, confirmation: "NO" }) },
+    {
+      name: "existing output",
+      prepare: (item) => {
+        mkdirSync(item.outputDirectory);
+        return item.options;
+      },
+    },
+    {
+      name: "missing output parent",
+      prepare: (item) => ({ ...item.options, outputDirectory: join(item.root, "missing", "output") }),
+    },
+    {
+      name: "output inside repository",
+      prepare: (item) => ({ ...item.options, outputDirectory: join(REPOSITORY_ROOT, ".synthetic-output-never-created") }),
+    },
+    {
+      name: "missing credential",
+      prepare: (item) => {
+        rmSync(item.credentialPath);
+        return item.options;
+      },
+    },
+    {
+      name: "credential directory",
+      prepare: (item) => {
+        rmSync(item.credentialPath);
+        mkdirSync(item.credentialPath);
+        return item.options;
+      },
+    },
+    {
+      name: "malformed credential JSON",
+      prepare: (item) => {
+        writeFileSync(item.credentialPath, "{", "utf8");
+        return item.options;
+      },
+    },
+    {
+      name: "wrong credential type",
+      prepare: (item) => {
+        writeSyntheticCredential(item.credentialPath, { type: "authorized_user" });
+        return item.options;
+      },
+    },
+    {
+      name: "credential project mismatch",
+      prepare: (item) => {
+        writeSyntheticCredential(item.credentialPath, { project_id: "other-project" });
+        return item.options;
+      },
+    },
+    {
+      name: "credential email mismatch",
+      prepare: (item) => {
+        writeSyntheticCredential(item.credentialPath, {
+          client_email: "reader@other-project.iam.gserviceaccount.com",
+        });
+        return item.options;
+      },
+    },
+    {
+      name: "missing credential private key",
+      prepare: (item) => {
+        writeSyntheticCredential(item.credentialPath, { private_key: "" });
+        return item.options;
+      },
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    const item = fixture(t);
+    const options = scenario.prepare(item);
+    let sourceInitializationCalls = 0;
+    await assert.rejects(
+      () => executeReadOnlyExport(options, {
+        createSource: async () => {
+          sourceInitializationCalls += 1;
+          return new FakeSource();
+        },
+      }),
+      undefined,
+      scenario.name,
+    );
+    assert.equal(sourceInitializationCalls, 0, scenario.name);
+  }
 });
 
 test("78 fake adapter receives exact explicit project and database IDs", async (t) => {
@@ -647,22 +799,13 @@ const executablePaths = [
   join(REPOSITORY_ROOT, "scripts", "membershipExportReadOnlyCore.ts"),
   join(REPOSITORY_ROOT, "scripts", "membershipExportReadOnly.ts"),
   join(REPOSITORY_ROOT, "scripts", "firestoreMembershipReadSource.ts"),
+  join(REPOSITORY_ROOT, "scripts", "membershipExportStaticGuard.ts"),
 ];
 
 test("81 static guard rejects every prohibited Firestore write-capable identifier", () => {
-  const forbidden = [
-    "WriteBatch", "BulkWriter", "Transaction", "FieldValue", "setDoc", "addDoc", "updateDoc",
-    "deleteDoc", "writeBatch", "runTransaction", "recursiveDelete",
-  ];
   for (const path of executablePaths) {
     const source = readFileSync(path, "utf8");
-    for (const token of forbidden) {
-      assert.equal(new RegExp(`\\b${token}\\b`).test(source), false, `${path} contains ${token}`);
-    }
-    for (const method of ["set", "create", "update", "delete"]) {
-      assert.equal(new RegExp(`\\.doc\\([^)]*\\)\\s*\\.${method}\\s*\\(`).test(source), false, `${path} contains document ${method}`);
-    }
-    assert.equal(/firestore\s*\.\s*(?:import|export)\b/.test(source), false);
+    assert.doesNotThrow(() => assertReadOnlyExecutableSource(path, source), path);
   }
 });
 
@@ -671,6 +814,81 @@ test("82 static guard allows createHash while still prohibiting write APIs", () 
   assert.match(source, /createHash/);
   assert.doesNotMatch(readFileSync(executablePaths[0], "utf8"), /\bWriteBatch\b/);
 });
+
+function assertSyntheticGuardFailure(source: string, expectedToken: string): void {
+  const filename = `synthetic-${expectedToken.replace(/[^A-Za-z0-9]+/g, "-")}.ts`;
+  assert.throws(
+    () => assertReadOnlyExecutableSource(filename, source),
+    (error: unknown) => {
+      assert.ok(error instanceof ReadOnlySourceSafetyError);
+      assert.equal(error.filename, filename);
+      assert.equal(error.token, expectedToken);
+      assert.match(error.message, /Read-only safety error/);
+      assert.ok(error.message.includes(filename));
+      assert.ok(error.message.includes(expectedToken));
+      return true;
+    },
+  );
+}
+
+const guardMutationCases: Array<[string, string, string]> = [
+  ["DocumentReference.set", 'const ref = database.doc("x/y"); ref.set(data);', ".set()"],
+  ["DocumentReference.create", 'const ref = database.doc("x/y"); ref.create(data);', ".create()"],
+  ["DocumentReference.update", 'const ref = database.doc("x/y"); ref.update(data);', ".update()"],
+  ["DocumentReference.delete", 'const ref = database.doc("x/y"); ref.delete();', ".delete()"],
+  ["CollectionReference.add", 'const collectionRef = database.collection("x"); collectionRef.add(data);', ".add()"],
+  ["Firestore.batch", "const writer = database.batch();", ".batch()"],
+  ["batch.commit", "const writer = makeWriter(); writer.commit();", ".commit()"],
+  ["general transaction", "const tx = database.transaction(callback);", ".transaction()"],
+  ["runTransaction", "runTransaction(database, callback);", "runTransaction"],
+  ["recursiveDelete", "database.recursiveDelete(ref);", "recursiveDelete"],
+  ["collectionGroup", 'database.collectionGroup("members");', "collectionGroup"],
+  ["WriteBatch", "let writer: WriteBatch;", "WriteBatch"],
+  ["BulkWriter", "let writer: BulkWriter;", "BulkWriter"],
+  ["Transaction", "let transaction: Transaction;", "Transaction"],
+  ["FieldValue", "const timestamp = FieldValue.serverTimestamp();", "FieldValue"],
+  ["setDoc", "setDoc(ref, data);", "setDoc"],
+  ["addDoc", "addDoc(ref, data);", "addDoc"],
+  ["updateDoc", "updateDoc(ref, data);", "updateDoc"],
+  ["deleteDoc", "deleteDoc(ref);", "deleteDoc"],
+  ["writeBatch", "writeBatch(database);", "writeBatch"],
+  ["managed importDocuments", "admin.importDocuments(request);", "importDocuments"],
+  ["managed exportDocuments", "admin.exportDocuments(request);", "exportDocuments"],
+  ["Firebase Auth createUser", "auth.createUser(user);", "createUser"],
+  ["Firebase Auth custom claims", "auth.setCustomUserClaims(uid, claims);", "setCustomUserClaims"],
+  ["Firebase client Auth module", 'import "firebase/auth";', "firebase/auth"],
+  ["Cloud Storage upload", 'bucket.upload("local-file");', "upload"],
+  ["Cloud Storage write stream", "file.createWriteStream();", "createWriteStream"],
+  ["Cloud Storage metadata write", "file.setMetadata(metadata);", "setMetadata"],
+  ["Cloud Storage file save", "file.save(data);", ".save()"],
+  ["Cloud Storage object copy", "file.copy(destination);", ".copy()"],
+  ["Cloud Storage object move", "file.move(destination);", ".move()"],
+  ["Cloud Storage object compose", "file.compose(parts);", ".compose()"],
+  ["Cloud Storage public access mutation", "file.makePublic();", ".makePublic()"],
+  ["Firebase client Storage module", 'import "firebase/storage";', "firebase/storage"],
+  ["Google Cloud Storage module", 'import "@google-cloud/storage";', "@google-cloud/storage"],
+  ["write after division expression", "const ratio = total / count; ref.set(data);", ".set()"],
+  ["write inside template expression", "const value = `result: ${ref.update(data)}`;", ".update()"],
+];
+
+for (const [name, source, token] of guardMutationCases) {
+  test(`81 mutation guard rejects ${name}`, () => assertSyntheticGuardFailure(source, token));
+}
+
+const safeGuardCases: Array<[string, string]> = [
+  ["createHash", 'const digest = createHash("sha256");'],
+  ["createSource", "const source = createSource(options);"],
+  ["createFirestoreMembershipReadSource", "const source = createFirestoreMembershipReadSource(options);"],
+  ["deleteApp", "await deleteApp(app);"],
+  ["native Map.set", 'const values = new Map<string, string>(); values.set("key", "value");'],
+  ["native Set.add", 'const seen = new Set<string>(); seen.add("value");'],
+];
+
+for (const [name, source] of safeGuardCases) {
+  test(`82 safe-name regression permits ${name}`, () => {
+    assert.doesNotThrow(() => assertReadOnlyExecutableSource(`safe-${name}.ts`, source));
+  });
+}
 
 test("83 real adapter contains only the approved collection names", () => {
   const source = readFileSync(executablePaths[2], "utf8");
@@ -691,9 +909,11 @@ test("84 real adapter never uses a collection-group query", () => {
 });
 
 test("85 executable exporter has no Firebase Auth or Storage imports", () => {
-  const source = executablePaths.map((path) => readFileSync(path, "utf8")).join("\n");
-  assert.doesNotMatch(source, /firebase-admin\/(?:auth|storage)/);
-  assert.doesNotMatch(source, /getAuth|getStorage|uploadBytes/);
+  for (const path of executablePaths) {
+    const source = readFileSync(path, "utf8");
+    assert.doesNotMatch(source, /from\s+["']firebase-admin\/(?:auth|storage)["']/);
+    assert.doesNotThrow(() => assertReadOnlyExecutableSource(path, source));
+  }
 });
 
 test("86 pure exporter core imports no Firebase module", () => {
