@@ -12,6 +12,7 @@ import {
   addDoc,
 } from "firebase/firestore";
 import { createNotification } from "../lib/notifications";
+import notificationService from "../services/notificationService";
 import {
   CheckCircle,
   XCircle,
@@ -25,8 +26,15 @@ import {
 import { subscribeToUsers, updateUserStatus } from "../lib/firestore/users";
 import ObservationMetricsManager from "../modules/parent-observation/components/ObservationMetricsManager";
 import SuperAdminHeader from "./superadmin/SuperAdminHeader";
+import SuperAdminNoticeComposer from "./superadmin/SuperAdminNoticeComposer";
 import SuperAdminOverview from "./superadmin/SuperAdminOverview";
 import { downloadSuperAdminDashboardCsv } from "./superadmin/dashboardExport";
+import {
+  firebaseUidForUser,
+  sendNoticeInBatches,
+  type NoticeSendRequest,
+  type NoticeSendSummary,
+} from "./superadmin/noticeAudience";
 import {
   buildRecentActivities,
   deriveDashboardAlerts,
@@ -81,6 +89,11 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const [activityLogs, setActivityLogs] = useState<AuditLogEntry[]>([]);
   const [activityLoadState, setActivityLoadState] = useState<DashboardLoadState>("idle");
   const [dashboardSearchQuery, setDashboardSearchQuery] = useState("");
+  const [isNoticeComposerOpen, setIsNoticeComposerOpen] = useState(false);
+  const [noticeAcademyByUid, setNoticeAcademyByUid] = useState<ReadonlyMap<string, string>>(
+    () => new Map(),
+  );
+  const [academyResolutionLoadState, setAcademyResolutionLoadState] = useState<DashboardLoadState>("idle");
   const activityRequestStartedRef = useRef(false);
 
   useEffect(() => {
@@ -229,11 +242,12 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     const enrichUsers = async () => {
+      setAcademyResolutionLoadState("loading");
       try {
         const accSnap = await getDocs(collection(db, "academies"));
-        const accNameMap = new Map();
-        const parentMap = new Map(); 
-        const playerMap = new Map(); 
+        const accNameMap = new Map<string, string>();
+        const parentMap = new Map<string, string>();
+        const playerMap = new Map<string, string>();
 
         const nextAcademyDirectory = accSnap.docs
           .filter((academyDoc) => academyDoc.id !== "superadmin_system")
@@ -248,12 +262,15 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
 
         // Fetch players for each academy manually to avoid collectionGroup permission issues
         const playerPromises = accSnap.docs.map(async (accDoc) => {
-          accNameMap.set(accDoc.id, accDoc.data().name);
+          const academyName = typeof accDoc.data().name === "string"
+            ? accDoc.data().name
+            : accDoc.id;
+          accNameMap.set(accDoc.id, academyName);
           const playersRef = collection(db, `academies/${accDoc.id}/players`);
           const playersSnap = await getDocs(playersRef);
           playersSnap.forEach((pDoc) => {
              const data = pDoc.data();
-             if (data.linkedUserId) {
+             if (typeof data.linkedUserId === "string" && data.linkedUserId) {
                 playerMap.set(data.linkedUserId, accDoc.id);
              }
              parentMap.set(pDoc.id, accDoc.id);
@@ -262,12 +279,14 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
 
         await Promise.all(playerPromises);
 
+        const nextNoticeAcademyByUid = new Map<string, string>();
         const newUsers = users.map(u => {
            let derivedAcademyId = u.academyId;
+           const userIdentity = u.id || u.uid;
            
            // If the user's ID is listed as linkedUserId on an academy player (Parent or Player)
-           if (playerMap.has(u.id)) {
-               derivedAcademyId = playerMap.get(u.id);
+           if (userIdentity && playerMap.has(userIdentity)) {
+               derivedAcademyId = playerMap.get(userIdentity);
            } 
            // Fallback: if the user document has linkedPlayerId pointing to an academy player
            else if (u.linkedPlayerId && parentMap.has(u.linkedPlayerId)) {
@@ -279,14 +298,24 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
            if (derivedAcademyId && accNameMap.has(derivedAcademyId)) {
                displayAcademy = accNameMap.get(derivedAcademyId);
            }
+
+           const uid = firebaseUidForUser(u);
+           const noticeAcademyId = u.activeAcademyId || derivedAcademyId;
+           if (uid && noticeAcademyId) {
+             nextNoticeAcademyByUid.set(uid, noticeAcademyId);
+           }
            
            return { ...u, academyId: displayAcademy || null };
         });
         setEnrichedUsers(newUsers);
+        setNoticeAcademyByUid(nextNoticeAcademyByUid);
+        setAcademyResolutionLoadState("loaded");
       } catch (err) {
         console.error("Error enriching users with academy data:", err);
         setEnrichedUsers(users);
         setAcademyLoadState("unavailable");
+        setNoticeAcademyByUid(new Map());
+        setAcademyResolutionLoadState("unavailable");
       }
     };
     
@@ -294,6 +323,8 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
       enrichUsers();
     } else {
       setEnrichedUsers([]);
+      setNoticeAcademyByUid(new Map());
+      setAcademyResolutionLoadState("idle");
     }
   }, [users]);
 
@@ -387,6 +418,20 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
       recentActivityLoadState: activityLoadState,
     });
   };
+
+  const handleSendNotice = async (
+    request: NoticeSendRequest,
+  ): Promise<NoticeSendSummary> => sendNoticeInBatches(
+    request.recipientUids,
+    (recipientUids) => notificationService.emitToRecipients([...recipientUids], {
+      title: request.title,
+      message: request.message,
+      type: "System",
+      entityType: "BROADCAST",
+      actionUrl: "dashboard",
+      academyId: request.academyId,
+    }),
+  );
 
   const handleApprove = async (user: User) => {
     if (!user.id) return;
@@ -530,6 +575,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
       <SuperAdminHeader
         onBack={onBack}
         onNavigate={setActiveTab}
+        onOpenNotice={() => setIsNoticeComposerOpen(true)}
         onExportReport={handleExportReport}
         dashboardActionsDisabled={isLoadingUsers}
         searchResults={dashboardSearchResults}
@@ -1245,6 +1291,16 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
         )}
 
       </div>
+
+      <SuperAdminNoticeComposer
+        isOpen={isNoticeComposerOpen}
+        users={users}
+        academies={academyDirectory}
+        academyByUid={noticeAcademyByUid}
+        academyTargetingAvailable={academyResolutionLoadState === "loaded"}
+        onClose={() => setIsNoticeComposerOpen(false)}
+        onSend={handleSendNotice}
+      />
 
       {selectedUser && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">

@@ -5,6 +5,7 @@ import type { DashboardSearchResult, SuperAdminTab } from "./dashboardModel";
 interface SuperAdminHeaderProps {
   onBack: () => void;
   onNavigate: (tab: SuperAdminTab) => void;
+  onOpenNotice: () => void;
   onExportReport: () => void;
   dashboardActionsDisabled: boolean;
   searchResults: readonly DashboardSearchResult[];
@@ -15,6 +16,7 @@ interface SuperAdminHeaderProps {
 export default function SuperAdminHeader({
   onBack,
   onNavigate,
+  onOpenNotice,
   onExportReport,
   dashboardActionsDisabled,
   searchResults,
@@ -59,9 +61,10 @@ export default function SuperAdminHeader({
           </button>
           <button
             type="button"
-            disabled
-            title="No SuperAdmin notice composer is available yet"
-            className="inline-flex cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-100 px-3 py-2.5 text-xs font-bold text-slate-400"
+            onClick={onOpenNotice}
+            disabled={dashboardActionsDisabled}
+            title={dashboardActionsDisabled ? "User data is still loading" : "Compose a notice for active users"}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 shadow-sm transition hover:border-emerald-200 hover:text-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
           >
             <Megaphone size={16} /> Send Notice
           </button>
