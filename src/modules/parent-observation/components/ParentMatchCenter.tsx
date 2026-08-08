@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { ChevronRight, Calendar, Users, MapPin, Shield, CheckCircle } from "lucide-react";
 import { useAuth } from "../../../contexts/AuthContext";
-import { collection, query, getDocs, where } from "firebase/firestore";
+import { collection, doc, getDoc, query, getDocs, where } from "firebase/firestore";
 import { db } from "../../../lib/firebase";
-import { getMatches } from "../../../lib/matchApi";
 import { Match } from "../../../types/Match";
+import { linkedPlayerLookupForUser } from "../../../lib/nonStaffPlayerAccess";
 
 export default function ParentMatchCenter({ onSelectMatch }: { onSelectMatch: (matchId: string, playerId: string, position?: string, academyId?: string) => void }) {
   const { currentUser } = useAuth();
@@ -22,59 +22,56 @@ export default function ParentMatchCenter({ onSelectMatch }: { onSelectMatch: (m
       setIsLoading(true);
 
       try {
-        // Find linked player by scanning academies (same approach as PlayerDashboard)
-        let foundAcademyId: string | null = null;
-        let foundPlayerId: string | null = null;
+        const lookup = linkedPlayerLookupForUser(currentUser);
+        if (lookup.kind !== "PARENT_DOCUMENT") {
+          throw new Error("Parent access requires an exact Academy and linked Player pointer.");
+        }
 
-        const accSnap = await getDocs(collection(db, "academies"));
-        for (const acc of accSnap.docs) {
-          const q = query(
-            collection(db, `academies/${acc.id}/players`),
-            where("linkedUserId", "==", currentUser.id)
+        const foundAcademyId = lookup.academyId;
+        const foundPlayerId = lookup.playerId;
+        const playerSnapshot = await getDoc(doc(
+          db,
+          `academies/${foundAcademyId}/players`,
+          foundPlayerId,
+        ));
+        if (!playerSnapshot.exists()) {
+          throw new Error("The linked Player profile was not found.");
+        }
+
+        const playerData = playerSnapshot.data();
+        if (playerData.position) {
+          const position = String(playerData.position).trim().toUpperCase();
+          setRealPlayerPosition(
+            position === "GK" || position === "GOALKEEPER" || position.includes("GOAL")
+              ? "Goalkeeper"
+              : playerData.position,
           );
-          const snap = await getDocs(q);
-          if (!snap.empty) {
-            foundAcademyId = acc.id;
-            foundPlayerId = snap.docs[0].id;
-            const pd = snap.docs[0].data();
-            if (pd.position) {
-              const posStr = String(pd.position).trim().toUpperCase();
-              setRealPlayerPosition((posStr === "GK" || posStr === "GOALKEEPER" || posStr.includes("GOAL")) ? "Goalkeeper" : pd.position);
-            }
-            break;
-          }
         }
-
-        // Fallback: use currentUser.academyId if available
-        if (!foundAcademyId && currentUser.academyId) {
-          foundAcademyId = currentUser.academyId;
-        }
-
-        if (foundPlayerId) {
-          setRealPlayerId(foundPlayerId);
-        }
+        setRealPlayerId(foundPlayerId);
 
         // Fetch matches using the resolved academyId
-        if (foundAcademyId) {
-          setRealAcademyId(foundAcademyId);
-          const fetchedMatches = await getMatches(foundAcademyId);
-          setMatches(fetchedMatches.filter(m => m.status !== "Cancelled"));
+        setRealAcademyId(foundAcademyId);
+        // Match documents do not currently expose a Rules-queryable Parent link.
+        // Exact linked-match reads remain protected, but an Academy-wide list is not attempted.
+        setMatches([]);
 
-          // Fetch recorded sessions for this user
-          const sessionsQ = query(
-            collection(db, `academies/${foundAcademyId}/observation_sessions`),
-            where("creatorId", "==", currentUser.id)
-          );
-          const sessionsSnap = await getDocs(sessionsQ);
-          const recordedIds = new Set<string>();
-          sessionsSnap.docs.forEach(doc => {
-            const data = doc.data();
-            if (data.contextId) {
-              recordedIds.add(data.contextId);
-            }
-          });
-          setRecordedMatchIds(recordedIds);
-        }
+        // Fetch only observation sessions created by this Parent.
+        const sessionsQ = query(
+          collection(db, `academies/${foundAcademyId}/observation_sessions`),
+          where("academyId", "==", foundAcademyId),
+          where("creatorId", "==", currentUser.id),
+          where("playerId", "==", foundPlayerId),
+          where("source", "==", "PARENT"),
+        );
+        const sessionsSnap = await getDocs(sessionsQ);
+        const recordedIds = new Set<string>();
+        sessionsSnap.docs.forEach(sessionDocument => {
+          const data = sessionDocument.data();
+          if (data.contextId) {
+            recordedIds.add(data.contextId);
+          }
+        });
+        setRecordedMatchIds(recordedIds);
       } catch (error) {
         console.error("Error fetching ParentMatchCenter data", error);
       } finally {
@@ -115,14 +112,14 @@ export default function ParentMatchCenter({ onSelectMatch }: { onSelectMatch: (m
                 <div>
                   <div className="flex items-center gap-2 mb-2 flex-wrap">
                   <span className="text-[10px] font-bold tracking-widest uppercase bg-indigo-50 text-indigo-600 px-2 py-1 rounded">
-                    {match.type}
+                    {match.competitionType}
                   </span>
-                  {match.status === "Played" && (
+                  {match.status === "COMPLETED" && (
                     <span className="text-[10px] font-bold tracking-widest uppercase bg-emerald-50 text-emerald-600 px-2 py-1 rounded flex items-center gap-1">
                       <CheckCircle size={10} /> Played
                     </span>
                   )}
-                  {match.status === "Upcoming" && (
+                  {match.status === "SCHEDULED" && (
                     <span className="text-[10px] font-bold tracking-widest uppercase bg-blue-50 text-blue-600 px-2 py-1 rounded flex items-center gap-1">
                       Upcoming
                     </span>
@@ -137,7 +134,7 @@ export default function ParentMatchCenter({ onSelectMatch }: { onSelectMatch: (m
                     vs {match.opponent}
                   </h3>
                   <div className="flex items-center gap-4 text-xs font-medium text-slate-500 mt-1">
-                    <span className="flex items-center gap-1"><Calendar size={14} /> {match.date}</span>
+                    <span className="flex items-center gap-1"><Calendar size={14} /> {match.matchDate}</span>
                     <span className="flex items-center gap-1"><MapPin size={14} /> {match.location}</span>
                   </div>
                 </div>

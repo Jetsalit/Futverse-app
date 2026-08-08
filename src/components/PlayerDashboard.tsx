@@ -12,6 +12,7 @@ import DailyWellness from "./player-portal/DailyWellness";
 import { EmptyState } from "./common/EmptyState";
 import { useCareerStats } from "../hooks/useCareerStats";
 import { ThaiDatePicker, formatThaiDate } from "./ThaiDatePicker";
+import { linkedPlayerLookupForUser } from "../lib/nonStaffPlayerAccess";
 
 interface Teammate {
   id: string;
@@ -109,20 +110,33 @@ export default function PlayerDashboard({
 
     const fetchAllLinkedProfiles = async () => {
       try {
-        const accSnap = await getDocs(collection(db, "academies"));
-        const profiles = [];
-        for (const acc of accSnap.docs) {
-          const q = query(collection(db, `academies/${acc.id}/players`), where("linkedUserId", "==", currentUser.id));
+        const lookup = linkedPlayerLookupForUser(currentUser);
+        const profiles: any[] = [];
+
+        if (lookup.kind === "PLAYER_QUERY") {
+          const q = query(
+            collection(db, `academies/${lookup.academyId}/players`),
+            where("linkedUserId", "==", lookup.uid),
+          );
           const snap = await getDocs(q);
           snap.docs.forEach(doc => {
-            profiles.push({ id: doc.id, academyId: acc.id, ...doc.data() });
+            profiles.push({ id: doc.id, academyId: lookup.academyId, ...doc.data() });
           });
+        } else if (lookup.kind === "PARENT_DOCUMENT") {
+          const playerSnapshot = await getDoc(doc(
+            db,
+            `academies/${lookup.academyId}/players`,
+            lookup.playerId,
+          ));
+          if (playerSnapshot.exists()) {
+            profiles.push({
+              id: playerSnapshot.id,
+              academyId: lookup.academyId,
+              ...playerSnapshot.data(),
+            });
+          }
         }
-        if (profiles.length > 0 && !currentUser.academyId) {
-          import("firebase/firestore").then(({ doc, updateDoc }) => {
-            updateDoc(doc(db, "users", currentUser.id), { academyId: profiles[0].academyId }).catch(console.error);
-          });
-        }
+
         if (isSubscribed) {
           setLinkedProfiles(profiles);
           setLoading(false);
@@ -154,25 +168,9 @@ export default function PlayerDashboard({
     if (!playerProfile?.id) return;
     
     let isSubscribed = true;
-    let eventsUnsub: any = null;
-
     const accId = playerProfile.academyId;
     const pId = playerProfile.id;
 
-    // Subscribe to upcoming events for this academy
-    eventsUnsub = onSnapshot(collection(db, `academies/${accId}/events`), (eventSnap) => {
-      const evData = eventSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      const now = new Date();
-      now.setHours(0,0,0,0);
-      const futureEvents = evData.filter((ev: any) => {
-        if (!ev.date) return false;
-        const evDate = new Date(ev.date);
-        evDate.setHours(0,0,0,0);
-        return evDate >= now;
-      }).sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      if (isSubscribed) setEvents(futureEvents);
-    });
-    
     // Subscribe to daily logs
     const logsRef = collection(db, `academies/${accId}/players/${pId}/daily_logs`);
     const logsUnsub = onSnapshot(logsRef, (logSnap) => {
@@ -188,50 +186,16 @@ export default function PlayerDashboard({
       if (isSubscribed) setTodayAttendance(attSnap.exists() ? { id: attSnap.id, ...attSnap.data() } : null);
     });
 
-    // Subscribe to training_weeks (Weekly Periodization)
-    const todayDate = new Date();
-    const dayNum = todayDate.getDay();
-    const diff = todayDate.getDate() - dayNum + (dayNum === 0 ? -6 : 1);
-    const startOfWeek = new Date(todayDate);
-    startOfWeek.setDate(diff);
-    const weekStartStr = startOfWeek.toISOString().split("T")[0];
-    
-    const weekRef = doc(db, `academies/${accId}/training_weeks`, weekStartStr);
-    const weekUnsub = onSnapshot(weekRef, (weekSnap) => {
-      if (isSubscribed) setTrainingWeek(weekSnap.exists() ? { id: weekSnap.id, ...weekSnap.data() } : null);
-    });
-
-    // Fetch teammates
-    const playersRef = collection(db, `academies/${accId}/players`);
-    const teammatesQ = query(playersRef, where("ageGroup", "==", playerProfile.ageGroup));
-    const tmUnsub = onSnapshot(teammatesQ, (tmSnap) => {
-      if (isSubscribed) {
-        const tmList = tmSnap.docs.map(doc => ({
-          id: doc.id,
-          name: `${doc.data().firstName || ""} ${doc.data().lastName || ""}`.trim(),
-          avatar: doc.data().photoUrl || `https://ui-avatars.com/api/?name=${doc.data().firstName || "Player"}&background=random`,
-          position: doc.data().position || "Player"
-        }));
-        const finalTeammates = tmList.filter(t => t.id !== pId);
-        if (finalTeammates.length === 0) {
-          finalTeammates.push({
-            id: "dummy_player_for_testing",
-            name: "ผู้เล่นจำลอง (สำหรับทดสอบ)",
-            avatar: "https://ui-avatars.com/api/?name=Dummy&background=random",
-            position: "FW"
-          });
-        }
-        setTeammates(finalTeammates);
-      }
-    });
+    // Academy-wide events, weekly plans and rosters do not carry an owner link.
+    // Keep them unavailable rather than treating a legacy academy pointer as authorization.
+    setEvents([]);
+    setTrainingWeek(null);
+    setTeammates([]);
 
     return () => {
       isSubscribed = false;
-      if (eventsUnsub) eventsUnsub();
       logsUnsub();
       attUnsub();
-      weekUnsub();
-      tmUnsub();
     };
   }, [playerProfile?.id, playerProfile?.academyId]);
 
@@ -245,8 +209,6 @@ export default function PlayerDashboard({
     setSelectedPlayerToClaim(null);
 
     try {
-      const accSnap = await getDocs(collection(db, "academies"));
-      const candidates: any[] = [];
       const cleanFutId = normalizeStr(claimForm.futId);
       const cleanFirst = normalizeStr(claimForm.firstName);
       const cleanLast = normalizeStr(claimForm.lastName);
@@ -259,67 +221,9 @@ export default function PlayerDashboard({
         return;
       }
 
-      for (const acc of accSnap.docs) {
-        const academyData = acc.data();
-        const academyName = academyData.name || "Academy";
-        const playersRef = collection(db, `academies/${acc.id}/players`);
-        
-        let pDocs: any[] = [];
-        if (cleanFutId) {
-          // Priority 1: Search by FUT ID
-          const q = query(playersRef, where("futId", "==", claimForm.futId.trim().toUpperCase()));
-          const snap = await getDocs(q);
-          pDocs = snap.docs;
-
-          // If exact match didn't catch case difference, fetch all and filter in-memory for futId
-          if (pDocs.length === 0) {
-            const allSnap = await getDocs(playersRef);
-            pDocs = allSnap.docs.filter(d => normalizeStr(d.data().futId) === cleanFutId);
-          }
-        } else {
-          // Priority 2 & 3: Search by Name + DOB (with normalization)
-          const allSnap = await getDocs(playersRef);
-          pDocs = allSnap.docs.filter(d => {
-            const data = d.data();
-            const dbFirst = normalizeStr(data.firstName);
-            const dbLast = normalizeStr(data.lastName);
-            const dbDob = data.dob;
-
-            const nameMatches = (dbFirst === cleanFirst && dbLast === cleanLast) ||
-                                (normalizeStr(dbFirst + dbLast) === normalizeStr(cleanFirst + cleanLast));
-            const dobMatches = !inputDob || dbDob === inputDob;
-
-            return nameMatches && dobMatches;
-          });
-        }
-
-        pDocs.forEach(doc => {
-          candidates.push({
-            id: doc.id,
-            academyId: acc.id,
-            academyName,
-            ...doc.data()
-          });
-        });
-      }
-
-      if (candidates.length === 0) {
-        setClaimError("ไม่พบข้อมูลนักเตะ กรุณาตรวจสอบ FUT ID หรือ ชื่อ นามสกุล และวันเกิดอีกครั้ง หรือติดต่อโค้ช");
-        setClaimStatus("IDLE");
-        return;
-      }
-
-      const unlinkedCandidates = candidates.filter(c => !c.linkedUserId);
-      if (unlinkedCandidates.length === 0) {
-        setClaimError("โปรไฟล์นี้ถูกเชื่อมโยงกับบัญชีอื่นไปแล้ว");
-        setClaimStatus("IDLE");
-        return;
-      }
-
-      setFoundPlayers(unlinkedCandidates);
-      if (unlinkedCandidates.length === 1) {
-        setSelectedPlayerToClaim(unlinkedCandidates[0]);
-      }
+      // Owner-scoped Player rules cannot safely authorize discovery by FUT ID or PII.
+      // Keep unlinked account recovery fail-closed until a server-mediated claim flow exists.
+      setClaimError("ไม่สามารถค้นหาโปรไฟล์นักเตะแบบสาธารณะได้ กรุณาติดต่อผู้ดูแล Academy เพื่อเชื่อมโยงบัญชีอย่างปลอดภัย");
       setClaimStatus("IDLE");
     } catch (error) {
       console.error(error);
@@ -675,27 +579,10 @@ export default function PlayerDashboard({
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!coachMessage.trim() || !playerProfile?.academyId) return;
-    
-    setIsSendingMessage(true);
-    try {
-      await addDoc(collection(db, `academies/${playerProfile.academyId}/messages`), {
-        senderId: currentUser?.id,
-        senderName: `${playerProfile.firstName || ""} ${playerProfile.lastName || ""}`.trim(),
-        playerId: playerProfile.id,
-        targetSquad: playerProfile.ageGroup || "Unknown",
-        message: coachMessage,
-        isRead: false,
-        createdAt: serverTimestamp()
-      });
-      setIsMessagingCoach(false);
-      setCoachMessage("");
-      alert("ส่งข้อความถึงโค้ชเรียบร้อยแล้ว");
-    } catch (error) {
-      console.error("Error sending message:", error);
-      alert("เกิดข้อผิดพลาดในการส่งข้อความ");
-    } finally {
-      setIsSendingMessage(false);
-    }
+
+    // Academy messages are staff-only under the canonical tenant Rules.
+    // Keep this fail-closed until a recipient-bound Player messaging schema exists.
+    alert("ยังไม่สามารถส่งข้อความจากบัญชีนักกีฬาได้ กรุณาติดต่อผู้ดูแล Academy โดยตรง");
   };
 
   const handleCheckIn = async () => {

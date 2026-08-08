@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { collection, query, onSnapshot, orderBy } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { Match, PlayerMatchRecord } from "../types/Match";
+import { useAuth } from "../contexts/AuthContext";
 
 export interface CareerStats {
   totalMatches: number;
@@ -17,11 +18,13 @@ export interface CareerStats {
 }
 
 export function useCareerStats(academyId: string | undefined, playerId: string | undefined) {
+  const { currentUser } = useAuth();
   const [stats, setStats] = useState<CareerStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!academyId || !playerId) {
+    if (!academyId || !playerId || currentUser?.role === "PLAYER" || currentUser?.role === "PARENT") {
+      setStats(null);
       setLoading(false);
       return;
     }
@@ -117,7 +120,7 @@ export function useCareerStats(academyId: string | undefined, playerId: string |
     });
 
     return () => unsubscribe();
-  }, [academyId, playerId]);
+  }, [academyId, playerId, currentUser?.role]);
 
   return { stats, loading };
 }

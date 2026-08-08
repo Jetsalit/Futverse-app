@@ -299,6 +299,10 @@ export default function YouthPlayerCV({ player, onBack, isSelfView = false, chil
   const [playerMatches, setPlayerMatches] = useState<any[]>([]);
   useEffect(() => {
     if (!player?.id || !academyId) return;
+    if (isSelfView) {
+      setPlayerMatches([]);
+      return;
+    }
     const unsubMatches = onSnapshot(getAcademyCollection("matches"), (snap) => {
       const pMatches: any[] = [];
       snap.forEach(doc => {
@@ -315,7 +319,7 @@ export default function YouthPlayerCV({ player, onBack, isSelfView = false, chil
       setPlayerMatches(pMatches);
     });
     return () => unsubMatches();
-  }, [player?.id, academyId]);
+  }, [player?.id, academyId, isSelfView]);
 
   // Derived from playerMatches — no extra Firestore listener needed
   const playedUpMatches = useMemo(() => playerMatches, [playerMatches]);
@@ -656,21 +660,27 @@ export default function YouthPlayerCV({ player, onBack, isSelfView = false, chil
       const sortedEvals = [...evals].sort((a, b) => new Date(b.evaluation_date).getTime() - new Date(a.evaluation_date).getTime());
       setEvaluations(sortedEvals);
       
-      const criteriaSnap = await getDocs(getAcademyCollection("evaluation_criteria"));
-      let criteriaList = criteriaSnap.docs.map(doc => doc.data());
-      
-      // Also fetch global criteria from superadmin_system
-      if (academyId !== "superadmin_system") {
-        try {
-          const globalRef = collection(db, "academies", "superadmin_system", "evaluation_criteria");
-          const globalSnap = await getDocs(globalRef);
-          const globalData = globalSnap.docs.map(doc => doc.data());
-          const existingNames = new Set(criteriaList.map(c => c.criteria_name));
-          globalData.forEach(g => {
-            if (!existingNames.has(g.criteria_name)) criteriaList.push(g);
-          });
-        } catch (e) {
-          console.warn("Failed to fetch global criteria from superadmin_system", e);
+      let criteriaList: any[] = [];
+
+      // Criteria collections are academy configuration, not owner-scoped Player data.
+      // Staff views retain the existing reads; Player self-view stays fail-closed.
+      if (!isSelfView) {
+        const criteriaSnap = await getDocs(getAcademyCollection("evaluation_criteria"));
+        criteriaList = criteriaSnap.docs.map(doc => doc.data());
+
+        // Also fetch global criteria from superadmin_system
+        if (academyId !== "superadmin_system") {
+          try {
+            const globalRef = collection(db, "academies", "superadmin_system", "evaluation_criteria");
+            const globalSnap = await getDocs(globalRef);
+            const globalData = globalSnap.docs.map(doc => doc.data());
+            const existingNames = new Set(criteriaList.map(c => c.criteria_name));
+            globalData.forEach(g => {
+              if (!existingNames.has(g.criteria_name)) criteriaList.push(g);
+            });
+          } catch (e) {
+            console.warn("Failed to fetch global criteria from superadmin_system", e);
+          }
         }
       }
       
@@ -718,7 +728,7 @@ export default function YouthPlayerCV({ player, onBack, isSelfView = false, chil
       ]);
     };
     fetchEvaluationsAndCriteria();
-  }, [player?.id, academyId]);
+  }, [player?.id, academyId, isSelfView]);
 
   const teammates = useMemo(() => [{ 
     id: player.id, 
@@ -956,12 +966,14 @@ export default function YouthPlayerCV({ player, onBack, isSelfView = false, chil
           <div className="mt-6 pt-6 border-t border-slate-800 space-y-4">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">ข้อมูลประวัติ & ติดต่อ</span>
-              <button 
-                onClick={() => setIsEditingBio(true)}
-                className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 transition-colors uppercase tracking-wider"
-              >
-                แก้ไข
-              </button>
+              {!isSelfView && (
+                <button
+                  onClick={() => setIsEditingBio(true)}
+                  className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 transition-colors uppercase tracking-wider"
+                >
+                  แก้ไข
+                </button>
+              )}
             </div>
             
             <div className="space-y-3 text-xs">
@@ -986,7 +998,7 @@ export default function YouthPlayerCV({ player, onBack, isSelfView = false, chil
         </div>
 
         <div className="p-6 border-t border-slate-800 bg-slate-950 flex flex-col gap-3 relative z-20">
-          {!hasVoted && (
+          {!isSelfView && !hasVoted && (
             <button
               onClick={() => setShowVotingModal(true)}
               className="w-full bg-gradient-to-r from-indigo-600 to-indigo-900 rounded-xl p-4 shadow-lg border border-indigo-400/30 flex items-center justify-between group hover:shadow-indigo-500/20 transition-all text-left mb-2"

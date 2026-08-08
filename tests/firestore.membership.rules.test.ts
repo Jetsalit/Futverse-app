@@ -25,12 +25,12 @@ import {
   MAX_INVITE_CODE_LENGTH,
   normalizeAndValidateInviteCode,
   validateApprovedMembershipActivation,
-} from "../src/services/membershipValidation";
+} from "../src/services/membershipValidation.ts";
 import type {
   AcademyInvite,
   AcademyJoinClaim,
   Membership,
-} from "../src/types/Membership";
+} from "../src/types/Membership.ts";
 
 const PROJECT_ID = "demo-futverse-membership";
 const ACADEMY_A = "academy-a";
@@ -39,6 +39,8 @@ const ADMIN_A = "admin-a";
 const ADMIN_B = "admin-b";
 const COACH_A = "coach-a";
 const USER_A = "user-a";
+const PLAYER_A = "player-user-a";
+const PARENT_A = "parent-a";
 const INVITE_A = "FUT-ACADEMY-A";
 const INVITE_B = "FUT-ACADEMY-B";
 
@@ -820,4 +822,350 @@ test("40. signed-in user cannot read another user's protected observation data",
     "parent_match_observations",
     "protected",
   )));
+});
+
+test("41. PLAYER can query only the Player profile linked to their Firebase UID", async () => {
+  await seedAcademies();
+  await seed([
+    [`users/${PLAYER_A}`, userData(PLAYER_A, "PLAYER", ACADEMY_A)],
+    [`academies/${ACADEMY_A}/players/player-1`, { firstName: "Linked", linkedUserId: PLAYER_A }],
+    [`academies/${ACADEMY_A}/players/player-2`, { firstName: "Other", linkedUserId: "another-user" }],
+  ]);
+  const db = authedDb(PLAYER_A);
+  const linkedProfiles = await assertSucceeds(getDocs(query(
+    collection(db, "academies", ACADEMY_A, "players"),
+    where("linkedUserId", "==", PLAYER_A),
+  )));
+  assert.equal(linkedProfiles.size, 1);
+  assert.equal(linkedProfiles.docs[0].id, "player-1");
+  await assertFails(getDoc(doc(db, "academies", ACADEMY_A)));
+  await assertFails(getDoc(doc(db, "academies", ACADEMY_A, "players", "player-2")));
+});
+
+test("42. PLAYER can read and write only their linked Player subtree", async () => {
+  await seedAcademies();
+  await seed([
+    [`users/${PLAYER_A}`, userData(PLAYER_A, "PLAYER", ACADEMY_A)],
+    [`academies/${ACADEMY_A}/players/player-1`, { linkedUserId: PLAYER_A }],
+    [`academies/${ACADEMY_A}/players/player-2`, { linkedUserId: "another-user" }],
+    [`academies/${ACADEMY_A}/players/player-1/goals/goal-1`, { title: "Own goal" }],
+    [`academies/${ACADEMY_A}/players/player-2/goals/goal-2`, { title: "Other goal" }],
+    [`academies/${ACADEMY_A}/player_evaluations/evaluation-own`, { player_id: "player-1" }],
+    [`academies/${ACADEMY_A}/player_evaluations/evaluation-other`, { player_id: "player-2" }],
+    [`academies/${ACADEMY_A}/idps/idp-own`, { playerId: "player-1" }],
+    [`academies/${ACADEMY_A}/idps/idp-other`, { playerId: "player-2" }],
+    [`academies/${ACADEMY_A}/fitness_tests/fitness-own`, { playerId: "player-1" }],
+  ]);
+  const db = authedDb(PLAYER_A);
+  await assertSucceeds(getDoc(doc(db, "academies", ACADEMY_A, "players", "player-1", "goals", "goal-1")));
+  const ownGoals = await assertSucceeds(getDocs(collection(
+    db,
+    "academies",
+    ACADEMY_A,
+    "players",
+    "player-1",
+    "goals",
+  )));
+  assert.equal(ownGoals.size, 1);
+  await assertSucceeds(setDoc(doc(db, "academies", ACADEMY_A, "players", "player-1", "goals", "goal-2"), {
+    title: "New own goal",
+  }));
+  await assertFails(getDoc(doc(db, "academies", ACADEMY_A, "players", "player-2", "goals", "goal-2")));
+  const ownEvaluations = await assertSucceeds(getDocs(query(
+    collection(db, "academies", ACADEMY_A, "player_evaluations"),
+    where("player_id", "==", "player-1"),
+  )));
+  assert.equal(ownEvaluations.size, 1);
+  const ownIdps = await assertSucceeds(getDocs(query(
+    collection(db, "academies", ACADEMY_A, "idps"),
+    where("playerId", "==", "player-1"),
+  )));
+  assert.equal(ownIdps.size, 1);
+  const ownFitness = await assertSucceeds(getDocs(query(
+    collection(db, "academies", ACADEMY_A, "fitness_tests"),
+    where("playerId", "==", "player-1"),
+  )));
+  assert.equal(ownFitness.size, 1);
+});
+
+test("43. PARENT can read only the exact linked Player, not staff Academy data", async () => {
+  await seedAcademies();
+  await seed([
+    [`users/${PARENT_A}`, { ...userData(PARENT_A, "PARENT", ACADEMY_A), linkedPlayerId: "player-1" }],
+    [`academies/${ACADEMY_A}/players/player-1`, { firstName: "Child" }],
+    [`academies/${ACADEMY_A}/players/player-2`, { firstName: "Other" }],
+  ]);
+  const db = authedDb(PARENT_A);
+  await assertSucceeds(getDoc(doc(db, "academies", ACADEMY_A, "players", "player-1")));
+  await assertFails(getDoc(doc(db, "academies", ACADEMY_A, "players", "player-2")));
+  await assertFails(getDoc(doc(db, "academies", ACADEMY_A)));
+});
+
+test("44. PARENT can read an exact linked match but cannot list the Academy schedule", async () => {
+  await seedAcademies();
+  await seed([
+    [`users/${PARENT_A}`, { ...userData(PARENT_A, "PARENT", ACADEMY_A), linkedPlayerId: "player-1" }],
+    [`academies/${ACADEMY_A}/players/player-1`, { firstName: "Child" }],
+    [`academies/${ACADEMY_A}/matches/match-own`, { playerIds: ["player-1"] }],
+    [`academies/${ACADEMY_A}/matches/match-other`, { playerIds: ["player-2"] }],
+  ]);
+  const db = authedDb(PARENT_A);
+  await assertSucceeds(getDoc(doc(db, "academies", ACADEMY_A, "matches", "match-own")));
+  await assertFails(getDocs(query(
+    collection(db, "academies", ACADEMY_A, "matches"),
+    where("playerIds", "array-contains", "player-1"),
+  )));
+  await assertFails(getDoc(doc(db, "academies", ACADEMY_A, "matches", "match-other")));
+});
+
+test("45. COACH without Membership cannot access Academy data", async () => {
+  await seedAcademies();
+  await seed([[`users/${COACH_A}`, userData(COACH_A, "COACH", ACADEMY_A)]]);
+  await assertFails(getDoc(doc(authedDb(COACH_A), "academies", ACADEMY_A)));
+});
+
+test("46. ACTIVE ADMIN and ACTIVE COACH Memberships can read their Academy", async () => {
+  await seedAcademies();
+  await seed([
+    [`users/${ADMIN_A}`, userData(ADMIN_A, "ADMIN", ACADEMY_A)],
+    [`users/${COACH_A}`, userData(COACH_A, "COACH", ACADEMY_A)],
+    [`academies/${ACADEMY_A}/members/${ADMIN_A}`, membershipData(ADMIN_A, ACADEMY_A, "ADMIN")],
+    [`academies/${ACADEMY_A}/members/${COACH_A}`, membershipData(COACH_A, ACADEMY_A, "COACH")],
+  ]);
+  await assertSucceeds(getDoc(doc(authedDb(ADMIN_A), "academies", ACADEMY_A)));
+  await assertSucceeds(getDoc(doc(authedDb(COACH_A), "academies", ACADEMY_A)));
+});
+
+test("47. requestedRole and email do not grant staff Academy access", async () => {
+  await seedAcademies();
+  await seed([[`users/${PLAYER_A}`, {
+    ...userData(PLAYER_A, "PLAYER", ACADEMY_A),
+    email: "futverse.coach@gmail.com",
+    requestedRole: "ADMIN",
+  }]]);
+  await assertFails(getDoc(doc(authedDb(PLAYER_A), "academies", ACADEMY_A)));
+});
+
+test("48. PARENT observation sessions are scoped to owner and linked Player", async () => {
+  await seedAcademies();
+  await seed([
+    [`users/${PARENT_A}`, { ...userData(PARENT_A, "PARENT", ACADEMY_A), linkedPlayerId: "player-1" }],
+    [`academies/${ACADEMY_A}/players/player-1`, { firstName: "Child" }],
+  ]);
+  const db = authedDb(PARENT_A);
+  const ownSession = doc(db, "academies", ACADEMY_A, "observation_sessions", "session-own");
+  await assertSucceeds(setDoc(ownSession, {
+    academyId: ACADEMY_A,
+    playerId: "player-1",
+    creatorId: PARENT_A,
+    source: "PARENT",
+    contextId: "match-1",
+    sessionStatus: "IN_PROGRESS",
+  }));
+  await assertSucceeds(getDoc(ownSession));
+  const ownSessions = await assertSucceeds(getDocs(query(
+    collection(db, "academies", ACADEMY_A, "observation_sessions"),
+    where("academyId", "==", ACADEMY_A),
+    where("creatorId", "==", PARENT_A),
+    where("playerId", "==", "player-1"),
+    where("source", "==", "PARENT"),
+  )));
+  assert.equal(ownSessions.size, 1);
+  await assertFails(setDoc(doc(db, "academies", ACADEMY_A, "observation_sessions", "session-other"), {
+    academyId: ACADEMY_A,
+    playerId: "player-2",
+    creatorId: PARENT_A,
+    source: "PARENT",
+    contextId: "match-1",
+    sessionStatus: "IN_PROGRESS",
+  }));
+});
+
+test("49. PLAYER cannot enumerate roster, cross users, Academies, or Player identity", async () => {
+  await seedAcademies();
+  await seed([
+    [`users/${PLAYER_A}`, userData(PLAYER_A, "PLAYER", ACADEMY_A)],
+    [`academies/${ACADEMY_A}/players/player-1`, { linkedUserId: PLAYER_A, firstName: "Own" }],
+    [`academies/${ACADEMY_A}/players/player-2`, { linkedUserId: "another-user", firstName: "Other" }],
+    [`academies/${ACADEMY_B}/players/player-1`, { linkedUserId: PLAYER_A, firstName: "Cross Academy" }],
+  ]);
+  const db = authedDb(PLAYER_A);
+
+  await assertFails(getDocs(collection(db, "academies", ACADEMY_A, "players")));
+  await assertFails(getDocs(query(
+    collection(db, "academies", ACADEMY_A, "players"),
+    where("linkedUserId", "==", "another-user"),
+  )));
+  await assertFails(getDocs(query(
+    collection(db, "academies", ACADEMY_B, "players"),
+    where("linkedUserId", "==", PLAYER_A),
+  )));
+  await assertFails(setDoc(
+    doc(db, "academies", ACADEMY_A, "players", "player-2", "goals", "forged"),
+    { title: "Other player's goal" },
+  ));
+  await assertFails(setDoc(
+    doc(db, "academies", ACADEMY_B, "players", "player-1", "goals", "forged"),
+    { title: "Cross-Academy goal" },
+  ));
+  await assertFails(updateDoc(
+    doc(db, "academies", ACADEMY_A, "players", "player-1"),
+    { linkedUserId: "another-user" },
+  ));
+  await assertFails(updateDoc(
+    doc(db, "academies", ACADEMY_A, "players", "player-1"),
+    { academyId: ACADEMY_B },
+  ));
+});
+
+test("50. PARENT cannot enumerate Players or write a linked Player subtree", async () => {
+  await seedAcademies();
+  await seed([
+    [`users/${PARENT_A}`, { ...userData(PARENT_A, "PARENT", ACADEMY_A), linkedPlayerId: "player-1" }],
+    [`academies/${ACADEMY_A}/players/player-1`, { firstName: "Child" }],
+    [`academies/${ACADEMY_A}/players/player-2`, { firstName: "Other" }],
+    [`academies/${ACADEMY_B}/players/player-1`, { firstName: "Cross Academy" }],
+  ]);
+  const db = authedDb(PARENT_A);
+
+  await assertFails(getDocs(collection(db, "academies", ACADEMY_A, "players")));
+  await assertFails(getDocs(query(
+    collection(db, "academies", ACADEMY_A, "players"),
+    where("firstName", "==", "Child"),
+  )));
+  await assertFails(getDoc(doc(db, "academies", ACADEMY_B, "players", "player-1")));
+  await assertFails(setDoc(
+    doc(db, "academies", ACADEMY_A, "players", "player-1", "goals", "forged"),
+    { title: "Parent cannot write child goals" },
+  ));
+});
+
+test("51. PARENT cannot read cross-Academy matches or substitute arbitrary links", async () => {
+  await seedAcademies();
+  await seed([
+    [`users/${PARENT_A}`, { ...userData(PARENT_A, "PARENT", ACADEMY_A), linkedPlayerId: "player-1" }],
+    [`academies/${ACADEMY_A}/players/player-1`, { firstName: "Child" }],
+    [`academies/${ACADEMY_B}/players/player-1`, { firstName: "Cross Academy" }],
+    [`academies/${ACADEMY_B}/matches/match-cross`, { playerIds: ["player-1"] }],
+  ]);
+  const db = authedDb(PARENT_A);
+
+  await assertFails(getDoc(doc(db, "academies", ACADEMY_B, "matches", "match-cross")));
+  await assertFails(updateDoc(doc(db, "users", PARENT_A), {
+    linkedPlayerId: "player-2",
+    academyId: ACADEMY_B,
+    activeAcademyId: ACADEMY_B,
+  }));
+});
+
+test("52. PARENT observation session identity is immutable", async () => {
+  await seedAcademies();
+  await seed([
+    [`users/${PARENT_A}`, { ...userData(PARENT_A, "PARENT", ACADEMY_A), linkedPlayerId: "player-1" }],
+    [`academies/${ACADEMY_A}/players/player-1`, { firstName: "Child" }],
+    [`academies/${ACADEMY_A}/players/player-2`, { firstName: "Other" }],
+    [`academies/${ACADEMY_B}/players/player-1`, { firstName: "Cross Academy" }],
+  ]);
+  const db = authedDb(PARENT_A);
+  const session = doc(db, "academies", ACADEMY_A, "observation_sessions", "session-own");
+  await assertSucceeds(setDoc(session, {
+    academyId: ACADEMY_A,
+    playerId: "player-1",
+    creatorId: PARENT_A,
+    source: "PARENT",
+    contextId: "match-1",
+    sessionStatus: "IN_PROGRESS",
+  }));
+
+  await assertFails(updateDoc(session, { playerId: "player-2" }));
+  await assertFails(updateDoc(session, { creatorId: "another-parent" }));
+  await assertFails(updateDoc(session, { academyId: ACADEMY_B }));
+  await assertFails(updateDoc(session, { source: "COACH" }));
+  await assertFails(setDoc(
+    doc(db, "academies", ACADEMY_B, "observation_sessions", "session-cross"),
+    {
+      academyId: ACADEMY_B,
+      playerId: "player-1",
+      creatorId: PARENT_A,
+      source: "PARENT",
+    },
+  ));
+});
+
+test("53. PARENT observation documents require complete owner query constraints", async () => {
+  await seedAcademies();
+  await seed([
+    [`users/${PARENT_A}`, { ...userData(PARENT_A, "PARENT", ACADEMY_A), linkedPlayerId: "player-1" }],
+    [`academies/${ACADEMY_A}/players/player-1`, { firstName: "Child" }],
+    [`academies/${ACADEMY_A}/players/player-2`, { firstName: "Other" }],
+  ]);
+  const db = authedDb(PARENT_A);
+  const reflection = doc(db, "academies", ACADEMY_A, "observation_reflections", "reflection-own");
+  const liveEvent = doc(db, "academies", ACADEMY_A, "observation_live_events", "event-own");
+  const ownerData = {
+    academyId: ACADEMY_A,
+    playerId: "player-1",
+    creatorId: PARENT_A,
+    source: "PARENT",
+    sessionId: "session-own",
+  };
+  await assertSucceeds(setDoc(reflection, { ...ownerData, text: "Own reflection" }));
+  await assertSucceeds(setDoc(liveEvent, { ...ownerData, type: "NOTE" }));
+
+  const ownerReflections = await assertSucceeds(getDocs(query(
+    collection(db, "academies", ACADEMY_A, "observation_reflections"),
+    where("academyId", "==", ACADEMY_A),
+    where("sessionId", "==", "session-own"),
+    where("playerId", "==", "player-1"),
+    where("creatorId", "==", PARENT_A),
+    where("source", "==", "PARENT"),
+  )));
+  assert.equal(ownerReflections.size, 1);
+  const ownerLiveEvents = await assertSucceeds(getDocs(query(
+    collection(db, "academies", ACADEMY_A, "observation_live_events"),
+    where("academyId", "==", ACADEMY_A),
+    where("sessionId", "==", "session-own"),
+    where("playerId", "==", "player-1"),
+    where("creatorId", "==", PARENT_A),
+    where("source", "==", "PARENT"),
+  )));
+  assert.equal(ownerLiveEvents.size, 1);
+  await assertFails(getDocs(query(
+    collection(db, "academies", ACADEMY_A, "observation_reflections"),
+    where("sessionId", "==", "session-own"),
+  )));
+  await assertFails(updateDoc(reflection, { playerId: "player-2" }));
+  await assertFails(updateDoc(reflection, { creatorId: "another-parent" }));
+  await assertFails(updateDoc(reflection, { academyId: ACADEMY_B }));
+  await assertFails(updateDoc(reflection, { source: "COACH" }));
+  await assertFails(updateDoc(liveEvent, { playerId: "player-2" }));
+  await assertFails(setDoc(
+    doc(db, "academies", ACADEMY_A, "observation_live_events", "event-other-child"),
+    { ...ownerData, playerId: "player-2" },
+  ));
+});
+
+test("54. PENDING ADMIN and COACH Memberships cannot access tenant data", async () => {
+  await seedAcademies();
+  await seed([
+    [`users/${ADMIN_A}`, userData(ADMIN_A, "ADMIN", ACADEMY_A)],
+    [`users/${COACH_A}`, userData(COACH_A, "COACH", ACADEMY_A)],
+    [`academies/${ACADEMY_A}/members/${ADMIN_A}`, membershipData(ADMIN_A, ACADEMY_A, "ADMIN", "PENDING")],
+    [`academies/${ACADEMY_A}/members/${COACH_A}`, membershipData(COACH_A, ACADEMY_A, "COACH", "PENDING")],
+  ]);
+
+  await assertFails(getDoc(doc(authedDb(ADMIN_A), "academies", ACADEMY_A)));
+  await assertFails(getDoc(doc(authedDb(COACH_A), "academies", ACADEMY_A)));
+});
+
+test("55. SUPERADMIN Academy access remains unchanged without tenant Membership", async () => {
+  await seedAcademies();
+  await seed([
+    ["users/superadmin-access-audit", userData("superadmin-access-audit", "SUPERADMIN")],
+    [`academies/${ACADEMY_A}/players/player-1`, { firstName: "Tenant Player" }],
+  ]);
+  const db = authedDb("superadmin-access-audit");
+
+  await assertSucceeds(getDoc(doc(db, "academies", ACADEMY_A)));
+  await assertSucceeds(getDoc(doc(db, "academies", ACADEMY_A, "players", "player-1")));
 });

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, orderBy, getDocs, where, getDoc } from "firebase/firestore";
+import { collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, orderBy } from "firebase/firestore";
 import { db } from "../../lib/firebase";
-import notificationService from "../../services/notificationService";
 import { Plus, Target, CheckCircle, Clock, Trash2, Edit2, X, Activity, Brain, Dumbbell, ShieldAlert, Star, MessageSquare } from "lucide-react";
 
 interface MyGoalsProps {
@@ -53,9 +52,6 @@ export default function MyGoals({ academyId, playerId, initialEvaluation, onGoal
     if (!form.title.trim()) return;
 
     try {
-      let shouldNotifyCoach = false;
-      let finalGoalId = editingId;
-
       if (editingId) {
         const ref = doc(db, `academies/${academyId}/players/${playerId}/goals`, editingId);
         const existingGoal = goals.find(g => g.id === editingId);
@@ -66,7 +62,6 @@ export default function MyGoals({ academyId, playerId, initialEvaluation, onGoal
         // If re-submitting a goal that needed revision, set approvalStatus back to PROPOSED
         if (existingGoal?.approvalStatus === "NEEDS_REVISION" || !existingGoal?.approvalStatus || existingGoal?.approvalStatus === "PROPOSED") {
           updatedPayload.approvalStatus = "PROPOSED";
-          shouldNotifyCoach = true;
         }
         await updateDoc(ref, updatedPayload);
       } else {
@@ -81,35 +76,7 @@ export default function MyGoals({ academyId, playerId, initialEvaluation, onGoal
           payload.evaluationId = initialEvaluation.evaluationId;
           payload.sourceEvaluationId = initialEvaluation.evaluationId;
         }
-        const newDoc = await addDoc(ref, payload);
-        finalGoalId = newDoc.id;
-        shouldNotifyCoach = true;
-      }
-
-      if (shouldNotifyCoach && finalGoalId) {
-        try {
-          let playerName = "นักกีฬาในความดูแลของคุณ";
-          const pSnap = await getDoc(doc(db, `academies/${academyId}/players/${playerId}`));
-          if (pSnap.exists()) {
-            const pData = pSnap.data();
-            playerName = pData.firstName ? `${pData.firstName} ${pData.lastName || ''}`.trim() : playerName;
-          }
-          
-          const coachesRef = collection(db, `academies/${academyId}/coaches`);
-          const coachSnap = await getDocs(coachesRef);
-          const coachUids = coachSnap.docs
-            .map(d => {
-              const data = d.data();
-              return data.userId || data.userID || data.userid || data.uid || data.user_id || data.authUid;
-            })
-            .filter((uid): uid is string => Boolean(uid));
-          
-          if (coachUids.length > 0) {
-            await notificationService.notifyGoalProposed(coachUids, playerName, finalGoalId, academyId);
-          }
-        } catch(e: any) {
-          console.error("Error sending coach notification:", e);
-        }
+        await addDoc(ref, payload);
       }
       setIsAdding(false);
       setEditingId(null);
