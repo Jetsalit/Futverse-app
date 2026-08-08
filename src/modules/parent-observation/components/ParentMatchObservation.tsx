@@ -88,7 +88,12 @@ export default function ParentMatchObservation({
         setPlayerContext({ id: playerDoc.id, ...playerDoc.data() });
 
         // 2. Load Observation Session
-        let activeSession = await getObservationSession(effectiveAcademyId, matchId, currentUser.id);
+        let activeSession = await getObservationSession(
+          effectiveAcademyId,
+          matchId,
+          currentUser.id,
+          playerId,
+        );
         
         // Check if session needs recreation:
         // - No session exists
@@ -101,7 +106,12 @@ export default function ParentMatchObservation({
           const currentActiveProfile = await getActiveObservationProfile(effectiveAcademyId);
           if (currentActiveProfile && activeSession.profileVersion !== currentActiveProfile.profileVersion) {
             // Profile was updated! Only recreate if the session has NOT been actively used (no live events recorded)
-            const existingEventsForCheck = await getObservationLiveEvents(effectiveAcademyId, activeSession.id);
+            const existingEventsForCheck = await getObservationLiveEvents(
+              effectiveAcademyId,
+              activeSession.id,
+              playerId,
+              currentUser.id,
+            );
             const activeEventCount = existingEventsForCheck.filter(ev => ev.eventStatus === "ACTIVE").length;
             if (activeEventCount === 0) {
               needsRecreation = true;
@@ -117,6 +127,7 @@ export default function ParentMatchObservation({
 
           const newSessionData: Omit<ObservationSession, "id" | "startedAt" | "immutableMetricSnapshot"> = {
             academyId: effectiveAcademyId,
+            playerId,
             contextType: "MATCH",
             contextId: matchId,
             matchId: matchId,
@@ -189,7 +200,12 @@ export default function ParentMatchObservation({
         setMetrics(displayMetrics);
 
         // Load previously saved live events for UI count aggregation
-        const existingEvents = await getObservationLiveEvents(effectiveAcademyId, activeSession.id);
+        const existingEvents = await getObservationLiveEvents(
+          effectiveAcademyId,
+          activeSession.id,
+          playerId,
+          currentUser.id,
+        );
         const aggregatedCounts: Record<string, number> = {};
         let maxSequence = 0;
         

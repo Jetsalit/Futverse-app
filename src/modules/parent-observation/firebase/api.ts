@@ -304,12 +304,16 @@ export const archiveSystemMetric = async (id: string): Promise<void> => {
 export const getObservationSession = async (
   academyId: string,
   contextId: string,
-  creatorId: string
+  creatorId: string,
+  playerId: string,
 ): Promise<ObservationSession | null> => {
   const q = query(
     collection(db, `academies/${academyId}/observation_sessions`),
+    where("academyId", "==", academyId),
     where("contextId", "==", contextId),
-    where("creatorId", "==", creatorId)
+    where("creatorId", "==", creatorId),
+    where("playerId", "==", playerId),
+    where("source", "==", "PARENT"),
   );
   const snapshot = await getDocs(q);
   if (snapshot.empty) return null;
@@ -327,11 +331,17 @@ export const getObservationSession = async (
 
 export const getObservationLiveEvents = async (
   academyId: string,
-  sessionId: string
+  sessionId: string,
+  playerId: string,
+  creatorId: string,
 ): Promise<ObservationLiveEvent[]> => {
   const q = query(
     collection(db, `academies/${academyId}/observation_live_events`),
-    where("sessionId", "==", sessionId)
+    where("academyId", "==", academyId),
+    where("sessionId", "==", sessionId),
+    where("playerId", "==", playerId),
+    where("creatorId", "==", creatorId),
+    where("source", "==", "PARENT"),
   );
   const snapshot = await getDocs(q);
   return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as ObservationLiveEvent));
@@ -339,11 +349,17 @@ export const getObservationLiveEvents = async (
 
 export const getObservationReflection = async (
   academyId: string,
-  sessionId: string
+  sessionId: string,
+  playerId: string,
+  creatorId: string,
 ): Promise<ObservationReflection | null> => {
   const q = query(
     collection(db, `academies/${academyId}/observation_reflections`),
-    where("sessionId", "==", sessionId)
+    where("academyId", "==", academyId),
+    where("sessionId", "==", sessionId),
+    where("playerId", "==", playerId),
+    where("creatorId", "==", creatorId),
+    where("source", "==", "PARENT"),
   );
   const snapshot = await getDocs(q);
   if (snapshot.empty) return null;

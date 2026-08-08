@@ -12,6 +12,10 @@ import {
 import { db } from "../lib/firebase";
 import type { Membership, TenantRole } from "../types/Membership";
 import { useAuth } from "./AuthContext";
+import {
+  classifyStaffMembership,
+  isStaffTenantRole,
+} from "./academyAccessModel";
 
 export interface CustomMetric {
   id: string;
@@ -50,6 +54,7 @@ export type AcademyAccessState =
   | "LOADING"
   | "ACTIVE_MEMBERSHIP"
   | "LEGACY_COMPATIBILITY"
+  | "NON_STAFF_ACCESS"
   | "NO_ACADEMY"
   | "MEMBERSHIP_MISSING"
   | "MEMBERSHIP_PENDING"
@@ -122,10 +127,20 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     let unsubscribeMembership: (() => void) | undefined;
+    let membershipResolutionVersion = 0;
 
     const clearTenantAccess = () => {
       setAcademyId(null);
+      setAcademy(null);
       setMembership(null);
+      setTenantRole(null);
+      setSettings(defaultSettings);
+      setIsLegacyCompatibility(false);
+    };
+
+    const clearResolvedAcademy = () => {
+      setAcademyId(null);
+      setAcademy(null);
       setTenantRole(null);
       setSettings(defaultSettings);
       setIsLegacyCompatibility(false);
@@ -133,9 +148,17 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
 
     if (!currentUser) {
       clearTenantAccess();
-      setAcademy(null);
       setError(null);
       setAccessState("NO_ACADEMY");
+      setLoading(false);
+      return;
+    }
+
+    const effectiveRole = currentUser.role;
+    if (!isStaffTenantRole(effectiveRole)) {
+      clearTenantAccess();
+      setError(null);
+      setAccessState("NON_STAFF_ACCESS");
       setLoading(false);
       return;
     }
@@ -146,8 +169,14 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
     const exactAcademyId = activeAcademyId || legacyAcademyId;
 
     clearTenantAccess();
-    setAcademy(null);
     setError(null);
+
+    if (!uid) {
+      setAccessState("ERROR");
+      setError(new Error("Authenticated staff UID is missing."));
+      setLoading(false);
+      return;
+    }
 
     if (!exactAcademyId) {
       setAccessState("NO_ACADEMY");
@@ -158,124 +187,88 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
     setAccessState("LOADING");
     setLoading(true);
 
-    const resolveAcademy = async () => {
-      try {
-        const academySnapshot = await getDoc(doc(db, "academies", exactAcademyId));
+    unsubscribeMembership = onSnapshot(
+      doc(db, "academies", exactAcademyId, "members", uid),
+      async (membershipSnapshot) => {
+        const resolutionVersion = ++membershipResolutionVersion;
         if (cancelled) return;
 
-        if (!academySnapshot.exists()) {
-          setAccessState("ACADEMY_NOT_FOUND");
+        const membershipData = membershipSnapshot.exists()
+          ? membershipSnapshot.data() as Membership
+          : null;
+        setMembership(membershipData);
+        clearResolvedAcademy();
+
+        const membershipState = classifyStaffMembership(
+          uid,
+          exactAcademyId,
+          effectiveRole,
+          membershipData,
+        );
+        const inactiveStates: Record<string, AcademyAccessState> = {
+          MISSING: "MEMBERSHIP_MISSING",
+          PENDING: "MEMBERSHIP_PENDING",
+          SUSPENDED: "MEMBERSHIP_SUSPENDED",
+          LEFT: "MEMBERSHIP_LEFT",
+          REVOKED: "MEMBERSHIP_REVOKED",
+        };
+
+        if (membershipState !== "ACTIVE") {
+          setAccessState(inactiveStates[membershipState] || "ERROR");
+          setError(
+            inactiveStates[membershipState]
+              ? null
+              : new Error("Membership identity or role does not match the staff account."),
+          );
           setLoading(false);
           return;
         }
 
-        const academyData = {
-          id: academySnapshot.id,
-          ...academySnapshot.data(),
-        } as AcademyDocument;
-        setAcademy(academyData);
-
-        if (legacyAcademyId) {
-          const legacyRole = currentUser.tenantRole ||
-            (currentUser.role === "ADMIN" || currentUser.role === "COACH"
-              ? currentUser.role
-              : null);
-          const nextSettings = { ...defaultSettings, ...academySnapshot.data() };
-          setAcademyId(legacyAcademyId);
-          setSettings(nextSettings);
-          setActiveSeason(nextSettings.currentSeason || "2026");
-          setTenantRole(legacyRole);
-          setIsLegacyCompatibility(true);
-          setAccessState("LEGACY_COMPATIBILITY");
-          setLoading(false);
-          return;
-        }
-
-        if (!uid) {
-          throw new Error("Authenticated user UID is missing.");
-        }
-
-        unsubscribeMembership = onSnapshot(
-          doc(db, "academies", activeAcademyId!, "members", uid),
-          (membershipSnapshot) => {
-            if (cancelled) return;
-            if (!membershipSnapshot.exists()) {
-              clearTenantAccess();
-              setAcademy(academyData);
-              setAccessState("MEMBERSHIP_MISSING");
-              setLoading(false);
-              return;
-            }
-
-            const membershipData = membershipSnapshot.data() as Membership;
-            setMembership(membershipData);
-            setAcademyId(null);
-            setTenantRole(null);
-            setIsLegacyCompatibility(false);
-            setSettings(defaultSettings);
-
-            const inactiveStates: Record<string, AcademyAccessState> = {
-              PENDING: "MEMBERSHIP_PENDING",
-              SUSPENDED: "MEMBERSHIP_SUSPENDED",
-              LEFT: "MEMBERSHIP_LEFT",
-              REVOKED: "MEMBERSHIP_REVOKED",
-            };
-
-            if (membershipData.userId !== uid || membershipData.academyId !== activeAcademyId) {
-              setAccessState("ERROR");
-              setError(new Error("Membership identity does not match the active Academy pointer."));
-              setLoading(false);
-              return;
-            }
-
-            if (membershipData.status !== "ACTIVE") {
-              setAccessState(inactiveStates[membershipData.status] || "ERROR");
-              setError(
-                inactiveStates[membershipData.status]
-                  ? null
-                  : new Error("Unknown Membership status."),
-              );
-              setLoading(false);
-              return;
-            }
-            if (membershipData.role !== "ADMIN" && membershipData.role !== "COACH") {
-              setAccessState("ERROR");
-              setError(new Error("Membership has an invalid tenant role."));
-              setLoading(false);
-              return;
-            }
-
-            const nextSettings = { ...defaultSettings, ...academySnapshot.data() };
-            setAcademyId(activeAcademyId);
-            setSettings(nextSettings);
-            setActiveSeason(nextSettings.currentSeason || "2026");
-            setTenantRole(membershipData.role);
-            setAccessState("ACTIVE_MEMBERSHIP");
+        try {
+          const academySnapshot = await getDoc(doc(db, "academies", exactAcademyId));
+          if (cancelled || resolutionVersion !== membershipResolutionVersion) return;
+          if (!academySnapshot.exists()) {
+            setAccessState("ACADEMY_NOT_FOUND");
             setError(null);
             setLoading(false);
-          },
-          (snapshotError) => {
-            if (cancelled) return;
-            clearTenantAccess();
-            setAcademy(academyData);
-            setError(normalizeError(snapshotError));
-            setAccessState(permissionDenied(snapshotError) ? "PERMISSION_DENIED" : "ERROR");
-            setLoading(false);
-          },
-        );
-      } catch (resolutionError) {
-        if (cancelled) return;
-        clearTenantAccess();
-        setAcademy(null);
-        setError(normalizeError(resolutionError));
-        setAccessState(permissionDenied(resolutionError) ? "PERMISSION_DENIED" : "ERROR");
-        setLoading(false);
-      }
-    };
+            return;
+          }
 
-    void resolveAcademy();
+          const academyData = {
+            id: academySnapshot.id,
+            ...academySnapshot.data(),
+          } as AcademyDocument;
+          const nextSettings = { ...defaultSettings, ...academySnapshot.data() };
+          setAcademy(academyData);
+          setAcademyId(exactAcademyId);
+          setSettings(nextSettings);
+          setActiveSeason(nextSettings.currentSeason || "2026");
+          setTenantRole(membershipData!.role);
+          setIsLegacyCompatibility(Boolean(legacyAcademyId));
+          setAccessState(legacyAcademyId ? "LEGACY_COMPATIBILITY" : "ACTIVE_MEMBERSHIP");
+          setError(null);
+          setLoading(false);
+        } catch (resolutionError) {
+          if (cancelled || resolutionVersion !== membershipResolutionVersion) return;
+          clearResolvedAcademy();
+          setError(normalizeError(resolutionError));
+          setAccessState(permissionDenied(resolutionError) ? "PERMISSION_DENIED" : "ERROR");
+          setLoading(false);
+        }
+      },
+      (snapshotError) => {
+        if (cancelled) return;
+        ++membershipResolutionVersion;
+        clearTenantAccess();
+        setError(normalizeError(snapshotError));
+        setAccessState(permissionDenied(snapshotError) ? "PERMISSION_DENIED" : "ERROR");
+        setLoading(false);
+      },
+    );
+
     return () => {
       cancelled = true;
+      ++membershipResolutionVersion;
       unsubscribeMembership?.();
     };
   }, [
@@ -289,14 +282,14 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
 
   const updateSettings = async (newSettings: Partial<AcademySettings>) => {
     if (!academyId || (accessState !== "ACTIVE_MEMBERSHIP" && accessState !== "LEGACY_COMPATIBILITY")) {
-      throw new Error("Active or legacy-compatible Academy access is required.");
+      throw new Error("An ACTIVE staff Membership is required.");
     }
     await setDoc(doc(db, "academies", academyId), newSettings, { merge: true });
   };
 
   const getAcademyCollection = (collectionName: string) => {
     if (!academyId || (accessState !== "ACTIVE_MEMBERSHIP" && accessState !== "LEGACY_COMPATIBILITY")) {
-      throw new Error(`Cannot access ${collectionName} without resolved Academy access.`);
+      throw new Error(`Cannot access ${collectionName} without an ACTIVE staff Membership.`);
     }
     return collection(db, "academies", academyId, collectionName);
   };

@@ -66,6 +66,7 @@ export interface ObservationProfile {
 export interface ObservationSession {
   id: string;
   academyId: string;
+  playerId: string;
   profileId?: string; // Configured profile reference
   profileVersion?: string;
   contextType: ContextType;

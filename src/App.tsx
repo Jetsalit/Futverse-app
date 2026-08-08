@@ -71,6 +71,10 @@ import { Match } from "./types/Match";
 import { collection, onSnapshot, query, where, orderBy } from "firebase/firestore";
 import { db } from "./lib/firebase";
 import { AppNotification } from "./lib/notifications";
+import {
+  isStaffOnboardingRequest,
+  requiresStaffMembership,
+} from "./contexts/academyAccessModel";
 
 function AccessResolutionScreen({
   accessState,
@@ -328,36 +332,38 @@ export default function App() {
     return <PendingApproval />;
   }
 
-  if (currentUser.role === "SUPERADMIN" && accessState === "NO_ACADEMY") {
+  if (currentUser.role === "SUPERADMIN" && !isImpersonating) {
     return <SuperadminPortal onBack={() => navigateTo("dashboard")} />;
   }
 
-  if (academyLoading || accessState === "LOADING") {
-    return (
-      <AccessResolutionScreen
-        accessState="LOADING"
-        error={academyError}
-        onLogout={logout}
-      />
-    );
-  }
-
-  // New ADMIN and COACH users request access before any subscription gate.
-  if (
-    accessState === "NO_ACADEMY" &&
-    (currentUser.requestedRole === "ADMIN" || currentUser.requestedRole === "COACH")
-  ) {
+  if (isStaffOnboardingRequest(currentUser)) {
     return <JoinAcademy />;
   }
 
-  if (accessState !== "ACTIVE_MEMBERSHIP" && accessState !== "LEGACY_COMPATIBILITY") {
-    return (
-      <AccessResolutionScreen
-        accessState={accessState}
-        error={academyError}
-        onLogout={logout}
-      />
-    );
+  if (requiresStaffMembership(currentUser)) {
+    if (academyLoading || accessState === "LOADING") {
+      return (
+        <AccessResolutionScreen
+          accessState="LOADING"
+          error={academyError}
+          onLogout={logout}
+        />
+      );
+    }
+
+    if (accessState === "NO_ACADEMY") {
+      return <JoinAcademy />;
+    }
+
+    if (accessState !== "ACTIVE_MEMBERSHIP" && accessState !== "LEGACY_COMPATIBILITY") {
+      return (
+        <AccessResolutionScreen
+          accessState={accessState}
+          error={academyError}
+          onLogout={logout}
+        />
+      );
+    }
   }
 
   // Enable Paywall for new registrations

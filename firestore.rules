@@ -417,6 +417,127 @@ service cloud.firestore {
       return isSuperAdmin() || hasAcademyRole(academyId, ['ADMIN', 'COACH']);
     }
 
+    // PLAYER/PARENT access is intentionally separate from tenant staff access.
+    // Academy pointers are trusted link metadata because owners cannot update them.
+    function hasActiveNonStaffAcademyPointer(academyId, roles) {
+      let user = currentUserData();
+      return isSignedIn()
+        && userExists(request.auth.uid)
+        && exactDocumentId(academyId)
+        && user.get('role', '') in roles
+        && user.get('status', '') in ['ACTIVE', 'Active']
+        && user.get('academyId', '') == academyId;
+    }
+
+    function canReadLinkedPlayer(academyId, playerId, player) {
+      let user = currentUserData();
+      return hasActiveNonStaffAcademyPointer(academyId, ['PLAYER', 'PARENT'])
+        && exactDocumentId(playerId)
+        && (
+          (
+            user.get('role', '') == 'PLAYER'
+            && player.get('linkedUserId', '') == request.auth.uid
+          )
+          || (
+            user.get('role', '') == 'PARENT'
+            && exactDocumentId(user.get('linkedPlayerId', ''))
+            && user.get('linkedPlayerId', '') == playerId
+          )
+        );
+    }
+
+    function canListOwnPlayerProfile(academyId, player) {
+      return hasActiveNonStaffAcademyPointer(academyId, ['PLAYER'])
+        && player.get('linkedUserId', '') == request.auth.uid;
+    }
+
+    function canAccessLinkedPlayerPath(academyId, playerId) {
+      return exists(
+          /databases/$(database)/documents/academies/$(academyId)/players/$(playerId)
+        )
+        && canReadLinkedPlayer(
+          academyId,
+          playerId,
+          get(
+            /databases/$(database)/documents/academies/$(academyId)/players/$(playerId)
+          ).data
+        );
+    }
+
+    function canWriteOwnPlayerPath(academyId, playerId) {
+      return hasActiveNonStaffAcademyPointer(academyId, ['PLAYER'])
+        && canAccessLinkedPlayerPath(academyId, playerId);
+    }
+
+    function parentHasLinkedPlayerAccess(academyId) {
+      let playerId = currentUserData().get('linkedPlayerId', '');
+      return hasActiveNonStaffAcademyPointer(academyId, ['PARENT'])
+        && exactDocumentId(playerId)
+        && canAccessLinkedPlayerPath(academyId, playerId);
+    }
+
+    function parentHasCanonicalPlayerLink() {
+      let academyId = currentUserData().get('academyId', '');
+      return exactDocumentId(academyId)
+        && parentHasLinkedPlayerAccess(academyId);
+    }
+
+    function parentCanReadLinkedMatch(academyId, matchData) {
+      let playerId = currentUserData().get('linkedPlayerId', '');
+      let playerIds = matchData.get('playerIds', []);
+      return parentHasLinkedPlayerAccess(academyId)
+        && playerIds is list
+        && playerId in playerIds;
+    }
+
+    function recordPlayerId(data) {
+      return data.get('playerId', data.get('player_id', ''));
+    }
+
+    function canReadLinkedPlayerRecord(academyId, data) {
+      let playerId = recordPlayerId(data);
+      return exactDocumentId(playerId)
+        && canAccessLinkedPlayerPath(academyId, playerId);
+    }
+
+    function parentCanReadOwnObservation(academyId, data) {
+      let playerId = data.get('playerId', '');
+      return hasActiveNonStaffAcademyPointer(academyId, ['PARENT'])
+        && data.get('academyId', academyId) == academyId
+        && data.get('creatorId', '') == request.auth.uid
+        && exactDocumentId(playerId)
+        && canAccessLinkedPlayerPath(academyId, playerId);
+    }
+
+    function validParentObservationCreate(academyId) {
+      return parentCanReadOwnObservation(academyId, request.resource.data)
+        && request.resource.data.get('source', '') == 'PARENT';
+    }
+
+    function parentObservationIdentityUnchanged() {
+      return request.resource.data.get('academyId', '') == resource.data.get('academyId', '')
+        && request.resource.data.get('creatorId', '') == resource.data.get('creatorId', '')
+        && request.resource.data.get('playerId', '') == resource.data.get('playerId', '')
+        && request.resource.data.get('source', '') == resource.data.get('source', '');
+    }
+
+    function parentSessionOwner(academyId, data) {
+      let playerId = data.get('playerId', '');
+      return hasActiveNonStaffAcademyPointer(academyId, ['PARENT'])
+        && data.get('academyId', '') == academyId
+        && data.get('creatorId', '') == request.auth.uid
+        && data.get('source', '') == 'PARENT'
+        && exactDocumentId(playerId)
+        && canAccessLinkedPlayerPath(academyId, playerId);
+    }
+
+    function parentSessionIdentityUnchanged() {
+      return request.resource.data.get('academyId', '') == resource.data.get('academyId', '')
+        && request.resource.data.get('creatorId', '') == resource.data.get('creatorId', '')
+        && request.resource.data.get('playerId', '') == resource.data.get('playerId', '')
+        && request.resource.data.get('source', '') == resource.data.get('source', '');
+    }
+
     match /users/{uid} {
       allow read: if isOwnUserDocument(uid) || isSuperAdmin();
       allow create: if isOwnUserDocument(uid) && validRegistrationUser(uid);
@@ -490,17 +611,32 @@ service cloud.firestore {
       }
 
       match /players/{playerId} {
-        allow read: if tenantMemberCanRead(academyId);
+        allow get: if canReadLinkedPlayer(academyId, playerId, resource.data)
+          || tenantMemberCanRead(academyId);
+        allow list: if canListOwnPlayerProfile(academyId, resource.data)
+          || tenantMemberCanRead(academyId);
         allow create, update, delete: if tenantFootballCanWrite(academyId);
 
         match /{playerCollection}/{document=**} {
-          allow read: if tenantMemberCanRead(academyId);
-          allow write: if tenantFootballCanWrite(academyId);
+          allow read: if tenantMemberCanRead(academyId)
+            || canAccessLinkedPlayerPath(academyId, playerId);
+          allow write: if tenantFootballCanWrite(academyId)
+            || (
+              playerCollection in [
+                'daily_logs',
+                'daily_wellness',
+                'goals',
+                'journals',
+                'attendance'
+              ]
+              && canWriteOwnPlayerPath(academyId, playerId)
+            );
         }
       }
 
       match /matches/{document=**} {
-        allow read: if tenantMemberCanRead(academyId);
+        allow read: if parentCanReadLinkedMatch(academyId, resource.data)
+          || tenantMemberCanRead(academyId);
         allow write: if tenantFootballCanWrite(academyId);
       }
 
@@ -510,17 +646,20 @@ service cloud.firestore {
       }
 
       match /idps/{document=**} {
-        allow read: if tenantMemberCanRead(academyId);
+        allow read: if tenantMemberCanRead(academyId)
+          || canReadLinkedPlayerRecord(academyId, resource.data);
         allow write: if tenantFootballCanWrite(academyId);
       }
 
       match /player_evaluations/{document=**} {
-        allow read: if tenantMemberCanRead(academyId);
+        allow read: if tenantMemberCanRead(academyId)
+          || canReadLinkedPlayerRecord(academyId, resource.data);
         allow write: if tenantFootballCanWrite(academyId);
       }
 
       match /fitness_tests/{document=**} {
-        allow read: if tenantMemberCanRead(academyId);
+        allow read: if tenantMemberCanRead(academyId)
+          || canReadLinkedPlayerRecord(academyId, resource.data);
         allow write: if tenantFootballCanWrite(academyId);
       }
 
@@ -535,23 +674,54 @@ service cloud.firestore {
       }
 
       match /observation_profiles/{document=**} {
-        allow read: if tenantMemberCanRead(academyId);
+        allow read: if tenantMemberCanRead(academyId)
+          || parentHasLinkedPlayerAccess(academyId);
         allow write: if isSuperAdmin() || hasAcademyRole(academyId, ['ADMIN']);
       }
 
       match /observation_sessions/{document=**} {
-        allow read: if tenantMemberCanRead(academyId);
-        allow write: if tenantFootballCanWrite(academyId);
+        allow read: if tenantMemberCanRead(academyId)
+          || parentSessionOwner(academyId, resource.data);
+        allow create: if tenantFootballCanWrite(academyId)
+          || parentSessionOwner(academyId, request.resource.data);
+        allow update: if tenantFootballCanWrite(academyId)
+          || (
+            parentSessionOwner(academyId, resource.data)
+            && parentSessionOwner(academyId, request.resource.data)
+            && parentSessionIdentityUnchanged()
+          );
+        allow delete: if tenantFootballCanWrite(academyId)
+          || parentSessionOwner(academyId, resource.data);
       }
 
       match /observation_live_events/{document=**} {
-        allow read: if tenantMemberCanRead(academyId);
-        allow write: if tenantFootballCanWrite(academyId);
+        allow read: if tenantMemberCanRead(academyId)
+          || parentCanReadOwnObservation(academyId, resource.data);
+        allow create: if tenantFootballCanWrite(academyId)
+          || validParentObservationCreate(academyId);
+        allow update: if tenantFootballCanWrite(academyId)
+          || (
+            parentCanReadOwnObservation(academyId, resource.data)
+            && validParentObservationCreate(academyId)
+            && parentObservationIdentityUnchanged()
+          );
+        allow delete: if tenantFootballCanWrite(academyId)
+          || parentCanReadOwnObservation(academyId, resource.data);
       }
 
       match /observation_reflections/{document=**} {
-        allow read: if tenantMemberCanRead(academyId);
-        allow write: if tenantFootballCanWrite(academyId);
+        allow read: if tenantMemberCanRead(academyId)
+          || parentCanReadOwnObservation(academyId, resource.data);
+        allow create: if tenantFootballCanWrite(academyId)
+          || validParentObservationCreate(academyId);
+        allow update: if tenantFootballCanWrite(academyId)
+          || (
+            parentCanReadOwnObservation(academyId, resource.data)
+            && validParentObservationCreate(academyId)
+            && parentObservationIdentityUnchanged()
+          );
+        allow delete: if tenantFootballCanWrite(academyId)
+          || parentCanReadOwnObservation(academyId, resource.data);
       }
 
       match /{collectionName}/{document=**} {
@@ -649,7 +819,8 @@ service cloud.firestore {
     }
 
     match /observation_metrics/{document=**} {
-      allow read, write: if isSuperAdmin();
+      allow read: if isSuperAdmin() || parentHasCanonicalPlayerLink();
+      allow write: if isSuperAdmin();
     }
 
     match /{document=**} {
