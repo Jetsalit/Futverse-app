@@ -1,8 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
+  appShellLandingPage,
+  appRouteScope,
   classifyStaffMembership,
   isStaffOnboardingRequest,
+  normalSuperAdminNeedsAcademyWorkspace,
   requiresStaffMembership,
 } from "../src/contexts/academyAccessModel.ts";
 import { linkedPlayerLookupForUser } from "../src/lib/nonStaffPlayerAccess.ts";
@@ -60,6 +64,88 @@ test("only effective ADMIN and COACH roles require staff Membership", () => {
   ];
   for (const [role, expected] of matrix) {
     assert.equal(requiresStaffMembership({ role }), expected, role);
+  }
+});
+
+test("normal SUPERADMIN login lands on the Portal through the App shell", () => {
+  assert.equal(appShellLandingPage({ role: "SUPERADMIN" }, false), "superadmin");
+  assert.equal(requiresStaffMembership({ role: "SUPERADMIN" }), false);
+
+  const appSource = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(
+    appSource,
+    /currentUser\.role === ["']SUPERADMIN["'][\s\S]*?return <SuperadminPortal/,
+  );
+  assert.match(appSource, /case ["']superadmin["']:\s*return <SuperadminPortal/);
+});
+
+test("impersonation follows the effective role and lands once on its dashboard", () => {
+  assert.equal(appShellLandingPage({ role: "ADMIN" }, true), "dashboard");
+  assert.equal(requiresStaffMembership({ role: "ADMIN" }), true);
+  assert.equal(appShellLandingPage({ role: "PLAYER" }, true), "dashboard");
+  assert.equal(requiresStaffMembership({ role: "PLAYER" }), false);
+});
+
+test("SuperAdmin route scope separates global tools from Academy operations", () => {
+  const globalRoutes = ["superadmin", "drills", "tactic", "subscription", "concierge"];
+  const tenantRoutes = [
+    "dashboard",
+    "youth",
+    "youth_cv",
+    "pro",
+    "pro_cv",
+    "periodization",
+    "attendance",
+    "daily_attendance_summary",
+    "training_log",
+    "tournament_manager",
+    "match_summary",
+    "match_scheduler",
+    "player_evaluation",
+    "idp_dashboard",
+    "idp_manager",
+    "coaches",
+    "settings:academy",
+    "settings:season",
+    "settings:roles",
+    "settings:age_groups",
+    "settings:observation-profile",
+    "settings:system",
+    "assets",
+    "downloads",
+  ];
+
+  for (const route of globalRoutes) assert.equal(appRouteScope(route), "GLOBAL", route);
+  for (const route of tenantRoutes) assert.equal(appRouteScope(route), "TENANT_SCOPED", route);
+});
+
+test("normal SUPERADMIN fails closed on tenant routes without an Academy workspace", () => {
+  const user = { role: "SUPERADMIN" as const };
+  assert.equal(
+    normalSuperAdminNeedsAcademyWorkspace(user, false, null, "youth"),
+    true,
+  );
+  assert.equal(
+    normalSuperAdminNeedsAcademyWorkspace(user, false, null, "periodization"),
+    true,
+  );
+  assert.equal(
+    normalSuperAdminNeedsAcademyWorkspace(user, false, null, "superadmin"),
+    false,
+  );
+  assert.equal(
+    normalSuperAdminNeedsAcademyWorkspace(user, false, "academy-a", "youth"),
+    false,
+  );
+});
+
+test("impersonated staff uses Membership authorization instead of the SuperAdmin route guard", () => {
+  for (const role of ["ADMIN", "COACH"] as const) {
+    assert.equal(
+      normalSuperAdminNeedsAcademyWorkspace({ role }, true, "academy-a", "youth"),
+      false,
+    );
+    assert.equal(requiresStaffMembership({ role }), true);
   }
 });
 

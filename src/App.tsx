@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Menu,
   X,
@@ -72,7 +72,9 @@ import { collection, onSnapshot, query, where, orderBy } from "firebase/firestor
 import { db } from "./lib/firebase";
 import { AppNotification } from "./lib/notifications";
 import {
+  appShellLandingPage,
   isStaffOnboardingRequest,
+  normalSuperAdminNeedsAcademyWorkspace,
   requiresStaffMembership,
 } from "./contexts/academyAccessModel";
 
@@ -119,8 +121,32 @@ function AccessResolutionScreen({
   );
 }
 
+function AcademyWorkspaceRequired({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="flex min-h-[60vh] items-center justify-center p-6">
+      <div className="w-full max-w-xl rounded-3xl border border-amber-200 bg-white p-8 text-center shadow-sm dark:border-amber-900/60 dark:bg-slate-900">
+        <Shield className="mx-auto mb-5 text-amber-500" size={44} />
+        <h1 className="text-2xl font-black text-slate-900 dark:text-white">
+          Academy Workspace Required
+        </h1>
+        <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
+          This page contains Academy operational data. Open it through an explicitly resolved Academy workspace or staff impersonation with an ACTIVE Membership.
+        </p>
+        <button
+          type="button"
+          onClick={onBack}
+          className="mt-7 rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500"
+        >
+          Return to SuperAdmin Portal
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [currentPage, setCurrentPage] = useState("dashboard");
+  const landingIdentityRef = useRef<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [openNavGroups, setOpenNavGroups] = useState<string[]>([]);
@@ -324,16 +350,30 @@ export default function App() {
     setIsMobileMenuOpen(false);
   };
 
+  useEffect(() => {
+    if (!currentUser) {
+      landingIdentityRef.current = null;
+      return;
+    }
+
+    const userId = currentUser.uid || currentUser.id;
+    const landingIdentity = `${userId}:${currentUser.role}:${isImpersonating ? "impersonating" : "direct"}`;
+    if (landingIdentityRef.current === landingIdentity) return;
+
+    landingIdentityRef.current = landingIdentity;
+    const landingPage = appShellLandingPage(currentUser, isImpersonating);
+    if (landingPage) {
+      setCurrentPage(landingPage);
+      setIsMobileMenuOpen(false);
+    }
+  }, [currentUser?.id, currentUser?.uid, currentUser?.role, isImpersonating]);
+
   if (!currentUser) {
     return <Login />;
   }
   
   if (currentUser.status === "PENDING" || currentUser.status === "REJECTED") {
     return <PendingApproval />;
-  }
-
-  if (currentUser.role === "SUPERADMIN" && !isImpersonating) {
-    return <SuperadminPortal onBack={() => navigateTo("dashboard")} />;
   }
 
   if (isStaffOnboardingRequest(currentUser)) {
@@ -386,6 +426,17 @@ export default function App() {
       currentUser?.status === "Inactive"
     ) {
       return <SubscriptionPaywall />;
+    }
+
+    if (
+      normalSuperAdminNeedsAcademyWorkspace(
+        currentUser,
+        isImpersonating,
+        academyId,
+        currentPage,
+      )
+    ) {
+      return <AcademyWorkspaceRequired onBack={() => navigateTo("superadmin")} />;
     }
 
     // Wrap Route Protection Logic

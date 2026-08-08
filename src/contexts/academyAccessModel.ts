@@ -29,6 +29,40 @@ export function isStaffOnboardingRequest(user: AccessRoleInput): boolean {
     && (user.requestedRole === "ADMIN" || user.requestedRole === "COACH");
 }
 
+export function appShellLandingPage(
+  user: AccessRoleInput,
+  isImpersonating: boolean,
+): "dashboard" | "superadmin" | null {
+  if (isImpersonating) return "dashboard";
+  return user.role === "SUPERADMIN" ? "superadmin" : null;
+}
+
+export type AppRouteScope = "GLOBAL" | "TENANT_SCOPED";
+
+const GLOBAL_APP_ROUTES = new Set([
+  "superadmin",
+  "drills",
+  "tactic",
+  "subscription",
+  "concierge",
+]);
+
+export function appRouteScope(route: string): AppRouteScope {
+  return GLOBAL_APP_ROUTES.has(route) ? "GLOBAL" : "TENANT_SCOPED";
+}
+
+export function normalSuperAdminNeedsAcademyWorkspace(
+  user: AccessRoleInput,
+  isImpersonating: boolean,
+  academyId: string | null,
+  route: string,
+): boolean {
+  return user.role === "SUPERADMIN"
+    && !isImpersonating
+    && !academyId
+    && appRouteScope(route) === "TENANT_SCOPED";
+}
+
 export function classifyStaffMembership(
   uid: string,
   academyId: string,
