@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useAuth, User } from "../contexts/AuthContext";
 import { db } from "../lib/firebase";
 import {
@@ -10,12 +10,9 @@ import {
   orderBy,
   limit,
   addDoc,
-  collectionGroup,
 } from "firebase/firestore";
 import { createNotification } from "../lib/notifications";
 import {
-  ShieldAlert,
-  ArrowLeft,
   CheckCircle,
   XCircle,
   X,
@@ -27,21 +24,63 @@ import {
 } from "lucide-react";
 import { subscribeToUsers, updateUserStatus } from "../lib/firestore/users";
 import ObservationMetricsManager from "../modules/parent-observation/components/ObservationMetricsManager";
+import SuperAdminHeader from "./superadmin/SuperAdminHeader";
+import SuperAdminOverview from "./superadmin/SuperAdminOverview";
+import {
+  buildRecentActivities,
+  deriveDashboardAlerts,
+  deriveEffectiveRoleCounts,
+  parseAuditLog,
+  searchDashboardData,
+  type AcademyDirectoryItem,
+  type AuditLogEntry,
+  type DashboardLoadState,
+  type DashboardSearchResult,
+  type ProfileClaimSearchItem,
+  type SuperAdminTab,
+} from "./superadmin/dashboardModel";
+
+interface FirestoreDateLike {
+  toDate?: () => Date;
+}
+
+interface ProfileClaim extends ProfileClaimSearchItem {
+  academyId?: string;
+  playerId: string;
+  role?: string;
+  userId: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  requestedAt?: FirestoreDateLike;
+}
+
+interface ErrorLog {
+  id: string;
+  timestamp?: FirestoreDateLike;
+  type?: string;
+  message?: string;
+  url?: string;
+}
 
 export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const { hasPermission, impersonate, currentUser: authUser } = useAuth();
-  const [activeTab, setActiveTab] = useState<
-    "approvals" | "payment_approvals" | "users" | "system_logs" | "profile_claims" | "observation_metrics"
-  >("approvals");
+  const [activeTab, setActiveTab] = useState<SuperAdminTab>("dashboard");
   const [viewSlipUrl, setViewSlipUrl] = useState<string | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
-  
-  const [errorLogs, setErrorLogs] = useState<any[]>([]);
-  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
 
-  const [profileClaims, setProfileClaims] = useState<any[]>([]);
+  const [errorLogs, setErrorLogs] = useState<ErrorLog[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+  const [errorLogsLoadState, setErrorLogsLoadState] = useState<DashboardLoadState>("idle");
+
+  const [profileClaims, setProfileClaims] = useState<ProfileClaim[]>([]);
   const [isLoadingClaims, setIsLoadingClaims] = useState(false);
+  const [profileClaimsLoadState, setProfileClaimsLoadState] = useState<DashboardLoadState>("idle");
+  const [academyDirectory, setAcademyDirectory] = useState<AcademyDirectoryItem[]>([]);
+  const [academyLoadState, setAcademyLoadState] = useState<DashboardLoadState>("idle");
+  const [activityLogs, setActivityLogs] = useState<AuditLogEntry[]>([]);
+  const [activityLoadState, setActivityLoadState] = useState<DashboardLoadState>("idle");
+  const [dashboardSearchQuery, setDashboardSearchQuery] = useState("");
+  const activityRequestStartedRef = useRef(false);
 
   useEffect(() => {
     if (activeTab === "system_logs") {
@@ -53,19 +92,25 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
 
   const fetchProfileClaims = async () => {
     setIsLoadingClaims(true);
+    setProfileClaimsLoadState("loading");
     try {
       const q = query(collection(db, "profile_claims"), orderBy("requestedAt", "desc"), limit(50));
       const snapshot = await getDocs(q);
-      const claims = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const claims = snapshot.docs.map((claimDoc) => ({
+        id: claimDoc.id,
+        ...claimDoc.data(),
+      })) as ProfileClaim[];
       setProfileClaims(claims);
+      setProfileClaimsLoadState("loaded");
     } catch (e) {
       console.error("Error fetching claims", e);
+      setProfileClaimsLoadState("unavailable");
     } finally {
       setIsLoadingClaims(false);
     }
   };
 
-  const handleApproveClaim = async (claim: any) => {
+  const handleApproveClaim = async (claim: ProfileClaim) => {
     try {
       // Find the academy this player belongs to
       const accSnap = await getDocs(collection(db, "academies"));
@@ -124,17 +169,50 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
 
   const fetchErrorLogs = async () => {
     setIsLoadingLogs(true);
+    setErrorLogsLoadState("loading");
     try {
       const q = query(collection(db, "error_logs"), orderBy("timestamp", "desc"), limit(50));
       const snapshot = await getDocs(q);
-      const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const logs = snapshot.docs.map((logDoc) => ({
+        id: logDoc.id,
+        ...logDoc.data(),
+      })) as ErrorLog[];
       setErrorLogs(logs);
+      setErrorLogsLoadState("loaded");
     } catch (e) {
       console.error("Error fetching logs", e);
+      setErrorLogsLoadState("unavailable");
     } finally {
       setIsLoadingLogs(false);
     }
   };
+
+  useEffect(() => {
+    if (activeTab !== "dashboard" || activityRequestStartedRef.current) return;
+
+    activityRequestStartedRef.current = true;
+    setActivityLoadState("loading");
+
+    const fetchRecentActivity = async () => {
+      try {
+        const activityQuery = query(
+          collection(db, "logs"),
+          orderBy("timestamp", "desc"),
+          limit(8),
+        );
+        const snapshot = await getDocs(activityQuery);
+        setActivityLogs(snapshot.docs.map((logDoc) => (
+          parseAuditLog(logDoc.id, logDoc.data() as Record<string, unknown>)
+        )));
+        setActivityLoadState("loaded");
+      } catch (error) {
+        console.error("Error fetching recent SuperAdmin activity", error);
+        setActivityLoadState("unavailable");
+      }
+    };
+
+    void fetchRecentActivity();
+  }, [activeTab]);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("ALL");
@@ -155,6 +233,17 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
         const accNameMap = new Map();
         const parentMap = new Map(); 
         const playerMap = new Map(); 
+
+        const nextAcademyDirectory = accSnap.docs
+          .filter((academyDoc) => academyDoc.id !== "superadmin_system")
+          .map((academyDoc) => ({
+            id: academyDoc.id,
+            name: typeof academyDoc.data().name === "string"
+              ? academyDoc.data().name
+              : academyDoc.id,
+          }));
+        setAcademyDirectory(nextAcademyDirectory);
+        setAcademyLoadState("loaded");
 
         // Fetch players for each academy manually to avoid collectionGroup permission issues
         const playerPromises = accSnap.docs.map(async (accDoc) => {
@@ -196,6 +285,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
       } catch (err) {
         console.error("Error enriching users with academy data:", err);
         setEnrichedUsers(users);
+        setAcademyLoadState("unavailable");
       }
     };
     
@@ -250,6 +340,34 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const parentsCount = users.filter(
     (u) => u.role === "PARENT" || u.requestedRole === "PARENT",
   ).length;
+
+  const effectiveRoleCounts = useMemo(() => deriveEffectiveRoleCounts(users), [users]);
+  const profileClaimPendingCount = profileClaimsLoadState === "loaded"
+    ? profileClaims.filter((claim) => claim.status === "PENDING").length
+    : null;
+  const errorReportCount = errorLogsLoadState === "loaded" ? errorLogs.length : null;
+  const recentActivities = useMemo(
+    () => buildRecentActivities(activityLogs, users),
+    [activityLogs, users],
+  );
+  const dashboardAlerts = useMemo(() => deriveDashboardAlerts({
+    pendingUsers: pendingUsers.length,
+    paymentApprovals: paymentPendingUsers.length,
+    profileClaims: profileClaimPendingCount,
+    errorReports: errorReportCount,
+  }), [errorReportCount, paymentPendingUsers.length, pendingUsers.length, profileClaimPendingCount]);
+  const dashboardSearchResults = useMemo(() => searchDashboardData({
+    query: dashboardSearchQuery,
+    users,
+    academies: academyDirectory,
+    claims: profileClaimsLoadState === "loaded" ? profileClaims : [],
+  }), [academyDirectory, dashboardSearchQuery, profileClaims, profileClaimsLoadState, users]);
+
+  const handleDashboardSearchSelect = (result: DashboardSearchResult) => {
+    if (result.searchValue) setSearchQuery(result.searchValue);
+    if (result.academyFilter) setManageUserAcademyFilter(result.academyFilter);
+    setActiveTab(result.tab);
+  };
 
   const handleApprove = async (user: User) => {
     if (!user.id) return;
@@ -390,27 +508,25 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="flex-1 flex flex-col h-full bg-slate-50 overflow-hidden">
-      <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={onBack}
-            className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-600"
-          >
-            <ArrowLeft size={20} />
-          </button>
-          <div>
-            <h1 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
-              <ShieldAlert className="text-emerald-600" size={28} />
-              SuperAdmin Portal
-            </h1>
-            <p className="text-sm text-slate-500 font-medium">
-              System Administration & Security
-            </p>
-          </div>
-        </div>
-      </header>
+      <SuperAdminHeader
+        onBack={onBack}
+        onNavigate={setActiveTab}
+        searchResults={dashboardSearchResults}
+        onSearchQueryChange={setDashboardSearchQuery}
+        onSearchSelect={handleDashboardSearchSelect}
+      />
 
       <div className="bg-white border-b border-slate-200 px-4 sm:px-6 flex gap-4 sm:gap-6 shrink-0 overflow-x-auto hide-scrollbar">
+        <button
+          onClick={() => setActiveTab("dashboard")}
+          className={`py-4 font-bold text-sm border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${
+            activeTab === "dashboard"
+              ? "border-emerald-500 text-emerald-600"
+              : "border-transparent text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          Dashboard
+        </button>
         <button
           onClick={() => setActiveTab("approvals")}
           className={`py-4 font-bold text-sm border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${
@@ -494,7 +610,23 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6">
+        {activeTab === "dashboard" && (
+          <SuperAdminOverview
+            pendingUsers={pendingUsers.length}
+            academyCount={academyLoadState === "loaded" ? academyDirectory.length : null}
+            roleCounts={effectiveRoleCounts}
+            paymentApprovals={paymentPendingUsers.length}
+            profileClaims={profileClaimPendingCount}
+            errorReports={errorReportCount}
+            profileClaimsAvailable={profileClaimsLoadState === "loaded"}
+            errorReportsAvailable={errorLogsLoadState === "loaded"}
+            activities={recentActivities}
+            activityLoadState={activityLoadState}
+            alerts={dashboardAlerts}
+            onNavigate={setActiveTab}
+          />
+        )}
         {activeTab === "approvals" && (
           <>
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
@@ -977,6 +1109,12 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                         <Loader2 className="animate-spin inline-block mr-2" size={20} /> Loading logs...
                       </td>
                     </tr>
+                  ) : errorLogsLoadState === "unavailable" ? (
+                    <tr>
+                      <td colSpan={4} className="p-8 text-center text-slate-500">
+                        Error reports are unavailable under the current data access configuration.
+                      </td>
+                    </tr>
                   ) : errorLogs.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="p-8 text-center text-slate-500">
@@ -1030,6 +1168,12 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                         <Loader2 className="animate-spin inline-block mr-2" size={20} /> Loading claims...
                       </td>
                     </tr>
+                  ) : profileClaimsLoadState === "unavailable" ? (
+                    <tr>
+                      <td colSpan={6} className="p-8 text-center text-slate-500">
+                        Profile claims are currently unavailable.
+                      </td>
+                    </tr>
                   ) : profileClaims.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="p-8 text-center text-slate-500">
@@ -1078,6 +1222,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
         {activeTab === "observation_metrics" && (
           <ObservationMetricsManager />
         )}
+
       </div>
 
       {selectedUser && (
