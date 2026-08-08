@@ -5,6 +5,8 @@ import type { DashboardSearchResult, SuperAdminTab } from "./dashboardModel";
 interface SuperAdminHeaderProps {
   onBack: () => void;
   onNavigate: (tab: SuperAdminTab) => void;
+  onExportReport: () => void;
+  dashboardActionsDisabled: boolean;
   searchResults: readonly DashboardSearchResult[];
   onSearchQueryChange: (query: string) => void;
   onSearchSelect: (result: DashboardSearchResult) => void;
@@ -13,6 +15,8 @@ interface SuperAdminHeaderProps {
 export default function SuperAdminHeader({
   onBack,
   onNavigate,
+  onExportReport,
+  dashboardActionsDisabled,
   searchResults,
   onSearchQueryChange,
   onSearchSelect,
@@ -63,9 +67,10 @@ export default function SuperAdminHeader({
           </button>
           <button
             type="button"
-            disabled
-            title="No existing SuperAdmin report export is available yet"
-            className="inline-flex cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-100 px-3 py-2.5 text-xs font-bold text-slate-400"
+            onClick={onExportReport}
+            disabled={dashboardActionsDisabled}
+            title={dashboardActionsDisabled ? "User data is still loading" : "Download the currently loaded Dashboard data as CSV"}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 shadow-sm transition hover:border-emerald-200 hover:text-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
           >
             <FileDown size={16} /> Export Report
           </button>

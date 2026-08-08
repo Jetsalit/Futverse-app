@@ -32,7 +32,7 @@ export default function SuperAdminSearch({
         onChange={(event) => setValue(event.target.value)}
         onFocus={() => setIsFocused(true)}
         onBlur={() => window.setTimeout(() => setIsFocused(false), 120)}
-        placeholder="Search FUTID, player, academy, club, email..."
+        placeholder="Search users, email, FUTID, academy..."
         aria-label="Search users, academies, and loaded profile claims"
         className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-11 pr-11 text-sm text-slate-800 shadow-sm outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
       />

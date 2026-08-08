@@ -26,6 +26,7 @@ import { subscribeToUsers, updateUserStatus } from "../lib/firestore/users";
 import ObservationMetricsManager from "../modules/parent-observation/components/ObservationMetricsManager";
 import SuperAdminHeader from "./superadmin/SuperAdminHeader";
 import SuperAdminOverview from "./superadmin/SuperAdminOverview";
+import { downloadSuperAdminDashboardCsv } from "./superadmin/dashboardExport";
 import {
   buildRecentActivities,
   deriveDashboardAlerts,
@@ -369,6 +370,24 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     setActiveTab(result.tab);
   };
 
+  const handleExportReport = () => {
+    const exportedAt = new Date();
+    downloadSuperAdminDashboardCsv({
+      exportedAt,
+      pendingUsers: pendingUsers.length,
+      academyCount: academyLoadState === "loaded" ? academyDirectory.length : null,
+      academyLoadState,
+      roleCounts: effectiveRoleCounts,
+      paymentApprovals: paymentPendingUsers.length,
+      profileClaims: profileClaimPendingCount,
+      profileClaimsLoadState,
+      errorReports: errorReportCount,
+      errorReportsLoadState: errorLogsLoadState,
+      recentActivities,
+      recentActivityLoadState: activityLoadState,
+    });
+  };
+
   const handleApprove = async (user: User) => {
     if (!user.id) return;
     try {
@@ -511,6 +530,8 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
       <SuperAdminHeader
         onBack={onBack}
         onNavigate={setActiveTab}
+        onExportReport={handleExportReport}
+        dashboardActionsDisabled={isLoadingUsers}
         searchResults={dashboardSearchResults}
         onSearchQueryChange={setDashboardSearchQuery}
         onSearchSelect={handleDashboardSearchSelect}
