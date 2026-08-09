@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Menu,
   X,
@@ -37,6 +37,12 @@ import PostMatchStatsEntry from "./components/PostMatchStatsEntry";
 import StartingXIBuilder from "./components/StartingXIBuilder";
 import { useAuth } from "./contexts/AuthContext";
 import { useAcademy, type AcademyAccessState } from "./contexts/AcademyContext";
+import {
+  appShellLandingPage,
+  isStaffOnboardingRequest,
+  normalSuperAdminNeedsAcademyWorkspace,
+  requiresStaffMembership,
+} from "./contexts/academyAccessModel";
 import AccessDenied from "./components/AccessDenied";
 import Login from "./components/Login";
 import JoinAcademy from "./components/JoinAcademy";
@@ -88,12 +94,35 @@ function AccessResolutionScreen({
   );
 }
 
+function AcademyWorkspaceRequired({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="min-h-[400px] flex items-center justify-center p-6">
+      <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-xl">
+        <Shield className="mx-auto mb-5 text-amber-500" size={44} />
+        <h2 className="text-2xl font-black text-slate-900">
+          Academy Workspace Required
+        </h2>
+        <p className="mt-3 text-slate-600">
+          Direct SuperAdmin access to tenant features requires selecting or resolving an active Academy workspace.
+        </p>
+        <button
+          type="button"
+          onClick={onBack}
+          className="mt-6 rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white hover:bg-slate-800"
+        >
+          Return to SuperAdmin Portal
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [currentPage, setCurrentPage] = useState("dashboard");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const { isOnline, toggleSimulation } = useNetworkStatus();
-  const { language, setLanguage, t } = useLanguage();
+  const { language, setLanguage } = useLanguage();
   const {
     hasPermission,
     currentUser,
@@ -103,11 +132,30 @@ export default function App() {
   } = useAuth();
   const {
     settings: academySettings,
+    academyId,
     accessState,
     loading: academyLoading,
     error: academyError,
   } = useAcademy();
   const [pendingSyncs, setPendingSyncs] = useState(0);
+
+  const prevLandingKeyRef = useRef<string>("");
+
+  useEffect(() => {
+    if (!currentUser) {
+      prevLandingKeyRef.current = "";
+      return;
+    }
+    const landingKey = `${currentUser.id || currentUser.uid}_${currentUser.role}_${isImpersonating}`;
+    if (prevLandingKeyRef.current !== landingKey) {
+      prevLandingKeyRef.current = landingKey;
+      const targetLanding = appShellLandingPage(currentUser, isImpersonating);
+      if (targetLanding) {
+        setCurrentPage(targetLanding);
+        setIsMobileMenuOpen(false);
+      }
+    }
+  }, [currentUser, isImpersonating]);
 
   // Global State / Context for Academy Squads
   const academySquads = academySettings.squads || [
@@ -152,32 +200,37 @@ export default function App() {
     return <PendingApproval />;
   }
 
-  if (currentUser.role === "SUPERADMIN" && accessState === "NO_ACADEMY") {
-    return <SuperadminPortal onBack={() => navigateTo("dashboard")} />;
-  }
-
-  if (academyLoading || accessState === "LOADING") {
-    return (
-      <AccessResolutionScreen
-        accessState="LOADING"
-        error={academyError}
-        onLogout={logout}
-      />
-    );
-  }
-
-  if (accessState === "NO_ACADEMY" && (currentUser.requestedRole === "ADMIN" || currentUser.requestedRole === "COACH")) {
+  if (isStaffOnboardingRequest(currentUser)) {
     return <JoinAcademy />;
   }
 
-  if (accessState !== "ACTIVE_MEMBERSHIP" && accessState !== "LEGACY_COMPATIBILITY") {
-    return (
-      <AccessResolutionScreen
-        accessState={accessState}
-        error={academyError}
-        onLogout={logout}
-      />
-    );
+  if (requiresStaffMembership(currentUser)) {
+    if (academyLoading || accessState === "LOADING") {
+      return (
+        <AccessResolutionScreen
+          accessState="LOADING"
+          error={academyError}
+          onLogout={logout}
+        />
+      );
+    }
+
+    if (accessState === "NO_ACADEMY") {
+      return <JoinAcademy />;
+    }
+
+    if (
+      accessState !== "ACTIVE_MEMBERSHIP" &&
+      accessState !== "LEGACY_COMPATIBILITY"
+    ) {
+      return (
+        <AccessResolutionScreen
+          accessState={accessState}
+          error={academyError}
+          onLogout={logout}
+        />
+      );
+    }
   }
 
   // Handle Paywall Logic inside the main app layout so the banner can still be visible
@@ -185,6 +238,21 @@ export default function App() {
     currentUser.status === "Inactive" || currentUser.status === "Pending";
 
   const renderContent = () => {
+    if (
+      normalSuperAdminNeedsAcademyWorkspace(
+        currentUser,
+        isImpersonating,
+        academyId,
+        currentPage,
+      )
+    ) {
+      return (
+        <AcademyWorkspaceRequired
+          onBack={() => navigateTo("superadmin")}
+        />
+      );
+    }
+
     if (isPaywallActive && !isImpersonating) {
       return <SubscriptionPaywall />;
     }
