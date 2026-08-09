@@ -7,6 +7,9 @@ import {
   updateDoc,
   addDoc,
   getDocs,
+  query,
+  orderBy,
+  limit,
 } from "firebase/firestore";
 import {
   CheckCircle,
@@ -25,9 +28,12 @@ import {
   deriveEffectiveRoleCounts,
   searchDashboardData,
   deriveDashboardAlerts,
+  parseAuditLog,
+  buildRecentActivities,
   type SuperAdminTab,
   type DashboardSearchResult,
   type DashboardLoadState,
+  type AuditLogEntry,
 } from "./superadmin/dashboardModel";
 import { downloadSuperAdminDashboardCsv } from "./superadmin/dashboardExport";
 
@@ -52,6 +58,10 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
 
   const [academyCount, setAcademyCount] = useState<number | null>(null);
   const [academyLoadState, setAcademyLoadState] =
+    useState<DashboardLoadState>("idle");
+
+  const [activityLogs, setActivityLogs] = useState<AuditLogEntry[]>([]);
+  const [activityLoadState, setActivityLoadState] =
     useState<DashboardLoadState>("idle");
 
   useEffect(() => {
@@ -83,6 +93,37 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     }
 
     fetchAcademyCount();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchRecentActivity() {
+      setActivityLoadState("loading");
+      try {
+        const activityQuery = query(
+          collection(db, "logs"),
+          orderBy("timestamp", "desc"),
+          limit(8),
+        );
+        const snapshot = await getDocs(activityQuery);
+        if (cancelled) return;
+        const logs = snapshot.docs.map((logDoc) =>
+          parseAuditLog(logDoc.id, logDoc.data() as Record<string, unknown>),
+        );
+        setActivityLogs(logs);
+        setActivityLoadState("loaded");
+      } catch (err) {
+        if (cancelled) return;
+        console.error("SuperAdmin failed to fetch recent activity:", err);
+        setActivityLogs([]);
+        setActivityLoadState("unavailable");
+      }
+    }
+
+    fetchRecentActivity();
     return () => {
       cancelled = true;
     };
@@ -123,6 +164,8 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   ).length;
 
   const roleCounts = deriveEffectiveRoleCounts(users);
+
+  const recentActivities = buildRecentActivities(activityLogs, users);
 
   const alerts = deriveDashboardAlerts({
     pendingUsers: pendingUsers.length,
@@ -166,8 +209,8 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
       profileClaimsLoadState: "unavailable",
       errorReports: null,
       errorReportsLoadState: "unavailable",
-      recentActivities: [],
-      recentActivityLoadState: "unavailable",
+      recentActivities,
+      recentActivityLoadState: activityLoadState,
     });
   };
 
@@ -333,8 +376,8 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
             errorReports={null}
             profileClaimsAvailable={false}
             errorReportsAvailable={false}
-            activities={[]}
-            activityLoadState="unavailable"
+            activities={recentActivities}
+            activityLoadState={activityLoadState}
             alerts={alerts}
             onNavigate={handleNavigate}
             availableTabs={CLEAN_AVAILABLE_TABS}
