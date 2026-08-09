@@ -89,6 +89,30 @@ service cloud.firestore {
         || hasAcademyRole(academyId, ['ADMIN', 'COACH']);
     }
 
+    function hasActiveNonStaffAcademyPointer(academyId, role) {
+      return isSignedIn()
+        && userExists(request.auth.uid)
+        && currentUserData().get('role', '') == role
+        && currentUserData().get('status', '') in ['Active', 'ACTIVE']
+        && currentUserData().get('academyId', '') == academyId;
+    }
+
+    function canReadLinkedPlayer(academyId, playerId) {
+      return (
+        hasActiveNonStaffAcademyPointer(academyId, 'PLAYER')
+        && resource.data.linkedUserId == request.auth.uid
+      ) || (
+        hasActiveNonStaffAcademyPointer(academyId, 'PARENT')
+        && exactDocumentId(currentUserData().get('linkedPlayerId', ''))
+        && currentUserData().get('linkedPlayerId', '') == playerId
+      );
+    }
+
+    function canListOwnPlayerProfile(academyId) {
+      return hasActiveNonStaffAcademyPointer(academyId, 'PLAYER')
+        && resource.data.linkedUserId == request.auth.uid;
+    }
+
     function safeOwnerProfileUpdate() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
         'name',
@@ -510,7 +534,10 @@ service cloud.firestore {
       }
 
       match /players/{playerId} {
-        allow read: if tenantMemberCanRead(academyId);
+        allow get: if tenantMemberCanRead(academyId)
+          || canReadLinkedPlayer(academyId, playerId);
+        allow list: if tenantMemberCanRead(academyId)
+          || canListOwnPlayerProfile(academyId);
         allow create, update, delete: if tenantFootballCanWrite(academyId);
 
         match /{playerCollection}/{document=**} {
