@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { User } from "../src/contexts/AuthContext.js";
 import {
+  appRouteScope,
   appShellLandingPage,
   classifyStaffMembership,
   isStaffOnboardingRequest,
@@ -81,6 +82,49 @@ describe("Access Resolution Foundation", () => {
 
     assert.equal(requiresStaffMembership(userWithStaffIntent), false);
     assert.equal(isStaffOnboardingRequest(userWithStaffIntent), true);
+  });
+
+  it("enforces staff onboarding intent strictly for USER role only", () => {
+    assert.equal(isStaffOnboardingRequest(makeUser({ role: "USER", requestedRole: "ADMIN" })), true);
+    assert.equal(isStaffOnboardingRequest(makeUser({ role: "USER", requestedRole: "COACH" })), true);
+    assert.equal(isStaffOnboardingRequest(makeUser({ role: "PLAYER", requestedRole: "COACH" })), false);
+    assert.equal(isStaffOnboardingRequest(makeUser({ role: "PARENT", requestedRole: "ADMIN" })), false);
+    assert.equal(isStaffOnboardingRequest(makeUser({ role: "SUPERADMIN", requestedRole: "ADMIN" })), false);
+    assert.equal(isStaffOnboardingRequest(makeUser({ role: "ADMIN", requestedRole: "COACH" })), false);
+    assert.equal(isStaffOnboardingRequest(makeUser({ role: "COACH", requestedRole: "ADMIN" })), false);
+  });
+
+  it("classifies routes accurately into GLOBAL and TENANT_SCOPED", () => {
+    assert.equal(appRouteScope("superadmin"), "GLOBAL");
+    assert.equal(appRouteScope("drills"), "GLOBAL");
+    assert.equal(appRouteScope("tactic"), "GLOBAL");
+    assert.equal(appRouteScope("subscription"), "GLOBAL");
+    assert.equal(appRouteScope("concierge"), "GLOBAL");
+
+    assert.equal(appRouteScope("dashboard"), "TENANT_SCOPED");
+    assert.equal(appRouteScope("youth"), "TENANT_SCOPED");
+    assert.equal(appRouteScope("fitness"), "TENANT_SCOPED");
+    assert.equal(appRouteScope("settings"), "TENANT_SCOPED");
+  });
+
+  it("determines direct SUPERADMIN academy workspace requirements based on route scope", () => {
+    const superadmin = makeUser({ role: "SUPERADMIN" });
+
+    // Global routes => false
+    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, null, "superadmin"), false);
+    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, null, "drills"), false);
+    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, null, "tactic"), false);
+    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, null, "subscription"), false);
+    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, null, "concierge"), false);
+
+    // Tenant routes => true when no academyId
+    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, null, "dashboard"), true);
+    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, null, "youth"), true);
+    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, null, "fitness"), true);
+    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, null, "settings"), true);
+
+    // Tenant routes => false when academyId exists
+    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, "academy-1", "dashboard"), false);
   });
 
   it("maps inactive staff Membership states explicitly", () => {

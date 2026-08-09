@@ -6,12 +6,13 @@ export function isStaffTenantRole(role?: string | null): boolean {
 
 export function requiresStaffMembership(user?: User | null): boolean {
   if (!user) return false;
+  if (user.role === "SUPERADMIN") return false;
   return isStaffTenantRole(user.role);
 }
 
 export function isStaffOnboardingRequest(user?: User | null): boolean {
   if (!user) return false;
-  if (requiresStaffMembership(user)) return false;
+  if (user.role !== "USER") return false;
   return isStaffTenantRole(user.requestedRole);
 }
 
@@ -44,11 +45,22 @@ export function appShellLandingPage(
   return "dashboard";
 }
 
-export function appRouteScope(currentPage: string): "global" | "tenant" {
-  if (currentPage === "superadmin" || currentPage === "settings") {
-    return "global";
+export type AppRouteScope = "GLOBAL" | "TENANT_SCOPED";
+
+export function appRouteScope(currentPage: string): AppRouteScope {
+  const normalized = currentPage.startsWith("/")
+    ? currentPage.slice(1)
+    : currentPage;
+  switch (normalized) {
+    case "superadmin":
+    case "drills":
+    case "tactic":
+    case "subscription":
+    case "concierge":
+      return "GLOBAL";
+    default:
+      return "TENANT_SCOPED";
   }
-  return "tenant";
 }
 
 export function normalSuperAdminNeedsAcademyWorkspace(
@@ -59,6 +71,6 @@ export function normalSuperAdminNeedsAcademyWorkspace(
 ): boolean {
   if (!user) return false;
   if (user.role !== "SUPERADMIN" || isImpersonating) return false;
-  if (currentPage === "superadmin") return false;
+  if (appRouteScope(currentPage) !== "TENANT_SCOPED") return false;
   return !academyId;
 }
