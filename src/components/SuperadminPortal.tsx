@@ -6,6 +6,7 @@ import {
   doc,
   updateDoc,
   addDoc,
+  getDocs,
 } from "firebase/firestore";
 import {
   CheckCircle,
@@ -26,6 +27,7 @@ import {
   deriveDashboardAlerts,
   type SuperAdminTab,
   type DashboardSearchResult,
+  type DashboardLoadState,
 } from "./superadmin/dashboardModel";
 import { downloadSuperAdminDashboardCsv } from "./superadmin/dashboardExport";
 
@@ -48,6 +50,10 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const [roleFilter, setRoleFilter] = useState("ALL");
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
+  const [academyCount, setAcademyCount] = useState<number | null>(null);
+  const [academyLoadState, setAcademyLoadState] =
+    useState<DashboardLoadState>("idle");
+
   useEffect(() => {
     const unsubscribe = subscribeToUsers((firestoreUsers) => {
       setUsers(firestoreUsers.filter((u) => u.id !== authUser?.id));
@@ -55,6 +61,32 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     });
     return () => unsubscribe();
   }, [authUser?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchAcademyCount() {
+      setAcademyLoadState("loading");
+      try {
+        const snapshot = await getDocs(collection(db, "academies"));
+        if (cancelled) return;
+        const count = snapshot.docs.filter(
+          (academyDoc) => academyDoc.id !== "superadmin_system",
+        ).length;
+        setAcademyCount(count);
+        setAcademyLoadState("loaded");
+      } catch (err) {
+        if (cancelled) return;
+        console.error("SuperAdmin failed to fetch academy count:", err);
+        setAcademyCount(null);
+        setAcademyLoadState("unavailable");
+      }
+    }
+
+    fetchAcademyCount();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (!hasPermission(["SUPERADMIN"])) {
     return (
@@ -125,8 +157,8 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     downloadSuperAdminDashboardCsv({
       exportedAt: new Date(),
       pendingUsers: pendingUsers.length,
-      academyCount: null,
-      academyLoadState: "unavailable",
+      academyCount,
+      academyLoadState,
       roleCounts,
       paymentApprovals: null,
       paymentApprovalsLoadState: "unavailable",
@@ -294,7 +326,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
         {activeTab === "dashboard" && (
           <SuperAdminOverview
             pendingUsers={pendingUsers.length}
-            academyCount={null}
+            academyCount={academyCount}
             roleCounts={roleCounts}
             paymentApprovals={null}
             profileClaims={null}
