@@ -88,7 +88,6 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
 
     const clearTenantAccess = () => {
       setAcademyId(null);
-      setAcademy(null);
       setMembership(null);
       setTenantRole(null);
       setSettings(defaultSettings);
@@ -97,6 +96,7 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
 
     if (!currentUser) {
       clearTenantAccess();
+      setAcademy(null);
       setError(null);
       setAccessState("NO_ACADEMY");
       setLoading(false);
@@ -109,6 +109,7 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
     const exactAcademyId = activeAcademyId || legacyAcademyId;
 
     clearTenantAccess();
+    setAcademy(null);
     setError(null);
 
     if (!uid) {
@@ -137,6 +138,8 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
 
         // 3. If Academy missing -> ACADEMY_NOT_FOUND
         if (!academySnapshot.exists()) {
+          clearTenantAccess();
+          setAcademy(null);
           setAccessState("ACADEMY_NOT_FOUND");
           setError(null);
           setLoading(false);
@@ -148,6 +151,8 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
           ...academySnapshot.data(),
         } as AcademyDocument;
         const nextSettings = { ...defaultSettings, ...academySnapshot.data() };
+
+        setAcademy(academyData);
 
         // 4. If using legacy academyId: DO NOT query Membership, resolve LEGACY_COMPATIBILITY
         if (legacyAcademyId) {
@@ -176,6 +181,8 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
               if (cancelled || currentVersion !== resolutionVersion) return;
 
               if (!membershipSnapshot.exists()) {
+                clearTenantAccess();
+                setAcademy(academyData);
                 setAccessState("MEMBERSHIP_MISSING");
                 setError(new Error("Membership not found."));
                 setLoading(false);
@@ -184,6 +191,11 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
 
               const membershipData = membershipSnapshot.data() as Membership;
               setMembership(membershipData);
+
+              setAcademyId(null);
+              setTenantRole(null);
+              setIsLegacyCompatibility(false);
+              setSettings(defaultSettings);
 
               // 6. Validate membership fields
               const isValidMembership =
@@ -230,6 +242,7 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
             (snapshotError) => {
               if (cancelled || currentVersion !== resolutionVersion) return;
               clearTenantAccess();
+              setAcademy(academyData);
               setError(normalizeError(snapshotError));
               setAccessState(
                 permissionDenied(snapshotError) ? "PERMISSION_DENIED" : "ERROR"
@@ -241,6 +254,7 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
       } catch (resolutionError) {
         if (cancelled || currentVersion !== resolutionVersion) return;
         clearTenantAccess();
+        setAcademy(null);
         setError(normalizeError(resolutionError));
         setAccessState(
           permissionDenied(resolutionError) ? "PERMISSION_DENIED" : "ERROR"
