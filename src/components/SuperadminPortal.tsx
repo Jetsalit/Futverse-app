@@ -3,15 +3,11 @@ import { useAuth, User } from "../contexts/AuthContext";
 import { db } from "../lib/firebase";
 import {
   collection,
-  getDocs,
   doc,
   updateDoc,
-  query,
   addDoc,
 } from "firebase/firestore";
 import {
-  ShieldAlert,
-  ArrowLeft,
   CheckCircle,
   XCircle,
   X,
@@ -22,15 +18,33 @@ import {
 } from "lucide-react";
 import { subscribeToUsers, updateUserStatus } from "../lib/firestore/users";
 
+import SuperAdminHeader from "./superadmin/SuperAdminHeader";
+import SuperAdminOverview from "./superadmin/SuperAdminOverview";
+import {
+  deriveEffectiveRoleCounts,
+  searchDashboardData,
+  deriveDashboardAlerts,
+  type SuperAdminTab,
+  type DashboardSearchResult,
+} from "./superadmin/dashboardModel";
+import { downloadSuperAdminDashboardCsv } from "./superadmin/dashboardExport";
+
+const CLEAN_AVAILABLE_TABS = [
+  "dashboard",
+  "approvals",
+  "users",
+] as const;
+
+type CleanTab = (typeof CLEAN_AVAILABLE_TABS)[number];
+
 export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
-  const { hasPermission, impersonate, currentUser: authUser } = useAuth();
-  const [activeTab, setActiveTab] = useState<"approvals" | "users">(
-    "approvals",
-  );
+  const { hasPermission, currentUser: authUser } = useAuth();
+  const [activeTab, setActiveTab] = useState<CleanTab>("dashboard");
   const [users, setUsers] = useState<User[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [headerSearchQuery, setHeaderSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("ALL");
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
@@ -75,6 +89,55 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const parentsCount = users.filter(
     (u) => u.role === "PARENT" || u.requestedRole === "PARENT",
   ).length;
+
+  const roleCounts = deriveEffectiveRoleCounts(users);
+
+  const alerts = deriveDashboardAlerts({
+    pendingUsers: pendingUsers.length,
+    paymentApprovals: null,
+    profileClaims: null,
+    errorReports: null,
+  });
+
+  const searchResults = searchDashboardData({
+    query: headerSearchQuery,
+    users,
+    academies: [],
+    claims: [],
+  });
+
+  const handleNavigate = (tab: SuperAdminTab) => {
+    if ((CLEAN_AVAILABLE_TABS as readonly string[]).includes(tab)) {
+      setActiveTab(tab as CleanTab);
+    }
+  };
+
+  const handleSearchSelect = (result: DashboardSearchResult) => {
+    if ((CLEAN_AVAILABLE_TABS as readonly string[]).includes(result.tab)) {
+      setActiveTab(result.tab as CleanTab);
+    }
+    if (result.searchValue) {
+      setSearchQuery(result.searchValue);
+    }
+  };
+
+  const handleExportReport = () => {
+    downloadSuperAdminDashboardCsv({
+      exportedAt: new Date(),
+      pendingUsers: pendingUsers.length,
+      academyCount: null,
+      academyLoadState: "unavailable",
+      roleCounts,
+      paymentApprovals: null,
+      paymentApprovalsLoadState: "unavailable",
+      profileClaims: null,
+      profileClaimsLoadState: "unavailable",
+      errorReports: null,
+      errorReportsLoadState: "unavailable",
+      recentActivities: [],
+      recentActivityLoadState: "unavailable",
+    });
+  };
 
   const handleApprove = async (user: User) => {
     if (!user.id) return;
@@ -177,27 +240,27 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="flex-1 flex flex-col h-full bg-slate-50 overflow-hidden">
-      <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={onBack}
-            className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-600"
-          >
-            <ArrowLeft size={20} />
-          </button>
-          <div>
-            <h1 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
-              <ShieldAlert className="text-emerald-600" size={28} />
-              SuperAdmin Portal
-            </h1>
-            <p className="text-sm text-slate-500 font-medium">
-              System Administration & Security
-            </p>
-          </div>
-        </div>
-      </header>
+      <SuperAdminHeader
+        onBack={onBack}
+        onNavigate={handleNavigate}
+        onExportReport={handleExportReport}
+        dashboardActionsDisabled={isLoadingUsers}
+        searchResults={searchResults}
+        onSearchQueryChange={setHeaderSearchQuery}
+        onSearchSelect={handleSearchSelect}
+      />
 
       <div className="bg-white border-b border-slate-200 px-6 flex gap-6 shrink-0">
+        <button
+          onClick={() => setActiveTab("dashboard")}
+          className={`py-4 font-bold text-sm border-b-2 transition-colors ${
+            activeTab === "dashboard"
+              ? "border-emerald-500 text-emerald-600"
+              : "border-transparent text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          Dashboard
+        </button>
         <button
           onClick={() => setActiveTab("approvals")}
           className={`py-4 font-bold text-sm border-b-2 transition-colors ${
@@ -228,6 +291,24 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {activeTab === "dashboard" && (
+          <SuperAdminOverview
+            pendingUsers={pendingUsers.length}
+            academyCount={null}
+            roleCounts={roleCounts}
+            paymentApprovals={null}
+            profileClaims={null}
+            errorReports={null}
+            profileClaimsAvailable={false}
+            errorReportsAvailable={false}
+            activities={[]}
+            activityLoadState="unavailable"
+            alerts={alerts}
+            onNavigate={handleNavigate}
+            availableTabs={CLEAN_AVAILABLE_TABS}
+          />
+        )}
+
         {activeTab === "approvals" && (
           <>
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
