@@ -570,8 +570,7 @@ service cloud.firestore {
     }
 
     match /players/{document=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
+      allow read, write: if false;
     }
 
     match /drills/{document=**} {
