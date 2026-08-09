@@ -1,0 +1,13 @@
+{
+  "exportedAt": "2026-08-05T00:00:00.000Z",
+  "academies": [
+    { "id": "academy-b", "name": "Academy B", "inviteCode": "FUT-ACADEMY-B", "status": "ACTIVE" },
+    { "id": "academy-a", "name": "Academy A", "inviteCode": " fut-academy-a ", "status": "ACTIVE" }
+  ],
+  "users": [
+    { "uid": "coach-b", "email": "coach-b@example.com", "name": "Coach B", "role": "COACH", "status": "Active", "academyId": "academy-b", "activeAcademyId": null, "tenantRole": "COACH" },
+    { "uid": "admin-a", "email": "admin-a@example.com", "name": "Admin A", "role": "ADMIN", "status": "Active", "academyId": "academy-a", "activeAcademyId": "academy-a", "tenantRole": "ADMIN" }
+  ],
+  "memberships": [],
+  "academyInvites": []
+}

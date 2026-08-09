@@ -71,7 +71,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [country, setCountry] = useState("");
-  const [academyId, setAcademyId] = useState("");
+  const [requestedAcademyName, setRequestedAcademyName] = useState("");
   const [phone, setPhone] = useState("");
   const [requestedRole, setRequestedRole] = useState("PLAYER");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -127,8 +127,18 @@ export default function Login() {
 
       if (!userSnap.exists()) {
         const isSuperAdmin = user.email === "jetsalween@gmail.com";
-        const assignedRole = isSuperAdmin ? "SUPERADMIN" : "USER";
-        const status = isSuperAdmin ? "Active" : "Inactive";
+        let assignedRole = isSuperAdmin ? "SUPERADMIN" : "USER";
+        let status = isSuperAdmin ? "Active" : "Inactive";
+
+        if (!isSuperAdmin) {
+          if (requestedRole === "PLAYER") {
+            assignedRole = "PLAYER";
+            status = "Active";
+          } else {
+            assignedRole = "USER";
+            status = "Inactive";
+          }
+        }
 
         const newData: any = {
           uid: user.uid,
@@ -138,6 +148,8 @@ export default function Login() {
           photoURL: user.photoURL || null,
           role: assignedRole,
           status: status,
+          academyId: null,
+          activeAcademyId: null,
           subscriptionPlan: "FREE",
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -147,11 +159,13 @@ export default function Login() {
         if (!isSuperAdmin) {
           newData.requestedRole = requestedRole; // always set to default/selected
           newData.country = country || null;
-          newData.academyId = academyId || null;
+          const trimmedName = requestedAcademyName?.trim();
+          if (trimmedName && (requestedRole === "ADMIN" || requestedRole === "COACH")) {
+            newData.requestedAcademyName = trimmedName;
+          }
           newData.phone = phone || null;
         } else {
           newData.requestedRole = null;
-          newData.academyId = null;
         }
 
         await setDoc(userRef, newData, { merge: true });
@@ -209,8 +223,20 @@ export default function Login() {
 
         // Save user data to Firestore
         const isSuperAdmin = email === "jetsalween@gmail.com";
-        const assignedRole = isSuperAdmin ? "SUPERADMIN" : "USER";
-        const status = isSuperAdmin ? "Active" : "Inactive";
+        let assignedRole = isSuperAdmin ? "SUPERADMIN" : "USER";
+        let status = isSuperAdmin ? "Active" : "Inactive";
+
+        if (!isSuperAdmin) {
+          if (requestedRole === "PLAYER") {
+            assignedRole = "PLAYER";
+            status = "Active";
+          } else {
+            assignedRole = "USER";
+            status = "Inactive";
+          }
+        }
+
+        const trimmedName = requestedAcademyName?.trim();
 
         await setDoc(
           doc(db, "users", user.uid),
@@ -222,10 +248,14 @@ export default function Login() {
             photoURL: user.photoURL || null,
             role: assignedRole,
             status: status,
+            academyId: null,
+            activeAcademyId: null,
             requestedRole: isSuperAdmin ? null : requestedRole,
             country: country || null,
-            academyId: academyId || null,
             phone: phone || null,
+            ...(!isSuperAdmin && trimmedName && (requestedRole === "ADMIN" || requestedRole === "COACH")
+              ? { requestedAcademyName: trimmedName }
+              : {}),
             subscriptionPlan: "FREE",
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -505,8 +535,8 @@ export default function Login() {
                       />
                       <input
                         type="text"
-                        value={academyId}
-                        onChange={(e) => setAcademyId(e.target.value)}
+                        value={requestedAcademyName}
+                        onChange={(e) => setRequestedAcademyName(e.target.value)}
                         placeholder="e.g. Elite Football Academy"
                         className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium rounded-xl focus:ring-2 focus:ring-[#E1FF01] focus:border-[#E1FF01] outline-none transition-all placeholder:text-slate-400"
                       />

@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   Settings as SettingsIcon,
   Bell,
+  Shield,
 } from "lucide-react";
 import Dashboard from "./components/Dashboard";
 import PlayerDashboard from "./components/PlayerDashboard";
@@ -35,13 +36,57 @@ import { useLanguage } from "./contexts/LanguageContext";
 import PostMatchStatsEntry from "./components/PostMatchStatsEntry";
 import StartingXIBuilder from "./components/StartingXIBuilder";
 import { useAuth } from "./contexts/AuthContext";
-import { useAcademy } from "./contexts/AcademyContext";
+import { useAcademy, type AcademyAccessState } from "./contexts/AcademyContext";
 import AccessDenied from "./components/AccessDenied";
 import Login from "./components/Login";
+import JoinAcademy from "./components/JoinAcademy";
 import SuperadminPortal from "./components/SuperadminPortal";
 import SubscriptionPaywall from "./components/SubscriptionPaywall";
 import ConciergeDashboard from "./components/ConciergeDashboard";
 import PendingApproval from "./components/PendingApproval";
+
+function AccessResolutionScreen({
+  accessState,
+  error,
+  onLogout,
+}: {
+  accessState: AcademyAccessState;
+  error: Error | null;
+  onLogout: () => void;
+}) {
+  const messages: Record<string, string> = {
+    LOADING: "Resolving your Academy access...",
+    NO_ACADEMY: "No exact Academy workspace is linked to this account.",
+    MEMBERSHIP_MISSING: "Your Academy pointer exists, but no Membership was found.",
+    MEMBERSHIP_PENDING: "Your Academy Membership is pending approval.",
+    MEMBERSHIP_SUSPENDED: "Your Academy Membership is suspended.",
+    MEMBERSHIP_LEFT: "Your Academy Membership has ended.",
+    MEMBERSHIP_REVOKED: "Your Academy Membership was revoked.",
+    ACADEMY_NOT_FOUND: "The exact Academy document linked to this account was not found.",
+    PERMISSION_DENIED: "Permission was denied while resolving Academy access.",
+    ERROR: "Academy access could not be resolved.",
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+      <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-xl">
+        <Shield className="mx-auto mb-5 text-indigo-600" size={44} />
+        <h1 className="text-2xl font-black text-slate-900">Academy Access</h1>
+        <p className="mt-3 text-slate-600">{messages[accessState] || messages.ERROR}</p>
+        {error && <p className="mt-3 text-sm text-rose-600">{error.message}</p>}
+        {accessState !== "LOADING" && (
+          <button
+            type="button"
+            onClick={onLogout}
+            className="mt-7 rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white hover:bg-slate-800"
+          >
+            Log out
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState("dashboard");
@@ -56,7 +101,12 @@ export default function App() {
     isImpersonating,
     revertImpersonation,
   } = useAuth();
-  const { settings: academySettings } = useAcademy();
+  const {
+    settings: academySettings,
+    accessState,
+    loading: academyLoading,
+    error: academyError,
+  } = useAcademy();
   const [pendingSyncs, setPendingSyncs] = useState(0);
 
   // Global State / Context for Academy Squads
@@ -97,9 +147,37 @@ export default function App() {
   if (!currentUser) {
     return <Login />;
   }
-  
+
   if (currentUser.status === "PENDING" || currentUser.status === "REJECTED") {
     return <PendingApproval />;
+  }
+
+  if (currentUser.role === "SUPERADMIN" && accessState === "NO_ACADEMY") {
+    return <SuperadminPortal onBack={() => navigateTo("dashboard")} />;
+  }
+
+  if (academyLoading || accessState === "LOADING") {
+    return (
+      <AccessResolutionScreen
+        accessState="LOADING"
+        error={academyError}
+        onLogout={logout}
+      />
+    );
+  }
+
+  if (accessState === "NO_ACADEMY" && (currentUser.requestedRole === "ADMIN" || currentUser.requestedRole === "COACH")) {
+    return <JoinAcademy />;
+  }
+
+  if (accessState !== "ACTIVE_MEMBERSHIP" && accessState !== "LEGACY_COMPATIBILITY") {
+    return (
+      <AccessResolutionScreen
+        accessState={accessState}
+        error={academyError}
+        onLogout={logout}
+      />
+    );
   }
 
   // Handle Paywall Logic inside the main app layout so the banner can still be visible

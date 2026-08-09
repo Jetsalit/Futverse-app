@@ -1,0 +1,7 @@
+{
+  "exportedAt": "2026-08-05T00:00:00.000Z",
+  "academies": [{ "id": "academy-a", "name": "=HYPERLINK(\"https://example.invalid\")", "inviteCode": "FUT-A" }],
+  "users": [{ "uid": "admin-a", "email": "=CMD()", "name": "+Formula", "role": "ADMIN", "status": "Active", "academyId": "academy-a" }],
+  "memberships": [],
+  "academyInvites": []
+}
