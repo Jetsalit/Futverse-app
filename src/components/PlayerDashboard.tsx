@@ -351,17 +351,4 @@ export default function PlayerDashboard({
       </div>
     </div>
   );
-}ed-xl shadow-sm hover:bg-slate-800 transition-colors flex justify-center items-center gap-2"
-        >
-          {isWellnessSaved ? (
-            <>
-              บันทึกเรียบร้อย! <span className="text-emerald-400">✓</span>
-            </>
-          ) : (
-            "บันทึกข้อมูลวันนี้ (Save Wellness)"
-          )}
-        </button>
-      </div>
-    </div>
-  );
 }
