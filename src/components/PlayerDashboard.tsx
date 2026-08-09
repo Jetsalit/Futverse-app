@@ -1,10 +1,18 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { db } from "../lib/firebase";
-import { collection, query, onSnapshot, doc, getDoc } from "firebase/firestore";
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  doc,
+  getDoc,
+} from "firebase/firestore";
 import { Award, Activity, Heart, ChevronRight, UserCircle } from "lucide-react";
 import PeerVotingModal from "./PeerVotingModal";
 import { EmptyState } from "./common/EmptyState";
+import { linkedPlayerLookupForUser } from "../lib/nonStaffPlayerAccess";
 
 interface Teammate {
   id: string;
@@ -12,14 +20,6 @@ interface Teammate {
   position: string;
   avatar: string;
 }
-
-const MOCK_PROFILE = {
-  id: "mock_id",
-  firstName: "Suphanat",
-  lastName: "Mueanta",
-  position: "Striker",
-  avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Suphanat",
-};
 
 const MOCK_TEAMMATES: Teammate[] = [
   {
@@ -37,9 +37,9 @@ export default function PlayerDashboard({
 }) {
   const { currentUser } = useAuth();
 
-  const [playerProfile, setPlayerProfile] = useState<any>(MOCK_PROFILE);
+  const [playerProfile, setPlayerProfile] = useState<any>(null);
   const [teammates, setTeammates] = useState<Teammate[]>(MOCK_TEAMMATES);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const [wellnessValues, setWellnessValues] = useState({
     fitness: 3,
@@ -51,7 +51,87 @@ export default function PlayerDashboard({
   const [hasVoted, setHasVoted] = useState(false);
 
   useEffect(() => {
-    // Mock data
+    let isMounted = true;
+
+    async function resolveProfile() {
+      setLoading(true);
+      const lookup = linkedPlayerLookupForUser(currentUser);
+
+      if (!currentUser || lookup.type === "UNAVAILABLE") {
+        if (isMounted) {
+          setPlayerProfile(null);
+          setLoading(false);
+        }
+        return;
+      }
+
+      try {
+        if (lookup.type === "PLAYER_QUERY") {
+          const playersRef = collection(
+            db,
+            "academies",
+            lookup.academyId,
+            "players"
+          );
+          const q = query(playersRef, where("linkedUserId", "==", lookup.uid));
+          const snapshot = await getDocs(q);
+
+          if (!isMounted) return;
+
+          if (snapshot.empty) {
+            setPlayerProfile(null);
+          } else if (snapshot.size === 1) {
+            const docSnap = snapshot.docs[0];
+            setPlayerProfile({
+              id: docSnap.id,
+              academyId: lookup.academyId,
+              ...docSnap.data(),
+            });
+          } else {
+            console.error(
+              `Data integrity error: Multiple player documents found for user ${lookup.uid} in academy ${lookup.academyId}`
+            );
+            setPlayerProfile(null);
+          }
+        } else if (lookup.type === "PARENT_DOCUMENT") {
+          const playerDocRef = doc(
+            db,
+            "academies",
+            lookup.academyId,
+            "players",
+            lookup.playerId
+          );
+          const docSnap = await getDoc(playerDocRef);
+
+          if (!isMounted) return;
+
+          if (docSnap.exists()) {
+            setPlayerProfile({
+              id: docSnap.id,
+              academyId: lookup.academyId,
+              ...docSnap.data(),
+            });
+          } else {
+            setPlayerProfile(null);
+          }
+        }
+      } catch (error) {
+        console.error("Error resolving player profile:", error);
+        if (isMounted) {
+          setPlayerProfile(null);
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    resolveProfile();
+
+    return () => {
+      isMounted = false;
+    };
   }, [currentUser]);
 
   const handleSaveWellness = () => {
@@ -259,6 +339,19 @@ export default function PlayerDashboard({
         <button
           onClick={handleSaveWellness}
           className="mt-6 w-full bg-slate-900 text-white font-bold py-3 px-4 rounded-xl shadow-sm hover:bg-slate-800 transition-colors flex justify-center items-center gap-2"
+        >
+          {isWellnessSaved ? (
+            <>
+              บันทึกเรียบร้อย! <span className="text-emerald-400">✓</span>
+            </>
+          ) : (
+            "บันทึกข้อมูลวันนี้ (Save Wellness)"
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}ed-xl shadow-sm hover:bg-slate-800 transition-colors flex justify-center items-center gap-2"
         >
           {isWellnessSaved ? (
             <>
