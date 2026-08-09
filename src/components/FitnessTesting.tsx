@@ -389,7 +389,7 @@ export default function FitnessTesting({
   isOnline?: boolean;
   onOfflineSave?: () => void;
 }) {
-  const { settings } = useAcademy();
+  const { settings, academyId } = useAcademy();
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"entry" | "report">("entry");
@@ -411,23 +411,33 @@ export default function FitnessTesting({
   });
 
   useEffect(() => {
+    if (!academyId) {
+      setPlayers([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
-    const unsubscribe = onSnapshot(collection(db, "players"), (snapshot) => {
-      const playersData = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Player[];
-      setPlayers(playersData);
-      if (playersData.length > 0) {
-        setSelectedPlayerId(prev => prev ? prev : playersData[0].id);
-      }
-      setLoading(false);
-    }, (error) => {
-      console.error("Error fetching players:", error);
-      setLoading(false);
-    });
+    const unsubscribe = onSnapshot(
+      collection(db, "academies", academyId, "players"),
+      (snapshot) => {
+        const playersData = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as Player[];
+        setPlayers(playersData);
+        if (playersData.length > 0) {
+          setSelectedPlayerId(prev => prev ? prev : playersData[0].id);
+        }
+        setLoading(false);
+      },
+      (error) => {
+        console.error("Error fetching players:", error);
+        setLoading(false);
+      },
+    );
     return () => unsubscribe();
-  }, []);
+  }, [academyId]);
 
   const calculateAge = (dob: string) => {
     if (!dob) return 0;
@@ -487,6 +497,13 @@ export default function FitnessTesting({
 
   const handleSavePlayer = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!academyId) {
+      console.error("FitnessTesting: Missing academyId; refusing to save player.");
+      alert("Missing academy context. Please try again once the academy is available.");
+      return;
+    }
+
     try {
       const playerData: any = {
         ...formData,
@@ -496,9 +513,9 @@ export default function FitnessTesting({
       delete playerData.avatarUrl;
 
       if (editingPlayerId) {
-        await updateDoc(doc(db, "players", editingPlayerId), playerData);
+        await updateDoc(doc(db, "academies", academyId, "players", editingPlayerId), playerData);
       } else {
-        await addDoc(collection(db, "players"), playerData);
+        await addDoc(collection(db, "academies", academyId, "players"), playerData);
       }
       closeModal();
     } catch (error: any) {
@@ -508,14 +525,22 @@ export default function FitnessTesting({
   };
 
   const handleDeleteConfirm = async () => {
-    if (playerToDelete) {
-      try {
-        await updateDoc(doc(db, "players", playerToDelete), { hideFromFitness: true });
-        setPlayerToDelete(null);
-      } catch (error: any) {
-        console.error("Error deleting player:", error);
-        alert("Error deleting: " + error.message);
-      }
+    if (!playerToDelete) {
+      return;
+    }
+
+    if (!academyId) {
+      console.error("FitnessTesting: Missing academyId; refusing to hide player.");
+      alert("Missing academy context. Please try again once the academy is available.");
+      return;
+    }
+
+    try {
+      await updateDoc(doc(db, "academies", academyId, "players", playerToDelete), { hideFromFitness: true });
+      setPlayerToDelete(null);
+    } catch (error: any) {
+      console.error("Error deleting player:", error);
+      alert("Error deleting: " + error.message);
     }
   };
 

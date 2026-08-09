@@ -69,7 +69,7 @@ export default function YouthPlayerManager({
   onBack: () => void;
   onSelectPlayer?: (player: any) => void;
 }) {
-  const { settings } = useAcademy();
+  const { settings, academyId } = useAcademy();
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(false);
   const [filterAge, setFilterAge] = useState("All");
@@ -91,9 +91,15 @@ export default function YouthPlayerManager({
   });
 
   useEffect(() => {
+    if (!academyId) {
+      setPlayers([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     const unsubscribe = onSnapshot(
-      collection(db, "players"),
+      collection(db, "academies", academyId, "players"),
       (snapshot) => {
         const playersData = snapshot.docs.map((doc) => ({
           id: doc.id,
@@ -105,11 +111,11 @@ export default function YouthPlayerManager({
       (error) => {
         console.error("Error fetching players:", error);
         setLoading(false);
-      }
+      },
     );
 
     return () => unsubscribe();
-  }, []);
+  }, [academyId]);
 
   const calculateAge = (dob: string) => {
     if (!dob) return 0;
@@ -183,9 +189,16 @@ export default function YouthPlayerManager({
 
   const handleSavePlayer = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!academyId) {
+      console.error("YouthPlayerManager: Missing academyId; refusing to save player.");
+      alert("Missing academy context. Please try again once the academy is available.");
+      return;
+    }
+
     try {
       if (editingPlayerId) {
-        await updateDoc(doc(db, "players", editingPlayerId), {
+        await updateDoc(doc(db, "academies", academyId, "players", editingPlayerId), {
           firstName: formData.firstName,
           lastName: formData.lastName,
           position: formData.position,
@@ -208,7 +221,7 @@ export default function YouthPlayerManager({
             formData.avatarUrl ||
             `https://api.dicebear.com/7.x/avataaars/svg?seed=${formData.firstName}${Date.now()}`,
         };
-        await addDoc(collection(db, "players"), newPlayer);
+        await addDoc(collection(db, "academies", academyId, "players"), newPlayer);
       }
       closeModal();
     } catch (error: any) {
@@ -218,14 +231,22 @@ export default function YouthPlayerManager({
   };
 
   const handleDeleteConfirm = async () => {
-    if (playerToDelete) {
-      try {
-        await deleteDoc(doc(db, "players", playerToDelete));
-        setPlayerToDelete(null);
-      } catch (error: any) {
-        console.error("Error deleting player:", error);
-        alert("ไม่สามารถลบข้อมูลได้: " + error.message);
-      }
+    if (!playerToDelete) {
+      return;
+    }
+
+    if (!academyId) {
+      console.error("YouthPlayerManager: Missing academyId; refusing to delete player.");
+      alert("Missing academy context. Please try again once the academy is available.");
+      return;
+    }
+
+    try {
+      await deleteDoc(doc(db, "academies", academyId, "players", playerToDelete));
+      setPlayerToDelete(null);
+    } catch (error: any) {
+      console.error("Error deleting player:", error);
+      alert("ไม่สามารถลบข้อมูลได้: " + error.message);
     }
   };
 
