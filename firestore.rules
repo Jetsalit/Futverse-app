@@ -572,9 +572,23 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    match /drills/{document=**} {
+    match /drills/{drillId} {
       allow read: if isSignedIn();
-      allow write: if isSignedIn();
+
+      allow create: if isSignedIn()
+        && request.resource.data.get('created_by', '') == request.auth.uid;
+
+      allow update: if isSignedIn()
+        && resource.data.get('created_by', '') == request.auth.uid
+        && request.resource.data.get('created_by', '') ==
+           resource.data.get('created_by', '');
+
+      allow delete: if isSignedIn()
+        && resource.data.get('created_by', '') == request.auth.uid;
+
+      match /{document=**} {
+        allow read, write: if false;
+      }
     }
 
     match /proPlayers/{document=**} {

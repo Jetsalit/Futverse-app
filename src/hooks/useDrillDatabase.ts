@@ -24,21 +24,10 @@ export interface Drill {
   date?: string;
 }
 
-const MOCK_DRILLS: Drill[] = [
-  {
-    id: "d1",
-    title: "Rondo 4v2",
-    category: "Tactical",
-    canvas_data: { elements: [], lines: [], fieldType: "half" },
-    created_by: "unknown_user",
-    is_shared: true,
-  }
-];
-
 export function useDrillDatabase() {
   const [drills, setDrills] = useState<Drill[]>([]);
-  const { currentUser } = useAuth();
-  const currentUserId = currentUser?.id || 'unknown_user';
+  const { actualUser } = useAuth();
+  const authenticatedUid = actualUser?.uid || actualUser?.id || null;
 
   useEffect(() => {
     const q = query(collection(db, 'drills'));
@@ -53,10 +42,15 @@ export function useDrillDatabase() {
   }, []);
 
   const saveDrill = async (newDrill: Omit<Drill, 'id' | 'created_by'>) => {
+    if (!authenticatedUid) {
+      console.error('Cannot save drill without authenticated UID');
+      return;
+    }
+
     try {
       const drillData = {
         ...newDrill,
-        created_by: currentUserId,
+        created_by: authenticatedUid,
         createdAt: new Date().toISOString(),
       };
       await addDoc(collection(db, 'drills'), drillData);
@@ -66,15 +60,33 @@ export function useDrillDatabase() {
   };
 
   const updateDrill = async (id: string, updates: Partial<Drill>) => {
+    if (!authenticatedUid) {
+      console.error('Cannot update drill without authenticated UID');
+      return;
+    }
+
     try {
+      if (Object.prototype.hasOwnProperty.call(updates, 'created_by')) {
+        console.error('Drill ownership is immutable on client update.');
+        return;
+      }
+
+      const safeUpdates: Partial<Drill> = { ...updates };
+      delete safeUpdates.created_by;
+
       const docRef = doc(db, 'drills', id);
-      await updateDoc(docRef, updates);
+      await updateDoc(docRef, safeUpdates);
     } catch (e) {
       console.error("Error updating drill: ", e);
     }
   };
 
   const deleteDrill = async (id: string) => {
+    if (!authenticatedUid) {
+      console.error('Cannot delete drill without authenticated UID');
+      return;
+    }
+
     try {
       const docRef = doc(db, 'drills', id);
       await deleteDoc(docRef);
@@ -83,8 +95,8 @@ export function useDrillDatabase() {
     }
   };
 
-  const myDrills = drills.filter(d => d.created_by === currentUserId);
+  const myDrills = drills.filter(d => d.created_by === authenticatedUid);
   const academyDrills = drills.filter(d => d.is_shared === true);
 
-  return { drills, myDrills, academyDrills, saveDrill, updateDrill, deleteDrill, currentUser: currentUserId };
+  return { drills, myDrills, academyDrills, saveDrill, updateDrill, deleteDrill, currentUser: authenticatedUid };
 }
