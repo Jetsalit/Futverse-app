@@ -558,8 +558,7 @@ service cloud.firestore {
     }
 
     match /coaches/{document=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
+      allow read, write: if false;
     }
 
     match /logs/{document=**} {
