@@ -13,15 +13,19 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    function isSuperAdmin() {
+    function currentUserIsActive() {
       return isSignedIn()
         && userExists(request.auth.uid)
+        && currentUserData().get('status', '') in ['Active', 'ACTIVE'];
+    }
+
+    function isSuperAdmin() {
+      return currentUserIsActive()
         && currentUserData().get('role', '') == 'SUPERADMIN';
     }
 
     function isAdmin() {
-      return isSignedIn()
-        && userExists(request.auth.uid)
+      return currentUserIsActive()
         && currentUserData().get('role', '') in ['SUPERADMIN', 'ADMIN'];
     }
 
@@ -62,8 +66,7 @@ service cloud.firestore {
       let membership = get(
         /databases/$(database)/documents/academies/$(academyId)/members/$(request.auth.uid)
       ).data;
-      return isSignedIn()
-        && userExists(request.auth.uid)
+      return currentUserIsActive()
         && exists(
           /databases/$(database)/documents/academies/$(academyId)/members/$(request.auth.uid)
         )
