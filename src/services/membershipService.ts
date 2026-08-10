@@ -30,6 +30,11 @@ import {
   validateApprovedMembershipActivation,
   validateClaimAcademyBinding,
 } from "./membershipValidation";
+import {
+  assertExactUidCoachMutationTarget,
+  resolveExactUidCoachProfile,
+  type CoachIdentityResolution,
+} from "./coachIdentity";
 
 export {
   buildAcademyJoinClaimId,
@@ -123,20 +128,24 @@ export async function resolveTenantRole(
   };
 }
 
-async function findCoachProfileId(
+async function resolveCoachProfileIdentity(
   academyId: string,
   claim: AcademyJoinClaim,
-): Promise<string> {
+): Promise<CoachIdentityResolution> {
+  requireExactDocumentId(claim.userId, "claim.userId");
   const coaches = collection(db, "academies", academyId, "coaches");
-  const byUserId = await getDocs(query(coaches, where("userId", "==", claim.userId), limit(1)));
-  if (!byUserId.empty) return byUserId.docs[0].id;
-
-  if (claim.userEmail) {
-    const byEmail = await getDocs(query(coaches, where("email", "==", claim.userEmail), limit(1)));
-    if (!byEmail.empty) return byEmail.docs[0].id;
-  }
-
-  return claim.userId;
+  const byUserId = await getDocs(query(
+    coaches,
+    where("userId", "==", claim.userId),
+    limit(2),
+  ));
+  return resolveExactUidCoachProfile(
+    claim.userId,
+    byUserId.docs.map((coachSnapshot) => ({
+      id: coachSnapshot.id,
+      userId: coachSnapshot.data().userId,
+    })),
+  );
 }
 
 export async function approveAcademyJoinClaim({
@@ -157,6 +166,7 @@ export async function approveAcademyJoinClaim({
     id: claimSnapshot.id,
     ...claimSnapshot.data(),
   } as AcademyJoinClaim;
+  requireExactDocumentId(persistedClaim.userId, "persisted claim.userId");
   const requestedRole = normalizeClaimRole(persistedClaim);
   const persistedInviteCode = normalizeAndValidateInviteCode(persistedClaim.inviteCode);
   const inviteSnapshot = await getDoc(doc(db, "academy_invites", persistedInviteCode));
@@ -169,9 +179,10 @@ export async function approveAcademyJoinClaim({
   if (persistedClaim.userId !== claim.userId) {
     throw new Error("Claim identity changed before approval.");
   }
-  const coachProfileId = requestedRole === "COACH"
-    ? await findCoachProfileId(academyId, persistedClaim)
+  const coachIdentity = requestedRole === "COACH"
+    ? await resolveCoachProfileIdentity(academyId, persistedClaim)
     : null;
+  const coachProfileId = coachIdentity?.profileId || null;
 
   return runTransaction(db, async (transaction) => {
     const academyRef = doc(db, "academies", academyId);
@@ -199,6 +210,7 @@ export async function approveAcademyJoinClaim({
     }
 
     const storedClaim = { id: claimSnapshot.id, ...claimSnapshot.data() } as AcademyJoinClaim;
+    requireExactDocumentId(storedClaim.userId, "stored claim.userId");
     const storedRole = normalizeClaimRole(storedClaim);
     const storedInviteCode = normalizeAndValidateInviteCode(storedClaim.inviteCode);
     const storedInvite = inviteSnapshot.data() as AcademyInvite;
@@ -233,6 +245,14 @@ export async function approveAcademyJoinClaim({
       && existingMembership.approvalClaimId !== claim.id
     ) {
       throw new Error("Membership is already bound to a different approval Claim.");
+    }
+    if (requestedRole === "COACH" && coachRef) {
+      assertExactUidCoachMutationTarget(
+        claim.userId,
+        coachSnapshot?.exists()
+          ? coachSnapshot.data() as Record<string, unknown>
+          : null,
+      );
     }
     const timestamp = serverTimestamp();
     const membershipWrite = {
