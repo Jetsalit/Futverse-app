@@ -130,26 +130,49 @@ service cloud.firestore {
       ]);
     }
 
-    function validRegistrationUser(uid) {
-      return request.resource.data.get('uid', '') == uid
-        && request.resource.data.get('academyId', null) == null
-        && request.resource.data.get('activeAcademyId', null) == null
-        && request.resource.data.get('tenantRole', null) == null
-        && request.resource.data.get('subscriptionPlan', 'FREE') == 'FREE'
-        && !request.resource.data.keys().hasAny([
+    function registrationLogId(uid) {
+      return 'user_registered_' + uid;
+    }
+
+    function validRegistrationUserData(uid, userData) {
+      return userData.get('uid', '') == uid
+        && request.auth.token.get('email', '') is string
+        && request.auth.token.get('email', '').size() > 0
+        && userData.get('email', '') == request.auth.token.get('email', '')
+        && userData.get('requestedRole', '') is string
+        && userData.get('academyId', null) == null
+        && userData.get('activeAcademyId', null) == null
+        && userData.get('tenantRole', null) == null
+        && userData.get('subscriptionPlan', 'FREE') == 'FREE'
+        && !userData.keys().hasAny([
           'maxPlayers',
           'paymentDetails'
         ])
-        && request.resource.data.get('role', '') in ['USER', 'PLAYER']
         && (
           (
-            request.resource.data.role == 'USER'
-            && request.resource.data.get('status', '') == 'Inactive'
+            userData.requestedRole == 'PLAYER'
+            && userData.get('role', '') == 'PLAYER'
+            && userData.get('status', '') == 'Active'
           )
           || (
-            request.resource.data.role == 'PLAYER'
-            && request.resource.data.get('status', '') == 'Active'
+            userData.requestedRole != 'PLAYER'
+            && userData.get('role', '') == 'USER'
+            && userData.get('status', '') == 'Inactive'
           )
+        );
+    }
+
+    function validRegistrationUser(uid) {
+      let logId = registrationLogId(uid);
+      let logPath = /databases/$(database)/documents/logs/$(logId);
+      return validRegistrationUserData(uid, request.resource.data)
+        && !exists(/databases/$(database)/documents/users/$(uid))
+        && !exists(logPath)
+        && existsAfter(logPath)
+        && validRegistrationLogData(
+          logId,
+          getAfter(logPath).data,
+          request.resource.data
         );
     }
 
@@ -435,16 +458,33 @@ service cloud.firestore {
         && request.resource.data.updatedBy == request.auth.uid;
     }
 
-    function validClientRegistrationLog() {
-      return request.resource.data.keys().hasAll([
-          'action', 'userId', 'timestamp'
-        ])
-        && request.resource.data.keys().hasOnly([
+    function validRegistrationLogData(logId, logData, userData) {
+      return logId == registrationLogId(request.auth.uid)
+        && logData.keys().hasAll([
           'action', 'userId', 'email', 'requestedRole', 'timestamp'
         ])
-        && request.resource.data.action == 'USER_REGISTERED'
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.timestamp == request.time;
+        && logData.keys().hasOnly([
+          'action', 'userId', 'email', 'requestedRole', 'timestamp'
+        ])
+        && logData.action == 'USER_REGISTERED'
+        && logData.userId == request.auth.uid
+        && logData.timestamp == request.time
+        && logData.email == request.auth.token.get('email', '')
+        && logData.email == userData.get('email', '')
+        && logData.requestedRole == userData.get('requestedRole', '');
+    }
+
+    function validClientRegistrationLog(logId) {
+      let uid = request.auth.uid;
+      let userPath = /databases/$(database)/documents/users/$(uid);
+      return !exists(userPath)
+        && existsAfter(userPath)
+        && validRegistrationUserData(uid, getAfter(userPath).data)
+        && validRegistrationLogData(
+          logId,
+          request.resource.data,
+          getAfter(userPath).data
+        );
     }
 
     match /users/{uid} {
@@ -564,10 +604,16 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    match /logs/{document=**} {
+    match /logs/{logId} {
       allow read: if isSuperAdmin();
       allow create: if isSuperAdmin()
-        || (isSignedIn() && validClientRegistrationLog());
+        || (isSignedIn() && validClientRegistrationLog(logId));
+      allow update, delete: if false;
+    }
+
+    match /logs/{parent}/{document=**} {
+      allow read: if isSuperAdmin();
+      allow create: if isSuperAdmin();
       allow update, delete: if false;
     }
 

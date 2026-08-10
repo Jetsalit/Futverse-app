@@ -10,8 +10,10 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
 const authPath = path.join(repoRoot, "src/contexts/AuthContext.tsx");
 const loginPath = path.join(repoRoot, "src/components/Login.tsx");
+const registrationPath = path.join(repoRoot, "src/lib/firestore/registration.ts");
 const authSource = readFileSync(authPath, "utf8");
 const loginSource = readFileSync(loginPath, "utf8");
+const registrationSource = readFileSync(registrationPath, "utf8");
 const authAst = ts.createSourceFile(authPath, authSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const loginAst = ts.createSourceFile(loginPath, loginSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 
@@ -214,12 +216,8 @@ test("27 email/password registration cannot assign SUPERADMIN from email", () =>
 
 test("28 requestedRole remains onboarding intent and registration log metadata", () => {
   assert.match(loginSource, /newData\.requestedRole\s*=\s*requestedRole/);
-  const shorthandRequestedRoles = descendants(
-    loginAst,
-    (node): node is ts.ShorthandPropertyAssignment =>
-      ts.isShorthandPropertyAssignment(node) && node.name.text === "requestedRole",
-  );
-  assert.ok(shorthandRequestedRoles.length >= 3);
+  assert.match(loginSource, /\brequestedRole\s*,/);
+  assert.match(registrationSource, /requestedRole:\s*canonicalUserData\.requestedRole/);
 });
 
 test("29 PLAYER registration remains explicitly active in both registration flows", () => {

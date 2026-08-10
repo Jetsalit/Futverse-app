@@ -12,10 +12,9 @@ import {
   doc,
   setDoc,
   getDoc,
-  addDoc,
-  collection,
   serverTimestamp,
 } from "firebase/firestore";
+import { createUserWithRegistrationLog } from "../lib/firestore/registration";
 import {
   Mail,
   Lock,
@@ -110,8 +109,6 @@ export default function Login() {
         }
 
         const newData: any = {
-          uid: user.uid,
-          email: user.email,
           name: user.displayName || name || "User",
           displayName: user.displayName || name || "User",
           photoURL: user.photoURL || null,
@@ -133,15 +130,7 @@ export default function Login() {
         }
         newData.phone = phone || null;
 
-        await setDoc(userRef, newData, { merge: true });
-
-        await addDoc(collection(db, "logs"), {
-          action: "USER_REGISTERED",
-          userId: user.uid,
-          email: user.email,
-          requestedRole,
-          timestamp: serverTimestamp(),
-        });
+        await createUserWithRegistrationLog(user, newData);
       } else {
         await setDoc(
           userRef,
@@ -197,11 +186,9 @@ export default function Login() {
 
         const trimmedName = requestedAcademyName?.trim();
 
-        await setDoc(
-          doc(db, "users", user.uid),
+        await createUserWithRegistrationLog(
+          user,
           {
-            uid: user.uid,
-            email: email,
             name: name || "User",
             displayName: name || "User",
             photoURL: user.photoURL || null,
@@ -220,16 +207,7 @@ export default function Login() {
             updatedAt: new Date(),
             lastLogin: new Date(),
           },
-          { merge: true },
         );
-
-        await addDoc(collection(db, "logs"), {
-          action: "USER_REGISTERED",
-          userId: user.uid,
-          email: user.email,
-          requestedRole,
-          timestamp: serverTimestamp(),
-        });
       } else {
         // Sign in existing user
         const userCredential = await signInWithEmailAndPassword(
