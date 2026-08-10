@@ -54,8 +54,6 @@ interface AuthContextType {
   actualUser: User | null;
   isImpersonating: boolean;
   isLoading: boolean;
-  setRole: (role: UserRole) => void;
-  login: (user: User) => void;
   logout: () => void;
   hasPermission: (allowedRoles: UserRole[]) => boolean;
   impersonate: (user: User) => void;
@@ -83,20 +81,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (firebaseUser) {
         const userRef = doc(db, "users", firebaseUser.uid);
-        unsubscribeUserDoc = onSnapshot(userRef, async (userDoc) => {
+        unsubscribeUserDoc = onSnapshot(userRef, (userDoc) => {
           if (userDoc.exists()) {
             const userData = userDoc.data() as User;
-            
-            // Auto-promote jetsalween@gmail.com to SUPERADMIN
-            if (firebaseUser.email === "jetsalween@gmail.com" && userData.role !== "SUPERADMIN") {
-              userData.role = "SUPERADMIN";
-              try {
-                const { updateDoc } = await import("firebase/firestore");
-                await updateDoc(userRef, { role: "SUPERADMIN" });
-              } catch (e) {
-                console.error("Failed to auto-promote:", e);
-              }
-            }
 
             const fullUser = {
               ...userData,
@@ -138,18 +125,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       unsubscribeAuth();
     };
   }, []);
-
-  const setRole = (role: UserRole) => {
-    if (currentUser) {
-      setCurrentUser({ ...currentUser, role });
-    }
-  };
-
-  const login = (user: User) => {
-    // Used for mock logic, real login is handled by Firebase Auth now
-    setActualUser(user);
-    setCurrentUser(user);
-  };
 
   const logout = async () => {
     await signOut(auth);
@@ -211,8 +186,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         actualUser,
         isImpersonating,
         isLoading,
-        setRole,
-        login,
         logout,
         hasPermission,
         impersonate,

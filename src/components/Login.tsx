@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import { useAuth, UserRole } from "../contexts/AuthContext";
 import { auth, db } from "../lib/firebase";
 import {
   createUserWithEmailAndPassword,
@@ -18,14 +17,10 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import {
-  Shield,
   Mail,
   Lock,
   User,
-  Crown,
-  Navigation,
   ChevronRight,
-  Database,
   Loader2,
   Globe,
   Phone,
@@ -62,7 +57,6 @@ const FutVerseLogo = ({ className = "" }: { className?: string }) => (
 );
 
 export default function Login() {
-  const { login } = useAuth();
   const [isLoginView, setIsLoginView] = useState(true);
   const [isForgotPasswordView, setIsForgotPasswordView] = useState(false);
   const [isResetEmailSent, setIsResetEmailSent] = useState(false);
@@ -76,9 +70,6 @@ export default function Login() {
   const [requestedRole, setRequestedRole] = useState("PLAYER");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
-
-  const [showDemo, setShowDemo] = useState(false);
-  const [clickCount, setClickCount] = useState(0);
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,22 +89,6 @@ export default function Login() {
     }
   };
 
-  const handleLogoClick = () => {
-    setClickCount((prev) => {
-      const newCount = prev + 1;
-      if (newCount >= 5) {
-        setShowDemo(true);
-        return 0;
-      }
-      return newCount;
-    });
-
-    // Reset click count after a delay
-    setTimeout(() => {
-      setClickCount((current) => Math.max(0, current - 1));
-    }, 2000);
-  };
-
   const handleGoogleSignIn = async () => {
     setError("");
     setIsSubmitting(true);
@@ -126,18 +101,12 @@ export default function Login() {
       const userSnap = await getDoc(userRef);
 
       if (!userSnap.exists()) {
-        const isSuperAdmin = user.email === "jetsalween@gmail.com";
-        let assignedRole = isSuperAdmin ? "SUPERADMIN" : "USER";
-        let status = isSuperAdmin ? "Active" : "Inactive";
+        let assignedRole = "USER";
+        let status = "Inactive";
 
-        if (!isSuperAdmin) {
-          if (requestedRole === "PLAYER") {
-            assignedRole = "PLAYER";
-            status = "Active";
-          } else {
-            assignedRole = "USER";
-            status = "Inactive";
-          }
+        if (requestedRole === "PLAYER") {
+          assignedRole = "PLAYER";
+          status = "Active";
         }
 
         const newData: any = {
@@ -156,17 +125,13 @@ export default function Login() {
           lastLogin: new Date(),
         };
 
-        if (!isSuperAdmin) {
-          newData.requestedRole = requestedRole; // always set to default/selected
-          newData.country = country || null;
-          const trimmedName = requestedAcademyName?.trim();
-          if (trimmedName && (requestedRole === "ADMIN" || requestedRole === "COACH")) {
-            newData.requestedAcademyName = trimmedName;
-          }
-          newData.phone = phone || null;
-        } else {
-          newData.requestedRole = null;
+        newData.requestedRole = requestedRole; // always set to default/selected
+        newData.country = country || null;
+        const trimmedName = requestedAcademyName?.trim();
+        if (trimmedName && (requestedRole === "ADMIN" || requestedRole === "COACH")) {
+          newData.requestedAcademyName = trimmedName;
         }
+        newData.phone = phone || null;
 
         await setDoc(userRef, newData, { merge: true });
 
@@ -174,7 +139,7 @@ export default function Login() {
           action: "USER_REGISTERED",
           userId: user.uid,
           email: user.email,
-          requestedRole: isSuperAdmin ? "SUPERADMIN" : requestedRole,
+          requestedRole,
           timestamp: serverTimestamp(),
         });
       } else {
@@ -222,18 +187,12 @@ export default function Login() {
         await updateProfile(user, { displayName: name });
 
         // Save user data to Firestore
-        const isSuperAdmin = email === "jetsalween@gmail.com";
-        let assignedRole = isSuperAdmin ? "SUPERADMIN" : "USER";
-        let status = isSuperAdmin ? "Active" : "Inactive";
+        let assignedRole = "USER";
+        let status = "Inactive";
 
-        if (!isSuperAdmin) {
-          if (requestedRole === "PLAYER") {
-            assignedRole = "PLAYER";
-            status = "Active";
-          } else {
-            assignedRole = "USER";
-            status = "Inactive";
-          }
+        if (requestedRole === "PLAYER") {
+          assignedRole = "PLAYER";
+          status = "Active";
         }
 
         const trimmedName = requestedAcademyName?.trim();
@@ -250,10 +209,10 @@ export default function Login() {
             status: status,
             academyId: null,
             activeAcademyId: null,
-            requestedRole: isSuperAdmin ? null : requestedRole,
+            requestedRole,
             country: country || null,
             phone: phone || null,
-            ...(!isSuperAdmin && trimmedName && (requestedRole === "ADMIN" || requestedRole === "COACH")
+            ...(trimmedName && (requestedRole === "ADMIN" || requestedRole === "COACH")
               ? { requestedAcademyName: trimmedName }
               : {}),
             subscriptionPlan: "FREE",
@@ -268,7 +227,7 @@ export default function Login() {
           action: "USER_REGISTERED",
           userId: user.uid,
           email: user.email,
-          requestedRole: isSuperAdmin ? "SUPERADMIN" : requestedRole,
+          requestedRole,
           timestamp: serverTimestamp(),
         });
       } else {
@@ -295,10 +254,6 @@ export default function Login() {
     }
   };
 
-  const handleRoleLogin = (role: UserRole, loginName: string) => {
-    login({ name: loginName, role });
-  };
-
   return (
     <div className="flex h-screen w-full bg-white relative">
       {/* Left Hero Section (Hidden on Mobile) */}
@@ -314,10 +269,7 @@ export default function Login() {
         <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/60 to-transparent" />
 
         <div className="relative z-10 px-16 text-center max-w-3xl">
-          <div
-            onClick={handleLogoClick}
-            className="w-24 h-24 mb-8 bg-slate-900/60 backdrop-blur-md border border-slate-700/50 rounded-3xl mx-auto flex items-center justify-center cursor-pointer overflow-hidden p-3"
-          >
+          <div className="w-24 h-24 mb-8 bg-slate-900/60 backdrop-blur-md border border-slate-700/50 rounded-3xl mx-auto flex items-center justify-center overflow-hidden p-3">
             <FutVerseLogo className="w-full h-full" />
           </div>
           <h1 className="text-5xl lg:text-6xl font-black text-white mb-6 tracking-tight leading-tight">
@@ -338,10 +290,7 @@ export default function Login() {
       <div className="w-full lg:w-[600px] flex flex-col justify-center px-8 sm:px-16 overflow-y-auto bg-white/50 backdrop-blur-3xl relative z-10">
         <div className="max-w-sm w-full mx-auto py-12 flex-1 flex flex-col justify-center">
           {/* Logo Context for Mobile */}
-          <div
-            onClick={handleLogoClick}
-            className="lg:hidden w-16 h-16 mb-8 bg-slate-900 border border-slate-800 rounded-2xl flex items-center justify-center cursor-pointer shadow-lg p-2"
-          >
+          <div className="lg:hidden w-16 h-16 mb-8 bg-slate-900 border border-slate-800 rounded-2xl flex items-center justify-center shadow-lg p-2">
             <FutVerseLogo className="w-full h-full" />
           </div>
           <h2 className="lg:hidden text-2xl font-black text-slate-900 mb-2 leading-tight">
@@ -684,174 +633,6 @@ export default function Login() {
             </div>
           )}
 
-          {/* Demo Roles Section */}
-          {showDemo && (
-            <div className="mt-12 pt-8 border-t border-slate-100">
-              <div className="flex items-center gap-2 mb-6">
-                <span className="h-px bg-slate-200 flex-1"></span>
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest px-2 group">
-                  Fast Login for Testing (Demo Mode)
-                </span>
-                <span className="h-px bg-slate-200 flex-1"></span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button
-                  onClick={() => handleRoleLogin("ADMIN", "Director J")}
-                  className="flex items-center gap-3 p-3 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 group transition-colors"
-                  title="Full Access"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-rose-100/50 flex items-center justify-center shrink-0">
-                    <Crown
-                      size={20}
-                      className="group-hover:scale-110 transition-transform"
-                    />
-                  </div>
-                  <div className="text-left flex-1 min-w-0">
-                    <div className="text-xs font-bold truncate">
-                      Login as Director
-                    </div>
-                    <div className="text-[10px] uppercase font-bold text-rose-400/80 tracking-wider">
-                      ADMIN Role
-                    </div>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => handleRoleLogin("COACH", "Coach Pep")}
-                  className="flex items-center gap-3 p-3 rounded-xl border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 group transition-colors"
-                  title="Management Access"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-emerald-100/50 flex items-center justify-center shrink-0">
-                    <Navigation
-                      size={20}
-                      className="group-hover:scale-110 transition-transform"
-                    />
-                  </div>
-                  <div className="text-left flex-1 min-w-0">
-                    <div className="text-xs font-bold truncate">
-                      Login as Head Coach
-                    </div>
-                    <div className="text-[10px] uppercase font-bold text-emerald-400/80 tracking-wider">
-                      COACH Role
-                    </div>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => handleRoleLogin("SCOUT", "Chief Scout")}
-                  className="flex items-center gap-3 p-3 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-700 group transition-colors"
-                  title="Scouting Access"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-amber-100/50 flex items-center justify-center shrink-0">
-                    <span className="text-lg group-hover:scale-110 transition-transform block">
-                      🕵️
-                    </span>
-                  </div>
-                  <div className="text-left flex-1 min-w-0">
-                    <div className="text-xs font-bold truncate">
-                      Login as Scout
-                    </div>
-                    <div className="text-[10px] uppercase font-bold text-amber-500/80 tracking-wider">
-                      SCOUT Role
-                    </div>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() =>
-                    login({
-                      name: "Parent Dan",
-                      role: "USER",
-                      status: "Inactive",
-                    })
-                  }
-                  className="flex items-center gap-3 p-3 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 group transition-colors"
-                  title="Read-only Access"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-blue-100/50 flex items-center justify-center shrink-0">
-                    <User
-                      size={20}
-                      className="group-hover:scale-110 transition-transform"
-                    />
-                  </div>
-                  <div className="text-left flex-1 min-w-0">
-                    <div className="text-xs font-bold truncate">
-                      Login as Parent
-                    </div>
-                    <div className="text-[10px] uppercase font-bold text-blue-400/80 tracking-wider">
-                      USER Role (Inactive)
-                    </div>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() =>
-                    handleRoleLogin("DATA_ADMIN", "Data Entry Pro")
-                  }
-                  className="flex items-center gap-3 p-3 rounded-xl border border-cyan-200 bg-cyan-50 hover:bg-cyan-100 text-cyan-700 group transition-colors"
-                  title="Data Entry Access"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-cyan-100/50 flex items-center justify-center shrink-0">
-                    <Database
-                      size={20}
-                      className="group-hover:scale-110 transition-transform"
-                    />
-                  </div>
-                  <div className="text-left flex-1 min-w-0">
-                    <div className="text-xs font-bold truncate">
-                      Login as Concierge
-                    </div>
-                    <div className="text-[10px] uppercase font-bold text-cyan-500/80 tracking-wider">
-                      DATA_ADMIN Role
-                    </div>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => handleRoleLogin("PLAYER", "Suphanat M.")}
-                  className="flex items-center gap-3 p-3 rounded-xl border border-lime-200 bg-lime-50 hover:bg-lime-100 text-lime-700 group transition-colors"
-                  title="Player Access"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-lime-100/50 flex items-center justify-center shrink-0">
-                    <User
-                      size={20}
-                      className="group-hover:scale-110 transition-transform"
-                    />
-                  </div>
-                  <div className="text-left flex-1 min-w-0">
-                    <div className="text-xs font-bold truncate">
-                      Login as Youth Player
-                    </div>
-                    <div className="text-[10px] uppercase font-bold text-lime-500/80 tracking-wider">
-                      PLAYER Role
-                    </div>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => handleRoleLogin("SUPERADMIN", "System Admin")}
-                  className="flex items-center gap-3 p-3 rounded-xl border border-violet-200 bg-violet-50 hover:bg-violet-100 text-violet-700 group transition-colors sm:col-span-2"
-                  title="System Access"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-violet-100/50 flex items-center justify-center shrink-0">
-                    <Shield
-                      size={20}
-                      className="group-hover:scale-110 transition-transform"
-                    />
-                  </div>
-                  <div className="text-left flex-1 min-w-0">
-                    <div className="text-xs font-bold truncate">
-                      Login as Superadmin
-                    </div>
-                    <div className="text-[10px] uppercase font-bold text-violet-400/80 tracking-wider">
-                      SUPERADMIN Role (Bypass all)
-                    </div>
-                  </div>
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
