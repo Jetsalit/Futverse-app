@@ -46,14 +46,16 @@ interface ScoutPlayer {
   image: string;
   status: "Verified" | "Pending";
   submitterRole?: string;
+  submittedBy?: string;
   videoLink?: string;
 }
 
 
 
 export default function ScoutDashboard({ onBack }: { onBack: () => void }) {
-  const { hasPermission } = useAuth();
+  const { hasPermission, actualUser } = useAuth();
   const canEdit = hasPermission(["SUPERADMIN"]) || hasPermission(["ADMIN"]);
+  const authenticatedUid = actualUser?.uid || actualUser?.id || null;
   
   const [players, setPlayers] = useState<ScoutPlayer[]>([]);
   const [editingPlayer, setEditingPlayer] = useState<ScoutPlayer | null>(null);
@@ -359,13 +361,19 @@ export default function ScoutDashboard({ onBack }: { onBack: () => void }) {
           onSave={async (p) => {
             try {
               if (editingPlayer && editingPlayer.id) {
-                await updateDoc(doc(db, "scoutPlayers", editingPlayer.id), p as any);
+                const updates = { ...p };
+                delete updates.submittedBy;
+                await updateDoc(doc(db, "scoutPlayers", editingPlayer.id), updates as any);
               } else {
+                if (!authenticatedUid) {
+                  throw new Error("Authenticated user ID is required to submit a scout player.");
+                }
                 await addDoc(collection(db, "scoutPlayers"), {
                   ...p,
-                  status: p.status || "Pending",
-                  grade: p.grade || "C",
-                  stars: p.stars || 3,
+                  submittedBy: authenticatedUid,
+                  status: canEdit ? (p.status || "Pending") : "Pending",
+                  grade: canEdit ? (p.grade || "C") : "C",
+                  stars: canEdit ? (p.stars || 3) : 3,
                   stats: p.stats || { pace: 70, stamina: 70, passing: 70 },
                   image: p.image || `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.name}`
                 });

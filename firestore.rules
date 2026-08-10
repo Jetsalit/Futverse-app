@@ -600,10 +600,27 @@ service cloud.firestore {
       }
     }
 
-    match /scoutPlayers/{document=**} {
+    match /scoutPlayers/{scoutPlayerId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update, delete: if isSuperAdmin() || isAdmin();
+      allow create: if isSignedIn()
+        && request.resource.data.get('submittedBy', '') == request.auth.uid
+        && (
+          isAdmin()
+          || (
+            request.resource.data.get('status', '') == 'Pending'
+            && request.resource.data.get('grade', '') == 'C'
+            && request.resource.data.get('stars', 0) == 3
+          )
+        );
+      allow update: if isAdmin()
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'submittedBy'
+        ]);
+      allow delete: if isAdmin();
+
+      match /{document=**} {
+        allow read, write: if false;
+      }
     }
 
     match /{document=**} {
