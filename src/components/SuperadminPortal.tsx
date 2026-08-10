@@ -49,7 +49,9 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const { hasPermission, currentUser: authUser } = useAuth();
   const [activeTab, setActiveTab] = useState<CleanTab>("dashboard");
   const [users, setUsers] = useState<User[]>([]);
-  const [isLoadingUsers, setIsLoadingUsers] = useState(true);
+  const [userLoadState, setUserLoadState] =
+    useState<DashboardLoadState>("loading");
+  const [userReadError, setUserReadError] = useState<string | null>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [headerSearchQuery, setHeaderSearchQuery] = useState("");
@@ -65,10 +67,25 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     useState<DashboardLoadState>("idle");
 
   useEffect(() => {
-    const unsubscribe = subscribeToUsers((firestoreUsers) => {
-      setUsers(firestoreUsers.filter((u) => u.id !== authUser?.id));
-      setIsLoadingUsers(false);
-    });
+    setUserLoadState("loading");
+    setUserReadError(null);
+    setUsers([]);
+
+    const unsubscribe = subscribeToUsers(
+      (firestoreUsers) => {
+        setUsers(firestoreUsers.filter((u) => u.id !== authUser?.id));
+        setUserLoadState("loaded");
+      },
+      (error) => {
+        console.error("SuperAdmin failed to read user inventory:", error);
+        setUsers([]);
+        setSelectedUser(null);
+        setUserReadError(
+          "Unable to read the Firestore user inventory. User counts, search, approvals, and exports are unavailable.",
+        );
+        setUserLoadState("unavailable");
+      },
+    );
     return () => unsubscribe();
   }, [authUser?.id]);
 
@@ -313,13 +330,21 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     return matchesSearch && matchesRole;
   });
 
+  const filteredUsers = users.filter(
+    (u) =>
+      u.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.email?.toLowerCase().includes(searchQuery.toLowerCase()),
+  );
+
+  const isLoadingUsers = userLoadState === "loading";
+
   return (
     <div className="flex-1 flex flex-col h-full bg-slate-50 overflow-hidden">
       <SuperAdminHeader
         onBack={onBack}
         onNavigate={handleNavigate}
         onExportReport={handleExportReport}
-        dashboardActionsDisabled={isLoadingUsers}
+        dashboardActionsDisabled={userLoadState !== "loaded"}
         searchResults={searchResults}
         onSearchQueryChange={setHeaderSearchQuery}
         onSearchSelect={handleSearchSelect}
@@ -366,6 +391,35 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {isLoadingUsers && (
+          <div
+            className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-800"
+            role="status"
+          >
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading the authoritative Firestore user inventory...
+          </div>
+        )}
+
+        {userLoadState === "unavailable" && (
+          <div
+            className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800"
+            role="alert"
+          >
+            <XCircle className="h-4 w-4" />
+            {userReadError}
+          </div>
+        )}
+
+        {userLoadState === "loaded" && users.length === 0 && (
+          <div
+            className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600"
+            role="status"
+          >
+            No other users found in the authoritative Firestore users collection.
+          </div>
+        )}
+
         {activeTab === "dashboard" && (
           <SuperAdminOverview
             pendingUsers={pendingUsers.length}
@@ -510,6 +564,15 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                           <Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" />
                         </td>
                       </tr>
+                    ) : userLoadState === "unavailable" ? (
+                      <tr>
+                        <td
+                          colSpan={6}
+                          className="p-8 text-center text-rose-600"
+                        >
+                          User inventory unavailable.
+                        </td>
+                      </tr>
                     ) : filteredPendingUsers.length === 0 ? (
                       <tr>
                         <td
@@ -616,17 +679,26 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {users
-                    .filter(
-                      (u) =>
-                        u.name
-                          ?.toLowerCase()
-                          .includes(searchQuery.toLowerCase()) ||
-                        u.email
-                          ?.toLowerCase()
-                          .includes(searchQuery.toLowerCase()),
-                    )
-                    .map((user) => (
+                  {isLoadingUsers ? (
+                    <tr>
+                      <td colSpan={5} className="p-8 text-center text-slate-500">
+                        <Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" />
+                      </td>
+                    </tr>
+                  ) : userLoadState === "unavailable" ? (
+                    <tr>
+                      <td colSpan={5} className="p-8 text-center text-rose-600">
+                        User inventory unavailable.
+                      </td>
+                    </tr>
+                  ) : filteredUsers.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="p-8 text-center text-slate-500">
+                        No users found.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredUsers.map((user) => (
                       <tr
                         key={user.id}
                         className="hover:bg-slate-50/50 transition-colors"
@@ -639,7 +711,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                         </td>
                         <td className="p-4">
                           <select
-                            value={user.status || "INACTIVE"}
+                            value={user.status || ""}
                             onChange={(e) =>
                               handleUpdateStatus(user, e.target.value)
                             }
@@ -654,6 +726,9 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                                     : "bg-slate-100 text-slate-800 border-slate-200"
                             }`}
                           >
+                            <option value="" disabled>
+                              MISSING STATUS
+                            </option>
                             <option value="ACTIVE">ACTIVE</option>
                             <option value="PENDING">PENDING</option>
                             <option value="REJECTED">REJECTED</option>
@@ -662,13 +737,16 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                         </td>
                         <td className="p-4">
                           <select
-                            value={user.role || "USER"}
+                            value={user.role || ""}
                             onChange={(e) =>
                               handleUpdateRole(user, e.target.value)
                             }
                             disabled={user.role === "SUPERADMIN"}
                             className="text-xs font-bold rounded-xl px-2 py-1 bg-slate-50 border border-slate-200 text-slate-800 outline-none cursor-pointer"
                           >
+                            <option value="" disabled>
+                              MISSING ROLE
+                            </option>
                             <option value="USER">USER</option>
                             <option value="PLAYER">PLAYER</option>
                             <option value="COACH">COACH</option>
@@ -691,7 +769,8 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                           </button>
                         </td>
                       </tr>
-                    ))}
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
