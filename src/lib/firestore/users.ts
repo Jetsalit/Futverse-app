@@ -2,6 +2,7 @@ import { collection, onSnapshot } from "firebase/firestore";
 import type { DocumentData, Unsubscribe } from "firebase/firestore";
 import type { User } from "../../contexts/AuthContext";
 import { db } from "../firebase";
+import { mapCanonicalSnapshot } from "./canonicalDocument";
 
 export interface UserSnapshot {
   docs: ReadonlyArray<{
@@ -16,10 +17,10 @@ export type UserSnapshotSource = (
 ) => Unsubscribe;
 
 export const mapUserSnapshot = (snapshot: UserSnapshot): User[] =>
-  snapshot.docs.map((userDoc) => ({
-    ...(userDoc.data() as User),
-    id: userDoc.id,
-  }));
+  snapshot.docs.map((userDoc) => {
+    const { uid: _storedUid, ...canonicalUser } = mapCanonicalSnapshot<User>(userDoc);
+    return canonicalUser as User;
+  });
 
 export const subscribeToUserSnapshots = (
   source: UserSnapshotSource,

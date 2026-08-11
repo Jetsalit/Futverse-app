@@ -12,8 +12,12 @@ import {
 import { useAuth } from "../contexts/AuthContext";
 import { ProPlayer } from "../types/ProPlayer";
 import { db } from "../lib/firebase";
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from "firebase/firestore";
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, deleteField, doc } from "firebase/firestore";
 import { Edit2, Trash2, AlertCircle } from "lucide-react";
+import {
+  mapCanonicalSnapshot,
+  withoutCanonicalDocumentId,
+} from "../lib/firestore/canonicalDocument";
 
 const MOCK_PRO_PLAYERS: ProPlayer[] = [
   {
@@ -135,10 +139,9 @@ export default function ProPlayerManager({
     const unsubscribe = onSnapshot(
       proPlayersRef,
       (snapshot) => {
-        const playersData = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as ProPlayer[];
+        const playersData = snapshot.docs.map((doc) =>
+          mapCanonicalSnapshot<ProPlayer>(doc)
+        );
         setPlayers(playersData);
         setIsLoading(false);
       },
@@ -347,10 +350,14 @@ export default function ProPlayerManager({
           }}
           onSave={async (p) => {
             try {
+              const playerData = withoutCanonicalDocumentId(p);
               if (editingPlayer && editingPlayer.id) {
-                await updateDoc(doc(db, "proPlayers", editingPlayer.id), p as any);
+                await updateDoc(doc(db, "proPlayers", editingPlayer.id), {
+                  ...playerData,
+                  id: deleteField(),
+                } as any);
               } else {
-                await addDoc(collection(db, "proPlayers"), p);
+                await addDoc(collection(db, "proPlayers"), playerData);
               }
               setIsAddModalOpen(false);
               setEditingPlayer(null);
@@ -372,33 +379,37 @@ function AddProPlayerModal({
 }: {
   initialData?: ProPlayer | null;
   onClose: () => void;
-  onSave: (p: Partial<ProPlayer>) => void;
+  onSave: (p: Partial<Omit<ProPlayer, "id">>) => void;
 }) {
-  const [formData, setFormData] = useState<Partial<ProPlayer>>(initialData || {
-    name: "",
-    nationality: "",
-    dob: "",
-    position: "Striker",
-    height: 175,
-    weight: 70,
-    preferredFoot: "Right",
-    currentClub: "",
-    league: "T1",
-    contractExpiry: "",
-    marketValue: "",
-    avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=new",
-    actionShotUrl: "",
-    highlightVideoUrl: "",
-    careerHistory: [],
-    attributes: {
-      technical: 70,
-      tactical: 70,
-      physical: 70,
-      mental: 70,
-      attacking: 70,
-      defending: 70,
-    },
-  });
+  const [formData, setFormData] = useState<Partial<Omit<ProPlayer, "id">>>(
+    () => initialData
+      ? withoutCanonicalDocumentId(initialData)
+      : {
+          name: "",
+          nationality: "",
+          dob: "",
+          position: "Striker",
+          height: 175,
+          weight: 70,
+          preferredFoot: "Right",
+          currentClub: "",
+          league: "T1",
+          contractExpiry: "",
+          marketValue: "",
+          avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=new",
+          actionShotUrl: "",
+          highlightVideoUrl: "",
+          careerHistory: [],
+          attributes: {
+            technical: 70,
+            tactical: 70,
+            physical: 70,
+            mental: 70,
+            attacking: 70,
+            defending: 70,
+          },
+        },
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">

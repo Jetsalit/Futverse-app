@@ -8,6 +8,7 @@ import React, {
 import { auth, db } from "../lib/firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
+import { mapCanonicalSnapshot } from "../lib/firestore/canonicalDocument";
 import type { TenantRole } from "../types/Membership";
 import {
   canImpersonateUser,
@@ -91,6 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             const fullUser = {
               ...userData,
+              ...mapCanonicalSnapshot<User>(userDoc),
               id: firebaseUser.uid,
               uid: firebaseUser.uid,
               email: firebaseUser.email || undefined,

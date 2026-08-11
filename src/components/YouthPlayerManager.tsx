@@ -18,12 +18,14 @@ import {
   collection,
   onSnapshot,
   doc,
+  deleteField,
   deleteDoc,
   addDoc,
   updateDoc,
 } from "firebase/firestore";
 import { useAcademy } from "../contexts/AcademyContext";
 import { EmptyState } from "./common/EmptyState";
+import { mapCanonicalSnapshot } from "../lib/firestore/canonicalDocument";
 
 interface Player {
   id: string;
@@ -101,10 +103,9 @@ export default function YouthPlayerManager({
     const unsubscribe = onSnapshot(
       collection(db, "academies", academyId, "players"),
       (snapshot) => {
-        const playersData = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as Player[];
+        const playersData = snapshot.docs.map((doc) =>
+          mapCanonicalSnapshot<Player>(doc)
+        );
         setPlayers(playersData);
         setLoading(false);
       },
@@ -207,6 +208,7 @@ export default function YouthPlayerManager({
           age: calculateAge(formData.dob),
           fitness_status: formData.fitness_status,
           ...(formData.avatarUrl ? { avatar: formData.avatarUrl } : {}),
+          id: deleteField(),
         });
       } else {
         const newPlayer = {

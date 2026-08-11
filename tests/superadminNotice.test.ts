@@ -26,11 +26,14 @@ describe("SuperAdmin notice audiences", () => {
       user({ id: "active-title", name: "Title", status: "Active" }),
       user({ id: "inactive", name: "Inactive", status: "INACTIVE" }),
       user({ id: "pending", name: "Pending", status: "PENDING" }),
-      user({ id: "duplicate-doc", uid: "active-upper", name: "Duplicate" }),
+      user({ id: "duplicate-doc", uid: "active-upper", name: "Stored UID Mismatch" }),
       user({ id: undefined, uid: " invalid ", name: "Invalid UID" }),
     ], new Map());
 
-    assert.deepEqual(recipients.map((recipient) => recipient.uid), ["active-title", "active-upper"]);
+    assert.deepEqual(
+      recipients.map((recipient) => recipient.uid),
+      ["duplicate-doc", "active-title", "active-upper"],
+    );
     assert.equal(validFirebaseUid(" valid-uid "), null);
     assert.equal(validFirebaseUid("valid-uid"), "valid-uid");
   });

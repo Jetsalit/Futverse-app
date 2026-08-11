@@ -6,6 +6,7 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 import { db } from "../firebase";
+import { withoutCanonicalDocumentId } from "./canonicalDocument";
 
 export const REGISTRATION_LOG_ID_PREFIX = "user_registered_";
 
@@ -22,7 +23,7 @@ export async function createUserWithRegistrationLog(
   }
 
   const canonicalUserData = {
-    ...userData,
+    ...(withoutCanonicalDocumentId(userData) as typeof userData),
     uid: user.uid,
     email: user.email,
   };

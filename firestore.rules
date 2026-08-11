@@ -45,6 +45,18 @@ service cloud.firestore {
         && value.matches('^[^/]+$');
     }
 
+    function hasNoStoredDocumentId() {
+      return !request.resource.data.keys().hasAny(['id']);
+    }
+
+    function hasCanonicalUserUid(uid) {
+      return !request.resource.data.keys().hasAny(['uid'])
+        || (
+          request.resource.data.uid is string
+          && request.resource.data.uid == uid
+        );
+    }
+
     function activeInviteMatchesAcademy(inviteCode, academyId) {
       return validInviteCode(inviteCode)
         && exactDocumentId(academyId)
@@ -126,7 +138,9 @@ service cloud.firestore {
         'lastLogin',
         'updatedAt',
         'pdpaAccepted',
-        'pdpaAcceptedAt'
+        'pdpaAcceptedAt',
+        'uid',
+        'id'
       ]);
     }
 
@@ -143,6 +157,7 @@ service cloud.firestore {
 
     function validRegistrationUserData(uid, userData) {
       return userData.get('uid', '') == uid
+        && !userData.keys().hasAny(['id'])
         && request.auth.token.get('email', '') is string
         && request.auth.token.get('email', '').size() > 0
         && userData.get('email', '') == request.auth.token.get('email', '')
@@ -196,7 +211,9 @@ service cloud.firestore {
           'tenantRole',
           'role',
           'status',
-          'updatedAt'
+          'updatedAt',
+          'uid',
+          'id'
         ])
         && exists(
           /databases/$(database)/documents/academies/$(academyId)/members/$(uid)
@@ -341,7 +358,8 @@ service cloud.firestore {
         'approvedRole',
         'rejectedAt',
         'rejectedBy',
-        'updatedAt'
+        'updatedAt',
+        'id'
       ]);
     }
 
@@ -496,13 +514,20 @@ service cloud.firestore {
 
     match /users/{uid} {
       allow read: if isOwnUserDocument(uid) || isSuperAdmin();
-      allow create: if isOwnUserDocument(uid) && validRegistrationUser(uid);
-      allow update: if isSuperAdmin()
-        || (
-          isOwnUserDocument(uid)
-          && (
-            safeOwnerProfileUpdate()
-            || userPointerUpdateMatchesActiveMembership(uid)
+      allow create: if isOwnUserDocument(uid)
+        && hasNoStoredDocumentId()
+        && hasCanonicalUserUid(uid)
+        && validRegistrationUser(uid);
+      allow update: if hasNoStoredDocumentId()
+        && hasCanonicalUserUid(uid)
+        && (
+          isSuperAdmin()
+          || (
+            isOwnUserDocument(uid)
+            && (
+              safeOwnerProfileUpdate()
+              || userPointerUpdateMatchesActiveMembership(uid)
+            )
           )
         );
       allow delete: if false;
@@ -518,10 +543,12 @@ service cloud.firestore {
         );
       allow list: if false;
       allow create: if isSuperAdmin()
+        && hasNoStoredDocumentId()
         && validAcademyInviteData(inviteCode)
         && request.resource.data.createdAt == request.time
         && request.resource.data.createdBy == request.auth.uid;
       allow update: if isSuperAdmin()
+        && hasNoStoredDocumentId()
         && validAcademyInviteData(inviteCode)
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.createdBy == resource.data.createdBy;
@@ -529,7 +556,9 @@ service cloud.firestore {
     }
 
     match /profile_claims/{claimId} {
-      allow create: if isSignedIn() && validNewClaim(claimId);
+      allow create: if isSignedIn()
+        && hasNoStoredDocumentId()
+        && validNewClaim(claimId);
       allow read: if isSignedIn()
         && (
           isClaimOwner(resource.data)
@@ -537,6 +566,7 @@ service cloud.firestore {
           || isSuperAdmin()
         );
       allow update: if isSignedIn()
+        && hasNoStoredDocumentId()
         && claimIdentityIsUnchanged()
         && claimReviewerMayUpdate()
         && (validClaimApproval(claimId) || validClaimRejection());
@@ -545,20 +575,24 @@ service cloud.firestore {
 
     match /academies/{academyId} {
       allow read: if isSuperAdmin() || isActiveAcademyMember(academyId);
-      allow create: if isSuperAdmin();
-      allow update, delete: if isSuperAdmin() || hasAcademyRole(academyId, ['ADMIN']);
+      allow create: if isSuperAdmin() && hasNoStoredDocumentId();
+      allow update: if hasNoStoredDocumentId()
+        && (isSuperAdmin() || hasAcademyRole(academyId, ['ADMIN']));
+      allow delete: if isSuperAdmin() || hasAcademyRole(academyId, ['ADMIN']);
 
       match /members/{uid} {
         allow read: if isSuperAdmin()
           || isOwnUserDocument(uid)
           || hasAcademyRole(academyId, ['ADMIN']);
         allow create: if validMembershipData(academyId, uid)
+          && hasNoStoredDocumentId()
           && validMembershipApprovalReference(academyId, uid)
           && (isSuperAdmin() || hasAcademyRole(academyId, ['ADMIN']))
           && request.resource.data.joinedBy == request.auth.uid
           && request.resource.data.joinedAt == request.time
           && request.resource.data.updatedAt == request.time;
         allow update: if validMembershipData(academyId, uid)
+          && hasNoStoredDocumentId()
           && membershipApprovalReferenceIsStable()
           && (
             (
@@ -577,8 +611,11 @@ service cloud.firestore {
 
       match /coaches/{coachProfileId} {
         allow read: if isSuperAdmin() || isActiveAcademyMember(academyId);
-        allow create, update: if isSuperAdmin()
-          || hasAcademyRole(academyId, ['ADMIN']);
+        allow create, update: if hasNoStoredDocumentId()
+          && (
+            isSuperAdmin()
+            || hasAcademyRole(academyId, ['ADMIN'])
+          );
         allow delete: if isSuperAdmin()
           || hasAcademyRole(academyId, ['ADMIN']);
       }
@@ -588,7 +625,9 @@ service cloud.firestore {
           || canReadLinkedPlayer(academyId, playerId);
         allow list: if tenantMemberCanRead(academyId)
           || canListOwnPlayerProfile(academyId);
-        allow create, update, delete: if tenantFootballCanWrite(academyId);
+        allow create, update: if tenantFootballCanWrite(academyId)
+          && hasNoStoredDocumentId();
+        allow delete: if tenantFootballCanWrite(academyId);
 
         match /{playerCollection}/{document=**} {
           allow read: if tenantMemberCanRead(academyId);
@@ -613,14 +652,17 @@ service cloud.firestore {
 
     match /logs/{logId} {
       allow read: if isSuperAdmin();
-      allow create: if isSuperAdmin()
-        || (isSignedIn() && validClientRegistrationLog(logId));
+      allow create: if hasNoStoredDocumentId()
+        && (
+          isSuperAdmin()
+          || (isSignedIn() && validClientRegistrationLog(logId))
+        );
       allow update, delete: if false;
     }
 
     match /logs/{parent}/{document=**} {
       allow read: if isSuperAdmin();
-      allow create: if isSuperAdmin();
+      allow create: if isSuperAdmin() && hasNoStoredDocumentId();
       allow update, delete: if false;
     }
 
@@ -632,9 +674,11 @@ service cloud.firestore {
       allow read: if isSignedIn();
 
       allow create: if isSignedIn()
+        && hasNoStoredDocumentId()
         && request.resource.data.get('created_by', '') == request.auth.uid;
 
       allow update: if isSignedIn()
+        && hasNoStoredDocumentId()
         && resource.data.get('created_by', '') == request.auth.uid
         && request.resource.data.get('created_by', '') ==
            resource.data.get('created_by', '');
@@ -649,7 +693,8 @@ service cloud.firestore {
 
     match /proPlayers/{proPlayerId} {
       allow read: if isSignedIn();
-      allow create, update, delete: if isAdmin();
+      allow create, update: if isAdmin() && hasNoStoredDocumentId();
+      allow delete: if isAdmin();
 
       match /{document=**} {
         allow read, write: if false;
@@ -659,6 +704,7 @@ service cloud.firestore {
     match /scoutPlayers/{scoutPlayerId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn()
+        && hasNoStoredDocumentId()
         && request.resource.data.get('submittedBy', '') == request.auth.uid
         && (
           isAdmin()
@@ -669,6 +715,7 @@ service cloud.firestore {
           )
         );
       allow update: if isAdmin()
+        && hasNoStoredDocumentId()
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
           'submittedBy'
         ]);

@@ -13,6 +13,7 @@ import { Award, Activity, Heart, ChevronRight, UserCircle } from "lucide-react";
 import PeerVotingModal from "./PeerVotingModal";
 import { EmptyState } from "./common/EmptyState";
 import { linkedPlayerLookupForUser } from "../lib/nonStaffPlayerAccess";
+import { mapCanonicalSnapshot } from "../lib/firestore/canonicalDocument";
 
 interface Teammate {
   id: string;
@@ -83,9 +84,8 @@ export default function PlayerDashboard({
           } else if (snapshot.size === 1) {
             const docSnap = snapshot.docs[0];
             setPlayerProfile({
-              id: docSnap.id,
+              ...mapCanonicalSnapshot(docSnap),
               academyId: lookup.academyId,
-              ...docSnap.data(),
             });
           } else {
             console.error(
@@ -107,9 +107,8 @@ export default function PlayerDashboard({
 
           if (docSnap.exists()) {
             setPlayerProfile({
-              id: docSnap.id,
+              ...mapCanonicalSnapshot(docSnap),
               academyId: lookup.academyId,
-              ...docSnap.data(),
             });
           } else {
             setPlayerProfile(null);

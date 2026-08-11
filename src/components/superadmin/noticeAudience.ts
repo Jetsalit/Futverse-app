@@ -57,7 +57,7 @@ export function validFirebaseUid(value: string | undefined | null): string | nul
 }
 
 export function firebaseUidForUser(user: User): string | null {
-  return validFirebaseUid(user.uid) || validFirebaseUid(user.id);
+  return validFirebaseUid(user.id) || validFirebaseUid(user.uid);
 }
 
 export function isActiveNoticeUser(user: User): boolean {

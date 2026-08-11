@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -11,6 +12,7 @@ import {
 } from "firebase/firestore";
 import { FirebaseError } from "firebase/app";
 import { auth, db } from "../lib/firebase";
+import { mapCanonicalSnapshot } from "../lib/firestore/canonicalDocument";
 import type {
   ActivateApprovedMembershipResult,
   AcademyInvite,
@@ -162,10 +164,8 @@ export async function approveAcademyJoinClaim({
   if (!claimSnapshot.exists()) {
     throw new Error("The Academy join claim does not exist.");
   }
-  const persistedClaim = {
-    id: claimSnapshot.id,
-    ...claimSnapshot.data(),
-  } as AcademyJoinClaim;
+  const persistedClaim = mapCanonicalSnapshot<AcademyJoinClaim>(claimSnapshot);
+  const canonicalClaimId = persistedClaim.id;
   requireExactDocumentId(persistedClaim.userId, "persisted claim.userId");
   const requestedRole = normalizeClaimRole(persistedClaim);
   const persistedInviteCode = normalizeAndValidateInviteCode(persistedClaim.inviteCode);
@@ -186,8 +186,8 @@ export async function approveAcademyJoinClaim({
 
   return runTransaction(db, async (transaction) => {
     const academyRef = doc(db, "academies", academyId);
-    const membershipRef = doc(db, "academies", academyId, "members", claim.userId);
-    const claimRef = doc(db, "profile_claims", claim.id);
+    const membershipRef = doc(db, "academies", academyId, "members", persistedClaim.userId);
+    const claimRef = doc(db, "profile_claims", canonicalClaimId);
     const inviteRef = doc(db, "academy_invites", persistedInviteCode);
     const coachRef = coachProfileId
       ? doc(db, "academies", academyId, "coaches", coachProfileId)
@@ -209,13 +209,16 @@ export async function approveAcademyJoinClaim({
       throw new Error("The canonical Academy invite does not exist.");
     }
 
-    const storedClaim = { id: claimSnapshot.id, ...claimSnapshot.data() } as AcademyJoinClaim;
+    const storedClaim = mapCanonicalSnapshot<AcademyJoinClaim>(claimSnapshot);
+    if (storedClaim.id !== canonicalClaimId) {
+      throw new Error("Claim transaction resolved a different canonical document ID.");
+    }
     requireExactDocumentId(storedClaim.userId, "stored claim.userId");
     const storedRole = normalizeClaimRole(storedClaim);
     const storedInviteCode = normalizeAndValidateInviteCode(storedClaim.inviteCode);
     const storedInvite = inviteSnapshot.data() as AcademyInvite;
     if (
-      storedClaim.userId !== claim.userId ||
+      storedClaim.userId !== persistedClaim.userId ||
       storedRole !== requestedRole ||
       storedClaim.userEmail !== persistedClaim.userEmail ||
       storedInviteCode !== persistedInviteCode
@@ -242,13 +245,13 @@ export async function approveAcademyJoinClaim({
       : null;
     if (
       existingMembership?.approvalClaimId
-      && existingMembership.approvalClaimId !== claim.id
+      && existingMembership.approvalClaimId !== canonicalClaimId
     ) {
       throw new Error("Membership is already bound to a different approval Claim.");
     }
     if (requestedRole === "COACH" && coachRef) {
       assertExactUidCoachMutationTarget(
-        claim.userId,
+        storedClaim.userId,
         coachSnapshot?.exists()
           ? coachSnapshot.data() as Record<string, unknown>
           : null,
@@ -256,12 +259,12 @@ export async function approveAcademyJoinClaim({
     }
     const timestamp = serverTimestamp();
     const membershipWrite = {
-      userId: claim.userId,
+      userId: storedClaim.userId,
       academyId,
       role: requestedRole,
       status: "ACTIVE" as const,
       source: "CLAIM_APPROVAL" as const,
-      approvalClaimId: claim.id,
+      approvalClaimId: canonicalClaimId,
       joinedAt: existingMembership?.joinedAt || timestamp,
       joinedBy: existingMembership?.joinedBy || approvedBy,
       updatedAt: timestamp,
@@ -271,32 +274,34 @@ export async function approveAcademyJoinClaim({
     transaction.set(claimRef, {
       status: "APPROVED",
       approvedAt: storedClaim.status === "APPROVED"
-        ? claimSnapshot.data().approvedAt || timestamp
+        ? storedClaim.approvedAt || timestamp
         : timestamp,
       approvedBy: storedClaim.status === "APPROVED"
-        ? claimSnapshot.data().approvedBy || approvedBy
+        ? storedClaim.approvedBy || approvedBy
         : approvedBy,
       approvedAcademyId: academyId,
       approvedRole: requestedRole,
       updatedAt: timestamp,
+      id: deleteField(),
     }, { merge: true });
 
     if (requestedRole === "COACH" && coachRef) {
       const nameParts = (storedClaim.userName || "Coach").trim().split(/\s+/);
+      const coachWrite = coachSnapshot?.exists()
+        ? { userId: storedClaim.userId }
+        : {
+            userId: storedClaim.userId,
+            firstName: nameParts[0] || "Coach",
+            lastName: nameParts.slice(1).join(" "),
+            email: storedClaim.userEmail || "",
+            phone: "",
+            license: "C",
+            teams: [],
+            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(storedClaim.userEmail || storedClaim.userId)}`,
+          };
       transaction.set(
         coachRef,
-        coachSnapshot?.exists()
-          ? { userId: claim.userId }
-          : {
-              userId: claim.userId,
-              firstName: nameParts[0] || "Coach",
-              lastName: nameParts.slice(1).join(" "),
-              email: storedClaim.userEmail || "",
-              phone: "",
-              license: "C",
-              teams: [],
-              avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(storedClaim.userEmail || claim.userId)}`,
-            },
+        { ...coachWrite, id: deleteField() },
         { merge: true },
       );
     }
@@ -343,10 +348,7 @@ export async function activateApprovedMembership(
     const claimRef = doc(db, "profile_claims", membership.approvalClaimId!);
     const claimSnapshot = await transaction.get(claimRef);
     if (!claimSnapshot.exists()) throw new Error("Approved Academy join claim was not found.");
-    const approvedClaim = {
-      id: claimSnapshot.id,
-      ...claimSnapshot.data(),
-    } as AcademyJoinClaim;
+    const approvedClaim = mapCanonicalSnapshot<AcademyJoinClaim>(claimSnapshot);
     const normalizedInviteCode = normalizeAndValidateInviteCode(approvedClaim.inviteCode);
     const inviteSnapshot = await transaction.get(
       doc(db, "academy_invites", normalizedInviteCode),
@@ -362,12 +364,14 @@ export async function activateApprovedMembership(
     });
 
     transaction.set(userRef, {
+      uid,
       activeAcademyId: academyId,
       academyId,
       tenantRole: role,
       role,
       status: "Active",
       updatedAt: serverTimestamp(),
+      id: deleteField(),
     }, { merge: true });
 
     return { activated: true, academyId, role };

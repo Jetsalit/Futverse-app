@@ -9,6 +9,7 @@ import {
   sendPasswordResetEmail,
 } from "firebase/auth";
 import {
+  deleteField,
   doc,
   setDoc,
   getDoc,
@@ -139,7 +140,12 @@ export default function Login() {
       } else {
         await setDoc(
           userRef,
-          { lastLogin: serverTimestamp(), updatedAt: serverTimestamp() },
+          {
+            uid: user.uid,
+            lastLogin: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            id: deleteField(),
+          },
           { merge: true },
         );
       }
@@ -223,8 +229,10 @@ export default function Login() {
         await setDoc(
           doc(db, "users", userCredential.user.uid),
           {
+            uid: userCredential.user.uid,
             lastLogin: serverTimestamp(),
             updatedAt: serverTimestamp(),
+            id: deleteField(),
           },
           { merge: true },
         );

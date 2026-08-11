@@ -83,7 +83,7 @@ describe("Access A6-H4 exact UID-bound Coach identity", () => {
     );
     assert.match(
       membershipServiceCode,
-      /coachSnapshot\?\.exists\(\)[\s\S]*?\{\s*userId:\s*claim\.userId\s*\}/,
+      /coachSnapshot\?\.exists\(\)[\s\S]*?\{\s*userId:\s*storedClaim\.userId\s*\}/,
     );
   });
 

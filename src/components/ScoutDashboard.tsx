@@ -1,7 +1,11 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from "firebase/firestore";
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, deleteField, doc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../contexts/AuthContext";
+import {
+  mapCanonicalSnapshot,
+  withoutCanonicalDocumentId,
+} from "../lib/firestore/canonicalDocument";
 import {
   Search,
   ArrowLeft,
@@ -63,11 +67,12 @@ export default function ScoutDashboard({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "scoutPlayers"), (snapshot) => {
       const data = snapshot.docs.map(doc => {
-        const d = doc.data();
+        const canonicalPlayer = mapCanonicalSnapshot<ScoutPlayer>(doc);
         return { 
-          id: doc.id, 
-          ...d,
-          position: Array.isArray(d.position) ? d.position : (d.position ? [d.position] : [])
+          ...canonicalPlayer,
+          position: Array.isArray(canonicalPlayer.position)
+            ? canonicalPlayer.position
+            : (canonicalPlayer.position ? [canonicalPlayer.position] : []),
         } as ScoutPlayer
       });
       setPlayers(data);
@@ -360,22 +365,24 @@ export default function ScoutDashboard({ onBack }: { onBack: () => void }) {
           }}
           onSave={async (p) => {
             try {
+              const playerData = withoutCanonicalDocumentId(p);
               if (editingPlayer && editingPlayer.id) {
-                const updates = { ...p };
+                const updates: any = { ...playerData };
                 delete updates.submittedBy;
+                updates.id = deleteField();
                 await updateDoc(doc(db, "scoutPlayers", editingPlayer.id), updates as any);
               } else {
                 if (!authenticatedUid) {
                   throw new Error("Authenticated user ID is required to submit a scout player.");
                 }
                 await addDoc(collection(db, "scoutPlayers"), {
-                  ...p,
+                  ...playerData,
                   submittedBy: authenticatedUid,
                   status: canEdit ? (p.status || "Pending") : "Pending",
                   grade: canEdit ? (p.grade || "C") : "C",
                   stars: canEdit ? (p.stars || 3) : 3,
-                  stats: p.stats || { pace: 70, stamina: 70, passing: 70 },
-                  image: p.image || `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.name}`
+                  stats: playerData.stats || { pace: 70, stamina: 70, passing: 70 },
+                  image: playerData.image || `https://api.dicebear.com/7.x/avataaars/svg?seed=${playerData.name}`
                 });
               }
             } catch (err) {
@@ -576,24 +583,28 @@ function SubmitTalentModal({
 }: { 
   initialData?: ScoutPlayer | null;
   onClose: () => void;
-  onSave: (p: Partial<ScoutPlayer>) => void;
+  onSave: (p: Partial<Omit<ScoutPlayer, "id">>) => void;
   isAdmin?: boolean;
 }) {
-  const [formData, setFormData] = useState<Partial<ScoutPlayer>>(initialData || {
-    name: "",
-    age: 15,
-    height: 170,
-    weight: 60,
-    position: [],
-    academy: "",
-    province: "",
-    status: "Pending",
-    grade: "C",
-    stars: 3,
-    stats: { pace: 5, stamina: 5, passing: 5, dribbling: 5, shooting: 5, tackling: 5, technique: 5, decision: 5, teamwork: 5 },
-    submitterRole: "",
-    videoLink: "",
-  });
+  const [formData, setFormData] = useState<Partial<Omit<ScoutPlayer, "id">>>(
+    () => initialData
+      ? withoutCanonicalDocumentId(initialData)
+      : {
+          name: "",
+          age: 15,
+          height: 170,
+          weight: 60,
+          position: [],
+          academy: "",
+          province: "",
+          status: "Pending",
+          grade: "C",
+          stars: 3,
+          stats: { pace: 5, stamina: 5, passing: 5, dribbling: 5, shooting: 5, tackling: 5, technique: 5, decision: 5, teamwork: 5 },
+          submitterRole: "",
+          videoLink: "",
+        },
+  );
   
   const [submitComplete, setSubmitComplete] = useState(false);
 

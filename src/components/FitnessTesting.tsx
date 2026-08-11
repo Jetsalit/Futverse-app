@@ -26,9 +26,10 @@ import {
   Users,
 } from "lucide-react";
 import { db } from "../lib/firebase";
-import { collection, onSnapshot, query, orderBy, doc, deleteDoc, addDoc, updateDoc } from "firebase/firestore";
+import { collection, onSnapshot, query, orderBy, doc, deleteDoc, deleteField, addDoc, updateDoc } from "firebase/firestore";
 import { EmptyState } from "./common/EmptyState";
 import { useAcademy } from "../contexts/AcademyContext";
+import { mapCanonicalSnapshot } from "../lib/firestore/canonicalDocument";
 import { Plus, Edit2, Trash2, X, Upload, Calendar, ChevronDown, Filter } from "lucide-react";
 
 interface Player {
@@ -421,10 +422,9 @@ export default function FitnessTesting({
     const unsubscribe = onSnapshot(
       collection(db, "academies", academyId, "players"),
       (snapshot) => {
-        const playersData = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as Player[];
+        const playersData = snapshot.docs.map((doc) =>
+          mapCanonicalSnapshot<Player>(doc)
+        );
         setPlayers(playersData);
         if (playersData.length > 0) {
           setSelectedPlayerId(prev => prev ? prev : playersData[0].id);
@@ -513,7 +513,10 @@ export default function FitnessTesting({
       delete playerData.avatarUrl;
 
       if (editingPlayerId) {
-        await updateDoc(doc(db, "academies", academyId, "players", editingPlayerId), playerData);
+        await updateDoc(doc(db, "academies", academyId, "players", editingPlayerId), {
+          ...playerData,
+          id: deleteField(),
+        });
       } else {
         await addDoc(collection(db, "academies", academyId, "players"), playerData);
       }
@@ -536,7 +539,10 @@ export default function FitnessTesting({
     }
 
     try {
-      await updateDoc(doc(db, "academies", academyId, "players", playerToDelete), { hideFromFitness: true });
+      await updateDoc(doc(db, "academies", academyId, "players", playerToDelete), {
+        hideFromFitness: true,
+        id: deleteField(),
+      });
       setPlayerToDelete(null);
     } catch (error: any) {
       console.error("Error deleting player:", error);

@@ -19,6 +19,7 @@ import {
   normalizeAndValidateInviteCode,
   validateActiveAcademyInvite,
 } from "../services/membershipService";
+import { mapCanonicalSnapshot } from "../lib/firestore/canonicalDocument";
 
 function getRequestedTenantRole(
   requestedRole?: unknown,
@@ -57,10 +58,7 @@ export default function JoinAcademy({ onBack }: { onBack?: () => void }) {
     );
     const unsub = onSnapshot(q, (snapshot) => {
       const claims = snapshot.docs
-        .map((snapshotDoc) => ({
-          id: snapshotDoc.id,
-          ...snapshotDoc.data(),
-        }) as AcademyJoinClaim)
+        .map((snapshotDoc) => mapCanonicalSnapshot<AcademyJoinClaim>(snapshotDoc))
         .filter((claim) =>
           claim.type === "COACH_JOIN"
             ? requestedRole === "COACH"
@@ -103,7 +101,7 @@ export default function JoinAcademy({ onBack }: { onBack?: () => void }) {
           normalizedInviteCode,
         );
         if (claimSnapshot.exists()) {
-          const storedClaim = claimSnapshot.data() as AcademyJoinClaim;
+          const storedClaim = mapCanonicalSnapshot<AcademyJoinClaim>(claimSnapshot);
           if (storedClaim.status === "PENDING") return;
           throw new Error("A previous request already exists for this invite code and role.");
         }

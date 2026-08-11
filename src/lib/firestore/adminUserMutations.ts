@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteField,
   doc,
   serverTimestamp,
   writeBatch,
@@ -7,6 +8,7 @@ import {
   type FieldValue,
 } from "firebase/firestore";
 import { db } from "../firebase";
+import { withoutCanonicalDocumentId } from "./canonicalDocument";
 import {
   genericApprovalBlockReason,
   isSafeAccountRole,
@@ -82,11 +84,15 @@ function createFirestoreBatch(): AtomicAdminBatch {
   const batch = writeBatch(db);
   return {
     updateUser(targetUid, patch) {
-      batch.update(doc(db, "users", targetUid), patch);
+      batch.update(doc(db, "users", targetUid), {
+        ...withoutCanonicalDocumentId(patch),
+        uid: targetUid,
+        id: deleteField(),
+      });
     },
     createAuditLog(log) {
       const logRef = doc(collection(db, "logs"));
-      batch.set(logRef, log);
+      batch.set(logRef, withoutCanonicalDocumentId(log));
     },
     commit: () => batch.commit(),
   };

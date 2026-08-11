@@ -12,6 +12,7 @@ import {
 import { db } from "../lib/firebase";
 import {
   collection,
+  deleteField,
   onSnapshot,
   doc,
   deleteDoc,
@@ -26,6 +27,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { EmptyState } from "./common/EmptyState";
 import { approveAcademyJoinClaim } from "../services/membershipService";
 import type { AcademyJoinClaim, TenantRole } from "../types/Membership";
+import { mapCanonicalSnapshot } from "../lib/firestore/canonicalDocument";
 
 const LICENSES = ["Pro", "A", "B", "C", "ไม่มี"];
 
@@ -103,10 +105,9 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     const unsubscribe = onSnapshot(getAcademyCollection("coaches"), (snapshot) => {
-      const loadedCoaches = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Coach[];
+      const loadedCoaches = snapshot.docs.map((doc) =>
+        mapCanonicalSnapshot<Coach>(doc)
+      );
       setCoaches(loadedCoaches);
       setLoading(false);
     });
@@ -124,10 +125,7 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
     const unsub = onSnapshot(q, (snapshot) => {
       setPendingClaims(
         snapshot.docs
-          .map((snapshotDoc) => ({
-            id: snapshotDoc.id,
-            ...snapshotDoc.data(),
-          }) as AcademyJoinClaim)
+          .map((snapshotDoc) => mapCanonicalSnapshot<AcademyJoinClaim>(snapshotDoc))
           .filter((claim) => getClaimRole(claim) !== null),
       );
     });
@@ -163,6 +161,7 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
         rejectedAt: serverTimestamp(),
         rejectedBy,
         updatedAt: serverTimestamp(),
+        id: deleteField(),
       });
       alert("Academy join request rejected");
     } catch (error) {
@@ -247,7 +246,10 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
       };
 
       if (editingId) {
-        await updateDoc(doc(getAcademyCollection("coaches"), editingId), coachData);
+        await updateDoc(doc(getAcademyCollection("coaches"), editingId), {
+          ...coachData,
+          id: deleteField(),
+        });
       } else {
         await addDoc(getAcademyCollection("coaches"), coachData);
       }

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../lib/firebase';
-import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, deleteDoc, deleteField, doc, onSnapshot, query } from 'firebase/firestore';
+import { mapCanonicalSnapshot, withoutCanonicalDocumentId } from '../lib/firestore/canonicalDocument';
 
 export interface Drill {
   id: string;
@@ -34,7 +35,7 @@ export function useDrillDatabase() {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const drillsData: Drill[] = [];
       snapshot.forEach((doc) => {
-        drillsData.push({ id: doc.id, ...doc.data() } as Drill);
+        drillsData.push(mapCanonicalSnapshot<Drill>(doc));
       });
       setDrills(drillsData);
     });
@@ -49,7 +50,7 @@ export function useDrillDatabase() {
 
     try {
       const drillData = {
-        ...newDrill,
+        ...withoutCanonicalDocumentId(newDrill),
         created_by: authenticatedUid,
         createdAt: new Date().toISOString(),
       };
@@ -71,11 +72,11 @@ export function useDrillDatabase() {
         return;
       }
 
-      const safeUpdates: Partial<Drill> = { ...updates };
+      const safeUpdates = withoutCanonicalDocumentId(updates) as Partial<Drill>;
       delete safeUpdates.created_by;
 
       const docRef = doc(db, 'drills', id);
-      await updateDoc(docRef, safeUpdates);
+      await updateDoc(docRef, { ...safeUpdates, id: deleteField() });
     } catch (e) {
       console.error("Error updating drill: ", e);
     }

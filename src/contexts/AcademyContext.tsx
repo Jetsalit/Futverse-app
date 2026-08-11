@@ -3,12 +3,17 @@ import { FirebaseError } from "firebase/app";
 import {
   collection,
   CollectionReference,
+  deleteField,
   doc,
   DocumentData,
   onSnapshot,
   setDoc,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
+import {
+  mapCanonicalSnapshot,
+  withoutCanonicalDocumentId,
+} from "../lib/firestore/canonicalDocument";
 import type { Membership, TenantRole } from "../types/Membership";
 import { useAuth } from "./AuthContext";
 import {
@@ -218,10 +223,7 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
               return;
             }
 
-            const academyData = {
-              id: academySnapshot.id,
-              ...academySnapshot.data(),
-            } as AcademyDocument;
+            const academyData = mapCanonicalSnapshot<AcademyDocument>(academySnapshot);
             const nextSettings = {
               ...defaultSettings,
               ...academySnapshot.data(),
@@ -303,7 +305,14 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
     if (!hasAuthorizedTenantContext || !academyId) {
       throw new Error("An ACTIVE Membership is required.");
     }
-    await setDoc(doc(db, "academies", academyId), newSettings, { merge: true });
+    await setDoc(
+      doc(db, "academies", academyId),
+      {
+        ...withoutCanonicalDocumentId(newSettings),
+        id: deleteField(),
+      },
+      { merge: true },
+    );
   };
 
   const getAcademyCollection = (collectionName: string) => {
