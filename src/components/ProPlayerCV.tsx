@@ -1,8 +1,6 @@
 import React, { useState } from "react";
 import {
   ArrowLeft,
-  Download,
-  Share2,
   Play,
   Calendar,
   MapPin,
@@ -68,16 +66,6 @@ export default function ProPlayerCV({
           <ArrowLeft size={20} />
         </button>
 
-        <div className="flex gap-2">
-          <button className="flex items-center gap-2 px-4 py-2 hover:bg-white/20 bg-white/10 backdrop-blur-md text-white rounded-lg text-sm font-bold transition-colors">
-            <Share2 size={16} />{" "}
-            <span className="hidden sm:inline">Share Link</span>
-          </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold transition-colors shadow-sm">
-            <Download size={16} />{" "}
-            <span className="hidden sm:inline">Export PDF</span>
-          </button>
-        </div>
       </div>
 
       {/* Hero Section */}
@@ -226,34 +214,6 @@ export default function ProPlayerCV({
                     </span>
                   </div>
                 </div>
-              </div>
-
-              {/* IDP Completion Rate */}
-              <div className="bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-800 text-white relative overflow-hidden">
-                <div className="absolute right-0 top-0 opacity-10">
-                  <Award size={100} className="-mr-4 -mt-4 text-emerald-400" />
-                </div>
-                <h3 className="text-sm font-black uppercase tracking-widest text-slate-400 mb-1">
-                  IDP Target Status
-                </h3>
-                <div className="flex items-end gap-3 mb-3">
-                  <span className="text-4xl font-black text-emerald-400 leading-none">
-                    85%
-                  </span>
-                  <span className="text-xs font-bold text-emerald-500 uppercase tracking-wider bg-emerald-500/10 px-2 py-1 rounded mb-1">
-                    Completion Rate
-                  </span>
-                </div>
-                <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                  <div
-                    className="bg-gradient-to-r from-emerald-500 to-indigo-500 h-full rounded-full"
-                    style={{ width: "85%" }}
-                  ></div>
-                </div>
-                <p className="text-[10px] text-slate-500 mt-3 font-medium uppercase tracking-wider">
-                  <span className="text-slate-300 font-bold">17/20</span>{" "}
-                  development goals achieved for this season.
-                </p>
               </div>
 
               {/* Contact Card */}

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../lib/firebase';
-import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, deleteDoc, deleteField, doc, onSnapshot, query } from 'firebase/firestore';
+import { mapCanonicalSnapshot, withoutCanonicalDocumentId } from '../lib/firestore/canonicalDocument';
 
 export interface Drill {
   id: string;
@@ -24,28 +25,17 @@ export interface Drill {
   date?: string;
 }
 
-const MOCK_DRILLS: Drill[] = [
-  {
-    id: "d1",
-    title: "Rondo 4v2",
-    category: "Tactical",
-    canvas_data: { elements: [], lines: [], fieldType: "half" },
-    created_by: "unknown_user",
-    is_shared: true,
-  }
-];
-
 export function useDrillDatabase() {
   const [drills, setDrills] = useState<Drill[]>([]);
-  const { currentUser } = useAuth();
-  const currentUserId = currentUser?.id || 'unknown_user';
+  const { actualUser } = useAuth();
+  const authenticatedUid = actualUser?.uid || actualUser?.id || null;
 
   useEffect(() => {
     const q = query(collection(db, 'drills'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const drillsData: Drill[] = [];
       snapshot.forEach((doc) => {
-        drillsData.push({ id: doc.id, ...doc.data() } as Drill);
+        drillsData.push(mapCanonicalSnapshot<Drill>(doc));
       });
       setDrills(drillsData);
     });
@@ -53,10 +43,15 @@ export function useDrillDatabase() {
   }, []);
 
   const saveDrill = async (newDrill: Omit<Drill, 'id' | 'created_by'>) => {
+    if (!authenticatedUid) {
+      console.error('Cannot save drill without authenticated UID');
+      return;
+    }
+
     try {
       const drillData = {
-        ...newDrill,
-        created_by: currentUserId,
+        ...withoutCanonicalDocumentId(newDrill),
+        created_by: authenticatedUid,
         createdAt: new Date().toISOString(),
       };
       await addDoc(collection(db, 'drills'), drillData);
@@ -66,15 +61,33 @@ export function useDrillDatabase() {
   };
 
   const updateDrill = async (id: string, updates: Partial<Drill>) => {
+    if (!authenticatedUid) {
+      console.error('Cannot update drill without authenticated UID');
+      return;
+    }
+
     try {
+      if (Object.prototype.hasOwnProperty.call(updates, 'created_by')) {
+        console.error('Drill ownership is immutable on client update.');
+        return;
+      }
+
+      const safeUpdates = withoutCanonicalDocumentId(updates) as Partial<Drill>;
+      delete safeUpdates.created_by;
+
       const docRef = doc(db, 'drills', id);
-      await updateDoc(docRef, updates);
+      await updateDoc(docRef, { ...safeUpdates, id: deleteField() });
     } catch (e) {
       console.error("Error updating drill: ", e);
     }
   };
 
   const deleteDrill = async (id: string) => {
+    if (!authenticatedUid) {
+      console.error('Cannot delete drill without authenticated UID');
+      return;
+    }
+
     try {
       const docRef = doc(db, 'drills', id);
       await deleteDoc(docRef);
@@ -83,8 +96,8 @@ export function useDrillDatabase() {
     }
   };
 
-  const myDrills = drills.filter(d => d.created_by === currentUserId);
+  const myDrills = drills.filter(d => d.created_by === authenticatedUid);
   const academyDrills = drills.filter(d => d.is_shared === true);
 
-  return { drills, myDrills, academyDrills, saveDrill, updateDrill, deleteDrill, currentUser: currentUserId };
+  return { drills, myDrills, academyDrills, saveDrill, updateDrill, deleteDrill, currentUser: authenticatedUid };
 }

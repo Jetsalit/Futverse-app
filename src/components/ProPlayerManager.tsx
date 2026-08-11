@@ -8,110 +8,17 @@ import {
   UserPlus,
   X,
   Loader2,
+  UserCircle,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { ProPlayer } from "../types/ProPlayer";
 import { db } from "../lib/firebase";
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from "firebase/firestore";
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, deleteField, doc } from "firebase/firestore";
 import { Edit2, Trash2, AlertCircle } from "lucide-react";
-
-const MOCK_PRO_PLAYERS: ProPlayer[] = [
-  {
-    id: "p1",
-    name: "Teerasil Dangda",
-    nationality: "Thailand",
-    dob: "1988-06-06",
-    position: "Striker",
-    secondaryPosition: "Attacking Midfielder",
-    height: 181,
-    weight: 75,
-    preferredFoot: "Right",
-    currentClub: "BG Pathum United",
-    league: "T1",
-    contractExpiry: "2025-05-31",
-    marketValue: "€300k",
-    avatarUrl:
-      "https://api.dicebear.com/7.x/avataaars/svg?seed=Teerasil&backgroundColor=0284c7",
-    actionShotUrl:
-      "https://images.unsplash.com/photo-1579952363873-27f3bade9f55?q=80&w=800&auto=format&fit=crop",
-    highlightVideoUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ",
-    careerHistory: [
-      {
-        year: "2020-Present",
-        club: "BG Pathum United",
-        apps: 85,
-        goals: 34,
-        assists: 12,
-      },
-      { year: "2020", club: "Shimizu S-Pulse", apps: 24, goals: 3, assists: 1 },
-      {
-        year: "2018",
-        club: "Sanfrecce Hiroshima",
-        apps: 32,
-        goals: 6,
-        assists: 3,
-      },
-      {
-        year: "2009-2020",
-        club: "Muangthong United",
-        apps: 268,
-        goals: 117,
-        assists: 40,
-      },
-    ],
-    attributes: {
-      technical: 85,
-      tactical: 80,
-      physical: 72,
-      mental: 88,
-      attacking: 89,
-      defending: 40,
-    },
-  },
-  {
-    id: "p2",
-    name: "Supachok Sarachat",
-    nationality: "Thailand",
-    dob: "1998-05-22",
-    position: "Winger",
-    secondaryPosition: "Attacking Midfielder",
-    height: 169,
-    weight: 60,
-    preferredFoot: "Right",
-    currentClub: "Hokkaido Consadole Sapporo",
-    league: "T1",
-    contractExpiry: "2027-12-31",
-    marketValue: "€1.00m",
-    avatarUrl:
-      "https://api.dicebear.com/7.x/avataaars/svg?seed=Supachok&backgroundColor=dc2626",
-    actionShotUrl:
-      "https://images.unsplash.com/photo-1518605368461-1e1e11111111?q=80&w=800&auto=format&fit=crop",
-    careerHistory: [
-      {
-        year: "2022-Present",
-        club: "Hokkaido Consadole Sapporo",
-        apps: 42,
-        goals: 9,
-        assists: 6,
-      },
-      {
-        year: "2015-2022",
-        club: "Buriram United",
-        apps: 153,
-        goals: 34,
-        assists: 20,
-      },
-    ],
-    attributes: {
-      technical: 88,
-      tactical: 78,
-      physical: 75,
-      mental: 80,
-      attacking: 85,
-      defending: 45,
-    },
-  },
-];
+import {
+  mapCanonicalSnapshot,
+  withoutCanonicalDocumentId,
+} from "../lib/firestore/canonicalDocument";
 
 export default function ProPlayerManager({
   onBack,
@@ -122,6 +29,7 @@ export default function ProPlayerManager({
 }) {
   const [players, setPlayers] = useState<ProPlayer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [readError, setReadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [leagueFilter, setLeagueFilter] = useState("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -135,15 +43,17 @@ export default function ProPlayerManager({
     const unsubscribe = onSnapshot(
       proPlayersRef,
       (snapshot) => {
-        const playersData = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as ProPlayer[];
+        const playersData = snapshot.docs.map((doc) =>
+          mapCanonicalSnapshot<ProPlayer>(doc)
+        );
         setPlayers(playersData);
+        setReadError(null);
         setIsLoading(false);
       },
       (error) => {
         console.error("Error fetching pro players:", error);
+        setPlayers([]);
+        setReadError("Professional player records could not be loaded.");
         setIsLoading(false);
       }
     );
@@ -198,11 +108,12 @@ export default function ProPlayerManager({
 
         {hasManagePermission && (
           <button
+            disabled={Boolean(readError)}
             onClick={() => {
               setEditingPlayer(null);
               setIsAddModalOpen(true);
             }}
-            className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-sm shadow-indigo-600/20 hover:bg-indigo-700 transition-colors w-full lg:w-auto justify-center"
+            className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-sm shadow-indigo-600/20 hover:bg-indigo-700 transition-colors w-full lg:w-auto justify-center disabled:cursor-not-allowed disabled:opacity-50"
           >
             <UserPlus size={18} />
             เพิ่มนักเตะอาชีพ
@@ -254,10 +165,10 @@ export default function ProPlayerManager({
               <UserPlus size={32} />
             </div>
             <h3 className="text-slate-700 font-bold text-lg mb-1">
-              ยังไม่มีรายชื่อนักเตะในระบบ
+              {readError ? "Professional player data unavailable" : "ยังไม่มีรายชื่อนักเตะในระบบ"}
             </h3>
             <p className="text-slate-500 text-sm">
-              โปรดกดปุ่ม 'เพิ่มนักเตะอาชีพ' ด้านบน
+              {readError || "โปรดกดปุ่ม 'เพิ่มนักเตะอาชีพ' ด้านบน"}
             </p>
           </div>
         ) : filteredPlayers.length === 0 ? (
@@ -296,14 +207,11 @@ export default function ProPlayerManager({
                   </div>
                 )}
                 <div className="w-16 h-16 rounded-full bg-slate-100 border border-slate-200 overflow-hidden shrink-0">
-                  <img
-                    src={
-                      player.avatarUrl ||
-                      `https://api.dicebear.com/7.x/avataaars/svg?seed=${player.name}`
-                    }
-                    alt={player.name}
-                    className="w-full h-full object-cover"
-                  />
+                    {player.avatarUrl ? (
+                      <img src={player.avatarUrl} alt={player.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <UserCircle className="h-full w-full p-3 text-slate-400" />
+                    )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <h3 className="font-bold text-slate-800 text-lg truncate group-hover:text-indigo-600 transition-colors">
@@ -347,10 +255,14 @@ export default function ProPlayerManager({
           }}
           onSave={async (p) => {
             try {
+              const playerData = withoutCanonicalDocumentId(p);
               if (editingPlayer && editingPlayer.id) {
-                await updateDoc(doc(db, "proPlayers", editingPlayer.id), p as any);
+                await updateDoc(doc(db, "proPlayers", editingPlayer.id), {
+                  ...playerData,
+                  id: deleteField(),
+                } as any);
               } else {
-                await addDoc(collection(db, "proPlayers"), p);
+                await addDoc(collection(db, "proPlayers"), playerData);
               }
               setIsAddModalOpen(false);
               setEditingPlayer(null);
@@ -372,33 +284,39 @@ function AddProPlayerModal({
 }: {
   initialData?: ProPlayer | null;
   onClose: () => void;
-  onSave: (p: Partial<ProPlayer>) => void;
+  onSave: (p: Partial<Omit<ProPlayer, "id">>) => void;
 }) {
-  const [formData, setFormData] = useState<Partial<ProPlayer>>(initialData || {
-    name: "",
-    nationality: "",
-    dob: "",
-    position: "Striker",
-    height: 175,
-    weight: 70,
-    preferredFoot: "Right",
-    currentClub: "",
-    league: "T1",
-    contractExpiry: "",
-    marketValue: "",
-    avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=new",
-    actionShotUrl: "",
-    highlightVideoUrl: "",
-    careerHistory: [],
-    attributes: {
-      technical: 70,
-      tactical: 70,
-      physical: 70,
-      mental: 70,
-      attacking: 70,
-      defending: 70,
-    },
-  });
+  const [formData, setFormData] = useState<Partial<Omit<ProPlayer, "id">>>(
+    () => initialData
+      ? withoutCanonicalDocumentId(initialData)
+      : {
+          name: "",
+          nationality: "",
+          dob: "",
+          position: "",
+          height: 0,
+          weight: 0,
+          preferredFoot: "" as any,
+          currentClub: "",
+          league: "" as any,
+          contractExpiry: "",
+          marketValue: "",
+          avatarUrl: "",
+          actionShotUrl: "",
+          highlightVideoUrl: "",
+          careerHistory: [],
+        },
+  );
+  const canSave = Boolean(
+    formData.name?.trim() &&
+      formData.position?.trim() &&
+      typeof formData.height === "number" &&
+      formData.height > 0 &&
+      typeof formData.weight === "number" &&
+      formData.weight > 0 &&
+      formData.preferredFoot &&
+      formData.league,
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
@@ -433,7 +351,7 @@ function AddProPlayerModal({
                 <input
                   type="text"
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-500"
-                  placeholder="e.g. Chanathip Songkrasin"
+                  placeholder="Enter player name"
                   value={formData.name}
                   onChange={(e) =>
                     setFormData({ ...formData, name: e.target.value })
@@ -476,7 +394,7 @@ function AddProPlayerModal({
                   <input
                     type="number"
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-500"
-                    value={formData.height}
+                    value={formData.height || ""}
                     onChange={(e) =>
                       setFormData({
                         ...formData,
@@ -492,7 +410,7 @@ function AddProPlayerModal({
                   <input
                     type="number"
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-500"
-                    value={formData.weight}
+                    value={formData.weight || ""}
                     onChange={(e) =>
                       setFormData({
                         ...formData,
@@ -508,7 +426,7 @@ function AddProPlayerModal({
                 </label>
                 <select
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-500"
-                  value={formData.preferredFoot}
+                  value={formData.preferredFoot || ""}
                   onChange={(e) =>
                     setFormData({
                       ...formData,
@@ -516,6 +434,7 @@ function AddProPlayerModal({
                     })
                   }
                 >
+                  <option value="" disabled>Select preferred foot</option>
                   <option value="Right">ขวา (Right)</option>
                   <option value="Left">ซ้าย (Left)</option>
                   <option value="Both">ทั้งสองเท้า (Both)</option>
@@ -564,11 +483,12 @@ function AddProPlayerModal({
                 </label>
                 <select
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-500"
-                  value={formData.league}
+                  value={formData.league || ""}
                   onChange={(e) =>
                     setFormData({ ...formData, league: e.target.value as any })
                   }
                 >
+                  <option value="" disabled>Select league</option>
                   <option value="T1">T1 (Thai League 1)</option>
                   <option value="T2">T2</option>
                   <option value="T3">T3</option>
@@ -617,8 +537,7 @@ function AddProPlayerModal({
                   รูปโปรไฟล์ (Avatar)
                 </label>
                 <div className="flex items-center gap-3 w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
-                  {formData.avatarUrl &&
-                    !formData.avatarUrl.includes("dicebear") && (
+                  {formData.avatarUrl && (
                       <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-slate-200">
                         <img
                           src={formData.avatarUrl}
@@ -922,13 +841,15 @@ function AddProPlayerModal({
             Cancel
           </button>
           <button
+            disabled={!canSave}
             onClick={() => {
+              if (!canSave) return;
               onSave({
                 ...formData,
-                name: formData.name || "Unknown",
+                name: formData.name!.trim(),
               });
             }}
-            className="flex-1 py-2.5 rounded-xl font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors text-sm shadow-sm"
+            className="flex-1 py-2.5 rounded-xl font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
           >
             Save Player Data
           </button>

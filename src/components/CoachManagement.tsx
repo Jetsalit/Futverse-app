@@ -8,18 +8,27 @@ import {
   Search,
   Upload,
   Users,
+  UserCircle,
 } from "lucide-react";
 import { db } from "../lib/firebase";
 import {
   collection,
+  deleteField,
   onSnapshot,
   doc,
   deleteDoc,
   addDoc,
   updateDoc,
+  query,
+  where,
+  serverTimestamp,
 } from "firebase/firestore";
 import { useAcademy } from "../contexts/AcademyContext";
+import { useAuth } from "../contexts/AuthContext";
 import { EmptyState } from "./common/EmptyState";
+import { approveAcademyJoinClaim } from "../services/membershipService";
+import type { AcademyJoinClaim, TenantRole } from "../types/Membership";
+import { mapCanonicalSnapshot } from "../lib/firestore/canonicalDocument";
 
 const LICENSES = ["Pro", "A", "B", "C", "ไม่มี"];
 
@@ -34,37 +43,35 @@ interface Coach {
   avatar: string;
 }
 
-const MOCK_COACHES: Coach[] = [
-  {
-    id: "c1",
-    firstName: "Pep",
-    lastName: "Guardiola",
-    email: "pep@futverse.com",
-    phone: "081-234-5678",
-    license: "Pro",
-    teams: ["U15", "U17", "First Team"],
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Pep",
-  },
-  {
-    id: "c2",
-    firstName: "Jurgen",
-    lastName: "Klopp",
-    email: "klopp@futverse.com",
-    phone: "082-345-6789",
-    license: "Pro",
-    teams: ["U13", "U15"],
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Jurgen",
-  },
-];
+const getClaimRole = (claim: AcademyJoinClaim): TenantRole | null => {
+  if (claim.type === "COACH_JOIN") return "COACH";
+  return claim.requestedRole === "ADMIN" || claim.requestedRole === "COACH"
+    ? claim.requestedRole
+    : null;
+};
+
+const formatClaimDate = (value: AcademyJoinClaim["createdAt"]) => {
+  if (!value) return "Unknown";
+  const date = typeof value === "object" && "toDate" in value
+    ? value.toDate()
+    : new Date(value as Date | string);
+  return Number.isNaN(date.getTime()) ? "Unknown" : date.toLocaleDateString();
+};
 
 export default function CoachManagement({ onBack }: { onBack: () => void }) {
-  const { settings } = useAcademy();
-  const [coaches, setCoaches] = useState<Coach[]>(MOCK_COACHES);
-  const [loading, setLoading] = useState(false);
+  const { settings, getAcademyCollection, academyId } = useAcademy();
+  const { currentUser } = useAuth();
+  const [coaches, setCoaches] = useState<Coach[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [coachReadError, setCoachReadError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [coachToDelete, setCoachToDelete] = useState<string | null>(null);
+
+  const [pendingClaims, setPendingClaims] = useState<AcademyJoinClaim[]>([]);
+  const [claimReadError, setClaimReadError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"coaches" | "claims">("coaches");
 
   const [formData, setFormData] = useState({
     firstName: "",
@@ -77,17 +84,100 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
   });
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "coaches"), (snapshot) => {
-      const loadedCoaches = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Coach[];
-      setCoaches(loadedCoaches);
+    setCoaches([]);
+    setCoachReadError(null);
+    setLoading(true);
+    if (!academyId) {
+      setCoachReadError("Authoritative Academy access is unavailable.");
       setLoading(false);
-    });
+      return;
+    }
+
+    const unsubscribe = onSnapshot(
+      getAcademyCollection("coaches"),
+      (snapshot) => {
+        const loadedCoaches = snapshot.docs.map((doc) =>
+          mapCanonicalSnapshot<Coach>(doc)
+        );
+        setCoaches(loadedCoaches);
+        setCoachReadError(null);
+        setLoading(false);
+      },
+      (error) => {
+        console.error("Error fetching coaches:", error);
+        setCoaches([]);
+        setCoachReadError("Coach records could not be loaded.");
+        setLoading(false);
+      },
+    );
 
     return () => unsubscribe();
-  }, []);
+  }, [academyId]);
+
+  useEffect(() => {
+    setPendingClaims([]);
+    setClaimReadError(null);
+    if (!settings.inviteCode) return;
+    const q = query(
+      collection(db, "profile_claims"),
+      where("inviteCode", "==", settings.inviteCode),
+      where("status", "==", "PENDING")
+    );
+    const unsub = onSnapshot(
+      q,
+      (snapshot) => {
+        setPendingClaims(
+          snapshot.docs
+            .map((snapshotDoc) => mapCanonicalSnapshot<AcademyJoinClaim>(snapshotDoc))
+            .filter((claim) => getClaimRole(claim) !== null),
+        );
+        setClaimReadError(null);
+      },
+      (error) => {
+        console.error("Error fetching Academy join claims:", error);
+        setPendingClaims([]);
+        setClaimReadError("Join requests could not be loaded.");
+      },
+    );
+    return () => unsub();
+  }, [settings.inviteCode]);
+
+  const handleApproveClaim = async (claim: AcademyJoinClaim) => {
+    try {
+      const approvedBy = currentUser?.uid || currentUser?.id;
+      if (!academyId || !approvedBy) {
+        throw new Error("An exact Academy ID and approving user are required.");
+      }
+      const result = await approveAcademyJoinClaim({
+        academyId,
+        claim,
+        approvedBy,
+      });
+      alert(
+        `${result.role} Membership approved. The user must activate Academy access from their account.`,
+      );
+    } catch (error) {
+      console.error("Error approving claim", error);
+      alert(error instanceof Error ? error.message : "Failed to approve request");
+    }
+  };
+
+  const handleRejectClaim = async (claimId: string) => {
+    try {
+      const rejectedBy = currentUser?.uid || currentUser?.id;
+      if (!rejectedBy) throw new Error("An approving user is required.");
+      await updateDoc(doc(db, "profile_claims", claimId), {
+        status: "REJECTED",
+        rejectedAt: serverTimestamp(),
+        rejectedBy,
+        updatedAt: serverTimestamp(),
+        id: deleteField(),
+      });
+      alert("Academy join request rejected");
+    } catch (error) {
+      console.error("Error rejecting claim", error);
+    }
+  };
 
   const openAddModal = () => {
     setEditingId(null);
@@ -160,15 +250,16 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
         phone: formData.phone,
         license: formData.license,
         teams: formData.teams,
-        avatar:
-          formData.avatarUrl ||
-          `https://api.dicebear.com/7.x/avataaars/svg?seed=${formData.firstName}`,
+        avatar: formData.avatarUrl,
       };
 
       if (editingId) {
-        await updateDoc(doc(db, "coaches", editingId), coachData);
+        await updateDoc(doc(getAcademyCollection("coaches"), editingId), {
+          ...coachData,
+          id: deleteField(),
+        });
       } else {
-        await addDoc(collection(db, "coaches"), coachData);
+        await addDoc(getAcademyCollection("coaches"), coachData);
       }
       
       setIsModalOpen(false);
@@ -194,7 +285,7 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
   const handleConfirmDelete = async () => {
     if (coachToDelete) {
       try {
-        await deleteDoc(doc(db, "coaches", coachToDelete));
+        await deleteDoc(doc(getAcademyCollection("coaches"), coachToDelete));
         setCoachToDelete(null);
       } catch (error) {
         console.error("Error deleting coach:", error);
@@ -243,143 +334,243 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
           </div>
         </div>
 
-        <button
-          onClick={openAddModal}
-          className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition shadow-sm w-full sm:w-auto justify-center"
-        >
-          <Plus size={18} />
-          <span>เพิ่มผู้ฝึกสอน</span>
-        </button>
+        <div className="flex w-full sm:w-auto items-center gap-3">
+          <div className="flex bg-slate-100 p-1 rounded-xl w-full sm:w-auto">
+            <button
+              onClick={() => setActiveTab("coaches")}
+              className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === "coaches" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+            >
+              Staff ({coaches.length})
+            </button>
+            <button
+              onClick={() => setActiveTab("claims")}
+              className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-sm font-bold transition-all relative ${activeTab === "claims" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+            >
+              Requests
+              {pendingClaims.length > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white text-[10px] flex items-center justify-center rounded-full border-2 border-slate-100">
+                  {pendingClaims.length}
+                </span>
+              )}
+            </button>
+          </div>
+          <button
+            onClick={openAddModal}
+            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition shadow-sm justify-center"
+          >
+            <Plus size={18} />
+            <span>เพิ่มผู้ฝึกสอน</span>
+          </button>
+        </div>
       </div>
 
-      {coaches.length === 0 ? (
-        <EmptyState
-          icon={Users}
-          title="No Coaches Yet"
-          description="Start building your coaching staff."
-          primaryActionLabel="Add Coach"
-          onPrimaryAction={openAddModal}
-        />
-      ) : (
-        <>
-          {/* Toolbar */}
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center mb-6">
-            <div className="relative w-full max-w-sm">
-              <Search
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                size={18}
-              />
-              <input
-                type="text"
-                placeholder="ค้นหาชื่อ หรือ อีเมล..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-              />
+      {activeTab === "coaches" ? (
+        coachReadError ? (
+          <EmptyState
+            icon={Users}
+            title="Coaches Unavailable"
+            description={coachReadError}
+          />
+        ) : coaches.length === 0 ? (
+          <EmptyState
+            icon={Users}
+            title="No Coaches Yet"
+            description="Start building your coaching staff."
+            primaryActionLabel="Add Coach"
+            onPrimaryAction={openAddModal}
+          />
+        ) : (
+          <>
+            {/* Toolbar */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center mb-6">
+              <div className="relative w-full max-w-sm">
+                <Search
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  size={18}
+                />
+                <input
+                  type="text"
+                  placeholder="ค้นหาชื่อ หรือ อีเมล..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                />
+              </div>
             </div>
-          </div>
 
-          {/* Content Area - Table */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500 font-bold">
-                    <th className="px-6 py-4 border-b">ข้อมูลผู้ฝึกสอน</th>
-                    <th className="px-6 py-4 border-b">สิทธิ์ / License</th>
-                    <th className="px-6 py-4 border-b">
-                      ทีมที่ดูแล (Assigned Teams)
-                    </th>
-                    <th className="px-6 py-4 border-b text-right">จัดการ</th>
+            {/* Content Area - Table */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500 font-bold">
+                      <th className="px-6 py-4 border-b">ข้อมูลผู้ฝึกสอน</th>
+                      <th className="px-6 py-4 border-b">สิทธิ์ / License</th>
+                      <th className="px-6 py-4 border-b">
+                        ทีมที่ดูแล (Assigned Teams)
+                      </th>
+                      <th className="px-6 py-4 border-b text-right">จัดการ</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredCoaches.map((coach) => (
+                      <tr
+                        key={coach.id}
+                        className="hover:bg-slate-50/50 transition-colors group"
+                      >
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full border-2 border-white shadow-sm overflow-hidden bg-slate-100 shrink-0 flex items-center justify-center">
+                              {coach.avatar ? (
+                                <img src={coach.avatar} alt="Avatar" className="w-full h-full object-cover" />
+                              ) : (
+                                <UserCircle className="text-slate-400" size={24} />
+                              )}
+                            </div>
+                            <div>
+                              <div className="font-bold text-slate-800 text-sm">
+                                {coach.firstName} {coach.lastName}
+                              </div>
+                              <div className="text-xs text-slate-500">
+                                {coach.email}
+                              </div>
+                              <div className="text-xs text-slate-400 mt-0.5">
+                                {coach.phone}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="inline-flex items-center justify-center bg-blue-50 text-blue-700 border border-blue-100 px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
+                            {coach.license}{" "}
+                            {coach.license !== "ไม่มี" ? "License" : ""}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-wrap gap-1.5">
+                            {coach.teams.map((team, idx) => (
+                              <span
+                                key={idx}
+                                className="bg-slate-100 border border-slate-200 text-slate-600 text-xs px-2 py-0.5 rounded-md font-medium"
+                              >
+                                {team}
+                              </span>
+                            ))}
+                            {coach.teams.length === 0 && (
+                              <span className="text-xs text-slate-400 italic">
+                                No teams assigned
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => openEditModal(coach)}
+                              className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteClick(coach.id)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredCoaches.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={4}
+                          className="px-6 py-12 text-center text-slate-500"
+                        >
+                          ไม่พบข้อมูลผู้ฝึกสอน
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )
+      ) : (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">User</th>
+                  <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Role</th>
+                  <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Date</th>
+                  <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {claimReadError ? (
+                  <tr>
+                    <td colSpan={4} className="p-8">
+                      <EmptyState icon={Users} title="Join Requests Unavailable" description={claimReadError} />
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredCoaches.map((coach) => (
-                    <tr
-                      key={coach.id}
-                      className="hover:bg-slate-50/50 transition-colors group"
-                    >
-                      <td className="px-6 py-4">
+                ) : pendingClaims.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="p-8">
+                      <EmptyState
+                        icon={Users}
+                        title="No Join Requests"
+                        description="There are currently no pending requests to join the Academy."
+                      />
+                    </td>
+                  </tr>
+                ) : (
+                  pendingClaims.map((claim) => (
+                    <tr key={claim.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="p-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full border-2 border-white shadow-sm overflow-hidden bg-slate-100 shrink-0">
-                            <img
-                              src={
-                                coach.avatar ||
-                                `https://api.dicebear.com/7.x/avataaars/svg?seed=${coach.firstName}`
-                              }
-                              alt="Avatar"
-                              className="w-full h-full object-cover"
-                            />
+                          <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-600">
+                            {claim.userName?.[0] || "?"}
                           </div>
                           <div>
-                            <div className="font-bold text-slate-800 text-sm">
-                              {coach.firstName} {coach.lastName}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              {coach.email}
-                            </div>
-                            <div className="text-xs text-slate-400 mt-0.5">
-                              {coach.phone}
-                            </div>
+                            <div className="font-bold text-slate-800">{claim.userName || "Unknown User"}</div>
+                            <div className="text-xs text-slate-500">{claim.userEmail}</div>
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="inline-flex items-center justify-center bg-blue-50 text-blue-700 border border-blue-100 px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
-                          {coach.license}{" "}
-                          {coach.license !== "ไม่มี" ? "License" : ""}
-                        </div>
+                      <td className="p-4">
+                        <span className="px-2 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-lg border border-indigo-100">
+                          {getClaimRole(claim)}
+                        </span>
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="flex flex-wrap gap-1.5">
-                          {coach.teams.map((team, idx) => (
-                            <span
-                              key={idx}
-                              className="bg-slate-100 border border-slate-200 text-slate-600 text-xs px-2 py-0.5 rounded-md font-medium"
-                            >
-                              {team}
-                            </span>
-                          ))}
-                          {coach.teams.length === 0 && (
-                            <span className="text-xs text-slate-400 italic">
-                              No teams assigned
-                            </span>
-                          )}
-                        </div>
+                      <td className="p-4 text-sm text-slate-600 font-medium">
+                        {formatClaimDate(claim.createdAt)}
                       </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <td className="p-4 text-right">
+                        <div className="flex justify-end gap-2">
                           <button
-                            onClick={() => openEditModal(coach)}
-                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            onClick={() => handleRejectClaim(claim.id)}
+                            className="px-3 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
                           >
-                            <Edit2 size={16} />
+                            Reject
                           </button>
                           <button
-                            onClick={() => handleDeleteClick(coach.id)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                            onClick={() => handleApproveClaim(claim)}
+                            className="px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors"
                           >
-                            <Trash2 size={16} />
+                            Approve
                           </button>
                         </div>
                       </td>
                     </tr>
-                  ))}
-                  {filteredCoaches.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={4}
-                        className="px-6 py-12 text-center text-slate-500"
-                      >
-                        ไม่พบข้อมูลผู้ฝึกสอน
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
-        </>
+        </div>
       )}
 
       {/* Modal เพิ่มผู้ฝึกสอน */}

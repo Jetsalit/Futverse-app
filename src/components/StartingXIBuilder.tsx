@@ -8,8 +8,10 @@ import {
   User,
 } from "lucide-react";
 import { db } from "../lib/firebase";
-import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import { collection, onSnapshot } from "firebase/firestore";
 import { EmptyState } from "./common/EmptyState";
+import { useAcademy } from "../contexts/AcademyContext";
+import { mapCanonicalSnapshot } from "../lib/firestore/canonicalDocument";
 
 interface Position {
   x: number;
@@ -22,7 +24,7 @@ interface Player {
   firstName: string;
   lastName: string;
   position: string;
-  avatar: string;
+  avatar?: string;
   jerseyNumber?: number;
 }
 
@@ -68,28 +70,11 @@ const FORMATIONS: Record<string, Position[]> = {
   ],
 };
 
-const MOCK_PLAYERS: Player[] = [
-  {
-    id: "p1",
-    firstName: "Suphanat",
-    lastName: "Mueanta",
-    position: "Striker",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Suphanat",
-    jerseyNumber: 9,
-  },
-  {
-    id: "p2",
-    firstName: "Supachai",
-    lastName: "Jaided",
-    position: "Attacking Midfielder",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Supachai",
-    jerseyNumber: 10,
-  }
-];
-
 export default function StartingXIBuilder({ onBack }: { onBack: () => void }) {
-  const [players, setPlayers] = useState<Player[]>(MOCK_PLAYERS);
-  const [loading, setLoading] = useState(false);
+  const { academyId } = useAcademy();
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [readError, setReadError] = useState<string | null>(null);
 
   const [formation, setFormation] = useState<string>("4-3-3");
   const [lineup, setLineup] = useState<Record<number, string | null>>({});
@@ -99,8 +84,34 @@ export default function StartingXIBuilder({ onBack }: { onBack: () => void }) {
   const currentFormation = FORMATIONS[formation];
 
   useEffect(() => {
-    // Mock data
-  }, []);
+    setPlayers([]);
+    setReadError(null);
+    if (!academyId) {
+      setReadError("Authoritative Academy access is unavailable.");
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const unsubscribe = onSnapshot(
+      collection(db, "academies", academyId, "players"),
+      (snapshot) => {
+        setPlayers(snapshot.docs.map((playerDocument) =>
+          mapCanonicalSnapshot<Player>(playerDocument),
+        ));
+        setReadError(null);
+        setLoading(false);
+      },
+      (error) => {
+        console.error("Starting XI player listener failed:", error);
+        setPlayers([]);
+        setLineup({});
+        setReadError("Player records could not be loaded.");
+        setLoading(false);
+      },
+    );
+    return () => unsubscribe();
+  }, [academyId]);
 
   const handleFormationChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setFormation(e.target.value);
@@ -173,8 +184,8 @@ export default function StartingXIBuilder({ onBack }: { onBack: () => void }) {
         </div>
         <EmptyState
           icon={Users}
-          title="No Players Available"
-          description="Add players to your squad to build your Starting XI."
+          title={readError ? "Players Unavailable" : "No Players Available"}
+          description={readError || "Add players to your squad to build your Starting XI."}
           primaryActionLabel="Go Back"
           onPrimaryAction={onBack}
         />

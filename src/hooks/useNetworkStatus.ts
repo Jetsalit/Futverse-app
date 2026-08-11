@@ -16,10 +16,5 @@ export function useNetworkStatus() {
     };
   }, []);
 
-  // Simulator toggle for testing PWA offline features in browser
-  const toggleSimulation = () => {
-    setIsOnline((prev) => !prev);
-  }
-
-  return { isOnline, toggleSimulation };
+  return { isOnline };
 }

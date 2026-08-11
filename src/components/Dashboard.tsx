@@ -1,4 +1,3 @@
-import { useState, useEffect } from "react";
 import {
   Calendar,
   Users,
@@ -13,7 +12,6 @@ import {
 } from "lucide-react";
 import { useLanguage } from "../contexts/LanguageContext";
 import { useAuth, UserRole } from "../contexts/AuthContext";
-import PeerVotingModal from "./PeerVotingModal";
 
 type DashboardItem = {
   id: string;
@@ -163,47 +161,11 @@ export default function Dashboard({
 }: {
   onNavigate: (page: string) => void;
 }) {
-  const { t, language } = useLanguage();
-  const { hasPermission, currentUser } = useAuth();
-  const [showVotingModal, setShowVotingModal] = useState(false);
-
-  // Mock teammates for voting
-  const teammates = [
-    {
-      id: "t1",
-      name: "Supachai Jaided",
-      position: "ST",
-      avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Supachai",
-    },
-    {
-      id: "t2",
-      name: "Chanathip Songkrasin",
-      position: "AM",
-      avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Chanathip",
-    },
-    {
-      id: "t3",
-      name: "Theerathon Bunmathan",
-      position: "LB",
-      avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Theerathon",
-    },
-    {
-      id: "t4",
-      name: "Kritsada Kaman",
-      position: "CB",
-      avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Kritsada",
-    },
-  ];
+  const { t } = useLanguage();
+  const { hasPermission } = useAuth();
 
   return (
     <div className="w-full max-w-6xl mx-auto pb-10">
-      {/* Peer Voting Modal */}
-      <PeerVotingModal
-        isOpen={showVotingModal}
-        onClose={() => setShowVotingModal(false)}
-        teammates={teammates}
-      />
-
       <div className="mb-8">
         <h1 className="text-2xl font-black text-slate-800 tracking-tight">
           {t("dashboard_title")}

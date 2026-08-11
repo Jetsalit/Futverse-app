@@ -11,6 +11,7 @@ import {
   Edit2,
   Trash2,
   Users,
+  UserCircle,
 } from "lucide-react";
 import YouthDevelopmentReport from "./YouthDevelopmentReport";
 import { db } from "../lib/firebase";
@@ -18,12 +19,14 @@ import {
   collection,
   onSnapshot,
   doc,
+  deleteField,
   deleteDoc,
   addDoc,
   updateDoc,
 } from "firebase/firestore";
 import { useAcademy } from "../contexts/AcademyContext";
 import { EmptyState } from "./common/EmptyState";
+import { mapCanonicalSnapshot } from "../lib/firestore/canonicalDocument";
 
 interface Player {
   id: string;
@@ -37,31 +40,6 @@ interface Player {
   avatar: string;
 }
 
-const MOCK_PLAYERS: Player[] = [
-  {
-    id: "p1",
-    firstName: "Suphanat",
-    lastName: "Mueanta",
-    position: "Striker",
-    ageGroup: "U17",
-    dob: "2007-08-02",
-    age: 17,
-    fitness_status: "Fit",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Suphanat",
-  },
-  {
-    id: "p2",
-    firstName: "Ekanit",
-    lastName: "Panya",
-    position: "Winger",
-    ageGroup: "U15",
-    dob: "2009-10-21",
-    age: 15,
-    fitness_status: "Injured",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Ekanit",
-  },
-];
-
 export default function YouthPlayerManager({
   onBack,
   onSelectPlayer,
@@ -69,9 +47,10 @@ export default function YouthPlayerManager({
   onBack: () => void;
   onSelectPlayer?: (player: any) => void;
 }) {
-  const { settings } = useAcademy();
+  const { settings, academyId } = useAcademy();
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(false);
+  const [readError, setReadError] = useState<string | null>(null);
   const [filterAge, setFilterAge] = useState("All");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -84,32 +63,43 @@ export default function YouthPlayerManager({
     firstName: "",
     lastName: "",
     dob: "",
-    fitness_status: "Fit",
-    position: "CM",
-    ageGroup: settings.squads.length > 0 ? settings.squads[0] : "U15",
+    fitness_status: "",
+    position: "",
+    ageGroup: settings.squads[0] || "",
     avatarUrl: "",
   });
 
   useEffect(() => {
+    if (!academyId) {
+      setPlayers([]);
+      setReadError("Authoritative Academy access is unavailable.");
+      setLoading(false);
+      return;
+    }
+
+    setPlayers([]);
+    setReadError(null);
     setLoading(true);
     const unsubscribe = onSnapshot(
-      collection(db, "players"),
+      collection(db, "academies", academyId, "players"),
       (snapshot) => {
-        const playersData = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as Player[];
+        const playersData = snapshot.docs.map((doc) =>
+          mapCanonicalSnapshot<Player>(doc)
+        );
         setPlayers(playersData);
+        setReadError(null);
         setLoading(false);
       },
       (error) => {
         console.error("Error fetching players:", error);
+        setPlayers([]);
+        setReadError("Youth player records could not be loaded.");
         setLoading(false);
-      }
+      },
     );
 
     return () => unsubscribe();
-  }, []);
+  }, [academyId]);
 
   const calculateAge = (dob: string) => {
     if (!dob) return 0;
@@ -145,9 +135,9 @@ export default function YouthPlayerManager({
       firstName: "",
       lastName: "",
       dob: "",
-      fitness_status: "Fit",
-      position: "CM",
-      ageGroup: settings.squads.length > 0 ? settings.squads[0] : "U15",
+      fitness_status: "",
+      position: "",
+      ageGroup: settings.squads[0] || "",
       avatarUrl: "",
     });
     setIsModalOpen(true);
@@ -158,7 +148,7 @@ export default function YouthPlayerManager({
       firstName: player.firstName,
       lastName: player.lastName,
       dob: player.dob,
-      fitness_status: player.fitness_status || "Fit",
+      fitness_status: player.fitness_status || "",
       position: player.position,
       ageGroup: player.ageGroup,
       avatarUrl: player.avatar,
@@ -174,18 +164,25 @@ export default function YouthPlayerManager({
       firstName: "",
       lastName: "",
       dob: "",
-      fitness_status: "Fit",
-      position: "CM",
-      ageGroup: settings.squads.length > 0 ? settings.squads[0] : "U15",
+      fitness_status: "",
+      position: "",
+      ageGroup: settings.squads[0] || "",
       avatarUrl: "",
     });
   };
 
   const handleSavePlayer = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!academyId) {
+      console.error("YouthPlayerManager: Missing academyId; refusing to save player.");
+      alert("Missing academy context. Please try again once the academy is available.");
+      return;
+    }
+
     try {
       if (editingPlayerId) {
-        await updateDoc(doc(db, "players", editingPlayerId), {
+        await updateDoc(doc(db, "academies", academyId, "players", editingPlayerId), {
           firstName: formData.firstName,
           lastName: formData.lastName,
           position: formData.position,
@@ -194,6 +191,7 @@ export default function YouthPlayerManager({
           age: calculateAge(formData.dob),
           fitness_status: formData.fitness_status,
           ...(formData.avatarUrl ? { avatar: formData.avatarUrl } : {}),
+          id: deleteField(),
         });
       } else {
         const newPlayer = {
@@ -204,11 +202,9 @@ export default function YouthPlayerManager({
           dob: formData.dob,
           age: calculateAge(formData.dob),
           fitness_status: formData.fitness_status,
-          avatar:
-            formData.avatarUrl ||
-            `https://api.dicebear.com/7.x/avataaars/svg?seed=${formData.firstName}${Date.now()}`,
+          avatar: formData.avatarUrl,
         };
-        await addDoc(collection(db, "players"), newPlayer);
+        await addDoc(collection(db, "academies", academyId, "players"), newPlayer);
       }
       closeModal();
     } catch (error: any) {
@@ -218,14 +214,22 @@ export default function YouthPlayerManager({
   };
 
   const handleDeleteConfirm = async () => {
-    if (playerToDelete) {
-      try {
-        await deleteDoc(doc(db, "players", playerToDelete));
-        setPlayerToDelete(null);
-      } catch (error: any) {
-        console.error("Error deleting player:", error);
-        alert("ไม่สามารถลบข้อมูลได้: " + error.message);
-      }
+    if (!playerToDelete) {
+      return;
+    }
+
+    if (!academyId) {
+      console.error("YouthPlayerManager: Missing academyId; refusing to delete player.");
+      alert("Missing academy context. Please try again once the academy is available.");
+      return;
+    }
+
+    try {
+      await deleteDoc(doc(db, "academies", academyId, "players", playerToDelete));
+      setPlayerToDelete(null);
+    } catch (error: any) {
+      console.error("Error deleting player:", error);
+      alert("ไม่สามารถลบข้อมูลได้: " + error.message);
     }
   };
 
@@ -285,10 +289,10 @@ export default function YouthPlayerManager({
       {players.length === 0 ? (
         <EmptyState
           icon={Users}
-          title="No Youth Players Yet"
-          description="Add players to start managing your academy rosters."
-          primaryActionLabel="Add Player"
-          onPrimaryAction={openAddModal}
+          title={readError ? "Youth Players Unavailable" : "No Youth Players Yet"}
+          description={readError || "Add players to start managing your academy rosters."}
+          primaryActionLabel={readError ? undefined : "Add Player"}
+          onPrimaryAction={readError ? undefined : openAddModal}
         />
       ) : (
         <>
@@ -358,15 +362,12 @@ export default function YouthPlayerManager({
                 </div>
 
                 <div className="px-5 pb-5 relative -mt-10">
-                  <div className="w-20 h-20 rounded-full border-4 border-white bg-slate-100 mx-auto mb-3 overflow-hidden shadow-sm">
-                    <img
-                      src={
-                        player.avatar ||
-                        `https://api.dicebear.com/7.x/avataaars/svg?seed=${player.firstName}`
-                      }
-                      alt={player.firstName}
-                      className="w-full h-full object-cover"
-                    />
+                  <div className="w-20 h-20 rounded-full border-4 border-white bg-slate-100 mx-auto mb-3 overflow-hidden shadow-sm flex items-center justify-center">
+                    {player.avatar ? (
+                      <img src={player.avatar} alt={player.firstName} className="w-full h-full object-cover" />
+                    ) : (
+                      <UserCircle className="text-slate-400" size={40} />
+                    )}
                   </div>
 
                   <div className="text-center mb-4">
@@ -552,11 +553,13 @@ export default function YouthPlayerManager({
                     </label>
                     <div className="relative flex items-center">
                       <select
+                        required
                         name="fitness_status"
                         value={formData.fitness_status}
                         onChange={handleInputChange}
                         className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-slate-700 font-medium"
                       >
+                        <option value="" disabled>Select fitness status</option>
                         <option value="Fit">Fit</option>
                         <option value="Injured">Injured</option>
                         <option value="Returning">Returning</option>
@@ -576,11 +579,13 @@ export default function YouthPlayerManager({
                     </label>
                     <div className="relative flex items-center">
                       <select
+                        required
                         name="position"
                         value={formData.position}
                         onChange={handleInputChange}
                         className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-slate-700 font-medium"
                       >
+                        <option value="" disabled>Select position</option>
                         <option value="GK">GK - Goalkeeper</option>
                         <option value="CB">CB - Center Back</option>
                         <option value="LB">LB - Left Back</option>
@@ -601,11 +606,13 @@ export default function YouthPlayerManager({
                     </label>
                     <div className="relative flex items-center">
                       <select
+                        required
                         name="ageGroup"
                         value={formData.ageGroup}
                         onChange={handleInputChange}
                         className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-slate-700 font-medium"
                       >
+                        <option value="" disabled>Select a configured squad</option>
                         {settings.squads.map((squad) => (
                           <option key={squad} value={squad}>
                             {squad} Squad

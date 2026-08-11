@@ -1,0 +1,25 @@
+{
+  "exportedAt": "2026-08-05T00:00:00.000Z",
+  "academies": [
+    { "id": "academy-a", "name": "Academy A", "inviteCode": "FUT-DUPLICATE" },
+    { "id": "academy-b", "name": "Academy B", "inviteCode": " fut-duplicate " },
+    { "id": "academy-c", "name": "Academy C", "inviteCode": "INVALID CODE" },
+    { "id": "academy-d", "name": "Academy D", "inviteCode": null }
+  ],
+  "users": [
+    { "uid": "missing-academy", "email": "missing@example.com", "role": "ADMIN", "status": "Active", "academyId": "academy-missing" },
+    { "uid": "pointer-conflict", "email": "pointer@example.com", "role": "ADMIN", "status": "Active", "academyId": "academy-a", "activeAcademyId": "academy-b" },
+    { "uid": "unsupported", "email": "unsupported@example.com", "role": "OWNER", "status": "Active", "academyId": "academy-a" },
+    { "uid": "role-conflict", "email": "role@example.com", "role": "ADMIN", "tenantRole": "COACH", "status": "Active", "academyId": "academy-a" },
+    { "uid": "display-only", "email": "display@example.com", "role": "COACH", "status": "Active", "requestedAcademyName": "Academy A" },
+    { "email": "missing-uid@example.com", "role": "ADMIN", "status": "Active", "academyId": "academy-a" },
+    { "uid": "inactive", "email": "inactive@example.com", "role": "ADMIN", "status": "Rejected", "academyId": "academy-a" },
+    { "uid": "existing-other", "email": "other@example.com", "role": "ADMIN", "status": "Active", "academyId": "academy-a" },
+    { "uid": "suspended", "email": "suspended@example.com", "role": "COACH", "status": "Active", "academyId": "academy-a" }
+  ],
+  "memberships": [
+    { "userId": "existing-other", "academyId": "academy-b", "role": "ADMIN", "status": "ACTIVE", "source": "LEGACY_MIGRATION" },
+    { "userId": "suspended", "academyId": "academy-a", "role": "COACH", "status": "SUSPENDED", "source": "LEGACY_MIGRATION" }
+  ],
+  "academyInvites": []
+}

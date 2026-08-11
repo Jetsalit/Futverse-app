@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Menu,
   X,
@@ -11,6 +11,8 @@ import {
   LayoutDashboard,
   Settings as SettingsIcon,
   Bell,
+  Shield,
+  UserCircle,
 } from "lucide-react";
 import Dashboard from "./components/Dashboard";
 import PlayerDashboard from "./components/PlayerDashboard";
@@ -35,37 +37,141 @@ import { useLanguage } from "./contexts/LanguageContext";
 import PostMatchStatsEntry from "./components/PostMatchStatsEntry";
 import StartingXIBuilder from "./components/StartingXIBuilder";
 import { useAuth } from "./contexts/AuthContext";
-import { useAcademy } from "./contexts/AcademyContext";
+import { useAcademy, type AcademyAccessState } from "./contexts/AcademyContext";
+import {
+  appShellLandingPage,
+  isStaffOnboardingRequest,
+  normalSuperAdminNeedsAcademyWorkspace,
+  requiresStaffMembership,
+} from "./contexts/academyAccessModel";
 import AccessDenied from "./components/AccessDenied";
 import Login from "./components/Login";
+import JoinAcademy from "./components/JoinAcademy";
 import SuperadminPortal from "./components/SuperadminPortal";
 import SubscriptionPaywall from "./components/SubscriptionPaywall";
 import ConciergeDashboard from "./components/ConciergeDashboard";
 import PendingApproval from "./components/PendingApproval";
+import {
+  isActivePrivilegedActor,
+  type PrivilegedRole,
+} from "./lib/privilegedAuthorization";
+import { isExplicitlyActiveAccountStatus } from "./lib/accountRolePolicy";
+
+function AccessResolutionScreen({
+  accessState,
+  error,
+  onLogout,
+}: {
+  accessState: AcademyAccessState;
+  error: Error | null;
+  onLogout: () => void;
+}) {
+  const messages: Record<string, string> = {
+    LOADING: "Resolving your Academy access...",
+    NO_ACADEMY: "No exact Academy workspace is linked to this account.",
+    MEMBERSHIP_MISSING: "Your Academy pointer exists, but no Membership was found.",
+    MEMBERSHIP_PENDING: "Your Academy Membership is pending approval.",
+    MEMBERSHIP_SUSPENDED: "Your Academy Membership is suspended.",
+    MEMBERSHIP_LEFT: "Your Academy Membership has ended.",
+    MEMBERSHIP_REVOKED: "Your Academy Membership was revoked.",
+    ACADEMY_NOT_FOUND: "The exact Academy document linked to this account was not found.",
+    PERMISSION_DENIED: "Permission was denied while resolving Academy access.",
+    ERROR: "Academy access could not be resolved.",
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+      <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-xl">
+        <Shield className="mx-auto mb-5 text-indigo-600" size={44} />
+        <h1 className="text-2xl font-black text-slate-900">Academy Access</h1>
+        <p className="mt-3 text-slate-600">{messages[accessState] || messages.ERROR}</p>
+        {error && <p className="mt-3 text-sm text-rose-600">{error.message}</p>}
+        {accessState !== "LOADING" && (
+          <button
+            type="button"
+            onClick={onLogout}
+            className="mt-7 rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white hover:bg-slate-800"
+          >
+            Log out
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AcademyWorkspaceRequired({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="min-h-[400px] flex items-center justify-center p-6">
+      <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-xl">
+        <Shield className="mx-auto mb-5 text-amber-500" size={44} />
+        <h2 className="text-2xl font-black text-slate-900">
+          Academy Workspace Required
+        </h2>
+        <p className="mt-3 text-slate-600">
+          Direct SuperAdmin access to tenant features requires selecting or resolving an active Academy workspace.
+        </p>
+        <button
+          type="button"
+          onClick={onBack}
+          className="mt-6 rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white hover:bg-slate-800"
+        >
+          Return to SuperAdmin Portal
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState("dashboard");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
-  const { isOnline, toggleSimulation } = useNetworkStatus();
-  const { language, setLanguage, t } = useLanguage();
+  const { isOnline } = useNetworkStatus();
+  const { language, setLanguage } = useLanguage();
   const {
     hasPermission,
     currentUser,
+    actualUser,
     logout,
-    isImpersonating,
-    revertImpersonation,
   } = useAuth();
-  const { settings: academySettings } = useAcademy();
-  const [pendingSyncs, setPendingSyncs] = useState(0);
+  const {
+    settings: academySettings,
+    academyId,
+    accessState,
+    loading: academyLoading,
+    error: academyError,
+  } = useAcademy();
+
+  const prevLandingKeyRef = useRef<string>("");
+
+  useEffect(() => {
+    if (!currentUser) {
+      prevLandingKeyRef.current = "";
+      return;
+    }
+    const landingKey = `${currentUser.id || currentUser.uid}_${currentUser.role}`;
+    if (prevLandingKeyRef.current !== landingKey) {
+      prevLandingKeyRef.current = landingKey;
+      const targetLanding = appShellLandingPage(currentUser);
+      if (targetLanding) {
+        setCurrentPage(targetLanding);
+        setIsMobileMenuOpen(false);
+      }
+    }
+  }, [currentUser]);
 
   // Global State / Context for Academy Squads
-  const academySquads = academySettings.squads || [
-    "U-17 National Prospects",
-    "U-15 Development",
-    "U-13 Grassroots",
-  ];
-  const [activeTeam, setActiveTeam] = useState(academySquads[0]);
+  const academySquads = academySettings.squads;
+  const [activeTeam, setActiveTeam] = useState("");
+
+  useEffect(() => {
+    setActiveTeam((previous) =>
+      previous && academySquads.includes(previous)
+        ? previous
+        : academySquads[0] || "",
+    );
+  }, [academySquads]);
 
   const [selectedProPlayer, setSelectedProPlayer] = useState<ProPlayer | null>(
     null,
@@ -79,16 +185,6 @@ export default function App() {
   const isGlobalRoute =
     pathname.startsWith("/superadmin") || pathname.startsWith("/settings");
 
-  // Simulate auto-sync when coming back online
-  useEffect(() => {
-    if (isOnline && pendingSyncs > 0) {
-      const syncTimer = setTimeout(() => {
-        setPendingSyncs(0);
-      }, 1500); // Faking sync delay
-      return () => clearTimeout(syncTimer);
-    }
-  }, [isOnline, pendingSyncs]);
-
   const navigateTo = (page: string) => {
     setCurrentPage(page);
     setIsMobileMenuOpen(false);
@@ -97,32 +193,68 @@ export default function App() {
   if (!currentUser) {
     return <Login />;
   }
-  
-  if (currentUser.status === "PENDING" || currentUser.status === "REJECTED") {
+
+  if (isStaffOnboardingRequest(currentUser)) {
+    return <JoinAcademy />;
+  }
+
+  if (!isExplicitlyActiveAccountStatus(currentUser.status)) {
     return <PendingApproval />;
   }
 
-  // Handle Paywall Logic inside the main app layout so the banner can still be visible
-  const isPaywallActive =
-    currentUser.status === "Inactive" || currentUser.status === "Pending";
+  const requiredPrivilegedRole: PrivilegedRole | null =
+    currentPage === "superadmin"
+      ? "SUPERADMIN"
+      : currentPage === "concierge"
+        ? "DATA_ADMIN"
+        : null;
+
+  if (
+    requiredPrivilegedRole &&
+    !isActivePrivilegedActor(actualUser, [requiredPrivilegedRole])
+  ) {
+    return <AccessDenied onBack={() => navigateTo("dashboard")} />;
+  }
+
+  if (requiresStaffMembership(currentUser)) {
+    if (academyLoading || accessState === "LOADING") {
+      return (
+        <AccessResolutionScreen
+          accessState="LOADING"
+          error={academyError}
+          onLogout={logout}
+        />
+      );
+    }
+
+    if (accessState === "NO_ACADEMY") {
+      return <JoinAcademy />;
+    }
+
+    if (accessState !== "ACTIVE_MEMBERSHIP") {
+      return (
+        <AccessResolutionScreen
+          accessState={accessState}
+          error={academyError}
+          onLogout={logout}
+        />
+      );
+    }
+  }
 
   const renderContent = () => {
-    if (isPaywallActive && !isImpersonating) {
-      return <SubscriptionPaywall />;
-    }
     if (
-      isPaywallActive &&
-      isImpersonating &&
-      currentUser?.status === "Pending"
+      normalSuperAdminNeedsAcademyWorkspace(
+        currentUser,
+        academyId,
+        currentPage,
+      )
     ) {
-      return <SubscriptionPaywall />;
-    }
-    if (
-      isPaywallActive &&
-      isImpersonating &&
-      currentUser?.status === "Inactive"
-    ) {
-      return <SubscriptionPaywall />;
+      return (
+        <AcademyWorkspaceRequired
+          onBack={() => navigateTo("superadmin")}
+        />
+      );
     }
 
     // Wrap Route Protection Logic
@@ -153,42 +285,14 @@ export default function App() {
             onBack={() => navigateTo("dashboard")}
             setLanguage={setLanguage}
             currentLanguage={language}
-            pendingSyncs={pendingSyncs}
           />
         );
+      case "subscription":
+        return <SubscriptionPaywall onBack={() => navigateTo("dashboard")} />;
       case "idp_dashboard":
         return (
           <IDPDashboard
             onBack={() => navigateTo("dashboard")}
-            onNavigateToPlayer={(id) => {
-              setSelectedProPlayer({
-                id,
-                name: "Teerasil Dangda",
-                nationality: "Thailand",
-                dob: "1988-06-06",
-                position: "Striker",
-                height: 181,
-                weight: 76,
-                preferredFoot: "Right",
-                currentClub: "BG Pathum United",
-                league: "T1",
-                contractExpiry: "2025-05-31",
-                avatarUrl:
-                  "https://api.dicebear.com/7.x/avataaars/svg?seed=Teerasil",
-                actionShotUrl:
-                  "https://images.unsplash.com/photo-1574629810360-7efbb212aa2d?auto=format&fit=crop&q=80&w=800",
-                careerHistory: [],
-                attributes: {
-                  technical: 85,
-                  tactical: 88,
-                  physical: 75,
-                  mental: 90,
-                  attacking: 89,
-                  defending: 40,
-                },
-              });
-              navigateTo("pro_cv");
-            }}
           />
         );
       case "fitness":
@@ -196,8 +300,6 @@ export default function App() {
           <FitnessTesting
             onBack={() => navigateTo("dashboard")}
             teamName={activeTeam}
-            isOnline={isOnline}
-            onOfflineSave={() => setPendingSyncs((p) => p + 1)}
           />
         );
       case "coaches":
@@ -306,7 +408,6 @@ export default function App() {
       label: "Peer Voting",
       icon: Users,
       roles: ["USER", "PLAYER"],
-      hasNotification: true,
     },
     {
       id: "/report",
@@ -424,9 +525,6 @@ export default function App() {
                 >
                   <div className="relative shrink-0">
                     <item.icon size={20} />
-                    {item.hasNotification && (
-                      <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-rose-500 border-2 border-slate-900 rounded-full -translate-y-1 translate-x-1"></span>
-                    )}
                   </div>
                   <span className="font-bold text-sm">{item.label}</span>
                 </button>
@@ -440,7 +538,6 @@ export default function App() {
             >
               <div className="relative shrink-0">
                 <Bell size={20} />
-                <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-rose-500 border-2 border-slate-900 rounded-full -translate-y-1 translate-x-1"></span>
               </div>
               <span className="font-bold text-sm">Notifications</span>
             </button>
@@ -454,11 +551,7 @@ export default function App() {
             title="Profile & Log Out"
           >
             <div className="w-10 h-10 rounded-full shrink-0 bg-slate-700 overflow-hidden hover:ring-2 hover:ring-emerald-500 transition-all">
-              <img
-                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.name || "Coach"}`}
-                alt="Avatar"
-                className="w-full h-full object-cover"
-              />
+              <UserCircle className="h-full w-full p-2 text-slate-300" />
             </div>
             <div className="text-left flex-1 min-w-0">
               <div className="font-bold text-sm text-white truncate">
@@ -474,28 +567,8 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-w-0 relative">
-        {/* Impersonation Banner */}
-        {isImpersonating && (
-          <div className="absolute top-0 left-0 right-0 h-12 bg-amber-400 text-amber-900 z-50 flex items-center justify-center px-4 shadow-md overflow-hidden">
-            <div className="flex items-center justify-between w-full max-w-6xl text-xs sm:text-sm font-bold">
-              <span className="flex items-center gap-2 truncate">
-                <span className="text-lg">⚠️</span> คุณกำลังใช้งานในฐานะ{" "}
-                {currentUser?.name} (Impersonating)
-              </span>
-              <button
-                onClick={revertImpersonation}
-                className="ml-4 shrink-0 px-4 py-1.5 bg-amber-900 text-amber-50 hover:bg-amber-800 rounded-lg transition-colors cursor-pointer"
-              >
-                ออกจากโหมดจำลอง
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Top Header Bar with Dynamic Squad Switcher & Network Status */}
-        <header
-          className={`fixed top-0 right-0 left-0 md:left-64 z-40 h-16 shrink-0 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-8 ${isImpersonating ? "mt-12" : ""}`}
-        >
+        <header className="fixed top-0 right-0 left-0 md:left-64 z-40 h-16 shrink-0 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-8">
           <div className="flex items-center gap-3 sm:gap-4">
             <button
               onClick={() => setIsMobileMenuOpen(true)}
@@ -512,7 +585,7 @@ export default function App() {
             {!isGlobalRoute && (
               <div className="relative group">
                 <button className="flex items-center gap-2 text-sm font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors">
-                  {activeTeam}
+                  {activeTeam || "No squad selected"}
                   <ChevronDown size={14} className="text-slate-500" />
                 </button>
                 <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-slate-200 shadow-lg rounded-xl overflow-hidden opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 origin-top">
@@ -548,35 +621,30 @@ export default function App() {
             </div>
 
             {/* Network Indicator */}
-            <button
-              onClick={toggleSimulation}
+            <div
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wider transition-colors border ${
                 isOnline
-                  ? pendingSyncs > 0
-                    ? "bg-amber-50 text-amber-600 border-amber-200"
-                    : "bg-emerald-50 text-emerald-600 border-emerald-200"
+                  ? "bg-emerald-50 text-emerald-600 border-emerald-200"
                   : "bg-rose-50 text-rose-600 border-rose-200"
               }`}
-              title="Click to simulate network drop"
+              title="Browser network status"
             >
               {isOnline ? (
                 <>
                   <Wifi size={14} />
                   <span className="hidden sm:inline">
-                    {pendingSyncs > 0
-                      ? `Syncing (${pendingSyncs})...`
-                      : "Online"}
+                    Online
                   </span>
                 </>
               ) : (
                 <>
                   <WifiOff size={14} />
                   <span className="hidden sm:inline">
-                    Offline (Saved: {pendingSyncs})
+                    Offline
                   </span>
                 </>
               )}
-            </button>
+            </div>
 
             <button
               onClick={() => setIsNotificationOpen(true)}
@@ -587,9 +655,7 @@ export default function App() {
           </div>
         </header>
 
-        <div
-          className={`flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 pt-20 sm:pt-24 ${isImpersonating ? "mt-12" : ""}`}
-        >
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 pt-20 sm:pt-24">
           {renderContent()}
         </div>
       </main>

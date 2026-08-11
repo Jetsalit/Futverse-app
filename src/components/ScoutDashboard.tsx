@@ -1,7 +1,11 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from "firebase/firestore";
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, deleteField, doc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../contexts/AuthContext";
+import {
+  mapCanonicalSnapshot,
+  withoutCanonicalDocumentId,
+} from "../lib/firestore/canonicalDocument";
 import {
   Search,
   ArrowLeft,
@@ -19,6 +23,8 @@ import {
   BadgeCheck,
   Edit2,
   Trash2,
+  UserCircle,
+  AlertTriangle,
 } from "lucide-react";
 
 interface ScoutPlayer {
@@ -33,9 +39,9 @@ interface ScoutPlayer {
   grade: "A+" | "A" | "B" | "C";
   stars: number;
   stats: {
-    pace: number;
-    stamina: number;
-    passing: number;
+    pace?: number;
+    stamina?: number;
+    passing?: number;
     dribbling?: number;
     shooting?: number;
     tackling?: number;
@@ -46,32 +52,38 @@ interface ScoutPlayer {
   image: string;
   status: "Verified" | "Pending";
   submitterRole?: string;
+  submittedBy?: string;
   videoLink?: string;
 }
 
 
 
 export default function ScoutDashboard({ onBack }: { onBack: () => void }) {
-  const { hasPermission } = useAuth();
+  const { hasPermission, actualUser } = useAuth();
   const canEdit = hasPermission(["SUPERADMIN"]) || hasPermission(["ADMIN"]);
+  const authenticatedUid = actualUser?.uid || actualUser?.id || null;
   
   const [players, setPlayers] = useState<ScoutPlayer[]>([]);
   const [editingPlayer, setEditingPlayer] = useState<ScoutPlayer | null>(null);
+  const [readError, setReadError] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "scoutPlayers"), (snapshot) => {
       const data = snapshot.docs.map(doc => {
-        const d = doc.data();
+        const canonicalPlayer = mapCanonicalSnapshot<ScoutPlayer>(doc);
         return { 
-          id: doc.id, 
-          ...d,
-          position: Array.isArray(d.position) ? d.position : (d.position ? [d.position] : [])
+          ...canonicalPlayer,
+          position: Array.isArray(canonicalPlayer.position)
+            ? canonicalPlayer.position
+            : (canonicalPlayer.position ? [canonicalPlayer.position] : []),
         } as ScoutPlayer
       });
       setPlayers(data);
+      setReadError(null);
     }, (error) => {
       console.error("Snapshot error:", error);
-      alert("ไม่สามารถดึงข้อมูลได้: " + error.message);
+      setPlayers([]);
+      setReadError("The scout player database is unavailable.");
     });
     return () => unsub();
   }, []);
@@ -111,7 +123,10 @@ export default function ScoutDashboard({ onBack }: { onBack: () => void }) {
           return false;
         }
       }// Grade Filter
-      if (filters.grade && player.grade !== filters.grade) return false;
+      if (
+        filters.grade &&
+        (player.status !== "Verified" || player.grade !== filters.grade)
+      ) return false;
 
       return true;
     });
@@ -301,6 +316,7 @@ export default function ScoutDashboard({ onBack }: { onBack: () => void }) {
             <div className="flex items-center gap-3 w-full md:w-auto">
               <button
                 onClick={() => setIsSubmitModalOpen(true)}
+                disabled={Boolean(readError)}
                 className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-sm transition-colors"
               >
                 <Plus size={18} /> ส่งโปรไฟล์นักเตะ
@@ -316,7 +332,15 @@ export default function ScoutDashboard({ onBack }: { onBack: () => void }) {
 
           {/* Grid */}
           <div className="flex-1 overflow-y-auto pr-1 pb-4">
-            {filteredPlayers.length === 0 ? (
+            {readError ? (
+              <div className="flex h-64 flex-col items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 p-12 text-center">
+                <AlertTriangle className="mb-4 h-12 w-12 text-rose-400" />
+                <p className="font-bold text-rose-800">{readError}</p>
+                <p className="mt-1 text-sm font-medium text-rose-600">
+                  No cached or sample player records are being shown.
+                </p>
+              </div>
+            ) : filteredPlayers.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-12 bg-white rounded-2xl border border-slate-200 border-dashed h-64">
                 <Filter className="text-slate-300 w-12 h-12 mb-4" />
                 <p className="text-slate-500 font-medium">
@@ -358,21 +382,29 @@ export default function ScoutDashboard({ onBack }: { onBack: () => void }) {
           }}
           onSave={async (p) => {
             try {
+              const playerData = withoutCanonicalDocumentId(p);
               if (editingPlayer && editingPlayer.id) {
-                await updateDoc(doc(db, "scoutPlayers", editingPlayer.id), p as any);
+                const updates: any = { ...playerData };
+                delete updates.submittedBy;
+                updates.id = deleteField();
+                await updateDoc(doc(db, "scoutPlayers", editingPlayer.id), updates as any);
               } else {
+                if (!authenticatedUid) {
+                  throw new Error("Authenticated user ID is required to submit a scout player.");
+                }
                 await addDoc(collection(db, "scoutPlayers"), {
-                  ...p,
-                  status: p.status || "Pending",
-                  grade: p.grade || "C",
-                  stars: p.stars || 3,
-                  stats: p.stats || { pace: 70, stamina: 70, passing: 70 },
-                  image: p.image || `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.name}`
+                  ...playerData,
+                  submittedBy: authenticatedUid,
+                  status: canEdit ? (p.status || "Pending") : "Pending",
+                  grade: canEdit ? (p.grade || "C") : "C",
+                  stars: canEdit ? (p.stars || 3) : 3,
+                  stats: playerData.stats || {},
+                  image: playerData.image || ""
                 });
               }
             } catch (err) {
               console.error("Error saving scout player:", err);
-              alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
+              throw err;
             }
           }}
         />
@@ -442,15 +474,16 @@ function TalentCard({
           </div>
         )}
 
-        <div className="w-16 h-16 rounded-full bg-slate-100 shrink-0 border border-slate-200 overflow-hidden mt-2 relative">
-          <img
-            src={
-              player.image ||
-              `https://api.dicebear.com/7.x/avataaars/svg?seed=${player.name}`
-            }
-            alt={player.name}
-            className="w-full h-full object-cover"
-          />
+        <div className="w-16 h-16 rounded-full bg-slate-100 shrink-0 border border-slate-200 overflow-hidden mt-2 relative flex items-center justify-center text-slate-400">
+          {player.image ? (
+            <img
+              src={player.image}
+              alt={player.name}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <UserCircle size={42} aria-label="No player image" />
+          )}
         </div>
         <div className="flex-1 mt-2">
           <h3 className="font-bold text-slate-800 text-lg leading-tight">
@@ -496,6 +529,7 @@ function TalentCard({
       </div>
 
       {/* Performance Radar/Bars */}
+      {player.status === "Verified" ? (
       <div className="p-5 space-y-3">
         {/* Stars */}
         <div className="flex items-center gap-2 mb-4">
@@ -506,7 +540,7 @@ function TalentCard({
                 key={i}
                 size={14}
                 className={
-                  i < player.stars
+                  i < (player.stars || 0)
                     ? "text-amber-400 fill-amber-400 drop-shadow-sm"
                     : "text-slate-200"
                 }
@@ -517,17 +551,22 @@ function TalentCard({
 
         {/* Stats Bars */}
         <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-          <StatBar label="Pace" value={player.stats.pace} color="bg-emerald-500" />
-          <StatBar label="Stamina" value={player.stats.stamina} color="bg-blue-500" />
-          <StatBar label="Passing" value={player.stats.passing} color="bg-amber-500" />
-          <StatBar label="Dribbling" value={player.stats.dribbling} color="bg-indigo-500" />
-          <StatBar label="Shooting" value={player.stats.shooting} color="bg-rose-500" />
-          <StatBar label="Tackling" value={player.stats.tackling} color="bg-slate-500" />
-          <StatBar label="Technique" value={player.stats.technique} color="bg-purple-500" />
-          <StatBar label="Decision" value={player.stats.decision} color="bg-teal-500" />
-          <StatBar label="Teamwork" value={player.stats.teamwork} color="bg-orange-500" />
+          <StatBar label="Pace" value={player.stats?.pace} color="bg-emerald-500" />
+          <StatBar label="Stamina" value={player.stats?.stamina} color="bg-blue-500" />
+          <StatBar label="Passing" value={player.stats?.passing} color="bg-amber-500" />
+          <StatBar label="Dribbling" value={player.stats?.dribbling} color="bg-indigo-500" />
+          <StatBar label="Shooting" value={player.stats?.shooting} color="bg-rose-500" />
+          <StatBar label="Tackling" value={player.stats?.tackling} color="bg-slate-500" />
+          <StatBar label="Technique" value={player.stats?.technique} color="bg-purple-500" />
+          <StatBar label="Decision" value={player.stats?.decision} color="bg-teal-500" />
+          <StatBar label="Teamwork" value={player.stats?.teamwork} color="bg-orange-500" />
         </div>
       </div>
+      ) : (
+        <div className="p-5 text-sm font-semibold text-slate-500">
+          Evaluation metrics are unavailable until an administrator verifies this submission.
+        </div>
+      )}
     </div>
   );
 }
@@ -538,7 +577,7 @@ function StatBar({
   color,
 }: {
   label: string;
-  value: number;
+  value?: number;
   color: string;
 }) {
   const displayValue = value > 10 ? Math.round(value / 10) : (value || 0);
@@ -568,26 +607,28 @@ function SubmitTalentModal({
 }: { 
   initialData?: ScoutPlayer | null;
   onClose: () => void;
-  onSave: (p: Partial<ScoutPlayer>) => void;
+  onSave: (p: Partial<Omit<ScoutPlayer, "id">>) => Promise<void>;
   isAdmin?: boolean;
 }) {
-  const [formData, setFormData] = useState<Partial<ScoutPlayer>>(initialData || {
-    name: "",
-    age: 15,
-    height: 170,
-    weight: 60,
-    position: [],
-    academy: "",
-    province: "",
-    status: "Pending",
-    grade: "C",
-    stars: 3,
-    stats: { pace: 5, stamina: 5, passing: 5, dribbling: 5, shooting: 5, tackling: 5, technique: 5, decision: 5, teamwork: 5 },
-    submitterRole: "",
-    videoLink: "",
-  });
+  const [formData, setFormData] = useState<Partial<Omit<ScoutPlayer, "id">>>(
+    () => initialData
+      ? withoutCanonicalDocumentId(initialData)
+      : {
+          name: "",
+          position: [],
+          academy: "",
+          province: "",
+          status: "Pending",
+          grade: "C",
+          stars: 3,
+          stats: {},
+          submitterRole: "",
+          videoLink: "",
+        },
+  );
   
   const [submitComplete, setSubmitComplete] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   if (submitComplete) {
     return (
@@ -649,8 +690,13 @@ function SubmitTalentModal({
           className="flex-1 overflow-y-auto p-6 space-y-8"
           onSubmit={async (e) => {
             e.preventDefault();
-            await onSave(formData);
-            setSubmitComplete(true);
+            setSubmitError(null);
+            try {
+              await onSave(formData);
+              setSubmitComplete(true);
+            } catch {
+              setSubmitError("The player record was not saved. Please try again.");
+            }
           }}
         >
           {/* Section 1: Submitter Info */}
@@ -702,7 +748,7 @@ function SubmitTalentModal({
                 ].map(stat => {
                   let val = (formData.stats as any)?.[stat.key];
                   if (val > 10) val = Math.round(val / 10);
-                  if (val === undefined) val = 5;
+                  if (val === undefined) val = "";
                   
                   return (
                     <div key={stat.key}>
@@ -939,6 +985,11 @@ function SubmitTalentModal({
           )}
 
           {/* Form Actions (Sticky on Mobile) */}
+          {submitError && (
+            <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-bold text-rose-700">
+              {submitError}
+            </p>
+          )}
           <div className="pt-6 pb-2 border-t border-slate-100 flex gap-3 sticky bottom-0 bg-white">
             <button
               type="button"
