@@ -52,14 +52,14 @@ describe("Access Resolution Foundation", () => {
   });
 
   it("routes direct SUPERADMIN to superadmin portal without staff Membership requirement", () => {
-    const superadmin = makeUser({ role: "SUPERADMIN" });
+    const superadmin = makeUser({ role: "SUPERADMIN", status: "ACTIVE" });
 
     assert.equal(appShellLandingPage(superadmin, false), "superadmin");
     assert.equal(requiresStaffMembership(superadmin), false);
   });
 
   it("fails closed for direct SUPERADMIN accessing tenant routes without an academy workspace", () => {
-    const superadmin = makeUser({ role: "SUPERADMIN" });
+    const superadmin = makeUser({ role: "SUPERADMIN", status: "ACTIVE" });
 
     assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, null, "dashboard"), true);
     assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, "academy-1", "dashboard"), false);
@@ -108,7 +108,7 @@ describe("Access Resolution Foundation", () => {
   });
 
   it("determines direct SUPERADMIN academy workspace requirements based on route scope", () => {
-    const superadmin = makeUser({ role: "SUPERADMIN" });
+    const superadmin = makeUser({ role: "SUPERADMIN", status: "ACTIVE" });
 
     // Global routes => false
     assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, null, "superadmin"), false);

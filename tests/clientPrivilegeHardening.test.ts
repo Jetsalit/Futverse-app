@@ -149,8 +149,7 @@ test("14 actualUser/currentUser use the Firebase UID", () => {
 
 test("15 impersonation remains explicit and separate", () => {
   const impersonate = variableInitializerText(authAst, "impersonate");
-  assert.match(impersonate, /actualUser\?\.role\s*===\s*"SUPERADMIN"/);
-  assert.match(impersonate, /actualUser\?\.role\s*===\s*"DATA_ADMIN"/);
+  assert.match(impersonate, /canImpersonateUser\s*\(\s*actualUser\s*,\s*user\s*\)/);
   assert.match(impersonate, /setCurrentUser\s*\(\s*user\s*\)/);
   assert.doesNotMatch(impersonate, /setActualUser/);
 });

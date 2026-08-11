@@ -9,6 +9,10 @@ import { auth, db } from "../lib/firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
 import type { TenantRole } from "../types/Membership";
+import {
+  canImpersonateUser,
+  hasClientPermission,
+} from "../lib/privilegedAuthorization";
 
 export type UserRole =
   | "SUPERADMIN"
@@ -133,13 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const impersonate = (user: User) => {
-    if (actualUser?.role === "SUPERADMIN") {
-      setCurrentUser(user);
-    } else if (
-      actualUser?.role === "DATA_ADMIN" &&
-      user.id &&
-      actualUser.assignedClients?.includes(user.id)
-    ) {
+    if (canImpersonateUser(actualUser, user)) {
       setCurrentUser(user);
     }
   };
@@ -169,9 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const hasPermission = (allowedRoles: UserRole[]) => {
-    if (!currentUser) return false;
-    if (currentUser.role === "SUPERADMIN") return true;
-    return allowedRoles.includes(currentUser.role);
+    return hasClientPermission(actualUser, currentUser, allowedRoles);
   };
 
   const isImpersonating =

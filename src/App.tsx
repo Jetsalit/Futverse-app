@@ -50,6 +50,10 @@ import SuperadminPortal from "./components/SuperadminPortal";
 import SubscriptionPaywall from "./components/SubscriptionPaywall";
 import ConciergeDashboard from "./components/ConciergeDashboard";
 import PendingApproval from "./components/PendingApproval";
+import {
+  isActivePrivilegedActor,
+  type PrivilegedRole,
+} from "./lib/privilegedAuthorization";
 
 function AccessResolutionScreen({
   accessState,
@@ -126,6 +130,7 @@ export default function App() {
   const {
     hasPermission,
     currentUser,
+    actualUser,
     logout,
     isImpersonating,
     revertImpersonation,
@@ -200,6 +205,20 @@ export default function App() {
     return <PendingApproval />;
   }
 
+  const requiredPrivilegedRole: PrivilegedRole | null =
+    currentPage === "superadmin"
+      ? "SUPERADMIN"
+      : currentPage === "concierge"
+        ? "DATA_ADMIN"
+        : null;
+
+  if (
+    requiredPrivilegedRole &&
+    !isActivePrivilegedActor(actualUser, [requiredPrivilegedRole])
+  ) {
+    return <AccessDenied onBack={() => navigateTo("dashboard")} />;
+  }
+
   if (isStaffOnboardingRequest(currentUser)) {
     return <JoinAcademy />;
   }
@@ -219,10 +238,7 @@ export default function App() {
       return <JoinAcademy />;
     }
 
-    if (
-      accessState !== "ACTIVE_MEMBERSHIP" &&
-      accessState !== "LEGACY_COMPATIBILITY"
-    ) {
+    if (accessState !== "ACTIVE_MEMBERSHIP") {
       return (
         <AccessResolutionScreen
           accessState={accessState}
