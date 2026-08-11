@@ -147,11 +147,16 @@ test("14 actualUser/currentUser use the Firebase UID", () => {
   assert.match(authSource, /setCurrentUser\s*\(\s*fullUser\s*\)/);
 });
 
-test("15 impersonation remains explicit and separate", () => {
-  const impersonate = variableInitializerText(authAst, "impersonate");
-  assert.match(impersonate, /canImpersonateUser\s*\(\s*actualUser\s*,\s*user\s*\)/);
-  assert.match(impersonate, /setCurrentUser\s*\(\s*user\s*\)/);
-  assert.doesNotMatch(impersonate, /setActualUser/);
+test("15 AuthContext exposes no caller-provided user-switching API", () => {
+  const members = interfaceMemberNames(authAst, "AuthContextType");
+  const providerProperties = providerValueProperties();
+  assert.ok(!members.includes("impersonate"));
+  assert.ok(!members.includes("revertImpersonation"));
+  assert.ok(!members.includes("isImpersonating"));
+  assert.ok(!providerProperties.includes("impersonate"));
+  assert.ok(!providerProperties.includes("revertImpersonation"));
+  assert.ok(!providerProperties.includes("isImpersonating"));
+  assert.equal(variableDeclarations(authAst, "impersonate").length, 0);
 });
 
 test("16 Login uses Firebase sign-in flows", () => {

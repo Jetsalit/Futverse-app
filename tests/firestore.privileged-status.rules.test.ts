@@ -106,9 +106,12 @@ after(async () => {
   await testEnv.cleanup();
 });
 
-test("1. Active SUPERADMIN privileged write allowed", async () => {
+test("1. Active SUPERADMIN privileged user update allowed", async () => {
   await seedUser("super-active", "SUPERADMIN", "Active");
-  await assertSucceeds(writeSetting("super-active"));
+  await assertSucceeds(updateDoc(
+    doc(authedDb("super-active"), "users", "target-user"),
+    { name: "After Active" },
+  ));
 });
 
 test("2. ACTIVE SUPERADMIN privileged write allowed", async () => {
@@ -147,9 +150,9 @@ test("13. missing authoritative user document denied", async () => {
   await assertFails(writeSetting("missing-superadmin"));
 });
 
-test("14. Active ADMIN settings write allowed", async () => {
+test("14. Active ADMIN root settings write denied", async () => {
   await seedUser("admin-active", "ADMIN", "Active");
-  await assertSucceeds(writeSetting("admin-active"));
+  await assertFails(writeSetting("admin-active"));
 });
 
 test("15. ACTIVE ADMIN proPlayers write allowed", async () => {

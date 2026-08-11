@@ -10,10 +10,7 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
 import { mapCanonicalSnapshot } from "../lib/firestore/canonicalDocument";
 import type { TenantRole } from "../types/Membership";
-import {
-  canImpersonateUser,
-  hasClientPermission,
-} from "../lib/privilegedAuthorization";
+import { hasClientPermission } from "../lib/privilegedAuthorization";
 
 export type UserRole =
   | "SUPERADMIN"
@@ -57,12 +54,9 @@ export interface User {
 interface AuthContextType {
   currentUser: User | null;
   actualUser: User | null;
-  isImpersonating: boolean;
   isLoading: boolean;
   logout: () => void;
   hasPermission: (allowedRoles: UserRole[]) => boolean;
-  impersonate: (user: User) => void;
-  revertImpersonation: () => void;
   submitSubscription: (
     plan: "monthly" | "yearly",
     date: string,
@@ -138,16 +132,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCurrentUser(null);
   };
 
-  const impersonate = (user: User) => {
-    if (canImpersonateUser(actualUser, user)) {
-      setCurrentUser(user);
-    }
-  };
-
-  const revertImpersonation = () => {
-    setCurrentUser(actualUser);
-  };
-
   const submitSubscription = (
     plan: "monthly" | "yearly",
     date: string,
@@ -172,22 +156,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return hasClientPermission(actualUser, currentUser, allowedRoles);
   };
 
-  const isImpersonating =
-    actualUser !== null &&
-    currentUser !== null &&
-    actualUser.id !== currentUser.id;
-
   return (
     <AuthContext.Provider
       value={{
         currentUser,
         actualUser,
-        isImpersonating,
         isLoading,
         logout,
         hasPermission,
-        impersonate,
-        revertImpersonation,
         submitSubscription,
       }}
     >

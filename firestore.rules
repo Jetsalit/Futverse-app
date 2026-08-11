@@ -642,8 +642,7 @@ service cloud.firestore {
     }
 
     match /settings/{document=**} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if false;
     }
 
     match /coaches/{document=**} {

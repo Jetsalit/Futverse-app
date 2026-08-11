@@ -4,7 +4,6 @@ export interface PrivilegedActor {
   id?: unknown;
   role?: unknown;
   status?: unknown;
-  assignedClients?: unknown;
 }
 
 export const ACTIVE_PRIVILEGED_STATUSES = ["Active", "ACTIVE"] as const;
@@ -44,22 +43,5 @@ export function hasClientPermission(
   return (
     typeof presentedUser.role === "string" &&
     allowedRoles.includes(presentedUser.role)
-  );
-}
-
-export function canImpersonateUser(
-  authoritativeActor: PrivilegedActor | null | undefined,
-  targetUser: PrivilegedActor | null | undefined,
-): boolean {
-  if (!targetUser || typeof targetUser.id !== "string" || !targetUser.id) {
-    return false;
-  }
-  if (isActivePrivilegedActor(authoritativeActor, ["SUPERADMIN"])) {
-    return true;
-  }
-  return (
-    isActivePrivilegedActor(authoritativeActor, ["DATA_ADMIN"]) &&
-    Array.isArray(authoritativeActor?.assignedClients) &&
-    authoritativeActor.assignedClients.includes(targetUser.id)
   );
 }

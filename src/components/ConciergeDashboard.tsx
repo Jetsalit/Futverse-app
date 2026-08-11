@@ -54,7 +54,7 @@ export default function ConciergeDashboard({
           <EmptyState
             icon={Users}
             title="Assigned Clients Unavailable"
-            description="No authorized Firestore-backed Concierge assignment inventory is available. Client impersonation is disabled."
+            description="No authorized Firestore-backed Concierge assignment inventory is available."
           />
         </div>
       </div>

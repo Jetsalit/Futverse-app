@@ -4,7 +4,6 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
-  canImpersonateUser,
   hasClientPermission,
   isActivePrivilegedActor,
 } from "../src/lib/privilegedAuthorization.js";
@@ -58,24 +57,16 @@ test("3. inactive, missing, and malformed SUPERADMIN authority fails closed", ()
   }
 });
 
-test("4. active assigned DATA_ADMIN impersonation remains valid", () => {
-  const actor = { role: "DATA_ADMIN", status: "Active", assignedClients: ["target-1"] };
-  assert.equal(canImpersonateUser(actor, { id: "target-1" }), true);
-  assert.equal(canImpersonateUser(actor, { id: "target-2" }), false);
+test("4. active DATA_ADMIN retains its own intended client permission", () => {
+  const actor = { role: "DATA_ADMIN", status: "Active" };
   assert.equal(hasClientPermission(actor, actor, ["DATA_ADMIN"]), true);
 });
 
-test("5. inactive or malformed DATA_ADMIN cannot impersonate", () => {
+test("5. inactive or malformed DATA_ADMIN has no privileged client permission", () => {
   for (const status of ["Inactive", "INACTIVE", "PENDING", "REJECTED", undefined, null, "active", {}]) {
-    assert.equal(
-      canImpersonateUser(
-        { role: "DATA_ADMIN", status, assignedClients: ["target-1"] },
-        { id: "target-1" },
-      ),
-      false,
-    );
+    const actor = { role: "DATA_ADMIN", status };
+    assert.equal(hasClientPermission(actor, actor, ["DATA_ADMIN"]), false);
   }
-  assert.equal(canImpersonateUser({ role: "DATA_ADMIN", status: "ACTIVE", assignedClients: ["target-1"] }, {}), false);
 });
 
 test("6. App gates privileged routes with the authoritative actualUser", () => {
@@ -97,15 +88,14 @@ test("8. Concierge contains no hardcoded or synthesized User inventory", () => {
   assert.doesNotMatch(conciergeSource, /pep@|medical@|scout@|Coach Pep|Dr\. Somchai|Scout A/i);
 });
 
-test("9. Concierge exposes no local Log In As or impersonate action", () => {
-  assert.doesNotMatch(conciergeSource, /Log In As|\bimpersonate\s*\(/i);
+test("9. Concierge exposes no local Log In As or user-switching action", () => {
+  assert.doesNotMatch(conciergeSource, /Log In As|\bimpersonat(?:e|ing|ion)\b/i);
   assert.match(conciergeSource, /Firestore-backed Concierge assignment inventory is available/);
-  assert.match(conciergeSource, /impersonation is disabled/i);
 });
 
-test("10. no production component calls impersonate with a local identity", () => {
-  assert.doesNotMatch(conciergeSource, /\bimpersonate\b/);
-  assert.doesNotMatch(superadminSource, /\bimpersonate\s*\(/);
+test("10. no production admin component exposes a local user-switching identity", () => {
+  assert.doesNotMatch(conciergeSource, /\bimpersonat(?:e|ing|ion)\b/i);
+  assert.doesNotMatch(superadminSource, /\bimpersonat(?:e|ing|ion)\b/i);
   assert.match(superadminSource, /subscribeToUsers\s*\(/);
 });
 
@@ -207,8 +197,8 @@ test("20. App accepts tenant staff routes only through ACTIVE_MEMBERSHIP", () =>
 test("21. active global SUPERADMIN routes remain academy-independent", () => {
   const activeSuperadmin = { id: "super-1", name: "Super", role: "SUPERADMIN" as const, status: "ACTIVE" as const };
   const inactiveSuperadmin = { ...activeSuperadmin, status: "INACTIVE" as const };
-  assert.equal(appShellLandingPage(activeSuperadmin, false), "superadmin");
-  assert.equal(appShellLandingPage(inactiveSuperadmin, false), "dashboard");
+  assert.equal(appShellLandingPage(activeSuperadmin), "superadmin");
+  assert.equal(appShellLandingPage(inactiveSuperadmin), "dashboard");
   assert.equal(appRouteScope("superadmin"), "GLOBAL");
   assert.equal(appRouteScope("drills"), "GLOBAL");
 });

@@ -54,23 +54,16 @@ describe("Access Resolution Foundation", () => {
   it("routes direct SUPERADMIN to superadmin portal without staff Membership requirement", () => {
     const superadmin = makeUser({ role: "SUPERADMIN", status: "ACTIVE" });
 
-    assert.equal(appShellLandingPage(superadmin, false), "superadmin");
+    assert.equal(appShellLandingPage(superadmin), "superadmin");
     assert.equal(requiresStaffMembership(superadmin), false);
   });
 
   it("fails closed for direct SUPERADMIN accessing tenant routes without an academy workspace", () => {
     const superadmin = makeUser({ role: "SUPERADMIN", status: "ACTIVE" });
 
-    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, null, "dashboard"), true);
-    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, "academy-1", "dashboard"), false);
-    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, null, "superadmin"), false);
-  });
-
-  it("requires staff Membership for impersonated ADMIN/COACH users and lands on dashboard", () => {
-    const impersonatedAdmin = makeUser({ role: "ADMIN", academyId: "academy-1" });
-
-    assert.equal(appShellLandingPage(impersonatedAdmin, true), "dashboard");
-    assert.equal(requiresStaffMembership(impersonatedAdmin), true);
+    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, null, "dashboard"), true);
+    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, "academy-1", "dashboard"), false);
+    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, null, "superadmin"), false);
   });
 
   it("never grants authorization via requestedRole or email", () => {
@@ -111,20 +104,20 @@ describe("Access Resolution Foundation", () => {
     const superadmin = makeUser({ role: "SUPERADMIN", status: "ACTIVE" });
 
     // Global routes => false
-    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, null, "superadmin"), false);
-    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, null, "drills"), false);
-    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, null, "tactic"), false);
-    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, null, "subscription"), false);
-    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, null, "concierge"), false);
+    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, null, "superadmin"), false);
+    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, null, "drills"), false);
+    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, null, "tactic"), false);
+    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, null, "subscription"), false);
+    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, null, "concierge"), false);
 
     // Tenant routes => true when no academyId
-    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, null, "dashboard"), true);
-    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, null, "youth"), true);
-    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, null, "fitness"), true);
-    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, null, "settings"), true);
+    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, null, "dashboard"), true);
+    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, null, "youth"), true);
+    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, null, "fitness"), true);
+    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, null, "settings"), true);
 
     // Tenant routes => false when academyId exists
-    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, false, "academy-1", "dashboard"), false);
+    assert.equal(normalSuperAdminNeedsAcademyWorkspace(superadmin, "academy-1", "dashboard"), false);
   });
 
   it("maps inactive staff Membership states explicitly", () => {

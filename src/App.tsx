@@ -132,8 +132,6 @@ export default function App() {
     currentUser,
     actualUser,
     logout,
-    isImpersonating,
-    revertImpersonation,
   } = useAuth();
   const {
     settings: academySettings,
@@ -151,16 +149,16 @@ export default function App() {
       prevLandingKeyRef.current = "";
       return;
     }
-    const landingKey = `${currentUser.id || currentUser.uid}_${currentUser.role}_${isImpersonating}`;
+    const landingKey = `${currentUser.id || currentUser.uid}_${currentUser.role}`;
     if (prevLandingKeyRef.current !== landingKey) {
       prevLandingKeyRef.current = landingKey;
-      const targetLanding = appShellLandingPage(currentUser, isImpersonating);
+      const targetLanding = appShellLandingPage(currentUser);
       if (targetLanding) {
         setCurrentPage(targetLanding);
         setIsMobileMenuOpen(false);
       }
     }
-  }, [currentUser, isImpersonating]);
+  }, [currentUser]);
 
   // Global State / Context for Academy Squads
   const academySquads = academySettings.squads || [
@@ -257,7 +255,6 @@ export default function App() {
     if (
       normalSuperAdminNeedsAcademyWorkspace(
         currentUser,
-        isImpersonating,
         academyId,
         currentPage,
       )
@@ -269,21 +266,7 @@ export default function App() {
       );
     }
 
-    if (isPaywallActive && !isImpersonating) {
-      return <SubscriptionPaywall />;
-    }
-    if (
-      isPaywallActive &&
-      isImpersonating &&
-      currentUser?.status === "Pending"
-    ) {
-      return <SubscriptionPaywall />;
-    }
-    if (
-      isPaywallActive &&
-      isImpersonating &&
-      currentUser?.status === "Inactive"
-    ) {
+    if (isPaywallActive) {
       return <SubscriptionPaywall />;
     }
 
@@ -636,28 +619,8 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-w-0 relative">
-        {/* Impersonation Banner */}
-        {isImpersonating && (
-          <div className="absolute top-0 left-0 right-0 h-12 bg-amber-400 text-amber-900 z-50 flex items-center justify-center px-4 shadow-md overflow-hidden">
-            <div className="flex items-center justify-between w-full max-w-6xl text-xs sm:text-sm font-bold">
-              <span className="flex items-center gap-2 truncate">
-                <span className="text-lg">⚠️</span> คุณกำลังใช้งานในฐานะ{" "}
-                {currentUser?.name} (Impersonating)
-              </span>
-              <button
-                onClick={revertImpersonation}
-                className="ml-4 shrink-0 px-4 py-1.5 bg-amber-900 text-amber-50 hover:bg-amber-800 rounded-lg transition-colors cursor-pointer"
-              >
-                ออกจากโหมดจำลอง
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Top Header Bar with Dynamic Squad Switcher & Network Status */}
-        <header
-          className={`fixed top-0 right-0 left-0 md:left-64 z-40 h-16 shrink-0 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-8 ${isImpersonating ? "mt-12" : ""}`}
-        >
+        <header className="fixed top-0 right-0 left-0 md:left-64 z-40 h-16 shrink-0 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-8">
           <div className="flex items-center gap-3 sm:gap-4">
             <button
               onClick={() => setIsMobileMenuOpen(true)}
@@ -749,9 +712,7 @@ export default function App() {
           </div>
         </header>
 
-        <div
-          className={`flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 pt-20 sm:pt-24 ${isImpersonating ? "mt-12" : ""}`}
-        >
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 pt-20 sm:pt-24">
           {renderContent()}
         </div>
       </main>

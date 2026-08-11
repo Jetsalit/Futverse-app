@@ -131,12 +131,10 @@ export function resolveExactMembershipSnapshot(
 
 export function appShellLandingPage(
   user: User | null,
-  isImpersonating: boolean,
 ): string {
   if (!user) return "login";
   if (
     user.role === "SUPERADMIN" &&
-    !isImpersonating &&
     isActivePrivilegedActor(user, ["SUPERADMIN"])
   ) {
     return "superadmin";
@@ -164,12 +162,11 @@ export function appRouteScope(currentPage: string): AppRouteScope {
 
 export function normalSuperAdminNeedsAcademyWorkspace(
   user: User | null,
-  isImpersonating: boolean,
   academyId: string | null,
   currentPage: string,
 ): boolean {
   if (!user) return false;
-  if (user.role !== "SUPERADMIN" || isImpersonating) return false;
+  if (user.role !== "SUPERADMIN") return false;
   if (appRouteScope(currentPage) !== "TENANT_SCOPED") return false;
   return !academyId;
 }

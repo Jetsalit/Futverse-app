@@ -87,7 +87,7 @@ The platform implements a Role-Based Access Control (RBAC) system with the follo
 - `USER`
 - `PARENT`
 
-Access to specific routes (e.g., settings, fitness, scout) is guarded by a `hasPermission` function in `App.tsx`. The application also supports an **impersonation** feature, allowing admins to view the app as another user.
+Access to specific routes (e.g., settings, fitness, scout) is guarded by a `hasPermission` function in `App.tsx`. Application identity is sourced from Firebase Auth and the authoritative `users/{firebaseUid}` document; the client does not expose a local user-switching API.
 
 ## Firebase Usage
 
