@@ -132,10 +132,11 @@ test("12 provider does not expose mock login", () => {
   assert.ok(!providerValueProperties().includes("login"));
 });
 
-test("13 missing user document fallback remains non-privileged USER", () => {
+test("13 missing user document fails closed without a local User identity", () => {
+  assert.doesNotMatch(authSource, /\bdefaultUser\b/);
   assert.match(
     authSource,
-    /else\s*\{\s*\/\/ Default user fallback[\s\S]*?const\s+defaultUser\s*:\s*User\s*=\s*\{[\s\S]*?role\s*:\s*"USER"/,
+    /else\s*\{\s*setActualUser\s*\(\s*null\s*\);\s*setCurrentUser\s*\(\s*null\s*\)/,
   );
 });
 

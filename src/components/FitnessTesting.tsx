@@ -15,14 +15,11 @@ import {
   Legend,
 } from "recharts";
 import {
-  Save,
   User,
   ShieldAlert,
   Activity,
   ChevronLeft,
   ClipboardList,
-  Database,
-  Check,
   Users,
 } from "lucide-react";
 import { db } from "../lib/firebase";
@@ -152,10 +149,6 @@ const PlayerTestRow = memo(
 
 function FitnessTestingGrid({
   players,
-  isOnline,
-  onOfflineSave,
-  saveStatus,
-  setSaveStatus,
   testData,
   setTestData,
   onEditPlayer,
@@ -166,10 +159,6 @@ function FitnessTestingGrid({
   onAddPlayer,
 }: {
   players: Player[];
-  isOnline: boolean;
-  onOfflineSave?: () => void;
-  saveStatus: "success" | "offline_queued" | null;
-  setSaveStatus: React.Dispatch<React.SetStateAction<"success" | "offline_queued" | null>>;
   testData: Record<string, any>;
   setTestData: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   onEditPlayer: (player: Player) => void;
@@ -179,8 +168,6 @@ function FitnessTestingGrid({
   squads: string[];
   onAddPlayer: () => void;
 }) {
-  const [isSaving, setIsSaving] = useState(false);
-
   // ควบคุมการอัปเดตข้อมูลรายบุคคลและคำนวณอัตโนมัติ
   const handleRowChange = useCallback(
     (playerId: string, field: string, value: string) => {
@@ -200,56 +187,9 @@ function FitnessTestingGrid({
           [playerId]: updatedPlayerStats,
         };
       });
-      setSaveStatus(null);
     },
-    [setTestData, setSaveStatus],
+    [setTestData],
   );
-
-  // 3. ระบบจัดเก็บข้อมูลแยกรายบุคคล (Upsert Logic)
-  const handleSaveAllResults = () => {
-    setIsSaving(true);
-
-    // แปลงเทเบิล State ให้อยู่ในรูปแบบ Array of Objects ตามเงื่อนไข
-    const todayDate = new Date().toISOString().split("T")[0];
-    const payloadToSave = players
-      .map((player) => {
-        const stats = testData[player.id] || {};
-        return {
-          player_id: player.id.toString(),
-          test_date: todayDate,
-          yoyo_level: Number(stats["yoyo_level"]) || null,
-          calculated_vo2max: Number(stats["calculated_vo2max"]) || null,
-          speed_10m: Number(stats["speed_10m"]) || null,
-          speed_30m: Number(stats["speed_30m"]) || null,
-          vertical_jump: Number(stats["vertical_jump"]) || null,
-        };
-      })
-      .filter(
-        (data) =>
-          data.yoyo_level !== null ||
-          data.speed_10m !== null ||
-          data.speed_30m !== null ||
-          data.vertical_jump !== null,
-      ); // Filter rows that actually have data filled
-
-    // Simulate Supabase Response wait time
-    setTimeout(() => {
-      setIsSaving(false);
-      console.log(
-        "--- Payload Prepared for Upsert (Supabase) ---",
-        payloadToSave,
-      );
-
-      if (isOnline) {
-        setSaveStatus("success");
-      } else {
-        setSaveStatus("offline_queued");
-        onOfflineSave?.();
-      }
-
-      setTimeout(() => setSaveStatus(null), 3000);
-    }, 800);
-  };
 
   return (
     <>
@@ -288,30 +228,13 @@ function FitnessTestingGrid({
         </div>
 
         <div className="flex items-center gap-3 w-full sm:w-auto">
-          {saveStatus === "success" && (
-            <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">
-              <Check size={14} /> Saved to Cloud
-            </span>
-          )}
-          {saveStatus === "offline_queued" && (
-            <span className="text-xs font-bold text-amber-600 flex items-center gap-1">
-              <Database size={14} /> Saved Offline
-            </span>
-          )}
-
           <button
-            onClick={handleSaveAllResults}
-            disabled={isSaving}
-            className="px-4 py-2 flex items-center justify-center gap-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 transition shadow-sm disabled:opacity-70 disabled:cursor-not-allowed w-full sm:w-auto"
+            type="button"
+            disabled
+            title="No fitness-results backend is configured"
+            className="px-4 py-2 flex items-center justify-center gap-2 bg-slate-200 text-slate-500 rounded-lg text-sm font-semibold cursor-not-allowed w-full sm:w-auto"
           >
-            {isSaving ? (
-              "Saving..."
-            ) : (
-              <>
-                <Save size={16} />
-                {isOnline ? "Save All Results" : "Save Offline"}
-              </>
-            )}
+            <ShieldAlert size={16} /> Save unavailable
           </button>
         </div>
       </div>
@@ -354,45 +277,17 @@ function FitnessTestingGrid({
   );
 }
 
-const MOCK_PLAYERS: Player[] = [
-  {
-    id: "p1",
-    firstName: "Suphanat",
-    lastName: "Mueanta",
-    position: "Striker",
-    ageGroup: "U17",
-    dob: "2007-08-02",
-    age: 17,
-    fitness_status: "Fit",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Suphanat",
-  },
-  {
-    id: "p2",
-    firstName: "Ekanit",
-    lastName: "Panya",
-    position: "Winger",
-    ageGroup: "U15",
-    dob: "2009-10-21",
-    age: 15,
-    fitness_status: "Fit",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Ekanit",
-  },
-];
-
 export default function FitnessTesting({
   onBack,
   teamName,
-  isOnline = true,
-  onOfflineSave,
 }: {
   onBack: () => void;
   teamName?: string;
-  isOnline?: boolean;
-  onOfflineSave?: () => void;
 }) {
   const { settings, academyId } = useAcademy();
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(false);
+  const [readError, setReadError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"entry" | "report">("entry");
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>("");
   const [filterAge, setFilterAge] = useState("All");
@@ -405,19 +300,22 @@ export default function FitnessTesting({
     firstName: "",
     lastName: "",
     dob: "",
-    fitness_status: "Fit",
-    position: "CM",
-    ageGroup: "U15",
+    fitness_status: "",
+    position: "",
+    ageGroup: settings.squads[0] || "",
     avatarUrl: "",
   });
 
   useEffect(() => {
     if (!academyId) {
       setPlayers([]);
+      setReadError("Authoritative Academy access is unavailable.");
       setLoading(false);
       return;
     }
 
+    setPlayers([]);
+    setReadError(null);
     setLoading(true);
     const unsubscribe = onSnapshot(
       collection(db, "academies", academyId, "players"),
@@ -426,6 +324,7 @@ export default function FitnessTesting({
           mapCanonicalSnapshot<Player>(doc)
         );
         setPlayers(playersData);
+        setReadError(null);
         if (playersData.length > 0) {
           setSelectedPlayerId(prev => prev ? prev : playersData[0].id);
         }
@@ -433,6 +332,9 @@ export default function FitnessTesting({
       },
       (error) => {
         console.error("Error fetching players:", error);
+        setPlayers([]);
+        setSelectedPlayerId("");
+        setReadError("Player records could not be loaded.");
         setLoading(false);
       },
     );
@@ -468,9 +370,9 @@ export default function FitnessTesting({
       firstName: "",
       lastName: "",
       dob: "",
-      fitness_status: "Fit",
-      position: "CM",
-      ageGroup: settings?.squads?.[0] || "U15",
+      fitness_status: "",
+      position: "",
+      ageGroup: settings?.squads?.[0] || "",
       avatarUrl: "",
     });
     setIsModalOpen(true);
@@ -481,7 +383,7 @@ export default function FitnessTesting({
       firstName: player.firstName,
       lastName: player.lastName,
       dob: player.dob,
-      fitness_status: player.fitness_status || "Fit",
+      fitness_status: player.fitness_status || "",
       position: player.position,
       ageGroup: player.ageGroup,
       avatarUrl: player.avatar || "",
@@ -556,10 +458,6 @@ export default function FitnessTesting({
   const [testData, setTestData] = useState<
     Record<string, Record<string, string>>
   >({});
-  const [saveStatus, setSaveStatus] = useState<
-    null | "success" | "offline_queued"
-  >(null);
-
   const getRadarData = (playerId: string) => {
     return METRICS_CONFIG.filter((m) => m.key !== "calculated_vo2max").map(
       (m) => {
@@ -617,8 +515,8 @@ export default function FitnessTesting({
         </div>
         <EmptyState
           icon={Users}
-          title="No Players Available"
-          description="You need to add players to the academy before you can test their fitness."
+          title={readError ? "Players Unavailable" : "No Players Available"}
+          description={readError || "You need to add players to the academy before you can test their fitness."}
           primaryActionLabel="Go Back"
           onPrimaryAction={onBack}
         />
@@ -681,17 +579,13 @@ export default function FitnessTesting({
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col animate-in fade-in duration-300">
           <FitnessTestingGrid
             players={filteredPlayers}
-            isOnline={isOnline}
-            onOfflineSave={onOfflineSave}
-            saveStatus={saveStatus}
-            setSaveStatus={setSaveStatus}
             testData={testData}
             setTestData={setTestData}
             onEditPlayer={handleEditClick}
             onDeletePlayer={(p) => setPlayerToDelete(p.id)}
             filterAge={filterAge}
             setFilterAge={setFilterAge}
-            squads={settings?.squads || ["U13", "U15", "U17", "U19", "U21"]}
+            squads={settings.squads}
             onAddPlayer={openAddModal}
           />
         </section>
@@ -727,15 +621,11 @@ export default function FitnessTesting({
             </div>
 
             <div className="mt-6 p-4 bg-amber-50 rounded-xl border border-amber-100">
-              <div className="flex gap-3 mb-2">
+              <div className="flex gap-3">
                 <ShieldAlert className="text-amber-500 shrink-0" size={20} />
                 <span className="font-semibold text-amber-800 text-sm">
-                  Injury Risk Analysis
+                  Injury-risk analysis is unavailable because no authoritative load-history backend is configured.
                 </span>
-              </div>
-              <div className="text-sm text-amber-700/90 leading-relaxed">
-                High load detected in last 3 microcycles for selected position
-                group. Recommend active recovery session.
               </div>
             </div>
           </div>
@@ -865,7 +755,8 @@ export default function FitnessTesting({
                   <div>
                     <label className="block text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Fitness Status</label>
                     <div className="relative">
-                      <select name="fitness_status" value={formData.fitness_status} onChange={handleInputChange} className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all">
+                      <select required name="fitness_status" value={formData.fitness_status} onChange={handleInputChange} className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all">
+                        <option value="" disabled>Select fitness status</option>
                         <option value="Fit">Fit</option>
                         <option value="Injured">Injured</option>
                         <option value="Returning">Returning</option>
@@ -878,7 +769,8 @@ export default function FitnessTesting({
                   <div>
                     <label className="block text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Position</label>
                     <div className="relative">
-                      <select name="position" value={formData.position} onChange={handleInputChange} className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all">
+                      <select required name="position" value={formData.position} onChange={handleInputChange} className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all">
+                        <option value="" disabled>Select position</option>
                         <option value="GK">GK</option>
                         <option value="CB">CB</option>
                         <option value="LB">LB</option>
@@ -893,8 +785,9 @@ export default function FitnessTesting({
                   <div>
                     <label className="block text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Age Group</label>
                     <div className="relative">
-                      <select name="ageGroup" value={formData.ageGroup} onChange={handleInputChange} className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all">
-                        {(settings?.squads || ["U13", "U15", "U17", "U19"]).map((squad: string) => (
+                      <select required name="ageGroup" value={formData.ageGroup} onChange={handleInputChange} className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all">
+                        <option value="" disabled>Select a configured squad</option>
+                        {settings.squads.map((squad: string) => (
                           <option key={squad} value={squad}>{squad}</option>
                         ))}
                       </select>

@@ -62,10 +62,10 @@ interface AcademyContextType {
 }
 
 const defaultSettings: AcademySettings = {
-  name: "Buriram United Academy",
-  shortName: "Buriram U.",
+  name: "Academy",
+  shortName: "Academy",
   logoUrl: null,
-  squads: ["U11", "U13", "U15", "PRO"],
+  squads: [],
 };
 
 const AcademyContext = createContext<AcademyContextType | undefined>(undefined);

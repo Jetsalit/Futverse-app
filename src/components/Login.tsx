@@ -122,7 +122,6 @@ export default function Login() {
           status: status,
           academyId: null,
           activeAcademyId: null,
-          subscriptionPlan: "FREE",
           createdAt: new Date(),
           updatedAt: new Date(),
           lastLogin: new Date(),
@@ -213,7 +212,6 @@ export default function Login() {
             ...(trimmedName && requestedRole === "COACH"
               ? { requestedAcademyName: trimmedName }
               : {}),
-            subscriptionPlan: "FREE",
             createdAt: new Date(),
             updatedAt: new Date(),
             lastLogin: new Date(),

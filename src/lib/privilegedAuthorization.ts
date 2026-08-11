@@ -41,6 +41,9 @@ export function hasClientPermission(
     );
   }
   return (
+    isExplicitlyActivePrivilegedStatus(authoritativeActor?.status) &&
+    authoritativeActor?.role === presentedUser.role &&
+    isExplicitlyActivePrivilegedStatus(presentedUser.status) &&
     typeof presentedUser.role === "string" &&
     allowedRoles.includes(presentedUser.role)
   );

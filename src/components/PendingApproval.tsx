@@ -1,10 +1,26 @@
 import React from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { LogOut } from "lucide-react";
+import { AlertTriangle, LogOut } from "lucide-react";
 
 export default function PendingApproval() {
   const { logout, currentUser } = useAuth();
   const isRejected = currentUser?.status === "REJECTED";
+  const isPending = currentUser?.status === "PENDING" || currentUser?.status === "Pending";
+  const isInactive = currentUser?.status === "INACTIVE" || currentUser?.status === "Inactive";
+  const title = isRejected
+    ? "Account Rejected"
+    : isPending
+      ? "Account Pending"
+      : isInactive
+        ? "Account Inactive"
+        : "Account Access Unavailable";
+  const message = isRejected
+    ? "Your account registration has been rejected. Please contact an administrator for more information."
+    : isPending
+      ? "Your account is waiting for approval. Please contact an administrator or wait until your account is reviewed."
+      : isInactive
+        ? "This account is not active and cannot access protected application data. Please contact an administrator."
+        : "The authoritative account status is missing or invalid. Access remains blocked until an administrator corrects the account record.";
 
   return (
     <div className="flex h-screen w-full items-center justify-center bg-slate-50">
@@ -25,23 +41,23 @@ export default function PendingApproval() {
                 strokeWidth={2}
                 d="M6 18L18 6M6 6l12 12"
               />
-            ) : (
+            ) : isPending ? (
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={2}
                 d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
               />
+            ) : (
+              <AlertTriangle size={32} />
             )}
           </svg>
         </div>
         <h2 className="text-2xl font-black text-slate-800 tracking-tight">
-          {isRejected ? "Account Rejected" : "Account Pending"}
+          {title}
         </h2>
         <p className="text-slate-500 font-medium">
-          {isRejected
-            ? "Your account registration has been rejected. Please contact support for more information."
-            : "Your account is waiting for approval. Please contact an administrator or wait until your account is reviewed."}
+          {message}
         </p>
         <button
           onClick={logout}

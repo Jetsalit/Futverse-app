@@ -18,6 +18,14 @@ export type SafeAccountRole = (typeof SAFE_ACCOUNT_ROLES)[number];
 export type TenantMembershipRole = (typeof TENANT_MEMBERSHIP_ROLES)[number];
 export type PrivilegedAccountRole = (typeof PRIVILEGED_ACCOUNT_ROLES)[number];
 
+export const ACTIVE_ACCOUNT_STATUSES = ["Active", "ACTIVE"] as const;
+
+export function isExplicitlyActiveAccountStatus(
+  status: unknown,
+): status is (typeof ACTIVE_ACCOUNT_STATUSES)[number] {
+  return status === "Active" || status === "ACTIVE";
+}
+
 export type RequestedIntentAssessment =
   | {
       kind: "SAFE_ACCOUNT_INTENT";

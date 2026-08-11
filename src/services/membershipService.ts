@@ -297,7 +297,7 @@ export async function approveAcademyJoinClaim({
             phone: "",
             license: "C",
             teams: [],
-            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(storedClaim.userEmail || storedClaim.userId)}`,
+            avatar: "",
           };
       transaction.set(
         coachRef,

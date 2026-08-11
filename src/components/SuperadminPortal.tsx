@@ -802,7 +802,9 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                         </td>
                         <td className="p-4">
                           <select
-                            value={user.status || ""}
+                            value={
+                              typeof user.status === "string" ? user.status : ""
+                            }
                             onChange={(e) =>
                               handleUpdateStatus(user, e.target.value)
                             }

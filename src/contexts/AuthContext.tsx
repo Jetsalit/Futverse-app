@@ -29,7 +29,7 @@ export interface User {
   email?: string;
   role: UserRole;
   requestedRole?: unknown;
-  status?: "ACTIVE" | "INACTIVE" | "PENDING" | "REJECTED" | "Active" | "Inactive" | "Pending";
+  status?: unknown;
   country?: string;
   phone?: string;
   // Legacy/routing metadata only. None of these fields grants tenant or player access.
@@ -43,12 +43,6 @@ export interface User {
   approvedBy?: string;
   approvedAt?: string;
   lastLogin?: string;
-  subscriptionPlan?: "monthly" | "yearly";
-  paymentDetails?: {
-    date: string;
-    time: string;
-    slipUrl: string;
-  };
   rejectionReason?: string;
   assignedClients?: string[]; // Array of User IDs they can manage
 }
@@ -59,12 +53,6 @@ interface AuthContextType {
   isLoading: boolean;
   logout: () => void;
   hasPermission: (allowedRoles: UserRole[]) => boolean;
-  submitSubscription: (
-    plan: "monthly" | "yearly",
-    date: string,
-    time: string,
-    slipUrl: string,
-  ) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -110,18 +98,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setActualUser(fullUser);
             setCurrentUser(fullUser);
           } else {
-            // Default user fallback if document not created yet
-            const defaultUser: User = {
-              id: firebaseUser.uid,
-              uid: firebaseUser.uid,
-              name: firebaseUser.displayName || "User",
-              email: firebaseUser.email || undefined,
-              role: "USER",
-              academyId: null,
-              activeAcademyId: null,
-            };
-            setActualUser(defaultUser);
-            setCurrentUser(defaultUser);
+            setActualUser(null);
+            setCurrentUser(null);
           }
           setIsLoading(false);
         }, (error) => {
@@ -148,26 +126,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCurrentUser(null);
   };
 
-  const submitSubscription = (
-    plan: "monthly" | "yearly",
-    date: string,
-    time: string,
-    slipUrl: string,
-  ) => {
-    if (currentUser) {
-      const updatedUser = {
-        ...currentUser,
-        status: "Pending" as const,
-        subscriptionPlan: plan,
-        paymentDetails: { date, time, slipUrl },
-      };
-      setCurrentUser(updatedUser);
-      if (actualUser?.id === currentUser.id) {
-        setActualUser(updatedUser);
-      }
-    }
-  };
-
   const hasPermission = (allowedRoles: UserRole[]) => {
     return hasClientPermission(actualUser, currentUser, allowedRoles);
   };
@@ -180,7 +138,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         logout,
         hasPermission,
-        submitSubscription,
       }}
     >
       {!isLoading && children}

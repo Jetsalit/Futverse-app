@@ -157,8 +157,8 @@ test("6. Firebase Auth and the live canonical User snapshot remain identity sour
   assert.match(authSource, /onSnapshot\s*\(\s*userRef/);
   assert.match(authSource, /setActualUser\s*\(\s*fullUser\s*\)/);
   assert.match(authSource, /setCurrentUser\s*\(\s*fullUser\s*\)/);
-  assert.match(authSource, /setActualUser\s*\(\s*defaultUser\s*\)/);
-  assert.match(authSource, /setCurrentUser\s*\(\s*defaultUser\s*\)/);
+  assert.doesNotMatch(authSource, /\bdefaultUser\b/);
+  assert.match(authSource, /else\s*\{\s*setActualUser\s*\(\s*null\s*\);\s*setCurrentUser\s*\(\s*null\s*\)/);
 });
 
 test("7. currentUser setters remain confined to AuthContext", () => {

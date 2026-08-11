@@ -8,6 +8,7 @@ import {
   Search,
   Upload,
   Users,
+  UserCircle,
 } from "lucide-react";
 import { db } from "../lib/firebase";
 import {
@@ -42,29 +43,6 @@ interface Coach {
   avatar: string;
 }
 
-const MOCK_COACHES: Coach[] = [
-  {
-    id: "c1",
-    firstName: "Pep",
-    lastName: "Guardiola",
-    email: "pep@futverse.com",
-    phone: "081-234-5678",
-    license: "Pro",
-    teams: ["U15", "U17", "First Team"],
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Pep",
-  },
-  {
-    id: "c2",
-    firstName: "Jurgen",
-    lastName: "Klopp",
-    email: "klopp@futverse.com",
-    phone: "082-345-6789",
-    license: "Pro",
-    teams: ["U13", "U15"],
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Jurgen",
-  },
-];
-
 const getClaimRole = (claim: AcademyJoinClaim): TenantRole | null => {
   if (claim.type === "COACH_JOIN") return "COACH";
   return claim.requestedRole === "ADMIN" || claim.requestedRole === "COACH"
@@ -83,14 +61,16 @@ const formatClaimDate = (value: AcademyJoinClaim["createdAt"]) => {
 export default function CoachManagement({ onBack }: { onBack: () => void }) {
   const { settings, getAcademyCollection, academyId } = useAcademy();
   const { currentUser } = useAuth();
-  const [coaches, setCoaches] = useState<Coach[]>(MOCK_COACHES);
-  const [loading, setLoading] = useState(false);
+  const [coaches, setCoaches] = useState<Coach[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [coachReadError, setCoachReadError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [coachToDelete, setCoachToDelete] = useState<string | null>(null);
 
   const [pendingClaims, setPendingClaims] = useState<AcademyJoinClaim[]>([]);
+  const [claimReadError, setClaimReadError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"coaches" | "claims">("coaches");
 
   const [formData, setFormData] = useState({
@@ -104,31 +84,61 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
   });
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(getAcademyCollection("coaches"), (snapshot) => {
-      const loadedCoaches = snapshot.docs.map((doc) =>
-        mapCanonicalSnapshot<Coach>(doc)
-      );
-      setCoaches(loadedCoaches);
+    setCoaches([]);
+    setCoachReadError(null);
+    setLoading(true);
+    if (!academyId) {
+      setCoachReadError("Authoritative Academy access is unavailable.");
       setLoading(false);
-    });
+      return;
+    }
+
+    const unsubscribe = onSnapshot(
+      getAcademyCollection("coaches"),
+      (snapshot) => {
+        const loadedCoaches = snapshot.docs.map((doc) =>
+          mapCanonicalSnapshot<Coach>(doc)
+        );
+        setCoaches(loadedCoaches);
+        setCoachReadError(null);
+        setLoading(false);
+      },
+      (error) => {
+        console.error("Error fetching coaches:", error);
+        setCoaches([]);
+        setCoachReadError("Coach records could not be loaded.");
+        setLoading(false);
+      },
+    );
 
     return () => unsubscribe();
-  }, []);
+  }, [academyId]);
 
   useEffect(() => {
+    setPendingClaims([]);
+    setClaimReadError(null);
     if (!settings.inviteCode) return;
     const q = query(
       collection(db, "profile_claims"),
       where("inviteCode", "==", settings.inviteCode),
       where("status", "==", "PENDING")
     );
-    const unsub = onSnapshot(q, (snapshot) => {
-      setPendingClaims(
-        snapshot.docs
-          .map((snapshotDoc) => mapCanonicalSnapshot<AcademyJoinClaim>(snapshotDoc))
-          .filter((claim) => getClaimRole(claim) !== null),
-      );
-    });
+    const unsub = onSnapshot(
+      q,
+      (snapshot) => {
+        setPendingClaims(
+          snapshot.docs
+            .map((snapshotDoc) => mapCanonicalSnapshot<AcademyJoinClaim>(snapshotDoc))
+            .filter((claim) => getClaimRole(claim) !== null),
+        );
+        setClaimReadError(null);
+      },
+      (error) => {
+        console.error("Error fetching Academy join claims:", error);
+        setPendingClaims([]);
+        setClaimReadError("Join requests could not be loaded.");
+      },
+    );
     return () => unsub();
   }, [settings.inviteCode]);
 
@@ -240,9 +250,7 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
         phone: formData.phone,
         license: formData.license,
         teams: formData.teams,
-        avatar:
-          formData.avatarUrl ||
-          `https://api.dicebear.com/7.x/avataaars/svg?seed=${formData.firstName}`,
+        avatar: formData.avatarUrl,
       };
 
       if (editingId) {
@@ -357,7 +365,13 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
       </div>
 
       {activeTab === "coaches" ? (
-        coaches.length === 0 ? (
+        coachReadError ? (
+          <EmptyState
+            icon={Users}
+            title="Coaches Unavailable"
+            description={coachReadError}
+          />
+        ) : coaches.length === 0 ? (
           <EmptyState
             icon={Users}
             title="No Coaches Yet"
@@ -406,15 +420,12 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
                       >
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full border-2 border-white shadow-sm overflow-hidden bg-slate-100 shrink-0">
-                              <img
-                                src={
-                                  coach.avatar ||
-                                  `https://api.dicebear.com/7.x/avataaars/svg?seed=${coach.firstName}`
-                                }
-                                alt="Avatar"
-                                className="w-full h-full object-cover"
-                              />
+                            <div className="w-10 h-10 rounded-full border-2 border-white shadow-sm overflow-hidden bg-slate-100 shrink-0 flex items-center justify-center">
+                              {coach.avatar ? (
+                                <img src={coach.avatar} alt="Avatar" className="w-full h-full object-cover" />
+                              ) : (
+                                <UserCircle className="text-slate-400" size={24} />
+                              )}
                             </div>
                             <div>
                               <div className="font-bold text-slate-800 text-sm">
@@ -499,7 +510,13 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {pendingClaims.length === 0 ? (
+                {claimReadError ? (
+                  <tr>
+                    <td colSpan={4} className="p-8">
+                      <EmptyState icon={Users} title="Join Requests Unavailable" description={claimReadError} />
+                    </td>
+                  </tr>
+                ) : pendingClaims.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="p-8">
                       <EmptyState

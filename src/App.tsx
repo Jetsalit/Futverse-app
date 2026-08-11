@@ -12,6 +12,7 @@ import {
   Settings as SettingsIcon,
   Bell,
   Shield,
+  UserCircle,
 } from "lucide-react";
 import Dashboard from "./components/Dashboard";
 import PlayerDashboard from "./components/PlayerDashboard";
@@ -54,6 +55,7 @@ import {
   isActivePrivilegedActor,
   type PrivilegedRole,
 } from "./lib/privilegedAuthorization";
+import { isExplicitlyActiveAccountStatus } from "./lib/accountRolePolicy";
 
 function AccessResolutionScreen({
   accessState,
@@ -125,7 +127,7 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState("dashboard");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
-  const { isOnline, toggleSimulation } = useNetworkStatus();
+  const { isOnline } = useNetworkStatus();
   const { language, setLanguage } = useLanguage();
   const {
     hasPermission,
@@ -140,7 +142,6 @@ export default function App() {
     loading: academyLoading,
     error: academyError,
   } = useAcademy();
-  const [pendingSyncs, setPendingSyncs] = useState(0);
 
   const prevLandingKeyRef = useRef<string>("");
 
@@ -161,12 +162,16 @@ export default function App() {
   }, [currentUser]);
 
   // Global State / Context for Academy Squads
-  const academySquads = academySettings.squads || [
-    "U-17 National Prospects",
-    "U-15 Development",
-    "U-13 Grassroots",
-  ];
-  const [activeTeam, setActiveTeam] = useState(academySquads[0]);
+  const academySquads = academySettings.squads;
+  const [activeTeam, setActiveTeam] = useState("");
+
+  useEffect(() => {
+    setActiveTeam((previous) =>
+      previous && academySquads.includes(previous)
+        ? previous
+        : academySquads[0] || "",
+    );
+  }, [academySquads]);
 
   const [selectedProPlayer, setSelectedProPlayer] = useState<ProPlayer | null>(
     null,
@@ -180,16 +185,6 @@ export default function App() {
   const isGlobalRoute =
     pathname.startsWith("/superadmin") || pathname.startsWith("/settings");
 
-  // Simulate auto-sync when coming back online
-  useEffect(() => {
-    if (isOnline && pendingSyncs > 0) {
-      const syncTimer = setTimeout(() => {
-        setPendingSyncs(0);
-      }, 1500); // Faking sync delay
-      return () => clearTimeout(syncTimer);
-    }
-  }, [isOnline, pendingSyncs]);
-
   const navigateTo = (page: string) => {
     setCurrentPage(page);
     setIsMobileMenuOpen(false);
@@ -199,7 +194,11 @@ export default function App() {
     return <Login />;
   }
 
-  if (currentUser.status === "PENDING" || currentUser.status === "REJECTED") {
+  if (isStaffOnboardingRequest(currentUser)) {
+    return <JoinAcademy />;
+  }
+
+  if (!isExplicitlyActiveAccountStatus(currentUser.status)) {
     return <PendingApproval />;
   }
 
@@ -215,10 +214,6 @@ export default function App() {
     !isActivePrivilegedActor(actualUser, [requiredPrivilegedRole])
   ) {
     return <AccessDenied onBack={() => navigateTo("dashboard")} />;
-  }
-
-  if (isStaffOnboardingRequest(currentUser)) {
-    return <JoinAcademy />;
   }
 
   if (requiresStaffMembership(currentUser)) {
@@ -247,10 +242,6 @@ export default function App() {
     }
   }
 
-  // Handle Paywall Logic inside the main app layout so the banner can still be visible
-  const isPaywallActive =
-    currentUser.status === "Inactive" || currentUser.status === "Pending";
-
   const renderContent = () => {
     if (
       normalSuperAdminNeedsAcademyWorkspace(
@@ -264,10 +255,6 @@ export default function App() {
           onBack={() => navigateTo("superadmin")}
         />
       );
-    }
-
-    if (isPaywallActive) {
-      return <SubscriptionPaywall />;
     }
 
     // Wrap Route Protection Logic
@@ -298,42 +285,14 @@ export default function App() {
             onBack={() => navigateTo("dashboard")}
             setLanguage={setLanguage}
             currentLanguage={language}
-            pendingSyncs={pendingSyncs}
           />
         );
+      case "subscription":
+        return <SubscriptionPaywall onBack={() => navigateTo("dashboard")} />;
       case "idp_dashboard":
         return (
           <IDPDashboard
             onBack={() => navigateTo("dashboard")}
-            onNavigateToPlayer={(id) => {
-              setSelectedProPlayer({
-                id,
-                name: "Teerasil Dangda",
-                nationality: "Thailand",
-                dob: "1988-06-06",
-                position: "Striker",
-                height: 181,
-                weight: 76,
-                preferredFoot: "Right",
-                currentClub: "BG Pathum United",
-                league: "T1",
-                contractExpiry: "2025-05-31",
-                avatarUrl:
-                  "https://api.dicebear.com/7.x/avataaars/svg?seed=Teerasil",
-                actionShotUrl:
-                  "https://images.unsplash.com/photo-1574629810360-7efbb212aa2d?auto=format&fit=crop&q=80&w=800",
-                careerHistory: [],
-                attributes: {
-                  technical: 85,
-                  tactical: 88,
-                  physical: 75,
-                  mental: 90,
-                  attacking: 89,
-                  defending: 40,
-                },
-              });
-              navigateTo("pro_cv");
-            }}
           />
         );
       case "fitness":
@@ -341,8 +300,6 @@ export default function App() {
           <FitnessTesting
             onBack={() => navigateTo("dashboard")}
             teamName={activeTeam}
-            isOnline={isOnline}
-            onOfflineSave={() => setPendingSyncs((p) => p + 1)}
           />
         );
       case "coaches":
@@ -451,7 +408,6 @@ export default function App() {
       label: "Peer Voting",
       icon: Users,
       roles: ["USER", "PLAYER"],
-      hasNotification: true,
     },
     {
       id: "/report",
@@ -569,9 +525,6 @@ export default function App() {
                 >
                   <div className="relative shrink-0">
                     <item.icon size={20} />
-                    {item.hasNotification && (
-                      <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-rose-500 border-2 border-slate-900 rounded-full -translate-y-1 translate-x-1"></span>
-                    )}
                   </div>
                   <span className="font-bold text-sm">{item.label}</span>
                 </button>
@@ -585,7 +538,6 @@ export default function App() {
             >
               <div className="relative shrink-0">
                 <Bell size={20} />
-                <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-rose-500 border-2 border-slate-900 rounded-full -translate-y-1 translate-x-1"></span>
               </div>
               <span className="font-bold text-sm">Notifications</span>
             </button>
@@ -599,11 +551,7 @@ export default function App() {
             title="Profile & Log Out"
           >
             <div className="w-10 h-10 rounded-full shrink-0 bg-slate-700 overflow-hidden hover:ring-2 hover:ring-emerald-500 transition-all">
-              <img
-                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.name || "Coach"}`}
-                alt="Avatar"
-                className="w-full h-full object-cover"
-              />
+              <UserCircle className="h-full w-full p-2 text-slate-300" />
             </div>
             <div className="text-left flex-1 min-w-0">
               <div className="font-bold text-sm text-white truncate">
@@ -637,7 +585,7 @@ export default function App() {
             {!isGlobalRoute && (
               <div className="relative group">
                 <button className="flex items-center gap-2 text-sm font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors">
-                  {activeTeam}
+                  {activeTeam || "No squad selected"}
                   <ChevronDown size={14} className="text-slate-500" />
                 </button>
                 <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-slate-200 shadow-lg rounded-xl overflow-hidden opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 origin-top">
@@ -673,35 +621,30 @@ export default function App() {
             </div>
 
             {/* Network Indicator */}
-            <button
-              onClick={toggleSimulation}
+            <div
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wider transition-colors border ${
                 isOnline
-                  ? pendingSyncs > 0
-                    ? "bg-amber-50 text-amber-600 border-amber-200"
-                    : "bg-emerald-50 text-emerald-600 border-emerald-200"
+                  ? "bg-emerald-50 text-emerald-600 border-emerald-200"
                   : "bg-rose-50 text-rose-600 border-rose-200"
               }`}
-              title="Click to simulate network drop"
+              title="Browser network status"
             >
               {isOnline ? (
                 <>
                   <Wifi size={14} />
                   <span className="hidden sm:inline">
-                    {pendingSyncs > 0
-                      ? `Syncing (${pendingSyncs})...`
-                      : "Online"}
+                    Online
                   </span>
                 </>
               ) : (
                 <>
                   <WifiOff size={14} />
                   <span className="hidden sm:inline">
-                    Offline (Saved: {pendingSyncs})
+                    Offline
                   </span>
                 </>
               )}
-            </button>
+            </div>
 
             <button
               onClick={() => setIsNotificationOpen(true)}
