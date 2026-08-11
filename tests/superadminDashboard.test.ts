@@ -76,6 +76,22 @@ describe("SuperAdmin Dashboard model", () => {
     assert.equal(activities[0]?.target, "target@example.com");
   });
 
+  it("prefers explicit actorUid and targetUid in hardened audit records", () => {
+    const parsed = parseAuditLog("log-atomic", {
+      action: "USER_BULK_APPROVED",
+      actorUid: "admin-atomic",
+      targetUid: "target-atomic",
+    });
+    const activities = buildRecentActivities(
+      [parsed],
+      [user({ id: "admin-atomic", name: "Atomic Admin", role: "SUPERADMIN" })],
+    );
+
+    assert.equal(activities[0]?.action, "User bulk-approved");
+    assert.equal(activities[0]?.actor, "Atomic Admin");
+    assert.equal(activities[0]?.target, "target-atomic");
+  });
+
   it("falls back safely for sparse audit records", () => {
     const activities = buildRecentActivities(
       [parseAuditLog("log-2", { action: "CUSTOM_EVENT" })],

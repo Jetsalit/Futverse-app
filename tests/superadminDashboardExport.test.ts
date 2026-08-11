@@ -22,6 +22,7 @@ function exportInput(
       parents: 7,
       scouts: 8,
     },
+    users: [],
     paymentApprovals: 2,
     paymentApprovalsLoadState: "loaded",
     profileClaims: null,
@@ -93,6 +94,27 @@ describe("SuperAdmin Dashboard CSV export", () => {
     assert.match(csv, /"Error Reports","1"/);
     assert.match(csv, /"Recent Activity Count","1"/);
     assert.match(csv, /"recent_activity","Activity 1","","User approved","HQ Admin","player@example.com","2026-08-08T10:20:30.000Z"/);
+  });
+
+  it("exports authoritative account role separately from requested intent metadata", () => {
+    const csv = buildSuperAdminDashboardCsv(exportInput({
+      users: [{
+        id: "pending-coach",
+        name: "Pending Coach",
+        email: "coach@example.test",
+        role: "USER",
+        status: "Inactive",
+        requestedRole: "COACH",
+      }],
+    }));
+
+    assert.match(csv, /"authoritative_role"/);
+    assert.match(csv, /"requested_intent"/);
+    assert.match(
+      csv,
+      /"user_authority","User authority record"[^\r\n]*"USER","Inactive","COACH \(pending Membership intent\)"/,
+    );
+    assert.doesNotMatch(csv, /"authoritative_role"[^\r\n]*"COACH"/);
   });
 
   it("quotes CSV safely, preserves UTF-8 text, and protects formula prefixes", () => {

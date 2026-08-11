@@ -25,9 +25,9 @@ interface SuperAdminNoticeComposerProps {
 
 const AUDIENCE_LABELS: Readonly<Record<NoticeAudienceKind, string>> = {
   individual: "Individual User",
-  role: "Effective Role",
+  role: "Authoritative Account Role",
   academy: "Academy",
-  academy_role: "Academy + Effective Role",
+  academy_role: "Academy + Authoritative Account Role",
   all_active: "All Active Users",
 };
 

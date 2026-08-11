@@ -66,7 +66,7 @@ export function isExactActiveMembership(
   );
 }
 
-export function isStaffTenantRole(role?: string | null): boolean {
+export function isStaffTenantRole(role?: unknown): boolean {
   return role === "ADMIN" || role === "COACH";
 }
 

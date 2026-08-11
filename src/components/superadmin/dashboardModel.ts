@@ -26,11 +26,13 @@ export interface ProfileClaimSearchItem {
 export interface AuditLogEntry {
   id: string;
   action: string;
+  actorUid?: string;
   approvedBy?: string;
   rejectedBy?: string;
   updatedBy?: string;
   userId?: string;
   targetUser?: string;
+  targetUid?: string;
   targetEmail?: string;
   email?: string;
   timestamp?: unknown;
@@ -113,11 +115,13 @@ export function parseAuditLog(id: string, data: Record<string, unknown>): AuditL
   return {
     id,
     action: optionalString(data.action) || "UNKNOWN_ACTION",
+    actorUid: optionalString(data.actorUid),
     approvedBy: optionalString(data.approvedBy),
     rejectedBy: optionalString(data.rejectedBy),
     updatedBy: optionalString(data.updatedBy),
     userId: optionalString(data.userId),
     targetUser: optionalString(data.targetUser),
+    targetUid: optionalString(data.targetUid),
     targetEmail: optionalString(data.targetEmail),
     email: optionalString(data.email),
     timestamp: data.timestamp,
@@ -127,6 +131,7 @@ export function parseAuditLog(id: string, data: Record<string, unknown>): AuditL
 const ACTION_LABELS: Readonly<Record<string, string>> = {
   USER_REGISTERED: "User registered",
   USER_APPROVED: "User approved",
+  USER_BULK_APPROVED: "User bulk-approved",
   USER_REJECTED: "User rejected",
   ROLE_UPDATED: "Role changed",
   STATUS_UPDATED: "Status changed",
@@ -145,10 +150,10 @@ export function buildRecentActivities(
   }
 
   return logs.map((log) => {
-    const actorId = log.approvedBy || log.rejectedBy || log.updatedBy || log.userId;
+    const actorId = log.actorUid || log.approvedBy || log.rejectedBy || log.updatedBy || log.userId;
     const actorUser = actorId ? usersById.get(actorId) : undefined;
     const actor = actorUser?.name || actorUser?.email || actorId || "System";
-    const target = log.targetEmail || log.email || log.targetUser || "—";
+    const target = log.targetEmail || log.email || log.targetUid || log.targetUser || "—";
 
     return {
       id: log.id,

@@ -134,12 +134,19 @@ service cloud.firestore {
       return 'user_registered_' + uid;
     }
 
+    function validRegistrationRequestedRole(userData) {
+      return userData.get('requestedRole', '') is string
+        && userData.get('requestedRole', '') in [
+          'COACH', 'PLAYER', 'SCOUT', 'PARENT'
+        ];
+    }
+
     function validRegistrationUserData(uid, userData) {
       return userData.get('uid', '') == uid
         && request.auth.token.get('email', '') is string
         && request.auth.token.get('email', '').size() > 0
         && userData.get('email', '') == request.auth.token.get('email', '')
-        && userData.get('requestedRole', '') is string
+        && validRegistrationRequestedRole(userData)
         && userData.get('academyId', null) == null
         && userData.get('activeAcademyId', null) == null
         && userData.get('tenantRole', null) == null

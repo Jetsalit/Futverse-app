@@ -16,6 +16,11 @@ import {
 } from "firebase/firestore";
 import { createUserWithRegistrationLog } from "../lib/firestore/registration";
 import {
+  REGISTRATION_INTENT_OPTIONS,
+  isRegistrationIntent,
+  type RegistrationIntent,
+} from "../lib/accountRolePolicy";
+import {
   Mail,
   Lock,
   User,
@@ -66,7 +71,7 @@ export default function Login() {
   const [country, setCountry] = useState("");
   const [requestedAcademyName, setRequestedAcademyName] = useState("");
   const [phone, setPhone] = useState("");
-  const [requestedRole, setRequestedRole] = useState("PLAYER");
+  const [requestedRole, setRequestedRole] = useState<RegistrationIntent>("PLAYER");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -125,7 +130,7 @@ export default function Login() {
         newData.requestedRole = requestedRole; // always set to default/selected
         newData.country = country || null;
         const trimmedName = requestedAcademyName?.trim();
-        if (trimmedName && (requestedRole === "ADMIN" || requestedRole === "COACH")) {
+        if (trimmedName && requestedRole === "COACH") {
           newData.requestedAcademyName = trimmedName;
         }
         newData.phone = phone || null;
@@ -199,7 +204,7 @@ export default function Login() {
             requestedRole,
             country: country || null,
             phone: phone || null,
-            ...(trimmedName && (requestedRole === "ADMIN" || requestedRole === "COACH")
+            ...(trimmedName && requestedRole === "COACH"
               ? { requestedAcademyName: trimmedName }
               : {}),
             subscriptionPlan: "FREE",
@@ -475,37 +480,36 @@ export default function Login() {
                       สมัครเป็น (Role)
                     </label>
                     <div className="grid grid-cols-2 gap-3">
-                      {[
-                        { id: "COACH", label: "Coach" },
-                        { id: "PLAYER", label: "Player" },
-                        { id: "SCOUT", label: "Scout" },
-                        { id: "PARENT", label: "Parent" },
-                      ].map((role) => (
+                      {REGISTRATION_INTENT_OPTIONS.map((role) => (
                         <label
-                          key={role.id}
+                          key={role.value}
                           className={`flex items-center gap-2 p-3 rounded-xl border cursor-pointer transition-all ${
-                            requestedRole === role.id
+                            requestedRole === role.value
                               ? "bg-slate-900 border-slate-900 text-[#E1FF01]"
                               : "bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300"
                           }`}
                         >
                           <div
                             className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                              requestedRole === role.id
+                              requestedRole === role.value
                                 ? "border-[#E1FF01]"
                                 : "border-slate-300"
                             }`}
                           >
-                            {requestedRole === role.id && (
+                            {requestedRole === role.value && (
                               <div className="w-2 h-2 rounded-full bg-[#E1FF01]" />
                             )}
                           </div>
                           <input
                             type="radio"
                             name="requestedRole"
-                            value={role.id}
-                            checked={requestedRole === role.id}
-                            onChange={(e) => setRequestedRole(e.target.value)}
+                            value={role.value}
+                            checked={requestedRole === role.value}
+                            onChange={(e) => {
+                              if (isRegistrationIntent(e.target.value)) {
+                                setRequestedRole(e.target.value);
+                              }
+                            }}
                             className="sr-only"
                           />
                           <span className="text-sm font-bold">

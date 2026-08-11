@@ -30,7 +30,7 @@ export interface User {
   name: string;
   email?: string;
   role: UserRole;
-  requestedRole?: UserRole;
+  requestedRole?: unknown;
   status?: "ACTIVE" | "INACTIVE" | "PENDING" | "REJECTED" | "Active" | "Inactive" | "Pending";
   country?: string;
   phone?: string;

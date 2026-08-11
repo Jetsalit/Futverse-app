@@ -3,6 +3,8 @@ import type {
   EffectiveRoleCounts,
   RecentActivityItem,
 } from "./dashboardModel";
+import type { User } from "../../contexts/AuthContext";
+import { assessRequestedIntent } from "../../lib/accountRolePolicy";
 
 export const DASHBOARD_CSV_MIME_TYPE = "text/csv;charset=utf-8";
 export const DASHBOARD_EXPORT_UNAVAILABLE = "Unavailable";
@@ -16,6 +18,12 @@ const CSV_HEADERS = [
   "target",
   "activity_timestamp",
   "exported_at",
+  "user_uid",
+  "user_name",
+  "user_email",
+  "authoritative_role",
+  "authoritative_status",
+  "requested_intent",
 ] as const;
 
 type CsvHeader = (typeof CSV_HEADERS)[number];
@@ -27,6 +35,7 @@ export interface SuperAdminDashboardExportInput {
   academyCount: number | null;
   academyLoadState: DashboardLoadState;
   roleCounts: EffectiveRoleCounts;
+  users: readonly User[];
   paymentApprovals: number | null;
   paymentApprovalsLoadState: DashboardLoadState;
   profileClaims: number | null;
@@ -97,6 +106,12 @@ function summaryRow(
     target: "",
     activity_timestamp: "",
     exported_at: exportedAt,
+    user_uid: "",
+    user_name: "",
+    user_email: "",
+    authoritative_role: "",
+    authoritative_status: "",
+    requested_intent: "",
   };
 }
 
@@ -154,9 +169,34 @@ export function buildSuperAdminDashboardCsv(
         target: activity.target,
         activity_timestamp: timestampToIso(activity.timestamp),
         exported_at: exportedAt,
+        user_uid: "",
+        user_name: "",
+        user_email: "",
+        authoritative_role: "",
+        authoritative_status: "",
+        requested_intent: "",
       });
     });
   }
+
+  input.users.forEach((user) => {
+    rows.push({
+      section: "user_authority",
+      metric: "User authority record",
+      value: "",
+      action: "",
+      actor: "",
+      target: "",
+      activity_timestamp: "",
+      exported_at: exportedAt,
+      user_uid: user.id || user.uid || "",
+      user_name: user.name,
+      user_email: user.email || "",
+      authoritative_role: user.role || "MISSING",
+      authoritative_status: user.status || "MISSING",
+      requested_intent: assessRequestedIntent(user.requestedRole).display,
+    });
+  });
 
   const csvLines = [
     CSV_HEADERS.map(dashboardCsvCell).join(","),

@@ -3,9 +3,6 @@ import { useAuth, User } from "../contexts/AuthContext";
 import { db } from "../lib/firebase";
 import {
   collection,
-  doc,
-  updateDoc,
-  addDoc,
   getDocs,
   query,
   orderBy,
@@ -20,7 +17,24 @@ import {
   Eye,
   Loader2,
 } from "lucide-react";
-import { subscribeToUsers, updateUserStatus } from "../lib/firestore/users";
+import { subscribeToUsers } from "../lib/firestore/users";
+import {
+  SAFE_ACCOUNT_ROLES,
+  assessRequestedIntent,
+  genericApprovalBlockReason,
+  isSafeAccountRole,
+  type SafeAccountRole,
+} from "../lib/accountRolePolicy";
+import {
+  APPROVED_ACCOUNT_STATUS,
+  BULK_APPROVED_ROLE,
+  MAX_ATOMIC_BULK_APPROVAL_USERS,
+  approveUserAtomically,
+  bulkApproveUsersAtomically,
+  rejectUserAtomically,
+  updateUserRoleAtomically,
+  updateUserStatusAtomically,
+} from "../lib/firestore/adminUserMutations";
 
 import SuperAdminHeader from "./superadmin/SuperAdminHeader";
 import SuperAdminOverview from "./superadmin/SuperAdminOverview";
@@ -57,6 +71,10 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const [headerSearchQuery, setHeaderSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("ALL");
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [approvedRole, setApprovedRole] = useState<SafeAccountRole>("USER");
+  const [mutationError, setMutationError] = useState<string | null>(null);
+  const [mutationNotice, setMutationNotice] = useState<string | null>(null);
+  const [isMutating, setIsMutating] = useState(false);
 
   const [academyCount, setAcademyCount] = useState<number | null>(null);
   const [academyLoadState, setAcademyLoadState] =
@@ -164,21 +182,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
       u.approvedAt &&
       new Date(u.approvedAt).toDateString() === today,
   ).length;
-  const rejectedCount = users.filter(
-    (u) => u.status === "REJECTED" || u.status === "Inactive",
-  ).length;
-  const coachesCount = users.filter(
-    (u) => u.role === "COACH" || u.requestedRole === "COACH",
-  ).length;
-  const playersCount = users.filter(
-    (u) => u.role === "PLAYER" || u.requestedRole === "PLAYER",
-  ).length;
-  const scoutsCount = users.filter(
-    (u) => u.role === "SCOUT" || u.requestedRole === "SCOUT",
-  ).length;
-  const parentsCount = users.filter(
-    (u) => u.role === "PARENT" || u.requestedRole === "PARENT",
-  ).length;
+  const rejectedCount = users.filter((u) => u.status === "REJECTED").length;
 
   const roleCounts = deriveEffectiveRoleCounts(users);
 
@@ -220,6 +224,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
       academyCount,
       academyLoadState,
       roleCounts,
+      users,
       paymentApprovals: null,
       paymentApprovalsLoadState: "unavailable",
       profileClaims: null,
@@ -231,94 +236,158 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     });
   };
 
+  const actorUid = authUser?.uid || authUser?.id;
+  const administrativeTarget = (user: User) => ({
+    targetUid: user.id || "",
+    targetEmail: user.email,
+    previousRole: user.role,
+    previousStatus: user.status,
+    requestedRole: user.requestedRole,
+  });
+
+  const beginMutation = () => {
+    setMutationError(null);
+    setMutationNotice(null);
+    setIsMutating(true);
+  };
+
+  const mutationFailure = (error: unknown, fallback: string) => {
+    const message = error instanceof Error ? error.message : fallback;
+    setMutationError(message);
+    console.error(fallback, error);
+  };
+
+  const openUserReview = (user: User) => {
+    setApprovedRole("USER");
+    setMutationError(null);
+    setMutationNotice(null);
+    setSelectedUser(user);
+  };
+
   const handleApprove = async (user: User) => {
-    if (!user.id) return;
+    if (!user.id || !actorUid) {
+      setMutationError("Canonical target UID and authenticated SuperAdmin UID are required.");
+      return;
+    }
+    beginMutation();
     try {
-      const newRole = user.requestedRole || "USER";
-      await updateUserStatus(user.id, "Active", {
-        role: newRole,
-        approvedBy: authUser?.id || "SUPERADMIN",
-        approvedAt: new Date().toISOString(),
-      });
-      await addDoc(collection(db, "logs"), {
-        action: "USER_APPROVED",
-        approvedBy: authUser?.id || "SUPERADMIN",
-        targetUser: user.id,
-        targetEmail: user.email,
-        oldRole: user.role,
-        newRole: newRole,
-        timestamp: new Date(),
+      await approveUserAtomically({
+        ...administrativeTarget(user),
+        actorUid,
+        approvedRole,
       });
       setSelectedUser(null);
+      setMutationNotice(
+        `${user.email || user.name} approved explicitly as ${approvedRole} / ${APPROVED_ACCOUNT_STATUS}.`,
+      );
     } catch (error) {
-      console.error("Error approving user:", error);
+      mutationFailure(error, "Error approving user");
+    } finally {
+      setIsMutating(false);
     }
   };
 
   const handleReject = async (user: User) => {
-    if (!user.id) return;
+    if (!user.id || !actorUid) {
+      setMutationError("Canonical target UID and authenticated SuperAdmin UID are required.");
+      return;
+    }
     const rejectReason = "Rejected by admin";
+    beginMutation();
     try {
-      await updateUserStatus(user.id, "Inactive", {
+      await rejectUserAtomically({
+        ...administrativeTarget(user),
+        actorUid,
         rejectionReason: rejectReason,
       });
-      await addDoc(collection(db, "logs"), {
-        action: "USER_REJECTED",
-        rejectedBy: authUser?.id || "SUPERADMIN",
-        targetUser: user.id,
-        targetEmail: user.email,
-        timestamp: new Date(),
-      });
       setSelectedUser(null);
+      setMutationNotice(`${user.email || user.name} rejected with an atomic audit record.`);
     } catch (error) {
-      console.error("Error rejecting user:", error);
+      mutationFailure(error, "Error rejecting user");
+    } finally {
+      setIsMutating(false);
     }
   };
 
   const handleBulkApprove = async () => {
     const toApprove = filteredPendingUsers;
-    for (const u of toApprove) {
-      await handleApprove(u);
+    if (!actorUid) {
+      setMutationError("Authenticated SuperAdmin UID is required.");
+      return;
+    }
+    const blocked = toApprove.filter((user) =>
+      genericApprovalBlockReason(user.requestedRole) !== null
+    );
+    if (blocked.length > 0) {
+      setMutationError(
+        `Bulk approval refused: ${blocked.length} selected record(s) have tenant, privileged, missing, malformed, or unknown requested intent metadata. Review them individually or use the Membership flow.`,
+      );
+      return;
+    }
+    if (toApprove.length > MAX_ATOMIC_BULK_APPROVAL_USERS) {
+      setMutationError(
+        `Bulk approval refused: ${toApprove.length} Users exceed the atomic limit of ${MAX_ATOMIC_BULK_APPROVAL_USERS}. Narrow the filter; no writes were attempted.`,
+      );
+      return;
+    }
+    const confirmed = window.confirm(
+      `Approve all ${toApprove.length} filtered Users as authoritative role ${BULK_APPROVED_ROLE} with status ${APPROVED_ACCOUNT_STATUS}? requestedRole will remain metadata only. All User and audit-log writes will commit in one atomic batch.`,
+    );
+    if (!confirmed) return;
+
+    beginMutation();
+    try {
+      await bulkApproveUsersAtomically({
+        actorUid,
+        targets: toApprove.map(administrativeTarget),
+      });
+      setMutationNotice(
+        `${toApprove.length} Users approved atomically as ${BULK_APPROVED_ROLE} / ${APPROVED_ACCOUNT_STATUS}.`,
+      );
+    } catch (error) {
+      mutationFailure(error, "Bulk approval failed");
+    } finally {
+      setIsMutating(false);
     }
   };
 
   const handleUpdateRole = async (user: User, newRole: string) => {
-    if (!user.id) return;
+    if (!user.id || !actorUid) {
+      setMutationError("Canonical target UID and authenticated SuperAdmin UID are required.");
+      return;
+    }
+    beginMutation();
     try {
-      await updateDoc(doc(db, "users", user.id), {
-        role: newRole,
+      await updateUserRoleAtomically({
+        ...administrativeTarget(user),
+        actorUid,
+        approvedRole: newRole,
       });
-      await addDoc(collection(db, "logs"), {
-        action: "ROLE_UPDATED",
-        updatedBy: authUser?.id || "SUPERADMIN",
-        targetUser: user.id,
-        targetEmail: user.email,
-        oldRole: user.role,
-        newRole: newRole,
-        timestamp: new Date(),
-      });
+      setMutationNotice(`${user.email || user.name} role updated atomically to ${newRole}.`);
     } catch (error) {
-      console.error("Error updating role:", error);
+      mutationFailure(error, "Error updating role");
+    } finally {
+      setIsMutating(false);
     }
   };
 
   const handleUpdateStatus = async (user: User, newStatus: string) => {
-    if (!user.id) return;
+    if (!user.id || !actorUid) {
+      setMutationError("Canonical target UID and authenticated SuperAdmin UID are required.");
+      return;
+    }
+    beginMutation();
     try {
-      await updateDoc(doc(db, "users", user.id), {
-        status: newStatus,
+      await updateUserStatusAtomically({
+        ...administrativeTarget(user),
+        actorUid,
+        approvedStatus: newStatus,
       });
-      await addDoc(collection(db, "logs"), {
-        action: "STATUS_UPDATED",
-        updatedBy: authUser?.id || "SUPERADMIN",
-        targetUser: user.id,
-        targetEmail: user.email,
-        oldStatus: user.status,
-        newStatus: newStatus,
-        timestamp: new Date(),
-      });
+      setMutationNotice(`${user.email || user.name} status updated atomically to ${newStatus}.`);
     } catch (error) {
-      console.error("Error updating status:", error);
+      mutationFailure(error, "Error updating status");
+    } finally {
+      setIsMutating(false);
     }
   };
 
@@ -337,6 +406,9 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   );
 
   const isLoadingUsers = userLoadState === "loading";
+  const selectedApprovalBlockReason = selectedUser
+    ? genericApprovalBlockReason(selectedUser.requestedRole)
+    : null;
 
   return (
     <div className="flex-1 flex flex-col h-full bg-slate-50 overflow-hidden">
@@ -420,6 +492,24 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
           </div>
         )}
 
+        {mutationError && (
+          <div
+            className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800"
+            role="alert"
+          >
+            {mutationError}
+          </div>
+        )}
+
+        {mutationNotice && (
+          <div
+            className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800"
+            role="status"
+          >
+            {mutationNotice}
+          </div>
+        )}
+
         {activeTab === "dashboard" && (
           <SuperAdminOverview
             pendingUsers={pendingUsers.length}
@@ -467,34 +557,34 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
               </div>
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
                 <div className="text-slate-500 text-xs font-bold uppercase mb-1">
-                  Coaches
+                  Authoritative Coaches
                 </div>
                 <div className="text-2xl font-black text-blue-600">
-                  {coachesCount}
+                  {roleCounts.coaches}
                 </div>
               </div>
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
                 <div className="text-slate-500 text-xs font-bold uppercase mb-1">
-                  Players
+                  Authoritative Players
                 </div>
                 <div className="text-2xl font-black text-indigo-600">
-                  {playersCount}
+                  {roleCounts.playerAccounts}
                 </div>
               </div>
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
                 <div className="text-slate-500 text-xs font-bold uppercase mb-1">
-                  Scouts
+                  Authoritative Scouts
                 </div>
                 <div className="text-2xl font-black text-amber-600">
-                  {scoutsCount}
+                  {roleCounts.scouts}
                 </div>
               </div>
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
                 <div className="text-slate-500 text-xs font-bold uppercase mb-1">
-                  Parents
+                  Authoritative Parents
                 </div>
                 <div className="text-2xl font-black text-purple-600">
-                  {parentsCount}
+                  {roleCounts.parents}
                 </div>
               </div>
             </div>
@@ -525,7 +615,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                       onChange={(e) => setRoleFilter(e.target.value)}
                       className="pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none cursor-pointer"
                     >
-                      <option value="ALL">All Roles</option>
+                      <option value="ALL">All pending intents</option>
                       <option value="COACH">Coach</option>
                       <option value="PLAYER">Player</option>
                       <option value="SCOUT">Scout</option>
@@ -536,9 +626,10 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                 {filteredPendingUsers.length > 0 && (
                   <button
                     onClick={handleBulkApprove}
+                    disabled={isMutating}
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm transition-colors whitespace-nowrap"
                   >
-                    Approve Filtered ({filteredPendingUsers.length})
+                    Approve Filtered as USER ({filteredPendingUsers.length})
                   </button>
                 )}
               </div>
@@ -549,7 +640,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                       <th className="p-4">User</th>
                       <th className="p-4">Contact</th>
                       <th className="p-4">Academy / Country</th>
-                      <th className="p-4">Requested Role</th>
+                      <th className="p-4">Pending Requested Intent</th>
                       <th className="p-4">Date</th>
                       <th className="p-4 text-right">Actions</th>
                     </tr>
@@ -609,7 +700,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                           </td>
                           <td className="p-4">
                             <span className="px-2.5 py-1 bg-amber-100 text-amber-800 text-xs font-bold rounded-full border border-amber-200">
-                              {user.requestedRole || "N/A"}
+                              {assessRequestedIntent(user.requestedRole).display}
                             </span>
                           </td>
                           <td className="p-4 text-slate-500 text-xs">
@@ -619,16 +710,16 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                           </td>
                           <td className="p-4 text-right space-x-2 whitespace-nowrap">
                             <button
-                              onClick={() => setSelectedUser(user)}
+                              onClick={() => openUserReview(user)}
                               className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                               title="View Profile"
                             >
                               <Eye size={18} />
                             </button>
                             <button
-                              onClick={() => handleApprove(user)}
+                              onClick={() => openUserReview(user)}
                               className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                              title="Approve"
+                              title="Review explicit account approval"
                             >
                               <CheckCircle size={18} />
                             </button>
@@ -673,8 +764,8 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                   <tr>
                     <th className="p-4">User</th>
                     <th className="p-4">Contact</th>
-                    <th className="p-4">Status</th>
-                    <th className="p-4">Role</th>
+                    <th className="p-4">Authoritative Status</th>
+                    <th className="p-4">Authoritative Role</th>
                     <th className="p-4 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -715,7 +806,11 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                             onChange={(e) =>
                               handleUpdateStatus(user, e.target.value)
                             }
-                            disabled={user.role === "SUPERADMIN"}
+                            disabled={
+                              isMutating
+                              || user.id === actorUid
+                              || user.role === "SUPERADMIN"
+                            }
                             className={`text-xs font-bold rounded-xl px-2 py-1 outline-none cursor-pointer border ${
                               user.status === "ACTIVE"
                                 ? "bg-emerald-100 text-emerald-800 border-emerald-200"
@@ -741,27 +836,34 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                             onChange={(e) =>
                               handleUpdateRole(user, e.target.value)
                             }
-                            disabled={user.role === "SUPERADMIN"}
+                            disabled={
+                              isMutating
+                              || user.id === actorUid
+                              || !isSafeAccountRole(user.role)
+                            }
+                            title={
+                              isSafeAccountRole(user.role)
+                                ? "Authoritative account role"
+                                : "Tenant and privileged roles are managed outside this generic control"
+                            }
                             className="text-xs font-bold rounded-xl px-2 py-1 bg-slate-50 border border-slate-200 text-slate-800 outline-none cursor-pointer"
                           >
                             <option value="" disabled>
                               MISSING ROLE
                             </option>
-                            <option value="USER">USER</option>
-                            <option value="PLAYER">PLAYER</option>
-                            <option value="COACH">COACH</option>
-                            <option value="SCOUT">SCOUT</option>
-                            <option value="PARENT">PARENT</option>
-                            <option value="ADMIN">ADMIN</option>
-                            <option value="DATA_ADMIN">DATA_ADMIN</option>
-                            <option value="SUPERADMIN" disabled>
-                              SUPERADMIN
-                            </option>
+                            {!isSafeAccountRole(user.role) && (
+                              <option value={user.role} disabled>
+                                {user.role} (externally managed)
+                              </option>
+                            )}
+                            {SAFE_ACCOUNT_ROLES.map((role) => (
+                              <option key={role} value={role}>{role}</option>
+                            ))}
                           </select>
                         </td>
                         <td className="p-4 text-right space-x-2 whitespace-nowrap">
                           <button
-                            onClick={() => setSelectedUser(user)}
+                            onClick={() => openUserReview(user)}
                             className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                             title="View Profile"
                           >
@@ -842,28 +944,69 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                 </div>
                 <div>
                   <div className="text-slate-500 text-xs font-bold uppercase mb-1">
-                    Requested Role
+                    Authoritative Account Role
                   </div>
                   <div className="font-bold text-slate-800">
-                    {selectedUser.requestedRole || "-"}
+                    {selectedUser.role || "MISSING"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-slate-500 text-xs font-bold uppercase mb-1">
+                    Pending Requested Intent
+                  </div>
+                  <div className="font-bold text-slate-800">
+                    {assessRequestedIntent(selectedUser.requestedRole).display}
                   </div>
                 </div>
               </div>
+
+              {selectedApprovalBlockReason ? (
+                <div
+                  className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-900"
+                  role="alert"
+                >
+                  {selectedApprovalBlockReason}
+                </div>
+              ) : (
+                <label className="block">
+                  <span className="mb-1 block text-xs font-bold uppercase text-slate-500">
+                    Explicit approved account role
+                  </span>
+                  <select
+                    value={approvedRole}
+                    onChange={(event) => {
+                      if (isSafeAccountRole(event.target.value)) {
+                        setApprovedRole(event.target.value);
+                      }
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-800"
+                  >
+                    {SAFE_ACCOUNT_ROLES.map((role) => (
+                      <option key={role} value={role}>{role}</option>
+                    ))}
+                  </select>
+                  <span className="mt-1 block text-xs text-slate-500">
+                    Defaults safely to USER and is never derived from requested intent.
+                  </span>
+                </label>
+              )}
             </div>
 
             <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
               <button
                 onClick={() => handleReject(selectedUser)}
+                disabled={isMutating}
                 className="px-4 py-2 text-rose-600 font-bold hover:bg-rose-50 rounded-xl transition-colors"
               >
                 Reject
               </button>
               <button
                 onClick={() => handleApprove(selectedUser)}
+                disabled={isMutating || selectedApprovalBlockReason !== null}
                 className="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-sm transition-colors flex items-center gap-2"
               >
                 <CheckCircle size={18} />
-                Approve
+                {selectedApprovalBlockReason ? "Generic Approval Blocked" : `Approve as ${approvedRole}`}
               </button>
             </div>
           </div>

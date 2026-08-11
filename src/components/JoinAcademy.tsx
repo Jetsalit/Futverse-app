@@ -21,7 +21,7 @@ import {
 } from "../services/membershipService";
 
 function getRequestedTenantRole(
-  requestedRole?: string,
+  requestedRole?: unknown,
   currentRole?: string,
 ): TenantRole | null {
   if (requestedRole === "ADMIN" || requestedRole === "COACH") return requestedRole;

@@ -1,4 +1,4 @@
-import { collection, doc, onSnapshot, updateDoc } from "firebase/firestore";
+import { collection, onSnapshot } from "firebase/firestore";
 import type { DocumentData, Unsubscribe } from "firebase/firestore";
 import type { User } from "../../contexts/AuthContext";
 import { db } from "../firebase";
@@ -42,12 +42,4 @@ export const subscribeToUsers = (
     callback,
     onError,
   );
-};
-
-export const updateUserStatus = async (userId: string, status: string, additionalData?: any) => {
-  const userRef = doc(db, "users", userId);
-  await updateDoc(userRef, {
-    status,
-    ...additionalData
-  });
 };
