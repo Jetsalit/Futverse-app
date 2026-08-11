@@ -130,28 +130,53 @@ describe("Access Resolution Foundation", () => {
     assert.equal(classifyStaffMembership(null), "MEMBERSHIP_MISSING");
   });
 
-  it("resolves PLAYER and PARENT pointers with strict validation and returns UNAVAILABLE on malformed data", () => {
-    const validPlayer: NonStaffPlayerAccessInput = { role: "PLAYER", academyId: "academy-1", id: "uid-123" };
+  it("resolves only active nonstaff identities and ignores legacy academy/player pointers", () => {
+    const validPlayer: NonStaffPlayerAccessInput = {
+      role: "PLAYER",
+      status: "ACTIVE",
+      academyId: "tampered-academy",
+      linkedPlayerId: "tampered-player",
+      id: "uid-123",
+    };
     assert.deepEqual(linkedPlayerLookupForUser(validPlayer), {
-      type: "PLAYER_QUERY",
-      academyId: "academy-1",
+      type: "ASSOCIATION_LISTENER",
       uid: "uid-123",
+      role: "PLAYER",
     });
 
-    const validParent: NonStaffPlayerAccessInput = { role: "PARENT", academyId: "academy-1", linkedPlayerId: "player-789" };
+    const validParent: NonStaffPlayerAccessInput = {
+      role: "PARENT",
+      status: "Active",
+      uid: "parent-123",
+      academyId: null,
+      linkedPlayerId: null,
+    };
     assert.deepEqual(linkedPlayerLookupForUser(validParent), {
-      type: "PARENT_DOCUMENT",
-      academyId: "academy-1",
-      playerId: "player-789",
+      type: "ASSOCIATION_LISTENER",
+      uid: "parent-123",
+      role: "PARENT",
     });
 
-    const malformedPlayer: NonStaffPlayerAccessInput = { role: "PLAYER", academyId: "academy/1", id: "uid-123" };
+    const malformedPlayer: NonStaffPlayerAccessInput = {
+      role: "PLAYER",
+      status: "ACTIVE",
+      academyId: "academy-1",
+      id: "uid/123",
+    };
     assert.deepEqual(linkedPlayerLookupForUser(malformedPlayer), { type: "UNAVAILABLE" });
 
-    const paddedParent: NonStaffPlayerAccessInput = { role: "PARENT", academyId: " academy-1 ", linkedPlayerId: "player-789" };
+    const paddedParent: NonStaffPlayerAccessInput = {
+      role: "PARENT",
+      status: "ACTIVE",
+      id: " parent-123 ",
+    };
     assert.deepEqual(linkedPlayerLookupForUser(paddedParent), { type: "UNAVAILABLE" });
 
-    const missingParentLink: NonStaffPlayerAccessInput = { role: "PARENT", academyId: "academy-1" };
-    assert.deepEqual(linkedPlayerLookupForUser(missingParentLink), { type: "UNAVAILABLE" });
+    const inactiveParent: NonStaffPlayerAccessInput = {
+      role: "PARENT",
+      status: "Inactive",
+      id: "parent-123",
+    };
+    assert.deepEqual(linkedPlayerLookupForUser(inactiveParent), { type: "UNAVAILABLE" });
   });
 });

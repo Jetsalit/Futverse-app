@@ -6,74 +6,64 @@ import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-const playerDashboardPath = path.resolve(
-  __dirname,
-  "../src/components/PlayerDashboard.tsx"
+const code = fs.readFileSync(
+  path.resolve(__dirname, "../src/components/PlayerDashboard.tsx"),
+  "utf8",
 );
-const code = fs.readFileSync(playerDashboardPath, "utf8");
 
-describe("PlayerDashboard Access Security & Profile Resolution Contract", () => {
-  it("proves linkedPlayerLookupForUser is imported and used", () => {
-    assert.match(
-      code,
-      /import\s+.*linkedPlayerLookupForUser.*\s+from\s+["']\.\.\/lib\/nonStaffPlayerAccess["']/
-    );
+describe("PlayerDashboard authoritative association contract", () => {
+  it("resolves through the authoritative association model", () => {
+    assert.match(code, /resolveAuthoritativeAssociationSnapshot/);
     assert.match(code, /linkedPlayerLookupForUser\(currentUser\)/);
+    assert.match(code, /collectionGroup\(db,\s*NONSTAFF_ASSOCIATION_COLLECTION\)/);
+    assert.match(code, /where\("userId",\s*"==",\s*lookup\.uid\)/);
   });
 
-  it("proves PLAYER path uses lookup.academyId in subcollection query", () => {
+  it("never uses legacy user pointers or Player linkedUserId as authority", () => {
+    assert.equal((code.match(/user\.activeAcademyId/g) || []).length, 1);
+    assert.equal((code.match(/user\.linkedPlayerId/g) || []).length, 1);
+    assert.doesNotMatch(code, /where\(["']academyId["']/);
+    assert.doesNotMatch(code, /where\(["']playerId["']/);
+    assert.doesNotMatch(code, /linkedUserId/);
+    assert.doesNotMatch(code, /collection\(\s*db,\s*["']academies["']/);
+  });
+
+  it("uses continuous metadata-aware association and exact player listeners", () => {
+    assert.match(code, /onSnapshot\(\s*associationsQuery/);
+    assert.match(code, /onSnapshot\(\s*playerReference/);
+    assert.match(code, /includeMetadataChanges:\s*true/g);
     assert.match(
       code,
-      /collection\(\s*db,\s*["']academies["'],\s*lookup\.academyId,\s*["']players["']\s*\)/
+      /doc\(\s*db,\s*"academies",\s*association\.academyId,\s*"players",\s*association\.playerId/,
     );
+    assert.doesNotMatch(code, /\bgetDoc(?:s)?\b/);
   });
 
-  it("proves PLAYER query uses linkedUserId == lookup.uid", () => {
-    assert.match(
-      code,
-      /where\(\s*["']linkedUserId["'],\s*["']==["'],\s*lookup\.uid\s*\)/
-    );
+  it("clears access for cache, pending writes, missing documents, and listener errors", () => {
+    assert.match(code, /snapshot\.metadata\.fromCache/);
+    assert.match(code, /snapshot\.metadata\.hasPendingWrites/);
+    assert.match(code, /playerSnapshot\.metadata\.fromCache/);
+    assert.match(code, /playerSnapshot\.metadata\.hasPendingWrites/);
+    assert.match(code, /!playerSnapshot\.exists\(\)/);
+    assert.ok((code.match(/clearResolvedProfiles\(\)/g) || []).length >= 5);
+    assert.match(code, /Authoritative association listener failed/);
+    assert.match(code, /Authoritative player listener failed/);
   });
 
-  it("proves PARENT path uses exact lookup.playerId in document path", () => {
-    assert.match(
-      code,
-      /doc\(\s*db,\s*["']academies["'],\s*lookup\.academyId,\s*["']players["'],\s*lookup\.playerId\s*\)/
-    );
+  it("guards stale callbacks and unsubscribes on account switch or unmount", () => {
+    assert.match(code, /currentVersion\s*!==\s*resolutionVersion/);
+    assert.match(code, /\+\+resolutionVersion/);
+    assert.match(code, /unsubscribeAssociations\?\.\(\)/);
+    assert.match(code, /stopPlayerListeners\(\)/);
+    assert.match(code, /\}, \[currentUser\]\)/);
+    assert.match(code, /resolvedScopeKey\s*===\s*currentScopeKey/);
+    assert.match(code, /user\.activeAcademyId\s*\?\?\s*null/);
   });
 
-  it("proves root Academy collection scan is absent", () => {
-    assert.doesNotMatch(code, /collection\(\s*db,\s*["']academies["']\s*\)/);
-  });
-
-  it("proves collectionGroup query is absent", () => {
-    assert.doesNotMatch(code, /collectionGroup/);
-  });
-
-  it("proves automatic academyId writeback to user document is absent", () => {
-    assert.doesNotMatch(code, /updateDoc\s*\(\s*doc\s*\(\s*db,\s*["']users["']/);
-    assert.doesNotMatch(code, /activeAcademyId/);
-  });
-
-  it("proves MOCK_PROFILE is not used as authenticated profile fallback", () => {
-    assert.doesNotMatch(code, /MOCK_PROFILE/);
-    assert.match(code, /useState<any>\(null\)/);
-  });
-
-  it("proves duplicate PLAYER query resolution fails closed", () => {
-    assert.match(code, /snapshot\.size\s*===\s*1/);
-    assert.match(code, /console\.error\(/);
-    assert.match(
-      code,
-      /Data integrity error:\s*Multiple player documents found/
-    );
-  });
-
-  it("proves UNAVAILABLE resolution fails closed", () => {
-    assert.match(
-      code,
-      /lookup\.type\s*===\s*["']UNAVAILABLE["'][\s\S]*setPlayerProfile\(null\)/
-    );
+  it("supports multiple exact authorized profiles without roster listing", () => {
+    assert.match(code, /resolution\.associations\.map/);
+    assert.match(code, /visiblePlayerProfiles\.length\s*>\s*1/);
+    assert.match(code, /setSelectedProfileKey/);
+    assert.doesNotMatch(code, /collection\(\s*db,\s*"academies"/);
   });
 });

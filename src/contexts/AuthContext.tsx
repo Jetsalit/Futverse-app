@@ -32,8 +32,10 @@ export interface User {
   status?: "ACTIVE" | "INACTIVE" | "PENDING" | "REJECTED" | "Active" | "Inactive" | "Pending";
   country?: string;
   phone?: string;
+  // Legacy/routing metadata only. None of these fields grants tenant or player access.
   academyId?: string | null;
   activeAcademyId?: string | null;
+  linkedPlayerId?: string | null;
   requestedAcademyName?: string;
   tenantRole?: TenantRole;
   createdAt?: string;
@@ -74,13 +76,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let unsubscribeUserDoc: (() => void) | undefined;
+    let authResolutionVersion = 0;
     const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      const resolutionVersion = ++authResolutionVersion;
       unsubscribeUserDoc?.();
       unsubscribeUserDoc = undefined;
+      setActualUser(null);
+      setCurrentUser(null);
+      setIsLoading(true);
 
       if (firebaseUser) {
         const userRef = doc(db, "users", firebaseUser.uid);
-        unsubscribeUserDoc = onSnapshot(userRef, (userDoc) => {
+        unsubscribeUserDoc = onSnapshot(userRef, { includeMetadataChanges: true }, (userDoc) => {
+          if (resolutionVersion !== authResolutionVersion) return;
+
+          if (userDoc.metadata.fromCache || userDoc.metadata.hasPendingWrites) {
+            setActualUser(null);
+            setCurrentUser(null);
+            setIsLoading(false);
+            return;
+          }
+
           if (userDoc.exists()) {
             const userData = userDoc.data() as User;
 
@@ -109,18 +125,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
           setIsLoading(false);
         }, (error) => {
+          if (resolutionVersion !== authResolutionVersion) return;
           console.error("Error fetching user data:", error);
           setActualUser(null);
           setCurrentUser(null);
           setIsLoading(false);
         });
       } else {
-        setActualUser(null);
-        setCurrentUser(null);
         setIsLoading(false);
       }
     });
     return () => {
+      ++authResolutionVersion;
       unsubscribeUserDoc?.();
       unsubscribeAuth();
     };

@@ -104,28 +104,62 @@ service cloud.firestore {
         || hasAcademyRole(academyId, ['ADMIN', 'COACH']);
     }
 
-    function hasActiveNonStaffAcademyPointer(academyId, role) {
-      return isSignedIn()
-        && userExists(request.auth.uid)
+    function validNonStaffAssociationData(
+      association,
+      academyId,
+      uid,
+      playerId
+    ) {
+      return exactDocumentId(academyId)
+        && exactDocumentId(uid)
+        && exactDocumentId(playerId)
+        && association.keys().hasAll([
+          'userId', 'academyId', 'playerId', 'role', 'status'
+        ])
+        && association.keys().hasOnly([
+          'userId', 'academyId', 'playerId', 'role', 'status'
+        ])
+        && association.userId == uid
+        && association.academyId == academyId
+        && association.playerId == playerId
+        && association.role in ['PLAYER', 'PARENT']
+        && association.status in ['ACTIVE', 'INACTIVE', 'REVOKED'];
+    }
+
+    function hasExactActiveNonStaffAssociation(academyId, playerId, role) {
+      let associationPath = /databases/$(database)/documents/academies/$(academyId)/nonstaffUsers/$(request.auth.uid)/playerAssociations/$(playerId);
+      let association = get(associationPath).data;
+      return currentUserIsActive()
+        && exactDocumentId(academyId)
+        && exactDocumentId(playerId)
+        && role in ['PLAYER', 'PARENT']
         && currentUserData().get('role', '') == role
-        && currentUserData().get('status', '') in ['Active', 'ACTIVE']
-        && currentUserData().get('academyId', '') == academyId;
+        && exists(associationPath)
+        && validNonStaffAssociationData(
+          association,
+          academyId,
+          request.auth.uid,
+          playerId
+        )
+        && association.role == role
+        && association.status == 'ACTIVE';
     }
 
-    function canReadLinkedPlayer(academyId, playerId) {
-      return (
-        hasActiveNonStaffAcademyPointer(academyId, 'PLAYER')
-        && resource.data.linkedUserId == request.auth.uid
-      ) || (
-        hasActiveNonStaffAcademyPointer(academyId, 'PARENT')
-        && exactDocumentId(currentUserData().get('linkedPlayerId', ''))
-        && currentUserData().get('linkedPlayerId', '') == playerId
-      );
+    function nonStaffAssociationTargetsExist(academyId, uid, playerId, role) {
+      let targetUser = get(
+        /databases/$(database)/documents/users/$(uid)
+      ).data;
+      return userExists(uid)
+        && targetUser.get('uid', '') == uid
+        && targetUser.get('role', '') == role
+        && exists(
+          /databases/$(database)/documents/academies/$(academyId)/players/$(playerId)
+        );
     }
 
-    function canListOwnPlayerProfile(academyId) {
-      return hasActiveNonStaffAcademyPointer(academyId, 'PLAYER')
-        && resource.data.linkedUserId == request.auth.uid;
+    function canReadAssociatedPlayer(academyId, playerId) {
+      return hasExactActiveNonStaffAssociation(academyId, playerId, 'PLAYER')
+        || hasExactActiveNonStaffAssociation(academyId, playerId, 'PARENT');
     }
 
     function safeOwnerProfileUpdate() {
@@ -609,6 +643,65 @@ service cloud.firestore {
         allow delete: if false;
       }
 
+      match /nonstaffUsers/{uid} {
+        allow read, write: if false;
+
+        match /playerAssociations/{playerId} {
+          allow get: if validNonStaffAssociationData(
+              resource.data,
+              academyId,
+              uid,
+              playerId
+            )
+            && (
+              isSuperAdmin()
+              || isActiveAcademyMember(academyId)
+              || (
+                isSignedIn()
+                && request.auth.uid == uid
+                && resource.data.userId == request.auth.uid
+              )
+            );
+          allow list: if isSuperAdmin()
+            || isActiveAcademyMember(academyId)
+            || (
+              isSignedIn()
+              && resource.data.userId == request.auth.uid
+            );
+          allow create: if validNonStaffAssociationData(
+              request.resource.data,
+              academyId,
+              uid,
+              playerId
+            )
+            && nonStaffAssociationTargetsExist(
+              academyId,
+              uid,
+              playerId,
+              request.resource.data.role
+            )
+            && (
+              isSuperAdmin()
+              || hasAcademyRole(academyId, ['ADMIN'])
+            );
+          allow update: if validNonStaffAssociationData(
+              request.resource.data,
+              academyId,
+              uid,
+              playerId
+            )
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status'
+            ])
+            && (
+              isSuperAdmin()
+              || hasAcademyRole(academyId, ['ADMIN'])
+            );
+          allow delete: if isSuperAdmin()
+            || hasAcademyRole(academyId, ['ADMIN']);
+        }
+      }
+
       match /coaches/{coachProfileId} {
         allow read: if isSuperAdmin() || isActiveAcademyMember(academyId);
         allow create, update: if hasNoStoredDocumentId()
@@ -622,9 +715,8 @@ service cloud.firestore {
 
       match /players/{playerId} {
         allow get: if tenantMemberCanRead(academyId)
-          || canReadLinkedPlayer(academyId, playerId);
-        allow list: if tenantMemberCanRead(academyId)
-          || canListOwnPlayerProfile(academyId);
+          || canReadAssociatedPlayer(academyId, playerId);
+        allow list: if tenantMemberCanRead(academyId);
         allow create, update: if tenantFootballCanWrite(academyId)
           && hasNoStoredDocumentId();
         allow delete: if tenantFootballCanWrite(academyId);
@@ -639,6 +731,14 @@ service cloud.firestore {
         allow read: if tenantMemberCanRead(academyId);
         allow write: if tenantFootballCanWrite(academyId);
       }
+    }
+
+    // Firestore collection-group queries require an explicit recursive match.
+    // The userId equality is query-provable; the client then validates the exact
+    // Academy/UID/Player path and complete schema before resolving any access.
+    match /{associationPath=**}/playerAssociations/{playerId} {
+      allow list: if isSignedIn()
+        && resource.data.userId == request.auth.uid;
     }
 
     match /settings/{document=**} {

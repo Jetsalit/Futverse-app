@@ -2,17 +2,20 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { db } from "../lib/firebase";
 import {
-  collection,
+  collectionGroup,
   query,
   where,
-  getDocs,
   doc,
-  getDoc,
+  onSnapshot,
 } from "firebase/firestore";
 import { Award, Activity, Heart, ChevronRight, UserCircle } from "lucide-react";
 import PeerVotingModal from "./PeerVotingModal";
 import { EmptyState } from "./common/EmptyState";
-import { linkedPlayerLookupForUser } from "../lib/nonStaffPlayerAccess";
+import {
+  linkedPlayerLookupForUser,
+  NONSTAFF_ASSOCIATION_COLLECTION,
+  resolveAuthoritativeAssociationSnapshot,
+} from "../lib/nonStaffPlayerAccess";
 import { mapCanonicalSnapshot } from "../lib/firestore/canonicalDocument";
 
 interface Teammate {
@@ -31,6 +34,21 @@ const MOCK_TEAMMATES: Teammate[] = [
   },
 ];
 
+const associationKey = (academyId: string, playerId: string) =>
+  JSON.stringify([academyId, playerId]);
+
+const accessScopeKey = (user: ReturnType<typeof useAuth>["currentUser"]) =>
+  user
+    ? JSON.stringify([
+        user.uid || user.id || null,
+        user.role,
+        user.status || null,
+        user.academyId ?? null,
+        user.activeAcademyId ?? null,
+        user.linkedPlayerId ?? null,
+      ])
+    : null;
+
 export default function PlayerDashboard({
   onNavigate,
 }: {
@@ -38,7 +56,9 @@ export default function PlayerDashboard({
 }) {
   const { currentUser } = useAuth();
 
-  const [playerProfile, setPlayerProfile] = useState<any>(null);
+  const [playerProfiles, setPlayerProfiles] = useState<any[]>([]);
+  const [selectedProfileKey, setSelectedProfileKey] = useState<string | null>(null);
+  const [resolvedScopeKey, setResolvedScopeKey] = useState<string | null>(null);
   const [teammates, setTeammates] = useState<Teammate[]>(MOCK_TEAMMATES);
   const [loading, setLoading] = useState(true);
 
@@ -52,86 +72,159 @@ export default function PlayerDashboard({
   const [hasVoted, setHasVoted] = useState(false);
 
   useEffect(() => {
-    let isMounted = true;
+    let cancelled = false;
+    let resolutionVersion = 0;
+    let unsubscribeAssociations: (() => void) | undefined;
+    let unsubscribePlayers: Array<() => void> = [];
 
-    async function resolveProfile() {
-      setLoading(true);
-      const lookup = linkedPlayerLookupForUser(currentUser);
+    const stopPlayerListeners = () => {
+      unsubscribePlayers.forEach((unsubscribe) => unsubscribe());
+      unsubscribePlayers = [];
+    };
 
-      if (!currentUser || lookup.type === "UNAVAILABLE") {
-        if (isMounted) {
-          setPlayerProfile(null);
-          setLoading(false);
-        }
-        return;
-      }
+    const clearResolvedProfiles = () => {
+      setPlayerProfiles([]);
+      setSelectedProfileKey(null);
+      setResolvedScopeKey(null);
+    };
 
-      try {
-        if (lookup.type === "PLAYER_QUERY") {
-          const playersRef = collection(
-            db,
-            "academies",
-            lookup.academyId,
-            "players"
-          );
-          const q = query(playersRef, where("linkedUserId", "==", lookup.uid));
-          const snapshot = await getDocs(q);
+    const lookup = linkedPlayerLookupForUser(currentUser);
+    const expectedScopeKey = accessScopeKey(currentUser);
+    clearResolvedProfiles();
+    setLoading(true);
 
-          if (!isMounted) return;
-
-          if (snapshot.empty) {
-            setPlayerProfile(null);
-          } else if (snapshot.size === 1) {
-            const docSnap = snapshot.docs[0];
-            setPlayerProfile({
-              ...mapCanonicalSnapshot(docSnap),
-              academyId: lookup.academyId,
-            });
-          } else {
-            console.error(
-              `Data integrity error: Multiple player documents found for user ${lookup.uid} in academy ${lookup.academyId}`
-            );
-            setPlayerProfile(null);
-          }
-        } else if (lookup.type === "PARENT_DOCUMENT") {
-          const playerDocRef = doc(
-            db,
-            "academies",
-            lookup.academyId,
-            "players",
-            lookup.playerId
-          );
-          const docSnap = await getDoc(playerDocRef);
-
-          if (!isMounted) return;
-
-          if (docSnap.exists()) {
-            setPlayerProfile({
-              ...mapCanonicalSnapshot(docSnap),
-              academyId: lookup.academyId,
-            });
-          } else {
-            setPlayerProfile(null);
-          }
-        }
-      } catch (error) {
-        console.error("Error resolving player profile:", error);
-        if (isMounted) {
-          setPlayerProfile(null);
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
+    if (lookup.type === "UNAVAILABLE") {
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
     }
 
-    resolveProfile();
+    const associationsQuery = query(
+      collectionGroup(db, NONSTAFF_ASSOCIATION_COLLECTION),
+      where("userId", "==", lookup.uid),
+    );
+
+    unsubscribeAssociations = onSnapshot(
+      associationsQuery,
+      { includeMetadataChanges: true },
+      (snapshot) => {
+        if (cancelled) return;
+        const currentVersion = ++resolutionVersion;
+        stopPlayerListeners();
+        clearResolvedProfiles();
+
+        const resolution = resolveAuthoritativeAssociationSnapshot(
+          currentUser,
+          {
+            fromCache: snapshot.metadata.fromCache,
+            hasPendingWrites: snapshot.metadata.hasPendingWrites,
+            documents: snapshot.docs.map((associationDocument) => ({
+              id: associationDocument.id,
+              path: associationDocument.ref.path,
+              data: associationDocument.data(),
+            })),
+          },
+        );
+
+        if (resolution.type === "UNAVAILABLE") {
+          setLoading(false);
+          return;
+        }
+
+        const authoritativeProfiles = new Map<string, any>();
+        setLoading(true);
+
+        for (const association of resolution.associations) {
+          const key = associationKey(association.academyId, association.playerId);
+          const playerReference = doc(
+            db,
+            "academies",
+            association.academyId,
+            "players",
+            association.playerId,
+          );
+
+          const unsubscribePlayer = onSnapshot(
+            playerReference,
+            { includeMetadataChanges: true },
+            (playerSnapshot) => {
+              if (cancelled || currentVersion !== resolutionVersion) return;
+
+              if (
+                playerSnapshot.metadata.fromCache ||
+                playerSnapshot.metadata.hasPendingWrites ||
+                !playerSnapshot.exists() ||
+                playerSnapshot.id !== association.playerId
+              ) {
+                authoritativeProfiles.delete(key);
+                clearResolvedProfiles();
+                setLoading(false);
+                return;
+              }
+
+              authoritativeProfiles.set(key, {
+                ...mapCanonicalSnapshot(playerSnapshot),
+                academyId: association.academyId,
+                associationKey: key,
+              });
+
+              if (authoritativeProfiles.size === resolution.associations.length) {
+                const nextProfiles = resolution.associations.map((item) =>
+                  authoritativeProfiles.get(
+                    associationKey(item.academyId, item.playerId),
+                  ),
+                );
+                setPlayerProfiles(nextProfiles);
+                setResolvedScopeKey(expectedScopeKey);
+                setSelectedProfileKey((previousKey) =>
+                  previousKey &&
+                  nextProfiles.some((profile) => profile.associationKey === previousKey)
+                    ? previousKey
+                    : nextProfiles[0].associationKey,
+                );
+                setLoading(false);
+              }
+            },
+            (error) => {
+              if (cancelled || currentVersion !== resolutionVersion) return;
+              ++resolutionVersion;
+              stopPlayerListeners();
+              clearResolvedProfiles();
+              setLoading(false);
+              console.error("Authoritative player listener failed:", error);
+            },
+          );
+          unsubscribePlayers.push(unsubscribePlayer);
+        }
+      },
+      (error) => {
+        ++resolutionVersion;
+        stopPlayerListeners();
+        if (cancelled) return;
+        clearResolvedProfiles();
+        setLoading(false);
+        console.error("Authoritative association listener failed:", error);
+      },
+    );
 
     return () => {
-      isMounted = false;
+      cancelled = true;
+      ++resolutionVersion;
+      unsubscribeAssociations?.();
+      stopPlayerListeners();
     };
   }, [currentUser]);
+
+  const currentScopeKey = accessScopeKey(currentUser);
+  const visiblePlayerProfiles =
+    resolvedScopeKey === currentScopeKey ? playerProfiles : [];
+  const playerProfile =
+    visiblePlayerProfiles.find(
+      (profile) => profile.associationKey === selectedProfileKey,
+    ) ||
+    visiblePlayerProfiles[0] ||
+    null;
 
   const handleSaveWellness = () => {
     setIsWellnessSaved(true);
@@ -170,6 +263,28 @@ export default function PlayerDashboard({
         onClose={handleVotingClose}
         teammates={teammates}
       />
+
+      {visiblePlayerProfiles.length > 1 && (
+        <div
+          className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-3"
+          aria-label="Authorized player profiles"
+        >
+          {visiblePlayerProfiles.map((profile) => (
+            <button
+              key={profile.associationKey}
+              type="button"
+              onClick={() => setSelectedProfileKey(profile.associationKey)}
+              className={`rounded-xl px-3 py-2 text-sm font-bold transition-colors ${
+                profile.associationKey === playerProfile.associationKey
+                  ? "bg-slate-900 text-white"
+                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+              }`}
+            >
+              {profile.firstName} {profile.lastName}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Header Profile Section */}
       <div className="bg-slate-900 rounded-3xl p-6 shadow-xl relative overflow-hidden flex items-center justify-between">
