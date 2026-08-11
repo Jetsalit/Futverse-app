@@ -250,3 +250,36 @@ test("21. SUPERADMIN can read/write academy-scoped coach", async () => {
     name: "Updated by Superadmin",
   }));
 });
+
+test("22. PLAYER and PARENT read of academy-scoped coach is denied", async () => {
+  await seed([
+    [`users/player-1`, userData("player-1", "PLAYER", "academy-a")],
+    [`users/parent-1`, userData("parent-1", "PARENT", "academy-a")],
+    [`academies/academy-a/coaches/coach-profile-a`, { name: "Coach A", status: "ACTIVE" }],
+  ]);
+
+  await assertFails(getDoc(doc(authedDb("player-1"), "academies", "academy-a", "coaches", "coach-profile-a")));
+  await assertFails(getDoc(doc(authedDb("parent-1"), "academies", "academy-a", "coaches", "coach-profile-a")));
+});
+
+test("23. PLAYER and PARENT create/update of academy-scoped coach is denied", async () => {
+  await seed([
+    [`users/player-1`, userData("player-1", "PLAYER", "academy-a")],
+    [`users/parent-1`, userData("parent-1", "PARENT", "academy-a")],
+    [`academies/academy-a/coaches/coach-profile-a`, { name: "Coach A", status: "ACTIVE" }],
+  ]);
+
+  await assertFails(setDoc(doc(authedDb("player-1"), "academies", "academy-a", "coaches", "coach-profile-b"), {
+    name: "New Coach",
+  }));
+  await assertFails(updateDoc(doc(authedDb("player-1"), "academies", "academy-a", "coaches", "coach-profile-a"), {
+    name: "Tampered Coach",
+  }));
+
+  await assertFails(setDoc(doc(authedDb("parent-1"), "academies", "academy-a", "coaches", "coach-profile-c"), {
+    name: "New Coach",
+  }));
+  await assertFails(updateDoc(doc(authedDb("parent-1"), "academies", "academy-a", "coaches", "coach-profile-a"), {
+    name: "Tampered Coach",
+  }));
+});
