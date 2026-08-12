@@ -16,6 +16,11 @@ import {
   Filter,
   Eye,
   Loader2,
+  ShieldAlert,
+  CreditCard,
+  Activity,
+  FileText,
+  BadgeCheck,
 } from "lucide-react";
 import { subscribeToUsers } from "../lib/firestore/users";
 import {
@@ -55,9 +60,26 @@ const CLEAN_AVAILABLE_TABS = [
   "dashboard",
   "approvals",
   "users",
+  "system_logs",
+  "profile_claims",
+  "payment_approvals",
+  "observation_metrics",
 ] as const;
 
 type CleanTab = (typeof CLEAN_AVAILABLE_TABS)[number];
+
+interface ProfileClaimItem {
+  id: string;
+  userId?: string;
+  userEmail?: string;
+  userName?: string;
+  playerName?: string;
+  futId?: string;
+  requestedRole?: string;
+  academyId?: string;
+  status?: string;
+  createdAt?: string;
+}
 
 export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const { hasPermission, currentUser: authUser } = useAuth();
@@ -83,6 +105,16 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const [activityLogs, setActivityLogs] = useState<AuditLogEntry[]>([]);
   const [activityLoadState, setActivityLoadState] =
     useState<DashboardLoadState>("idle");
+
+  // System Audit Logs State
+  const [logsList, setLogsList] = useState<AuditLogEntry[]>([]);
+  const [logsLoadState, setLogsLoadState] = useState<DashboardLoadState>("idle");
+  const [logsSearchQuery, setLogsSearchQuery] = useState("");
+
+  // Profile Claims State
+  const [profileClaimsList, setProfileClaimsList] = useState<ProfileClaimItem[]>([]);
+  const [profileClaimsLoadState, setProfileClaimsLoadState] = useState<DashboardLoadState>("idle");
+  const [claimsSearchQuery, setClaimsSearchQuery] = useState("");
 
   useEffect(() => {
     setUserLoadState("loading");
@@ -164,6 +196,79 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchSystemLogs() {
+      setLogsLoadState("loading");
+      try {
+        const logsQuery = query(
+          collection(db, "logs"),
+          orderBy("timestamp", "desc"),
+          limit(50),
+        );
+        const snapshot = await getDocs(logsQuery);
+        if (cancelled) return;
+        const logs = snapshot.docs.map((logDoc) =>
+          parseAuditLog(logDoc.id, logDoc.data() as Record<string, unknown>),
+        );
+        setLogsList(logs);
+        setLogsLoadState("loaded");
+      } catch (err) {
+        if (cancelled) return;
+        console.error("SuperAdmin failed to fetch system logs:", err);
+        setLogsList([]);
+        setLogsLoadState("unavailable");
+      }
+    }
+
+    fetchSystemLogs();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchProfileClaims() {
+      setProfileClaimsLoadState("loading");
+      try {
+        const claimsQuery = query(
+          collection(db, "profile_claims"),
+          limit(50),
+        );
+        const snapshot = await getDocs(claimsQuery);
+        if (cancelled) return;
+        const claims = snapshot.docs.map((claimDoc) => {
+          const data = claimDoc.data() as Record<string, unknown>;
+          return {
+            id: claimDoc.id,
+            userId: typeof data.userId === "string" ? data.userId : undefined,
+            userEmail: typeof data.userEmail === "string" ? data.userEmail : undefined,
+            userName: typeof data.userName === "string" ? data.userName : undefined,
+            playerName: typeof data.playerName === "string" ? data.playerName : undefined,
+            futId: typeof data.futId === "string" ? data.futId : undefined,
+            requestedRole: typeof data.requestedRole === "string" ? data.requestedRole : undefined,
+            academyId: typeof data.academyId === "string" ? data.academyId : undefined,
+            status: typeof data.status === "string" ? data.status : undefined,
+            createdAt: typeof data.createdAt === "string" ? data.createdAt : undefined,
+          };
+        });
+        setProfileClaimsList(claims);
+        setProfileClaimsLoadState("loaded");
+      } catch (err) {
+        if (cancelled) return;
+        console.error("SuperAdmin failed to fetch profile claims:", err);
+        setProfileClaimsList([]);
+        setProfileClaimsLoadState("unavailable");
+      }
+    }
+
+    fetchProfileClaims();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   if (!hasPermission(["SUPERADMIN"])) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -185,13 +290,16 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const rejectedCount = users.filter((u) => u.status === "REJECTED").length;
 
   const roleCounts = deriveEffectiveRoleCounts(users);
-
   const recentActivities = buildRecentActivities(activityLogs, users);
+
+  const pendingProfileClaimsCount = profileClaimsList.filter(
+    (c) => c.status === "PENDING",
+  ).length;
 
   const alerts = deriveDashboardAlerts({
     pendingUsers: pendingUsers.length,
     paymentApprovals: null,
-    profileClaims: null,
+    profileClaims: profileClaimsLoadState === "loaded" ? pendingProfileClaimsCount : null,
     errorReports: null,
   });
 
@@ -199,7 +307,12 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     query: headerSearchQuery,
     users,
     academies: [],
-    claims: [],
+    claims: profileClaimsList.map((c) => ({
+      id: c.id,
+      playerName: c.playerName || c.userName,
+      futId: c.futId,
+      userEmail: c.userEmail,
+    })),
   });
 
   const handleNavigate = (tab: SuperAdminTab) => {
@@ -227,8 +340,8 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
       users,
       paymentApprovals: null,
       paymentApprovalsLoadState: "unavailable",
-      profileClaims: null,
-      profileClaimsLoadState: "unavailable",
+      profileClaims: profileClaimsLoadState === "loaded" ? pendingProfileClaimsCount : null,
+      profileClaimsLoadState,
       errorReports: null,
       errorReportsLoadState: "unavailable",
       recentActivities,
@@ -405,6 +518,22 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
       u.email?.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
+  const filteredLogs = logsList.filter(
+    (log) =>
+      log.action.toLowerCase().includes(logsSearchQuery.toLowerCase()) ||
+      log.actorUid?.toLowerCase().includes(logsSearchQuery.toLowerCase()) ||
+      log.targetEmail?.toLowerCase().includes(logsSearchQuery.toLowerCase()) ||
+      log.targetUid?.toLowerCase().includes(logsSearchQuery.toLowerCase()),
+  );
+
+  const filteredClaims = profileClaimsList.filter(
+    (claim) =>
+      claim.userEmail?.toLowerCase().includes(claimsSearchQuery.toLowerCase()) ||
+      claim.userName?.toLowerCase().includes(claimsSearchQuery.toLowerCase()) ||
+      claim.requestedRole?.toLowerCase().includes(claimsSearchQuery.toLowerCase()) ||
+      claim.academyId?.toLowerCase().includes(claimsSearchQuery.toLowerCase()),
+  );
+
   const isLoadingUsers = userLoadState === "loading";
   const selectedApprovalBlockReason = selectedUser
     ? genericApprovalBlockReason(selectedUser.requestedRole)
@@ -422,10 +551,10 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
         onSearchSelect={handleSearchSelect}
       />
 
-      <div className="bg-white border-b border-slate-200 px-6 flex gap-6 shrink-0">
+      <div className="bg-white border-b border-slate-200 px-6 flex gap-6 shrink-0 overflow-x-auto">
         <button
           onClick={() => setActiveTab("dashboard")}
-          className={`py-4 font-bold text-sm border-b-2 transition-colors ${
+          className={`py-4 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${
             activeTab === "dashboard"
               ? "border-emerald-500 text-emerald-600"
               : "border-transparent text-slate-500 hover:text-slate-800"
@@ -435,7 +564,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
         </button>
         <button
           onClick={() => setActiveTab("approvals")}
-          className={`py-4 font-bold text-sm border-b-2 transition-colors ${
+          className={`py-4 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${
             activeTab === "approvals"
               ? "border-emerald-500 text-emerald-600"
               : "border-transparent text-slate-500 hover:text-slate-800"
@@ -452,13 +581,70 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
         </button>
         <button
           onClick={() => setActiveTab("users")}
-          className={`py-4 font-bold text-sm border-b-2 transition-colors ${
+          className={`py-4 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${
             activeTab === "users"
               ? "border-emerald-500 text-emerald-600"
               : "border-transparent text-slate-500 hover:text-slate-800"
           }`}
         >
-          <span className="flex items-center gap-2">Manage Users</span>
+          Manage Users
+        </button>
+        <button
+          onClick={() => setActiveTab("system_logs")}
+          className={`py-4 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${
+            activeTab === "system_logs"
+              ? "border-emerald-500 text-emerald-600"
+              : "border-transparent text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          System Audit Logs
+        </button>
+        <button
+          onClick={() => setActiveTab("profile_claims")}
+          className={`py-4 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${
+            activeTab === "profile_claims"
+              ? "border-emerald-500 text-emerald-600"
+              : "border-transparent text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          <span className="flex items-center gap-2">
+            Profile Claims
+            {pendingProfileClaimsCount > 0 && (
+              <span className="bg-amber-500 text-white text-[10px] px-2 py-0.5 rounded-full">
+                {pendingProfileClaimsCount}
+              </span>
+            )}
+          </span>
+        </button>
+        <button
+          onClick={() => setActiveTab("payment_approvals")}
+          className={`py-4 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${
+            activeTab === "payment_approvals"
+              ? "border-emerald-500 text-emerald-600"
+              : "border-transparent text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          <span className="flex items-center gap-1.5">
+            Payment Approvals
+            <span className="bg-slate-100 text-slate-500 text-[10px] px-1.5 py-0.5 rounded border border-slate-200">
+              Unavailable
+            </span>
+          </span>
+        </button>
+        <button
+          onClick={() => setActiveTab("observation_metrics")}
+          className={`py-4 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${
+            activeTab === "observation_metrics"
+              ? "border-emerald-500 text-emerald-600"
+              : "border-transparent text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          <span className="flex items-center gap-1.5">
+            Observation Metrics
+            <span className="bg-slate-100 text-slate-500 text-[10px] px-1.5 py-0.5 rounded border border-slate-200">
+              Unavailable
+            </span>
+          </span>
         </button>
       </div>
 
@@ -516,9 +702,9 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
             academyCount={academyCount}
             roleCounts={roleCounts}
             paymentApprovals={null}
-            profileClaims={null}
+            profileClaims={profileClaimsLoadState === "loaded" ? pendingProfileClaimsCount : null}
             errorReports={null}
-            profileClaimsAvailable={false}
+            profileClaimsAvailable={profileClaimsLoadState === "loaded"}
             errorReportsAvailable={false}
             activities={recentActivities}
             activityLoadState={activityLoadState}
@@ -877,6 +1063,211 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "system_logs" && (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4">
+              <div className="flex items-center gap-2">
+                <FileText className="text-emerald-600" size={20} />
+                <h3 className="font-black text-slate-800 text-base">System Audit Logs</h3>
+              </div>
+              <div className="relative flex-1 sm:w-64 w-full">
+                <Search
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  size={16}
+                />
+                <input
+                  type="text"
+                  placeholder="Filter logs by action, actor, target..."
+                  value={logsSearchQuery}
+                  onChange={(e) => setLogsSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                  <tr>
+                    <th className="p-4">Action</th>
+                    <th className="p-4">Actor</th>
+                    <th className="p-4">Target</th>
+                    <th className="p-4">Log Record ID</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {logsLoadState === "loading" ? (
+                    <tr>
+                      <td colSpan={4} className="p-8 text-center text-slate-500">
+                        <Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" />
+                      </td>
+                    </tr>
+                  ) : logsLoadState === "unavailable" ? (
+                    <tr>
+                      <td colSpan={4} className="p-8 text-center text-rose-600">
+                        Audit log entry collection is unavailable.
+                      </td>
+                    </tr>
+                  ) : filteredLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="p-8 text-center text-slate-500">
+                        No audit log entries found matching filter.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredLogs.map((log) => (
+                      <tr key={log.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="p-4 font-bold text-slate-800">
+                          <span className="px-2.5 py-1 bg-slate-100 text-slate-800 text-xs font-mono rounded-lg border border-slate-200">
+                            {log.action}
+                          </span>
+                        </td>
+                        <td className="p-4 text-xs font-mono text-slate-600">
+                          {log.actorUid || log.approvedBy || log.updatedBy || "System"}
+                        </td>
+                        <td className="p-4 text-xs font-mono text-slate-600">
+                          {log.targetEmail || log.targetUid || log.userId || "-"}
+                        </td>
+                        <td className="p-4 text-xs font-mono text-slate-400">
+                          {log.id}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "profile_claims" && (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4">
+              <div className="flex items-center gap-2">
+                <BadgeCheck className="text-emerald-600" size={20} />
+                <h3 className="font-black text-slate-800 text-base">Profile Claims Audit</h3>
+              </div>
+              <div className="relative flex-1 sm:w-64 w-full">
+                <Search
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  size={16}
+                />
+                <input
+                  type="text"
+                  placeholder="Filter claims by email, name, role, academy..."
+                  value={claimsSearchQuery}
+                  onChange={(e) => setClaimsSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+            </div>
+            <div className="bg-blue-50/70 border-b border-blue-100 px-4 py-3 text-xs text-blue-800 font-medium flex items-center gap-2">
+              <ShieldAlert className="shrink-0 text-blue-600" size={16} />
+              SuperAdmin Profile Claims is a read-only audit view. No claim status or player-link writes are performed from this screen.
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                  <tr>
+                    <th className="p-4">User</th>
+                    <th className="p-4">Requested Role</th>
+                    <th className="p-4">Academy ID</th>
+                    <th className="p-4">Status</th>
+                    <th className="p-4">Claim ID</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {profileClaimsLoadState === "loading" ? (
+                    <tr>
+                      <td colSpan={5} className="p-8 text-center text-slate-500">
+                        <Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" />
+                      </td>
+                    </tr>
+                  ) : profileClaimsLoadState === "unavailable" ? (
+                    <tr>
+                      <td colSpan={5} className="p-8 text-center text-rose-600">
+                        Profile claims inventory unavailable.
+                      </td>
+                    </tr>
+                  ) : filteredClaims.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="p-8 text-center text-slate-500">
+                        No profile claims found matching filter.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredClaims.map((claim) => (
+                      <tr key={claim.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="p-4">
+                          <div className="font-bold text-slate-800">{claim.userName || "-"}</div>
+                          <div className="text-xs text-slate-500">{claim.userEmail || claim.userId || "-"}</div>
+                        </td>
+                        <td className="p-4">
+                          <span className="px-2.5 py-1 bg-amber-100 text-amber-800 text-xs font-bold rounded-full border border-amber-200">
+                            {claim.requestedRole || "-"}
+                          </span>
+                        </td>
+                        <td className="p-4 font-mono text-xs text-slate-700">
+                          {claim.academyId || "-"}
+                        </td>
+                        <td className="p-4">
+                          <span className={`px-2.5 py-1 text-xs font-bold rounded-full border ${
+                            claim.status === "APPROVED"
+                              ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                              : claim.status === "REJECTED"
+                                ? "bg-rose-100 text-rose-800 border-rose-200"
+                                : "bg-amber-100 text-amber-800 border-amber-200"
+                          }`}>
+                            {claim.status || "PENDING"}
+                          </span>
+                        </td>
+                        <td className="p-4 font-mono text-xs text-slate-400">
+                          {claim.id}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "payment_approvals" && (
+          <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center max-w-2xl mx-auto shadow-sm">
+            <div className="w-12 h-12 bg-amber-100 text-amber-700 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-amber-200">
+              <CreditCard size={24} />
+            </div>
+            <h3 className="text-lg font-black text-slate-900 mb-2">
+              Payment Approvals Control Unavailable
+            </h3>
+            <p className="text-slate-600 text-sm leading-relaxed mb-6">
+              Payment approvals require an authoritative server-backed payment gateway API. Client-side payment status modification is disabled under Access A6 security rules to prevent unbacked privilege escalation.
+            </p>
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl border border-slate-200">
+              <ShieldAlert size={14} className="text-amber-600" />
+              Access A6 Security Baseline Preserved
+            </div>
+          </div>
+        )}
+
+        {activeTab === "observation_metrics" && (
+          <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center max-w-2xl mx-auto shadow-sm">
+            <div className="w-12 h-12 bg-blue-100 text-blue-700 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-blue-200">
+              <Activity size={24} />
+            </div>
+            <h3 className="text-lg font-black text-slate-900 mb-2">
+              Observation Metrics Telemetry Unavailable
+            </h3>
+            <p className="text-slate-600 text-sm leading-relaxed mb-6">
+              Platform observation metrics are unavailable because no authoritative telemetry collector is active in current main. Synthetic and mock metrics have been excluded to preserve data integrity.
+            </p>
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl border border-slate-200">
+              <ShieldAlert size={14} className="text-blue-600" />
+              Data Integrity Rule Enforced (No Mock Metrics)
             </div>
           </div>
         )}
