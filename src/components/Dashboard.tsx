@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { useLanguage } from "../contexts/LanguageContext";
 import { useAuth, UserRole } from "../contexts/AuthContext";
+import { useSuperAdminSupport } from "../contexts/SuperAdminSupportContext";
+import { canAccessTenantCapability } from "../lib/superAdminSupportModel";
 
 type DashboardItem = {
   id: string;
@@ -23,6 +25,7 @@ type DashboardItem = {
   color: string;
   route: string;
   allowedRoles?: UserRole[];
+  supportAllowedRoles?: UserRole[];
 };
 
 type DashboardSection = {
@@ -101,6 +104,7 @@ const SECTIONS: DashboardSection[] = [
         color: "bg-orange-500 text-orange-50",
         route: "fitness",
         allowedRoles: ["ADMIN", "COACH", "SUPERADMIN"],
+        supportAllowedRoles: ["ADMIN", "SUPERADMIN"],
       },
     ],
   },
@@ -163,6 +167,7 @@ export default function Dashboard({
 }) {
   const { t } = useLanguage();
   const { hasPermission } = useAuth();
+  const { isSupportActive, presentationRole } = useSuperAdminSupport();
 
   return (
     <div className="w-full max-w-6xl mx-auto pb-10">
@@ -177,9 +182,18 @@ export default function Dashboard({
 
       <div className="space-y-8">
         {SECTIONS.map((section, idx) => {
-          const visibleItems = section.items.filter(
-            (item) => !item.allowedRoles || hasPermission(item.allowedRoles),
-          );
+          const visibleItems = section.items.filter((item) => {
+            if (!item.allowedRoles) return true;
+            const effectiveAllowedRoles = isSupportActive && item.supportAllowedRoles
+              ? item.supportAllowedRoles
+              : item.allowedRoles;
+            return canAccessTenantCapability(
+              presentationRole,
+              effectiveAllowedRoles,
+              isSupportActive,
+              hasPermission,
+            );
+          });
           if (visibleItems.length === 0) return null;
 
           return (

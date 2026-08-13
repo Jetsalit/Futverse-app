@@ -21,6 +21,11 @@ import {
   isExactDocumentId,
   resolveExactMembershipSnapshot,
 } from "./academyAccessModel";
+import { useSuperAdminSupport } from "./SuperAdminSupportContext";
+import {
+  canUpdateAcademySettings,
+  isExactActiveSuperAdmin,
+} from "../lib/superAdminSupportModel";
 
 export interface AcademySettings {
   name: string;
@@ -38,6 +43,7 @@ export interface AcademyDocument extends Partial<AcademySettings> {
 export type AcademyAccessState =
   | "LOADING"
   | "ACTIVE_MEMBERSHIP"
+  | "SUPERADMIN_WORKSPACE"
   | "NO_ACADEMY"
   | "MEMBERSHIP_MISSING"
   | "MEMBERSHIP_PENDING"
@@ -77,7 +83,13 @@ const normalizeError = (error: unknown) =>
   error instanceof Error ? error : new Error(String(error));
 
 export function AcademyProvider({ children }: { children: React.ReactNode }) {
-  const { currentUser } = useAuth();
+  const { currentUser, actualUser } = useAuth();
+  const supportContext = useSuperAdminSupport();
+
+  const isSuperAdminActor = isExactActiveSuperAdmin(actualUser);
+  const supportAcademyId = isSuperAdminActor ? supportContext.activeAcademyId : null;
+  const supportSession = isSuperAdminActor ? supportContext.session : null;
+
   const [settings, setSettings] = useState<AcademySettings>(defaultSettings);
   const [academyId, setAcademyId] = useState<string | null>(null);
   const [academy, setAcademy] = useState<AcademyDocument | null>(null);
@@ -115,6 +127,89 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
       unsubscribeAcademy = undefined;
     };
 
+    // PATH B: SuperAdmin Support Workspace Path (SuperAdmin never uses Path A)
+    if (isSuperAdminActor) {
+      clearTenantAccess();
+      setError(null);
+
+      if (!supportAcademyId) {
+        setAccessState("NO_ACADEMY");
+        setLoading(false);
+        return;
+      }
+
+      if (!isExactDocumentId(supportAcademyId)) {
+        setAccessState("ERROR");
+        setError(new Error("supportAcademyId must be an exact Firestore document ID."));
+        setLoading(false);
+        return;
+      }
+
+      const scopeKey = JSON.stringify(["SUPERADMIN", supportAcademyId]);
+      setAccessState("LOADING");
+      setLoading(true);
+
+      unsubscribeAcademy = onSnapshot(
+        doc(db, "academies", supportAcademyId),
+        { includeMetadataChanges: true },
+        (academySnapshot) => {
+          if (cancelled) return;
+
+          if (
+            academySnapshot.metadata.fromCache ||
+            academySnapshot.metadata.hasPendingWrites
+          ) {
+            clearTenantAccess();
+            setAccessState("ERROR");
+            setError(new Error("Authoritative Academy data is unavailable."));
+            setLoading(false);
+            return;
+          }
+
+          if (!academySnapshot.exists()) {
+            clearTenantAccess();
+            setAccessState("ACADEMY_NOT_FOUND");
+            setError(null);
+            setLoading(false);
+            return;
+          }
+
+          const academyData = mapCanonicalSnapshot<AcademyDocument>(academySnapshot);
+          const nextSettings = {
+            ...defaultSettings,
+            ...academySnapshot.data(),
+          };
+
+          setAuthorizedScopeKey(scopeKey);
+          setAcademyId(supportAcademyId);
+          setAcademy(academyData);
+          setMembership(null); // SuperAdmin has no fake membership
+          setTenantRole(null); // Effective role remains in SuperAdminSupportContext instead
+          setSettings(nextSettings);
+          setAccessState("SUPERADMIN_WORKSPACE");
+          setError(null);
+          setLoading(false);
+        },
+        (academySnapshotError) => {
+          if (cancelled) return;
+          clearTenantAccess();
+          setError(normalizeError(academySnapshotError));
+          setAccessState(
+            permissionDenied(academySnapshotError)
+              ? "PERMISSION_DENIED"
+              : "ERROR",
+          );
+          setLoading(false);
+        },
+      );
+
+      return () => {
+        cancelled = true;
+        stopAcademyListener();
+      };
+    }
+
+    // PATH A: Normal Staff Membership Resolution
     if (!currentUser) {
       clearTenantAccess();
       setError(null);
@@ -278,32 +373,59 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
     requestedAcademyId,
     requestedScopeKey,
     requestedUid,
+    isSuperAdminActor,
+    supportAcademyId,
+    supportSession,
   ]);
 
+  const isSuperAdminWorkspaceActive = Boolean(
+    isSuperAdminActor &&
+      supportAcademyId &&
+      authorizedScopeKey === JSON.stringify(["SUPERADMIN", supportAcademyId]) &&
+      academyId === supportAcademyId &&
+      accessState === "SUPERADMIN_WORKSPACE",
+  );
+
   const hasAuthorizedTenantContext = Boolean(
-    requestedScopeKey &&
-      authorizedScopeKey === requestedScopeKey &&
-      academyId === requestedAcademyId &&
-      isExactActiveMembership(
-        membership,
-        requestedUid,
-        requestedUid,
-        requestedAcademyId,
-      ),
+    isSuperAdminWorkspaceActive ||
+      (!isSuperAdminActor &&
+        requestedScopeKey &&
+        authorizedScopeKey === requestedScopeKey &&
+        academyId === requestedAcademyId &&
+        isExactActiveMembership(
+          membership,
+          requestedUid,
+          requestedUid,
+          requestedAcademyId,
+        )),
   );
 
   const effectiveAccessState: AcademyAccessState =
-    accessState === "ACTIVE_MEMBERSHIP" && !hasAuthorizedTenantContext
-      ? requestedScopeKey
-        ? "LOADING"
-        : requestedAcademyId === null
-          ? "NO_ACADEMY"
-          : "ERROR"
-      : accessState;
+    accessState === "SUPERADMIN_WORKSPACE" && !isSuperAdminWorkspaceActive
+      ? "LOADING"
+      : accessState === "ACTIVE_MEMBERSHIP" && !hasAuthorizedTenantContext
+        ? requestedScopeKey
+          ? "LOADING"
+          : requestedAcademyId === null
+            ? "NO_ACADEMY"
+            : "ERROR"
+        : accessState;
 
   const updateSettings = async (newSettings: Partial<AcademySettings>) => {
     if (!hasAuthorizedTenantContext || !academyId) {
-      throw new Error("An ACTIVE Membership is required.");
+      throw new Error("An ACTIVE Membership or SuperAdmin Workspace is required.");
+    }
+    const isSupportActive = Boolean(isSuperAdminActor && supportAcademyId);
+    if (
+      !canUpdateAcademySettings(
+        isSupportActive,
+        supportContext.presentationRole,
+        membership?.role,
+      )
+    ) {
+      throw new Error(
+        "Permission denied: tenant settings update is not permitted for your current role.",
+      );
     }
     await setDoc(
       doc(db, "academies", academyId),
@@ -317,7 +439,7 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
 
   const getAcademyCollection = (collectionName: string) => {
     if (!hasAuthorizedTenantContext || !academyId) {
-      throw new Error(`Cannot access ${collectionName} without an ACTIVE Membership.`);
+      throw new Error(`Cannot access ${collectionName} without an ACTIVE Membership or SuperAdmin Workspace.`);
     }
     return collection(db, "academies", academyId, collectionName);
   };

@@ -56,6 +56,9 @@ import {
   type PrivilegedRole,
 } from "./lib/privilegedAuthorization";
 import { isExplicitlyActiveAccountStatus } from "./lib/accountRolePolicy";
+import { useSuperAdminSupport } from "./contexts/SuperAdminSupportContext";
+import { SuperAdminSupportBar } from "./components/superadmin/SuperAdminSupportBar";
+import { canAccessTenantCapability } from "./lib/superAdminSupportModel";
 
 function AccessResolutionScreen({
   accessState,
@@ -136,12 +139,20 @@ export default function App() {
     logout,
   } = useAuth();
   const {
+    isSupportActive,
+    presentationRole,
+  } = useSuperAdminSupport();
+  const {
     settings: academySettings,
     academyId,
     accessState,
     loading: academyLoading,
     error: academyError,
   } = useAcademy();
+
+  const effectivePresentationRole = isSupportActive
+    ? presentationRole
+    : (currentUser?.role || "USER");
 
   const prevLandingKeyRef = useRef<string>("");
 
@@ -258,13 +269,48 @@ export default function App() {
     }
 
     // Wrap Route Protection Logic
-    if (currentPage === "settings" && !hasPermission(["ADMIN"])) {
+    if (
+      currentPage === "settings" &&
+      !canAccessTenantCapability(
+        effectivePresentationRole,
+        ["ADMIN"],
+        isSupportActive,
+        hasPermission,
+      )
+    ) {
       return <AccessDenied onBack={() => navigateTo("dashboard")} />;
     }
-    if (currentPage === "fitness" && !hasPermission(["ADMIN"])) {
+    if (
+      currentPage === "fitness" &&
+      !canAccessTenantCapability(
+        effectivePresentationRole,
+        ["ADMIN"],
+        isSupportActive,
+        hasPermission,
+      )
+    ) {
       return <AccessDenied onBack={() => navigateTo("dashboard")} />;
     }
-    if (currentPage === "scout" && !hasPermission(["ADMIN", "SCOUT"])) {
+    if (
+      currentPage === "scout" &&
+      !canAccessTenantCapability(
+        effectivePresentationRole,
+        ["ADMIN", "SCOUT"],
+        isSupportActive,
+        hasPermission,
+      )
+    ) {
+      return <AccessDenied onBack={() => navigateTo("dashboard")} />;
+    }
+    if (
+      currentPage === "coaches" &&
+      !canAccessTenantCapability(
+        effectivePresentationRole,
+        ["ADMIN", "SUPERADMIN"],
+        isSupportActive,
+        hasPermission,
+      )
+    ) {
       return <AccessDenied onBack={() => navigateTo("dashboard")} />;
     }
 
@@ -424,8 +470,10 @@ export default function App() {
   ];
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-900 font-sans overflow-hidden">
-      {/* Mobile Sidebar Overlay */}
+    <div className="flex flex-col h-screen bg-slate-50 text-slate-900 font-sans overflow-hidden">
+      <SuperAdminSupportBar />
+      <div className="flex flex-1 min-h-0 relative">
+        {/* Mobile Sidebar Overlay */}
       {isMobileMenuOpen && (
         <div
           className="fixed inset-0 bg-slate-900/50 z-30 md:hidden transition-opacity"
@@ -509,7 +557,7 @@ export default function App() {
 
           <nav className="space-y-2 mt-8 w-full px-2">
             {navItems.map((item) => {
-              if (currentUser && !item.roles.includes(currentUser.role))
+              if (currentUser && !item.roles.includes(effectivePresentationRole))
                 return null;
 
               return (
@@ -664,6 +712,7 @@ export default function App() {
         isOpen={isNotificationOpen}
         onClose={() => setIsNotificationOpen(false)}
       />
+      </div>
     </div>
   );
 }
