@@ -616,7 +616,7 @@ export default function App() {
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-w-0 relative">
         {/* Top Header Bar with Dynamic Squad Switcher & Network Status */}
-        <header className="fixed top-0 right-0 left-0 md:left-64 z-40 h-16 shrink-0 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-8">
+        <header className="absolute top-0 right-0 left-0 z-40 h-16 shrink-0 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-8">
           <div className="flex items-center gap-3 sm:gap-4">
             <button
               onClick={() => setIsMobileMenuOpen(true)}
