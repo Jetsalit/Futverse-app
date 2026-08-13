@@ -50,6 +50,23 @@ export function isExactActiveStaffMembership(
   return role === "ADMIN" || role === "COACH";
 }
 
+export function isExactActiveStaffMembershipForRole(
+  membership: unknown,
+  targetUid: unknown,
+  academyId: unknown,
+  documentId: unknown | undefined,
+  expectedTenantRole: string,
+): boolean {
+  if (expectedTenantRole !== "ADMIN" && expectedTenantRole !== "COACH") {
+    return false;
+  }
+  if (!isExactActiveStaffMembership(membership, targetUid, academyId, documentId)) {
+    return false;
+  }
+  const candidate = membership as Record<string, unknown>;
+  return candidate.role === expectedTenantRole;
+}
+
 export function canEnterAcademyWorkspace(
   actor: unknown,
   academyId: unknown,

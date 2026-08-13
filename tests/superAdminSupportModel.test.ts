@@ -7,6 +7,7 @@ import {
   canUpdateAcademySettings,
   isAuthoritativeSnapshotMetadata,
   isExactActiveStaffMembership,
+  isExactActiveStaffMembershipForRole,
   isExactActiveSuperAdmin,
   isExactDocumentId,
   resolveSupportPresentationRole,
@@ -402,5 +403,68 @@ describe("superAdminSupportModel", () => {
       false,
     );
     assert.equal(canUpdateAcademySettings(true, role), false);
+  });
+
+  it("38. isExactActiveStaffMembershipForRole: expected ADMIN + membership ADMIN => true", () => {
+    assert.equal(
+      isExactActiveStaffMembershipForRole(validAdminMembership, targetStaffUid, academyId, undefined, "ADMIN"),
+      true,
+    );
+  });
+
+  it("39. isExactActiveStaffMembershipForRole: expected ADMIN + membership COACH => false", () => {
+    assert.equal(
+      isExactActiveStaffMembershipForRole(validCoachMembership, targetStaffUid, academyId, undefined, "ADMIN"),
+      false,
+    );
+  });
+
+  it("40. isExactActiveStaffMembershipForRole: expected COACH + membership COACH => true", () => {
+    assert.equal(
+      isExactActiveStaffMembershipForRole(validCoachMembership, targetStaffUid, academyId, undefined, "COACH"),
+      true,
+    );
+  });
+
+  it("41. isExactActiveStaffMembershipForRole: expected COACH + membership ADMIN => false", () => {
+    assert.equal(
+      isExactActiveStaffMembershipForRole(validAdminMembership, targetStaffUid, academyId, undefined, "COACH"),
+      false,
+    );
+  });
+
+  it("42. isExactActiveStaffMembershipForRole: inactive => false", () => {
+    assert.equal(
+      isExactActiveStaffMembershipForRole({ ...validAdminMembership, status: "INACTIVE" }, targetStaffUid, academyId, undefined, "ADMIN"),
+      false,
+    );
+  });
+
+  it("43. isExactActiveStaffMembershipForRole: mismatched UID => false", () => {
+    assert.equal(
+      isExactActiveStaffMembershipForRole({ ...validAdminMembership, userId: "other-uid" }, targetStaffUid, academyId, undefined, "ADMIN"),
+      false,
+    );
+  });
+
+  it("44. isExactActiveStaffMembershipForRole: mismatched Academy => false", () => {
+    assert.equal(
+      isExactActiveStaffMembershipForRole({ ...validAdminMembership, academyId: "other-academy" }, targetStaffUid, academyId, undefined, "ADMIN"),
+      false,
+    );
+  });
+
+  it("45. isExactActiveStaffMembershipForRole: mismatched document ID => false", () => {
+    assert.equal(
+      isExactActiveStaffMembershipForRole(validAdminMembership, targetStaffUid, academyId, "wrong-doc-id", "ADMIN"),
+      false,
+    );
+  });
+
+  it("46. isExactActiveStaffMembershipForRole: invalid expected role => false", () => {
+    assert.equal(
+      isExactActiveStaffMembershipForRole(validAdminMembership, targetStaffUid, academyId, undefined, "SUPERADMIN"),
+      false,
+    );
   });
 });

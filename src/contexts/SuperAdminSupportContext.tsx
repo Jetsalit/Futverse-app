@@ -26,6 +26,7 @@ import {
   canStartStaffWorkMode,
   isAuthoritativeSnapshotMetadata,
   isExactActiveStaffMembership,
+  isExactActiveStaffMembershipForRole,
   isExactActiveSuperAdmin,
   isExactDocumentId,
   resolveSupportPresentationRole,
@@ -376,14 +377,15 @@ export function SuperAdminSupportProvider({
             }
             const data = snapshot.data();
             if (
-              !isExactActiveStaffMembership(
+              !isExactActiveStaffMembershipForRole(
                 data,
                 expectedUid,
                 expectedAcademyId,
                 snapshot.id,
+                tenantRole
               )
             ) {
-              finishPendingPhase(new Error("Target Membership became inactive or invalid."));
+              finishPendingPhase(new Error("Target Membership became inactive, invalid, or changed role."));
               return;
             }
 
@@ -407,15 +409,16 @@ export function SuperAdminSupportProvider({
           } else {
             const data = snapshot.data();
             if (
-              !isExactActiveStaffMembership(
+              !isExactActiveStaffMembershipForRole(
                 data,
                 expectedUid,
                 expectedAcademyId,
                 snapshot.id,
+                tenantRole
               )
             ) {
               isValid = false;
-              invalidReason = "Target Membership became inactive or invalid.";
+              invalidReason = "Target Membership became inactive, invalid, or changed role.";
             }
           }
 
