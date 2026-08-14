@@ -98,7 +98,7 @@ export function canStartStaffWorkMode(
 
 export function resolveSupportPresentationRole(
   session: SuperAdminSupportSession | null,
-): "SUPERADMIN" | "ADMIN" | "COACH" | "PLAYER" | "PARENT" | "NONE" {
+): "SUPERADMIN" | "ADMIN" | "COACH" | "NONE" {
   if (!session) return "SUPERADMIN";
   if (session.mode === "ACADEMY_WORKSPACE") return "SUPERADMIN";
   if (session.mode === "WORK_AS_STAFF") {
@@ -106,9 +106,8 @@ export function resolveSupportPresentationRole(
     if (session.subject?.tenantRole === "COACH") return "COACH";
     return "NONE";
   }
-  if (session.mode === "SUPPORT_PLAYER") return "PLAYER";
-  if (session.mode === "SUPPORT_PARENT") return "PARENT";
-  return "SUPERADMIN";
+  // Unknown/unsupported mode — fail closed
+  return "NONE";
 }
 
 export function validateSupportSubject(
@@ -119,18 +118,11 @@ export function validateSupportSubject(
   if (!isExactDocumentId(candidate.uid)) return false;
 
   const role = candidate.role;
-  if (
-    role !== "ADMIN" &&
-    role !== "COACH" &&
-    role !== "PLAYER" &&
-    role !== "PARENT"
-  ) {
+  if (role !== "ADMIN" && role !== "COACH") {
     return false;
   }
 
-  if (role === "ADMIN" || role === "COACH") {
-    if (candidate.tenantRole !== role) return false;
-  }
+  if (candidate.tenantRole !== role) return false;
 
   return true;
 }

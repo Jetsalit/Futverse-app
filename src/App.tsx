@@ -160,12 +160,18 @@ export default function App() {
       if (isSupportActive) {
         await exitSupportMode();
       }
-      await logout();
     } catch (err) {
       console.error("Failed to safely close support session before logout:", err);
       alert(
         "Unable to safely close support session. Logout was cancelled to preserve audit integrity.",
       );
+      return;
+    }
+    try {
+      await logout();
+    } catch (err) {
+      console.error("Firebase sign-out failed:", err);
+      alert("Sign-out failed. Please try again.");
     }
   };
 

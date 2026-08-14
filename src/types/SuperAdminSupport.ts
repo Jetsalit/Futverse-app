@@ -1,14 +1,10 @@
 export type SuperAdminSupportMode =
   | "ACADEMY_WORKSPACE"
-  | "WORK_AS_STAFF"
-  | "SUPPORT_PLAYER"
-  | "SUPPORT_PARENT";
+  | "WORK_AS_STAFF";
 
 export type SuperAdminSupportSubjectRole =
   | "ADMIN"
-  | "COACH"
-  | "PLAYER"
-  | "PARENT";
+  | "COACH";
 
 export interface SuperAdminSupportSubject {
   uid: string;

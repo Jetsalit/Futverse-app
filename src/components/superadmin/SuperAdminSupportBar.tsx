@@ -1,5 +1,5 @@
-import React from "react";
-import { ShieldAlert, LogOut, UserCheck } from "lucide-react";
+import React, { useState } from "react";
+import { ShieldAlert, LogOut, UserCheck, AlertCircle } from "lucide-react";
 import { useSuperAdminSupport } from "../../contexts/SuperAdminSupportContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { useAcademy } from "../../contexts/AcademyContext";
@@ -9,6 +9,8 @@ export function SuperAdminSupportBar() {
     useSuperAdminSupport();
   const { currentUser } = useAuth();
   const { academy } = useAcademy();
+  const [isExiting, setIsExiting] = useState(false);
+  const [exitError, setExitError] = useState<string | null>(null);
 
   if (!isSupportActive || !session) return null;
 
@@ -17,10 +19,19 @@ export function SuperAdminSupportBar() {
   const superAdminName = currentUser?.name || currentUser?.email || "SuperAdmin";
 
   const handleExit = async () => {
+    if (isExiting) return;
+    setIsExiting(true);
+    setExitError(null);
     try {
       await exitSupportMode();
     } catch (err) {
+      setExitError(
+        "Failed to safely exit support mode. The audit record is queued for retry. " +
+          "You may try again or log out.",
+      );
       console.error("Error exiting support mode:", err);
+    } finally {
+      setIsExiting(false);
     }
   };
 
@@ -61,18 +72,36 @@ export function SuperAdminSupportBar() {
 
         <span className="text-slate-600 hidden md:inline">|</span>
         <div className="text-slate-400 text-[11px] hidden md:inline">
-          Authenticated actor: <span className="text-slate-200">{superAdminName}</span>
+          Authenticated actor:{" "}
+          <span className="text-slate-200">{superAdminName}</span>
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={handleExit}
-        className="flex items-center gap-1.5 px-3 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-lg transition-colors shadow-sm shrink-0"
-      >
-        <LogOut size={14} />
-        {session.mode === "WORK_AS_STAFF" ? "Exit Work Mode" : "Exit Workspace"}
-      </button>
+      <div className="flex items-center gap-2">
+        {exitError && (
+          <div className="flex items-center gap-1 text-amber-300 text-[11px] max-w-xs">
+            <AlertCircle size={12} className="shrink-0" />
+            <span className="truncate">{exitError}</span>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={handleExit}
+          disabled={isExiting}
+          className={`flex items-center gap-1.5 px-3 py-1 font-bold rounded-lg transition-colors shadow-sm shrink-0 ${
+            isExiting
+              ? "bg-amber-500/50 text-slate-950/50 cursor-not-allowed"
+              : "bg-amber-500 hover:bg-amber-600 text-slate-950"
+          }`}
+        >
+          <LogOut size={14} />
+          {isExiting
+            ? "Exiting..."
+            : session.mode === "WORK_AS_STAFF"
+              ? "Exit Work Mode"
+              : "Exit Workspace"}
+        </button>
+      </div>
     </div>
   );
 }
