@@ -5,6 +5,7 @@ import {
   collection,
   getDocs,
   query,
+  where,
   orderBy,
   limit,
 } from "firebase/firestore";
@@ -34,11 +35,17 @@ import {
   type SafeAccountRole,
 } from "../lib/accountRolePolicy";
 import {
+  formatFirestoreDate,
+  getUserApprovalBadge,
+  mapCanonicalClaimSnapshot,
+  resolveStaffClaimView,
+  getApprovalActionLabel,
+  type ExplicitAccountRoleSelection,
+  type StaffClaimView,
+} from "../lib/superAdminApprovalModel";
+import {
   APPROVED_ACCOUNT_STATUS,
-  BULK_APPROVED_ROLE,
-  MAX_ATOMIC_BULK_APPROVAL_USERS,
   approveUserAtomically,
-  bulkApproveUsersAtomically,
   rejectUserAtomically,
   updateUserRoleAtomically,
   updateUserStatusAtomically,
@@ -84,7 +91,7 @@ interface ProfileClaimItem {
   requestedRole?: string;
   academyId?: string;
   status?: string;
-  createdAt?: string;
+  createdAt?: unknown;
 }
 
 interface AcademyListItem {
@@ -120,7 +127,9 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const [headerSearchQuery, setHeaderSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("ALL");
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [approvedRole, setApprovedRole] = useState<SafeAccountRole>("USER");
+  const [approvedRole, setApprovedRole] = useState<ExplicitAccountRoleSelection>("");
+  const [staffClaimView, setStaffClaimView] = useState<StaffClaimView | null>(null);
+  const [staffClaimLoadState, setStaffClaimLoadState] = useState<"idle" | "loading" | "loaded" | "error">("idle");
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [mutationNotice, setMutationNotice] = useState<string | null>(null);
   const [isMutating, setIsMutating] = useState(false);
@@ -344,7 +353,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
             requestedRole: typeof data.requestedRole === "string" ? data.requestedRole : undefined,
             academyId: typeof data.academyId === "string" ? data.academyId : undefined,
             status: typeof data.status === "string" ? data.status : undefined,
-            createdAt: typeof data.createdAt === "string" ? data.createdAt : undefined,
+            createdAt: data.createdAt,
           };
         });
         setProfileClaimsList(claims);
@@ -444,6 +453,66 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   };
 
   const actorUid = authUser?.uid || authUser?.id;
+  useEffect(() => {
+    setStaffClaimView(null);
+
+    if (!selectedUser) {
+      setStaffClaimLoadState("idle");
+      return;
+    }
+
+    const intent = assessRequestedIntent(selectedUser.requestedRole);
+
+    if (
+      intent.kind !== "TENANT_MEMBERSHIP_INTENT" ||
+      !selectedUser.id
+    ) {
+      setStaffClaimLoadState("idle");
+      return;
+    }
+
+    const capturedUid = selectedUser.id;
+    const capturedUser = selectedUser;
+    let cancelled = false;
+
+    setStaffClaimLoadState("loading");
+
+    async function loadStaffClaims() {
+      try {
+        const claimsQuery = query(
+          collection(db, "profile_claims"),
+          where("userId", "==", capturedUid),
+        );
+        const snap = await getDocs(claimsQuery);
+        if (cancelled) return;
+
+        const rawClaims = snap.docs.map((docSnap) =>
+          mapCanonicalClaimSnapshot(
+            docSnap.id,
+            docSnap.data() as Record<string, unknown>,
+          ),
+        );
+
+        if (cancelled) return;
+
+        const resolved = resolveStaffClaimView(rawClaims, capturedUser);
+        setStaffClaimView(resolved);
+        setStaffClaimLoadState("loaded");
+      } catch (err) {
+        if (cancelled) return;
+        console.error("Failed to query profile_claims for user:", err);
+        setStaffClaimView(null);
+        setStaffClaimLoadState("error");
+      }
+    }
+
+    void loadStaffClaims();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedUser?.id, selectedUser?.requestedRole]);
+
   const administrativeTarget = (user: User) => ({
     targetUid: user.id || "",
     targetEmail: user.email,
@@ -465,15 +534,20 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   };
 
   const openUserReview = (user: User) => {
-    setApprovedRole("USER");
+    setApprovedRole("");
     setMutationError(null);
     setMutationNotice(null);
     setSelectedUser(user);
+    setStaffClaimView(null);
   };
 
   const handleApprove = async (user: User) => {
     if (!user.id || !actorUid) {
       setMutationError("Canonical target UID and authenticated SuperAdmin UID are required.");
+      return;
+    }
+    if (!isSafeAccountRole(approvedRole)) {
+      setMutationError("Please explicitly select an approved account role.");
       return;
     }
     beginMutation();
@@ -511,48 +585,6 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
       setMutationNotice(`${user.email || user.name} rejected with an atomic audit record.`);
     } catch (error) {
       mutationFailure(error, "Error rejecting user");
-    } finally {
-      setIsMutating(false);
-    }
-  };
-
-  const handleBulkApprove = async () => {
-    const toApprove = filteredPendingUsers;
-    if (!actorUid) {
-      setMutationError("Authenticated SuperAdmin UID is required.");
-      return;
-    }
-    const blocked = toApprove.filter((user) =>
-      genericApprovalBlockReason(user.requestedRole) !== null
-    );
-    if (blocked.length > 0) {
-      setMutationError(
-        `Bulk approval refused: ${blocked.length} selected record(s) have tenant, privileged, missing, malformed, or unknown requested intent metadata. Review them individually or use the Membership flow.`,
-      );
-      return;
-    }
-    if (toApprove.length > MAX_ATOMIC_BULK_APPROVAL_USERS) {
-      setMutationError(
-        `Bulk approval refused: ${toApprove.length} Users exceed the atomic limit of ${MAX_ATOMIC_BULK_APPROVAL_USERS}. Narrow the filter; no writes were attempted.`,
-      );
-      return;
-    }
-    const confirmed = window.confirm(
-      `Approve all ${toApprove.length} filtered Users as authoritative role ${BULK_APPROVED_ROLE} with status ${APPROVED_ACCOUNT_STATUS}? requestedRole will remain metadata only. All User and audit-log writes will commit in one atomic batch.`,
-    );
-    if (!confirmed) return;
-
-    beginMutation();
-    try {
-      await bulkApproveUsersAtomically({
-        actorUid,
-        targets: toApprove.map(administrativeTarget),
-      });
-      setMutationNotice(
-        `${toApprove.length} Users approved atomically as ${BULK_APPROVED_ROLE} / ${APPROVED_ACCOUNT_STATUS}.`,
-      );
-    } catch (error) {
-      mutationFailure(error, "Bulk approval failed");
     } finally {
       setIsMutating(false);
     }
@@ -950,15 +982,6 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                     </select>
                   </div>
                 </div>
-                {filteredPendingUsers.length > 0 && (
-                  <button
-                    onClick={handleBulkApprove}
-                    disabled={isMutating}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm transition-colors whitespace-nowrap"
-                  >
-                    Approve Filtered as USER ({filteredPendingUsers.length})
-                  </button>
-                )}
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
@@ -1026,37 +1049,77 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                             </div>
                           </td>
                           <td className="p-4">
-                            <span className="px-2.5 py-1 bg-amber-100 text-amber-800 text-xs font-bold rounded-full border border-amber-200">
-                              {assessRequestedIntent(user.requestedRole).display}
-                            </span>
+                            {(() => {
+                              const badge = getUserApprovalBadge(user.requestedRole);
+                              const badgeColor =
+                                badge.kind === "SAFE_ACCOUNT"
+                                  ? "bg-blue-100 text-blue-800 border-blue-200"
+                                  : badge.kind === "TENANT_STAFF"
+                                    ? "bg-amber-100 text-amber-800 border-amber-200"
+                                    : "bg-rose-100 text-rose-800 border-rose-200";
+                              return (
+                                <span className={`px-2.5 py-1 text-xs font-bold rounded-full border ${badgeColor}`}>
+                                  {badge.label}
+                                </span>
+                              );
+                            })()}
                           </td>
                           <td className="p-4 text-slate-500 text-xs">
-                            {user.createdAt
-                              ? new Date(user.createdAt).toLocaleDateString()
-                              : "-"}
+                            {formatFirestoreDate(user.createdAt)}
                           </td>
                           <td className="p-4 text-right space-x-2 whitespace-nowrap">
-                            <button
-                              onClick={() => openUserReview(user)}
-                              className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                              title="View Profile"
-                            >
-                              <Eye size={18} />
-                            </button>
-                            <button
-                              onClick={() => openUserReview(user)}
-                              className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                              title="Review explicit account approval"
-                            >
-                              <CheckCircle size={18} />
-                            </button>
-                            <button
-                              onClick={() => handleReject(user)}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                              title="Reject"
-                            >
-                              <XCircle size={18} />
-                            </button>
+                            {assessRequestedIntent(user.requestedRole).kind === "SAFE_ACCOUNT_INTENT" ? (
+                              <>
+                                <button
+                                  onClick={() => openUserReview(user)}
+                                  className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                  title="View Profile"
+                                >
+                                  <Eye size={18} />
+                                </button>
+                                <button
+                                  onClick={() => openUserReview(user)}
+                                  className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                  title="Review explicit account approval"
+                                >
+                                  <CheckCircle size={18} />
+                                </button>
+                                <button
+                                  onClick={() => handleReject(user)}
+                                  disabled={isMutating}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                  title="Reject Account Request"
+                                >
+                                  <XCircle size={18} />
+                                </button>
+                              </>
+                            ) : assessRequestedIntent(user.requestedRole).kind === "TENANT_MEMBERSHIP_INTENT" ? (
+                              <button
+                                onClick={() => openUserReview(user)}
+                                className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                                title="View Membership Status"
+                              >
+                                <Eye size={18} />
+                              </button>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => openUserReview(user)}
+                                  className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                  title="View Profile"
+                                >
+                                  <Eye size={18} />
+                                </button>
+                                <button
+                                  onClick={() => handleReject(user)}
+                                  disabled={isMutating}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                  title="Reject Account Request"
+                                >
+                                  <XCircle size={18} />
+                                </button>
+                              </>
+                            )}
                           </td>
                         </tr>
                       ))
@@ -1702,54 +1765,198 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                 </div>
               </div>
 
-              {selectedApprovalBlockReason ? (
-                <div
-                  className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-900"
-                  role="alert"
-                >
-                  {selectedApprovalBlockReason}
-                </div>
-              ) : (
-                <label className="block">
-                  <span className="mb-1 block text-xs font-bold uppercase text-slate-500">
-                    Explicit approved account role
-                  </span>
-                  <select
-                    value={approvedRole}
-                    onChange={(event) => {
-                      if (isSafeAccountRole(event.target.value)) {
-                        setApprovedRole(event.target.value);
-                      }
-                    }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-800"
+              {/* Dynamic Intent Body */}
+              {(() => {
+                const intent = assessRequestedIntent(selectedUser.requestedRole);
+
+                if (intent.kind === "SAFE_ACCOUNT_INTENT") {
+                  return (
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-bold uppercase text-slate-500">
+                        Explicit approved account role
+                      </span>
+                      <select
+                        value={approvedRole}
+                        onChange={(event) => {
+                          const val = event.target.value;
+                          if (val === "" || isSafeAccountRole(val)) {
+                            setApprovedRole(val as ExplicitAccountRoleSelection);
+                          }
+                        }}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500 outline-none"
+                      >
+                        <option value="">Select approved account role...</option>
+                        {SAFE_ACCOUNT_ROLES.map((role) => (
+                          <option key={role} value={role}>
+                            {role}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="mt-1 block text-xs text-slate-500">
+                        Must be explicitly chosen. Never automatically derived from requested intent.
+                      </span>
+                    </label>
+                  );
+                }
+
+                if (intent.kind === "TENANT_MEMBERSHIP_INTENT") {
+                  return (
+                    <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+                      <div className="flex items-center gap-2 text-amber-900 font-bold text-sm">
+                        <ShieldAlert className="text-amber-600 shrink-0" size={18} />
+                        STAFF MEMBERSHIP REQUIRED
+                      </div>
+                      <p className="text-xs text-amber-800 leading-relaxed">
+                        {intent.intent} authority requires an exact ACTIVE Academy Membership.
+                      </p>
+
+                      {staffClaimLoadState === "loading" && (
+                        <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 py-2">
+                          <Loader2 className="h-4 w-4 animate-spin text-amber-600" />
+                          Checking Academy Membership request...
+                        </div>
+                      )}
+
+                      {staffClaimLoadState === "error" && (
+                        <div className="rounded-lg bg-rose-100 border border-rose-200 p-2.5 text-xs font-bold text-rose-800">
+                          Academy Membership request could not be verified.
+                        </div>
+                      )}
+
+                      {staffClaimLoadState === "loaded" && staffClaimView?.state === "NO_CLAIM" && (
+                        <div className="space-y-2 text-xs text-slate-700 bg-white p-3 rounded-lg border border-amber-200/60">
+                          <div className="font-bold text-slate-800">
+                            Waiting for Academy Join Request
+                          </div>
+                          <p className="text-slate-600">
+                            This user must sign in and enter a valid Academy Invite Code before staff Membership can be approved.
+                          </p>
+                          {selectedUser.requestedAcademyName && (
+                            <div className="mt-2 pt-2 border-t border-slate-100 text-[11px]">
+                              <span className="font-bold text-slate-500">
+                                Requested academy name (registration metadata):
+                              </span>{" "}
+                              <span className="font-semibold text-slate-700">
+                                {selectedUser.requestedAcademyName}
+                              </span>{" "}
+                              <span className="text-amber-700 italic">
+                                (non-authoritative)
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {staffClaimLoadState === "loaded" && staffClaimView?.state === "PENDING" && (
+                        <div className="space-y-3 bg-white p-3 rounded-lg border border-amber-200/60 text-xs">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <span className="text-slate-500 font-bold uppercase text-[10px] block">Status</span>
+                              <span className="px-2 py-0.5 bg-amber-100 text-amber-800 font-bold rounded-md border border-amber-200 inline-block text-[11px]">
+                                PENDING
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 font-bold uppercase text-[10px] block">Requested Role</span>
+                              <span className="font-bold text-slate-800">{staffClaimView.role}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 font-bold uppercase text-[10px] block">Academy ID</span>
+                              <span className="font-mono font-bold text-slate-800">{staffClaimView.academyId}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 font-bold uppercase text-[10px] block">Claim ID</span>
+                              <span className="font-mono text-slate-600 truncate block">{staffClaimView.claimId}</span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleEnterWorkspace(staffClaimView.academyId)}
+                            disabled={isMutating}
+                            className="w-full py-2 px-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+                          >
+                            <ArrowRight size={14} />
+                            Enter Academy Membership Flow
+                          </button>
+                        </div>
+                      )}
+
+                      {staffClaimLoadState === "loaded" && staffClaimView?.state === "APPROVED" && (
+                        <div className="space-y-2 bg-white p-3 rounded-lg border border-emerald-200 text-xs">
+                          <div className="flex items-center gap-1.5 text-emerald-800 font-bold">
+                            <CheckCircle size={14} className="text-emerald-600" />
+                            Membership Claim Approved
+                          </div>
+                          <div className="text-slate-700">
+                            <span className="font-semibold">Academy:</span> {staffClaimView.academyId} | <span className="font-semibold">Role:</span> {staffClaimView.role}
+                          </div>
+                          <p className="text-slate-600 text-[11px]">
+                            The Membership is approved. The user must complete Activate Academy Access from their own account.
+                          </p>
+                        </div>
+                      )}
+
+                      {staffClaimLoadState === "loaded" && staffClaimView?.state === "REJECTED" && (
+                        <div className="space-y-1 bg-white p-3 rounded-lg border border-rose-200 text-xs">
+                          <div className="flex items-center gap-1.5 text-rose-800 font-bold">
+                            <XCircle size={14} className="text-rose-600" />
+                            Membership Claim Rejected
+                          </div>
+                          <p className="text-slate-600 text-[11px]">
+                            The Academy Membership claim was rejected.
+                          </p>
+                        </div>
+                      )}
+
+                      {staffClaimLoadState === "loaded" && staffClaimView?.state === "AMBIGUOUS" && (
+                        <div className="space-y-2 bg-white p-3 rounded-lg border border-amber-300 text-xs text-amber-900">
+                          <div className="font-bold">
+                            Conflicting or malformed Academy Membership claims require manual review.
+                          </div>
+                          <p className="text-[11px] text-slate-600">
+                            Conflicting, malformed, or multiple claims were detected for this user. Manual verification in the profile claims audit is required.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                return (
+                  <div
+                    className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-medium text-rose-900"
+                    role="alert"
                   >
-                    {SAFE_ACCOUNT_ROLES.map((role) => (
-                      <option key={role} value={role}>{role}</option>
-                    ))}
-                  </select>
-                  <span className="mt-1 block text-xs text-slate-500">
-                    Defaults safely to USER and is never derived from requested intent.
-                  </span>
-                </label>
-              )}
+                    {intent.reason}
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
-              <button
-                onClick={() => handleReject(selectedUser)}
-                disabled={isMutating}
-                className="px-4 py-2 text-rose-600 font-bold hover:bg-rose-50 rounded-xl transition-colors"
-              >
-                Reject
-              </button>
-              <button
-                onClick={() => handleApprove(selectedUser)}
-                disabled={isMutating || selectedApprovalBlockReason !== null}
-                className="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-sm transition-colors flex items-center gap-2"
-              >
-                <CheckCircle size={18} />
-                {selectedApprovalBlockReason ? "Generic Approval Blocked" : `Approve as ${approvedRole}`}
-              </button>
+              {assessRequestedIntent(selectedUser.requestedRole).kind !== "TENANT_MEMBERSHIP_INTENT" && (
+                <button
+                  onClick={() => handleReject(selectedUser)}
+                  disabled={isMutating}
+                  className="px-4 py-2 text-rose-600 font-bold hover:bg-rose-50 rounded-xl transition-colors"
+                >
+                  Reject Account Request
+                </button>
+              )}
+              {assessRequestedIntent(selectedUser.requestedRole).kind === "SAFE_ACCOUNT_INTENT" && (
+                <button
+                  onClick={() => handleApprove(selectedUser)}
+                  disabled={isMutating || approvedRole === ""}
+                  className={`px-6 py-2 font-bold rounded-xl shadow-sm transition-colors flex items-center gap-2 ${
+                    approvedRole === "" || isMutating
+                      ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                      : "bg-emerald-500 hover:bg-emerald-600 text-white"
+                  }`}
+                >
+                  <CheckCircle size={18} />
+                  {getApprovalActionLabel(approvedRole)}
+                </button>
+              )}
             </div>
           </div>
         </div>

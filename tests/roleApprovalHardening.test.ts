@@ -301,25 +301,42 @@ describe("Access A6 atomic administrative mutations", () => {
     }, fakeAtomicDependencies().dependencies), /cannot change their own/);
   });
 
-  it("all administrative User controls route through the atomic helper", () => {
-    const portalSource = readFileSync(
-      path.join(repoRoot, "src/components/SuperadminPortal.tsx"),
-      "utf8",
-    );
-    assert.doesNotMatch(
-      portalSource,
-      /\bupdateDoc\b|\baddDoc\b|\bupdateUserStatus\s*\(/,
-    );
-    for (const helper of [
-      "approveUserAtomically",
-      "rejectUserAtomically",
-      "bulkApproveUsersAtomically",
-      "updateUserRoleAtomically",
-      "updateUserStatusAtomically",
-    ]) {
-      assert.match(portalSource, new RegExp(`\\b${helper}\\b`));
-    }
-  });
+  it(
+    "all exposed administrative User controls route through atomic helpers and bulk approval stays out of the mixed-intent UI",
+    () => {
+      const portalSource = readFileSync(
+        path.join(repoRoot, "src/components/SuperadminPortal.tsx"),
+        "utf8",
+      );
+
+      assert.doesNotMatch(
+        portalSource,
+        /\bupdateDoc\b|\bsetDoc\b|\baddDoc\b|\bdeleteDoc\b|\brunTransaction\b|\bwriteBatch\b|\bupdateUserStatus\s*\(/,
+      );
+
+      for (const helper of [
+        "approveUserAtomically",
+        "rejectUserAtomically",
+        "updateUserRoleAtomically",
+        "updateUserStatusAtomically",
+      ]) {
+        assert.match(
+          portalSource,
+          new RegExp(`\\b${helper}\\b`),
+        );
+      }
+
+      assert.doesNotMatch(
+        portalSource,
+        /\bbulkApproveUsersAtomically\b/,
+      );
+
+      assert.doesNotMatch(
+        portalSource,
+        /Approve Filtered as USER/,
+      );
+    },
+  );
 
   it("explains why tenant intent cannot enter generic approval", () => {
     assert.match(genericApprovalBlockReason("ADMIN") || "", /ACTIVE Membership/);
