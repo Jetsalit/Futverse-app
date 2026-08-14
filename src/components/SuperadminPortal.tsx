@@ -40,8 +40,15 @@ import {
   mapCanonicalClaimSnapshot,
   resolveStaffClaimView,
   getApprovalActionLabel,
+  normalizeManagedAccountStatus,
+  getManagedAccountStatusDisplay,
+  resolveClaimDisplayAcademy,
+  canReviewModeApprove,
+  canReviewModeReject,
+  isPendingAccountStatus,
   type ExplicitAccountRoleSelection,
   type StaffClaimView,
+  type UserReviewMode,
 } from "../lib/superAdminApprovalModel";
 import {
   APPROVED_ACCOUNT_STATUS,
@@ -89,7 +96,10 @@ interface ProfileClaimItem {
   playerName?: string;
   futId?: string;
   requestedRole?: string;
+  approvedRole?: string;
   academyId?: string;
+  requestedAcademyId?: string;
+  approvedAcademyId?: string;
   status?: string;
   createdAt?: unknown;
 }
@@ -127,6 +137,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const [headerSearchQuery, setHeaderSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("ALL");
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [reviewMode, setReviewMode] = useState<UserReviewMode>("READ_ONLY_PROFILE");
   const [approvedRole, setApprovedRole] = useState<ExplicitAccountRoleSelection>("");
   const [staffClaimView, setStaffClaimView] = useState<StaffClaimView | null>(null);
   const [staffClaimLoadState, setStaffClaimLoadState] = useState<"idle" | "loading" | "loaded" | "error">("idle");
@@ -351,7 +362,10 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
             playerName: typeof data.playerName === "string" ? data.playerName : undefined,
             futId: typeof data.futId === "string" ? data.futId : undefined,
             requestedRole: typeof data.requestedRole === "string" ? data.requestedRole : undefined,
+            approvedRole: typeof data.approvedRole === "string" ? data.approvedRole : undefined,
             academyId: typeof data.academyId === "string" ? data.academyId : undefined,
+            requestedAcademyId: typeof data.requestedAcademyId === "string" ? data.requestedAcademyId : undefined,
+            approvedAcademyId: typeof data.approvedAcademyId === "string" ? data.approvedAcademyId : undefined,
             status: typeof data.status === "string" ? data.status : undefined,
             createdAt: data.createdAt,
           };
@@ -533,7 +547,8 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     console.error(fallback, error);
   };
 
-  const openUserReview = (user: User) => {
+  const openUserReview = (user: User, mode: UserReviewMode = "APPROVAL_REVIEW") => {
+    setReviewMode(mode);
     setApprovedRole("");
     setMutationError(null);
     setMutationNotice(null);
@@ -544,6 +559,14 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const handleApprove = async (user: User) => {
     if (!user.id || !actorUid) {
       setMutationError("Canonical target UID and authenticated SuperAdmin UID are required.");
+      return;
+    }
+    if (reviewMode !== "APPROVAL_REVIEW") {
+      setMutationError("Account approval is only permitted in Approval Review mode.");
+      return;
+    }
+    if (!canReviewModeApprove(reviewMode, user.status, user.requestedRole)) {
+      setMutationError("Only pending accounts with safe account intent can be approved.");
       return;
     }
     if (!isSafeAccountRole(approvedRole)) {
@@ -571,6 +594,14 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const handleReject = async (user: User) => {
     if (!user.id || !actorUid) {
       setMutationError("Canonical target UID and authenticated SuperAdmin UID are required.");
+      return;
+    }
+    if (reviewMode !== "APPROVAL_REVIEW") {
+      setMutationError("Account rejection is only permitted in Approval Review mode.");
+      return;
+    }
+    if (!canReviewModeReject(reviewMode, user.status, user.requestedRole, user.role)) {
+      setMutationError("This account record cannot be rejected from the Approval Review modal.");
       return;
     }
     const rejectReason = "Rejected by admin";
@@ -687,7 +718,11 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
       claim.userEmail?.toLowerCase().includes(claimsSearchQuery.toLowerCase()) ||
       claim.userName?.toLowerCase().includes(claimsSearchQuery.toLowerCase()) ||
       claim.requestedRole?.toLowerCase().includes(claimsSearchQuery.toLowerCase()) ||
-      claim.academyId?.toLowerCase().includes(claimsSearchQuery.toLowerCase()),
+      claim.approvedRole?.toLowerCase().includes(claimsSearchQuery.toLowerCase()) ||
+      claim.academyId?.toLowerCase().includes(claimsSearchQuery.toLowerCase()) ||
+      claim.requestedAcademyId?.toLowerCase().includes(claimsSearchQuery.toLowerCase()) ||
+      claim.approvedAcademyId?.toLowerCase().includes(claimsSearchQuery.toLowerCase()) ||
+      claim.id.toLowerCase().includes(claimsSearchQuery.toLowerCase()),
   );
 
   const isLoadingUsers = userLoadState === "loading";
@@ -1071,14 +1106,14 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                             {assessRequestedIntent(user.requestedRole).kind === "SAFE_ACCOUNT_INTENT" ? (
                               <>
                                 <button
-                                  onClick={() => openUserReview(user)}
+                                  onClick={() => openUserReview(user, "APPROVAL_REVIEW")}
                                   className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                                   title="View Profile"
                                 >
                                   <Eye size={18} />
                                 </button>
                                 <button
-                                  onClick={() => openUserReview(user)}
+                                  onClick={() => openUserReview(user, "APPROVAL_REVIEW")}
                                   className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
                                   title="Review explicit account approval"
                                 >
@@ -1095,7 +1130,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                               </>
                             ) : assessRequestedIntent(user.requestedRole).kind === "TENANT_MEMBERSHIP_INTENT" ? (
                               <button
-                                onClick={() => openUserReview(user)}
+                                onClick={() => openUserReview(user, "APPROVAL_REVIEW")}
                                 className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
                                 title="View Membership Status"
                               >
@@ -1104,7 +1139,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                             ) : (
                               <>
                                 <button
-                                  onClick={() => openUserReview(user)}
+                                  onClick={() => openUserReview(user, "APPROVAL_REVIEW")}
                                   className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                                   title="View Profile"
                                 >
@@ -1192,9 +1227,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                         </td>
                         <td className="p-4">
                           <select
-                            value={
-                              typeof user.status === "string" ? user.status : ""
-                            }
+                            value={normalizeManagedAccountStatus(user.status)}
                             onChange={(e) =>
                               handleUpdateStatus(user, e.target.value)
                             }
@@ -1204,17 +1237,17 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                               || user.role === "SUPERADMIN"
                             }
                             className={`text-xs font-bold rounded-xl px-2 py-1 outline-none cursor-pointer border ${
-                              user.status === "ACTIVE"
+                              normalizeManagedAccountStatus(user.status) === "ACTIVE"
                                 ? "bg-emerald-100 text-emerald-800 border-emerald-200"
-                                : user.status === "PENDING"
+                                : normalizeManagedAccountStatus(user.status) === "PENDING"
                                   ? "bg-amber-100 text-amber-800 border-amber-200"
-                                  : user.status === "REJECTED"
+                                  : normalizeManagedAccountStatus(user.status) === "REJECTED"
                                     ? "bg-rose-100 text-rose-800 border-rose-200"
                                     : "bg-slate-100 text-slate-800 border-slate-200"
                             }`}
                           >
                             <option value="" disabled>
-                              MISSING STATUS
+                              {getManagedAccountStatusDisplay(user.status)}
                             </option>
                             <option value="ACTIVE">ACTIVE</option>
                             <option value="PENDING">PENDING</option>
@@ -1255,7 +1288,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                         </td>
                         <td className="p-4 text-right space-x-2 whitespace-nowrap">
                           <button
-                            onClick={() => openUserReview(user)}
+                            onClick={() => openUserReview(user, "READ_ONLY_PROFILE")}
                             className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                             title="View Profile"
                           >
@@ -1623,7 +1656,17 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                           </span>
                         </td>
                         <td className="p-4 font-mono text-xs text-slate-700">
-                          {claim.academyId || "-"}
+                          {(() => {
+                            const display = resolveClaimDisplayAcademy(claim);
+                            return (
+                              <div className="flex flex-col">
+                                <span>{display.academyId}</span>
+                                {display.label && display.academyId !== "-" && (
+                                  <span className="text-[10px] text-slate-400 font-sans font-medium">{display.label}</span>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="p-4">
                           <span className={`px-2.5 py-1 text-xs font-bold rounded-full border ${
@@ -1685,28 +1728,37 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
         )}
       </div>
 
+      {/* User Review / Approval Modal */}
       {selectedUser && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-start">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[calc(100vh-2rem)] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-start shrink-0">
               <div>
                 <h3 className="text-xl font-black text-slate-800">
-                  User Profile
+                  {reviewMode === "APPROVAL_REVIEW" ? "User Review & Approval" : "User Profile"}
                 </h3>
                 <p className="text-sm text-slate-500">
-                  Review details before approval
+                  {reviewMode === "APPROVAL_REVIEW"
+                    ? "Review details and take explicit approval action"
+                    : "Read-only profile inspection"}
                 </p>
               </div>
               <button
                 onClick={() => setSelectedUser(null)}
-                className="text-slate-400 hover:text-slate-600 p-1 bg-slate-50 hover:bg-slate-100 rounded-full transition-colors"
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors"
               >
                 <X size={20} />
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="p-6 space-y-4 flex-1 overflow-y-auto">
+              {mutationError && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-800">
+                  {mutationError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <div className="text-slate-500 text-xs font-bold uppercase mb-1">
                     Name
@@ -1719,32 +1771,24 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                   <div className="text-slate-500 text-xs font-bold uppercase mb-1">
                     Email
                   </div>
-                  <div className="font-bold text-slate-800">
+                  <div className="font-bold text-slate-800 truncate">
                     {selectedUser.email}
                   </div>
                 </div>
                 <div>
                   <div className="text-slate-500 text-xs font-bold uppercase mb-1">
-                    Phone
+                    Account Status
                   </div>
                   <div className="font-bold text-slate-800">
-                    {selectedUser.phone || "-"}
+                    {getManagedAccountStatusDisplay(selectedUser.status)}
                   </div>
                 </div>
                 <div>
                   <div className="text-slate-500 text-xs font-bold uppercase mb-1">
-                    Country
+                    Registered Date
                   </div>
                   <div className="font-bold text-slate-800">
-                    {selectedUser.country || "-"}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-slate-500 text-xs font-bold uppercase mb-1">
-                    Academy
-                  </div>
-                  <div className="font-bold text-slate-800">
-                    {selectedUser.academyId || "-"}
+                    {formatFirestoreDate(selectedUser.createdAt)}
                   </div>
                 </div>
                 <div>
@@ -1765,8 +1809,25 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                 </div>
               </div>
 
-              {/* Dynamic Intent Body */}
+              {/* Dynamic Review Mode & Intent Body */}
               {(() => {
+                if (reviewMode === "READ_ONLY_PROFILE") {
+                  return (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                      Manage Users profile view is read-only. Role and status modifications must be performed using the table controls.
+                    </div>
+                  );
+                }
+
+                if (!isPendingAccountStatus(selectedUser.status)) {
+                  const displayedStatus = getManagedAccountStatusDisplay(selectedUser.status);
+                  return (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-900">
+                      This account record is not in a pending state ({displayedStatus}). Approval actions are disabled.
+                    </div>
+                  );
+                }
+
                 const intent = assessRequestedIntent(selectedUser.requestedRole);
 
                 if (intent.kind === "SAFE_ACCOUNT_INTENT") {
@@ -1933,29 +1994,40 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
               })()}
             </div>
 
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
-              {assessRequestedIntent(selectedUser.requestedRole).kind !== "TENANT_MEMBERSHIP_INTENT" && (
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3 shrink-0">
+              {reviewMode === "READ_ONLY_PROFILE" || !isPendingAccountStatus(selectedUser.status) ? (
                 <button
-                  onClick={() => handleReject(selectedUser)}
-                  disabled={isMutating}
-                  className="px-4 py-2 text-rose-600 font-bold hover:bg-rose-50 rounded-xl transition-colors"
+                  onClick={() => setSelectedUser(null)}
+                  className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-100 rounded-xl transition-colors text-sm"
                 >
-                  Reject Account Request
+                  Close
                 </button>
-              )}
-              {assessRequestedIntent(selectedUser.requestedRole).kind === "SAFE_ACCOUNT_INTENT" && (
-                <button
-                  onClick={() => handleApprove(selectedUser)}
-                  disabled={isMutating || approvedRole === ""}
-                  className={`px-6 py-2 font-bold rounded-xl shadow-sm transition-colors flex items-center gap-2 ${
-                    approvedRole === "" || isMutating
-                      ? "bg-slate-200 text-slate-400 cursor-not-allowed"
-                      : "bg-emerald-500 hover:bg-emerald-600 text-white"
-                  }`}
-                >
-                  <CheckCircle size={18} />
-                  {getApprovalActionLabel(approvedRole)}
-                </button>
+              ) : (
+                <>
+                  {canReviewModeReject(reviewMode, selectedUser.status, selectedUser.requestedRole, selectedUser.role) && (
+                    <button
+                      onClick={() => handleReject(selectedUser)}
+                      disabled={isMutating}
+                      className="px-4 py-2 text-rose-600 font-bold hover:bg-rose-50 rounded-xl transition-colors"
+                    >
+                      Reject Account Request
+                    </button>
+                  )}
+                  {canReviewModeApprove(reviewMode, selectedUser.status, selectedUser.requestedRole) && (
+                    <button
+                      onClick={() => handleApprove(selectedUser)}
+                      disabled={isMutating || approvedRole === ""}
+                      className={`px-6 py-2 font-bold rounded-xl shadow-sm transition-colors flex items-center gap-2 ${
+                        approvedRole === "" || isMutating
+                          ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                          : "bg-emerald-500 hover:bg-emerald-600 text-white"
+                      }`}
+                    >
+                      <CheckCircle size={18} />
+                      {getApprovalActionLabel(approvedRole)}
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </div>

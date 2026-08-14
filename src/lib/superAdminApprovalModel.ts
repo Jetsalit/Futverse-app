@@ -9,6 +9,7 @@ import {
 } from "./accountRolePolicy";
 
 export type ExplicitAccountRoleSelection = SafeAccountRole | "";
+export type UserReviewMode = "APPROVAL_REVIEW" | "READ_ONLY_PROFILE";
 
 export interface RawProfileClaimData {
   id?: string;
@@ -133,19 +134,72 @@ export function isClaimCandidateForUser(
 
   const userRequestedRole = user.requestedRole;
   if (isTenantMembershipRole(userRequestedRole)) {
-    // Extract role from claim
-    const claimRole =
-      claim.approvedRole ||
-      claim.requestedRole ||
-      (claim.type === "COACH_JOIN" ? "COACH" : undefined);
+    const claimRequestedRole = typeof claim.requestedRole === "string" ? claim.requestedRole.trim() : undefined;
+    const claimApprovedRole = typeof claim.approvedRole === "string" ? claim.approvedRole.trim() : undefined;
+    const claimType = typeof claim.type === "string" ? claim.type.trim() : undefined;
 
-    // If claim explicitly defines a DIFFERENT valid tenant role, it's not for this intent
+    // Filter out unrelated non-tenant claims (e.g. PLAYER, PARENT, SCOUT)
     if (
-      isTenantMembershipRole(claimRole) &&
-      claimRole !== userRequestedRole
+      (claimRequestedRole && isSafeAccountRole(claimRequestedRole)) ||
+      (claimApprovedRole && isSafeAccountRole(claimApprovedRole))
     ) {
       return false;
     }
+
+    // Filter out non-tenant claim types (e.g. PLAYER_CLAIM, FUTID_CLAIM, etc.)
+    if (
+      claimType &&
+      (claimType.includes("PLAYER") ||
+        claimType.includes("PARENT") ||
+        claimType.includes("SCOUT") ||
+        claimType.includes("FUTID"))
+    ) {
+      return false;
+    }
+
+    // If claim is explicitly for COACH_JOIN, only applies when target role is COACH
+    if (claimType === "COACH_JOIN") {
+      if (userRequestedRole !== "COACH") return false;
+      return true;
+    }
+
+    // If claim explicitly requested a DIFFERENT valid tenant role, ignore as different tenant role
+    if (
+      claimRequestedRole &&
+      isTenantMembershipRole(claimRequestedRole) &&
+      claimRequestedRole !== userRequestedRole
+    ) {
+      return false;
+    }
+
+    // If requestedRole is absent/non-tenant, but approvedRole is explicitly a DIFFERENT valid tenant role, ignore
+    if (
+      !isTenantMembershipRole(claimRequestedRole) &&
+      claimApprovedRole &&
+      isTenantMembershipRole(claimApprovedRole) &&
+      claimApprovedRole !== userRequestedRole
+    ) {
+      return false;
+    }
+
+    // ACADEMY_JOIN type is relevant for the target tenant role
+    if (claimType === "ACADEMY_JOIN") {
+      return true;
+    }
+
+    // Legacy undefined type: relevant if role matches or if it's an academy join attempt
+    if (claimType === undefined) {
+      if (claimRequestedRole === userRequestedRole || claimApprovedRole === userRequestedRole) {
+        return true;
+      }
+      if (claim.requestedAcademyId || claim.approvedAcademyId || claim.academyId) {
+        return true;
+      }
+      return false;
+    }
+
+    // Other/malformed types remain candidate to fail closed in resolveStaffClaimView
+    return true;
   }
 
   return true;
@@ -197,8 +251,7 @@ export function resolveStaffClaimView(
   const single = candidates[0];
   const claimId = single.id!;
 
-  // 1. Type validation (Hardening 6)
-  // Supported: ACADEMY_JOIN, COACH_JOIN, or undefined (legacy)
+  // 1. Type validation (Supported: ACADEMY_JOIN, COACH_JOIN, or undefined)
   if (
     single.type !== undefined &&
     single.type !== "ACADEMY_JOIN" &&
@@ -207,58 +260,98 @@ export function resolveStaffClaimView(
     return toAmbiguous();
   }
 
-  // 2. Role validation
-  const rawRole =
-    single.approvedRole ||
-    single.requestedRole ||
-    (single.type === "COACH_JOIN" ? "COACH" : undefined);
-
-  if (rawRole !== "ADMIN" && rawRole !== "COACH") {
-    return toAmbiguous();
-  }
-  const role: "ADMIN" | "COACH" = rawRole;
-
-  // 3. Status validation (Hardening 5)
-  // Status MUST be explicitly "PENDING" | "APPROVED" | "REJECTED"
+  // 2. Status validation (Status MUST be explicitly PENDING | APPROVED | REJECTED)
   const status = single.status;
   if (status !== "PENDING" && status !== "APPROVED" && status !== "REJECTED") {
     return toAmbiguous();
   }
 
-  // 4. Status-specific Academy ID validation (Hardening 4)
+  const userRequestedRole = user.requestedRole;
+
+  // 3. Status === "PENDING"
   if (status === "PENDING") {
     const rawAcademyId = single.requestedAcademyId ?? single.academyId;
     if (!isExactDocumentId(rawAcademyId)) {
       return toAmbiguous();
     }
+    const rawRole =
+      single.requestedRole ||
+      (single.type === "COACH_JOIN" ? "COACH" : undefined) ||
+      single.approvedRole;
+
+    if (rawRole !== "ADMIN" && rawRole !== "COACH") {
+      return toAmbiguous();
+    }
+    if (isTenantMembershipRole(userRequestedRole) && rawRole !== userRequestedRole) {
+      return toAmbiguous();
+    }
+
     return {
       state: "PENDING",
       claimId,
       academyId: rawAcademyId,
-      role,
+      role: rawRole as "ADMIN" | "COACH",
     };
   }
 
+  // 4. Status === "APPROVED" (Authoritative approval fields required)
   if (status === "APPROVED") {
-    const rawAcademyId = single.approvedAcademyId ?? single.requestedAcademyId ?? single.academyId;
-    if (!isExactDocumentId(rawAcademyId)) {
+    // 4.1 approvedAcademyId MUST exist and be an exact Firestore document ID (no fallback to requestedAcademyId)
+    if (!isExactDocumentId(single.approvedAcademyId)) {
       return toAmbiguous();
     }
+    const approvedAcademyId = single.approvedAcademyId;
+
+    // 4.2 approvedRole MUST exist and equal ADMIN or COACH (no fallback to requestedRole)
+    if (single.approvedRole !== "ADMIN" && single.approvedRole !== "COACH") {
+      return toAmbiguous();
+    }
+    const approvedRole = single.approvedRole;
+
+    // 4.3 approvedRole MUST match user's requested tenant role
+    if (isTenantMembershipRole(userRequestedRole) && approvedRole !== userRequestedRole) {
+      return toAmbiguous();
+    }
+
+    // 4.4 If requestedRole exists, it must be consistent with approvedRole
+    if (single.requestedRole !== undefined && single.requestedRole !== approvedRole) {
+      return toAmbiguous();
+    }
+
+    // 4.5 If requestedAcademyId exists, it must be an exact ID and equal approvedAcademyId
+    if (single.requestedAcademyId !== undefined) {
+      if (!isExactDocumentId(single.requestedAcademyId) || single.requestedAcademyId !== approvedAcademyId) {
+        return toAmbiguous();
+      }
+    }
+
     return {
       state: "APPROVED",
       claimId,
-      academyId: rawAcademyId,
-      role,
+      academyId: approvedAcademyId,
+      role: approvedRole,
     };
   }
 
+  // 5. Status === "REJECTED"
   if (status === "REJECTED") {
-    const rawAcademyId = single.approvedAcademyId ?? single.requestedAcademyId ?? single.academyId;
+    const rawRole =
+      single.approvedRole ||
+      single.requestedRole ||
+      (single.type === "COACH_JOIN" ? "COACH" : undefined);
+
+    if (rawRole !== "ADMIN" && rawRole !== "COACH") {
+      return toAmbiguous();
+    }
+
+    const rawAcademyId =
+      single.requestedAcademyId ?? single.approvedAcademyId ?? single.academyId;
+
     return {
       state: "REJECTED",
       claimId,
       academyId: isExactDocumentId(rawAcademyId) ? rawAcademyId : undefined,
-      role,
+      role: rawRole as "ADMIN" | "COACH",
     };
   }
 
@@ -315,4 +408,95 @@ export function isBulkApprovalEligibleSet(
     }
   }
   return true;
+}
+
+export type NormalizedManagedStatus = "ACTIVE" | "PENDING" | "REJECTED" | "INACTIVE" | "";
+
+export function normalizeManagedAccountStatus(status: unknown): NormalizedManagedStatus {
+  if (typeof status !== "string") return "";
+  const upper = status.trim().toUpperCase();
+  if (upper === "ACTIVE") return "ACTIVE";
+  if (upper === "PENDING") return "PENDING";
+  if (upper === "REJECTED") return "REJECTED";
+  if (upper === "INACTIVE" || upper === "SUSPENDED") return "INACTIVE";
+  return "";
+}
+
+export function isPendingAccountStatus(status: unknown): boolean {
+  if (typeof status !== "string") return false;
+  const upper = status.trim().toUpperCase();
+  return upper === "PENDING" || upper === "INACTIVE";
+}
+
+export function getManagedAccountStatusDisplay(status: unknown): string {
+  if (typeof status !== "string") {
+    return "UNKNOWN";
+  }
+  const trimmed = status.trim();
+  if (trimmed.length === 0) {
+    return "MISSING";
+  }
+  const upper = trimmed.toUpperCase();
+  if (upper === "ACTIVE") return "ACTIVE";
+  if (upper === "PENDING") return "PENDING";
+  if (upper === "REJECTED") return "REJECTED";
+  if (upper === "INACTIVE" || upper === "SUSPENDED") return "INACTIVE";
+  return upper;
+}
+
+export function canReviewModeApprove(
+  mode: UserReviewMode,
+  userStatus: unknown,
+  requestedRole: unknown,
+): boolean {
+  if (mode !== "APPROVAL_REVIEW") return false;
+  if (!isPendingAccountStatus(userStatus)) return false;
+  const intent = assessRequestedIntent(requestedRole);
+  return intent.kind === "SAFE_ACCOUNT_INTENT";
+}
+
+export function canReviewModeReject(
+  mode: UserReviewMode,
+  userStatus: unknown,
+  requestedRole: unknown,
+  currentRole: unknown,
+): boolean {
+  if (mode !== "APPROVAL_REVIEW") return false;
+  if (!isPendingAccountStatus(userStatus)) return false;
+  if (currentRole === "SUPERADMIN" || currentRole === "DATA_ADMIN") return false;
+  const intent = assessRequestedIntent(requestedRole);
+  return intent.kind !== "TENANT_MEMBERSHIP_INTENT";
+}
+
+export function resolveClaimDisplayAcademy(claim: {
+  status?: string;
+  approvedAcademyId?: string;
+  requestedAcademyId?: string;
+  academyId?: string;
+}): { academyId: string; label?: string } {
+  const status = typeof claim.status === "string" ? claim.status.trim().toUpperCase() : "";
+
+  if (status === "APPROVED") {
+    if (claim.approvedAcademyId) return { academyId: claim.approvedAcademyId, label: "Approved" };
+    if (claim.requestedAcademyId) return { academyId: claim.requestedAcademyId, label: "Requested" };
+    if (claim.academyId) return { academyId: claim.academyId, label: "Legacy" };
+    return { academyId: "-" };
+  }
+
+  if (status === "PENDING") {
+    if (claim.requestedAcademyId) return { academyId: claim.requestedAcademyId, label: "Requested" };
+    if (claim.approvedAcademyId) return { academyId: claim.approvedAcademyId, label: "Approved" };
+    if (claim.academyId) return { academyId: claim.academyId, label: "Legacy" };
+    return { academyId: "-" };
+  }
+
+  if (status === "REJECTED") {
+    if (claim.requestedAcademyId) return { academyId: claim.requestedAcademyId, label: "Requested" };
+    if (claim.approvedAcademyId) return { academyId: claim.approvedAcademyId, label: "Approved" };
+    if (claim.academyId) return { academyId: claim.academyId, label: "Legacy" };
+    return { academyId: "-" };
+  }
+
+  const id = claim.approvedAcademyId || claim.requestedAcademyId || claim.academyId || "-";
+  return { academyId: id };
 }

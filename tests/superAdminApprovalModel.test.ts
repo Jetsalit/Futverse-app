@@ -15,8 +15,15 @@ import {
   isBulkApprovalEligibleSet,
   mapCanonicalClaimSnapshot,
   isExactDocumentId,
+  normalizeManagedAccountStatus,
+  isPendingAccountStatus,
+  getManagedAccountStatusDisplay,
+  canReviewModeApprove,
+  canReviewModeReject,
+  resolveClaimDisplayAcademy,
   type ExplicitAccountRoleSelection,
   type RawProfileClaimData,
+  type UserReviewMode,
 } from "../src/lib/superAdminApprovalModel";
 import {
   approveUserAtomically,
@@ -124,16 +131,13 @@ describe("Explicit Account Approval Selection", () => {
   });
 
   it("10. requested PARENT does NOT automatically become approved PARENT", () => {
-    // Proves that requested intent and approved role are strictly decoupled
     const user = { requestedRole: "PARENT" };
     let approvedRole: ExplicitAccountRoleSelection = "";
     assert.equal(canExecuteAccountApproval(approvedRole), false);
 
-    // Only after explicit SuperAdmin choice does approvedRole become valid
     approvedRole = "PARENT";
     assert.equal(canExecuteAccountApproval(approvedRole), true);
 
-    // Or SuperAdmin deliberately chooses USER
     approvedRole = "USER";
     assert.equal(canExecuteAccountApproval(approvedRole), true);
     assert.equal(getApprovalActionLabel(approvedRole), "Approve as USER");
@@ -169,7 +173,7 @@ describe("Profile Claims Matching & Staff Claim Resolution", () => {
     const claim: RawProfileClaimData = {
       id: "claim-1",
       userId: "different-uid-999",
-      userEmail: "coach@academy.test", // Same email!
+      userEmail: "coach@academy.test",
       requestedRole: "COACH",
       status: "PENDING",
     };
@@ -190,7 +194,7 @@ describe("Profile Claims Matching & Staff Claim Resolution", () => {
     const claim: RawProfileClaimData = {
       id: "claim-1",
       userId: "user-coach-123",
-      requestedRole: "ADMIN", // Mismatch with user's COACH requestedRole
+      requestedRole: "ADMIN",
       status: "PENDING",
     };
     assert.equal(isClaimMatchingUser(claim, targetCoachUser), false);
@@ -344,13 +348,13 @@ describe("Table Classification Badges & Bulk Eligibility", () => {
   it("28. mixed account/staff set is not bulk eligible", () => {
     const mixedSet = [
       { requestedRole: "PARENT" },
-      { requestedRole: "COACH" }, // Tenant staff
+      { requestedRole: "COACH" },
     ];
     assert.equal(isBulkApprovalEligibleSet(mixedSet), false);
 
     const blockedSet = [
       { requestedRole: "PARENT" },
-      { requestedRole: undefined }, // Blocked
+      { requestedRole: undefined },
     ];
     assert.equal(isBulkApprovalEligibleSet(blockedSet), false);
 
@@ -552,7 +556,7 @@ describe("Hardened Staff Claim Invariants (Tests 31 - 43)", () => {
       userId: "coach-user-777",
       requestedRole: "COACH",
       requestedAcademyId: "academy-123",
-      status: "ACTIVE", // Only PENDING, APPROVED, REJECTED are supported claim statuses
+      status: "ACTIVE",
       type: "ACADEMY_JOIN",
     };
     assert.equal(resolveStaffClaimView([claimActive], targetCoachUser).state, "AMBIGUOUS");
@@ -633,7 +637,7 @@ describe("Hardened Staff Claim Invariants (Tests 31 - 43)", () => {
     const claim: RawProfileClaimData = {
       id: "claim-email-only",
       userId: "different-coach-888",
-      userEmail: "coach777@academy.test", // Same email as targetCoachUser
+      userEmail: "coach777@academy.test",
       requestedRole: "COACH",
       requestedAcademyId: "academy-123",
       status: "PENDING",
@@ -667,5 +671,284 @@ describe("Hardened Staff Claim Invariants (Tests 31 - 43)", () => {
     if (view.state === "AMBIGUOUS") {
       assert.equal(view.claims.length, 2);
     }
+  });
+});
+
+describe("Hardening Pass: Bugs 1, 2, 3, 4, 5 Invariants", () => {
+  const targetCoachUser = {
+    id: "coach-user-999",
+    uid: "coach-user-999",
+    email: "coach999@academy.test",
+    requestedRole: "COACH",
+  };
+
+  // Bug 1: Review Mode Guards
+  it("Bug 1.1: READ_ONLY_PROFILE mode cannot approve or reject", () => {
+    assert.equal(canReviewModeApprove("READ_ONLY_PROFILE", "PENDING", "PARENT"), false);
+    assert.equal(canReviewModeReject("READ_ONLY_PROFILE", "PENDING", "PARENT", "USER"), false);
+    assert.equal(canReviewModeApprove("READ_ONLY_PROFILE", "Inactive", "SCOUT"), false);
+    assert.equal(canReviewModeReject("READ_ONLY_PROFILE", "Inactive", "SCOUT", "USER"), false);
+  });
+
+  it("Bug 1.2: APPROVAL_REVIEW for non-pending user cannot approve or reject", () => {
+    assert.equal(canReviewModeApprove("APPROVAL_REVIEW", "ACTIVE", "PARENT"), false);
+    assert.equal(canReviewModeReject("APPROVAL_REVIEW", "ACTIVE", "PARENT", "USER"), false);
+    assert.equal(canReviewModeApprove("APPROVAL_REVIEW", "Active", "PARENT"), false);
+    assert.equal(canReviewModeReject("APPROVAL_REVIEW", "Active", "PARENT", "USER"), false);
+    assert.equal(canReviewModeApprove("APPROVAL_REVIEW", "REJECTED", "PARENT"), false);
+    assert.equal(canReviewModeReject("APPROVAL_REVIEW", "REJECTED", "PARENT", "USER"), false);
+  });
+
+  it("Bug 1.3: APPROVAL_REVIEW cannot reject privileged account records", () => {
+    assert.equal(canReviewModeReject("APPROVAL_REVIEW", "PENDING", "PARENT", "SUPERADMIN"), false);
+    assert.equal(canReviewModeReject("APPROVAL_REVIEW", "PENDING", "PARENT", "DATA_ADMIN"), false);
+  });
+
+  it("Bug 1.4: Staff tenant intent never exposes generic Reject Account Request", () => {
+    assert.equal(canReviewModeReject("APPROVAL_REVIEW", "PENDING", "COACH", "USER"), false);
+    assert.equal(canReviewModeReject("APPROVAL_REVIEW", "PENDING", "ADMIN", "USER"), false);
+  });
+
+  it("Bug 1.5: Pending safe account in APPROVAL_REVIEW allows approve and reject", () => {
+    assert.equal(canReviewModeApprove("APPROVAL_REVIEW", "PENDING", "PARENT"), true);
+    assert.equal(canReviewModeReject("APPROVAL_REVIEW", "PENDING", "PARENT", "USER"), true);
+    assert.equal(canReviewModeApprove("APPROVAL_REVIEW", "Inactive", "SCOUT"), true);
+    assert.equal(canReviewModeReject("APPROVAL_REVIEW", "Inactive", "SCOUT", "USER"), true);
+  });
+
+  // Bug 2: Unrelated same-UID claim filtering
+  it("Bug 2.1: same UID PLAYER claim + valid COACH claim resolves normally", () => {
+    const claims: RawProfileClaimData[] = [
+      {
+        id: "claim-legacy-player",
+        userId: "coach-user-999",
+        requestedRole: "PLAYER",
+        status: "PENDING",
+      },
+      {
+        id: "claim-valid-coach",
+        userId: "coach-user-999",
+        requestedRole: "COACH",
+        requestedAcademyId: "academy-real-123",
+        status: "PENDING",
+        type: "ACADEMY_JOIN",
+      },
+    ];
+    const view = resolveStaffClaimView(claims, targetCoachUser);
+    assert.equal(view.state, "PENDING");
+    if (view.state === "PENDING") {
+      assert.equal(view.claimId, "claim-valid-coach");
+      assert.equal(view.academyId, "academy-real-123");
+      assert.equal(view.role, "COACH");
+    }
+  });
+
+  it("Bug 2.2: same UID PLAYER-only claim => NO_CLAIM for COACH", () => {
+    const claims: RawProfileClaimData[] = [
+      {
+        id: "claim-player-only",
+        userId: "coach-user-999",
+        requestedRole: "PLAYER",
+        status: "PENDING",
+      },
+    ];
+    const view = resolveStaffClaimView(claims, targetCoachUser);
+    assert.equal(view.state, "NO_CLAIM");
+  });
+
+  it("Bug 2.3: same UID ADMIN claim while target requestedRole COACH => ignored as different tenant role", () => {
+    const claims: RawProfileClaimData[] = [
+      {
+        id: "claim-admin",
+        userId: "coach-user-999",
+        requestedRole: "ADMIN",
+        requestedAcademyId: "academy-xyz",
+        status: "PENDING",
+        type: "ACADEMY_JOIN",
+      },
+    ];
+    const view = resolveStaffClaimView(claims, targetCoachUser);
+    assert.equal(view.state, "NO_CLAIM");
+  });
+
+  it("Bug 2.4: malformed staff-relevant COACH claim => AMBIGUOUS", () => {
+    const claims: RawProfileClaimData[] = [
+      {
+        id: "claim-malformed-coach",
+        userId: "coach-user-999",
+        requestedRole: "COACH",
+        requestedAcademyId: "academy-xyz",
+        status: "PENDING",
+        type: "MALFORMED_JOIN_TYPE",
+      },
+    ];
+    const view = resolveStaffClaimView(claims, targetCoachUser);
+    assert.equal(view.state, "AMBIGUOUS");
+  });
+
+  // Bug 3: APPROVED Claim strict invariants
+  it("Bug 3.1: APPROVED without approvedAcademyId => AMBIGUOUS even if requestedAcademyId exists", () => {
+    const claims: RawProfileClaimData[] = [
+      {
+        id: "claim-app-no-acad",
+        userId: "coach-user-999",
+        requestedRole: "COACH",
+        approvedRole: "COACH",
+        requestedAcademyId: "academy-valid",
+        approvedAcademyId: undefined, // Missing authoritative approvedAcademyId!
+        status: "APPROVED",
+        type: "ACADEMY_JOIN",
+      },
+    ];
+    const view = resolveStaffClaimView(claims, targetCoachUser);
+    assert.equal(view.state, "AMBIGUOUS");
+  });
+
+  it("Bug 3.2: APPROVED without approvedRole => AMBIGUOUS even if requestedRole exists", () => {
+    const claims: RawProfileClaimData[] = [
+      {
+        id: "claim-app-no-role",
+        userId: "coach-user-999",
+        requestedRole: "COACH",
+        approvedRole: undefined, // Missing authoritative approvedRole!
+        approvedAcademyId: "academy-valid",
+        status: "APPROVED",
+        type: "ACADEMY_JOIN",
+      },
+    ];
+    const view = resolveStaffClaimView(claims, targetCoachUser);
+    assert.equal(view.state, "AMBIGUOUS");
+  });
+
+  it("Bug 3.3: APPROVED requestedRole / approvedRole conflict => AMBIGUOUS", () => {
+    const claims: RawProfileClaimData[] = [
+      {
+        id: "claim-role-conflict",
+        userId: "coach-user-999",
+        requestedRole: "COACH",
+        approvedRole: "ADMIN",
+        requestedAcademyId: "academy-valid",
+        approvedAcademyId: "academy-valid",
+        status: "APPROVED",
+        type: "ACADEMY_JOIN",
+      },
+    ];
+    const view = resolveStaffClaimView(claims, targetCoachUser);
+    assert.equal(view.state, "AMBIGUOUS");
+  });
+
+  it("Bug 3.4: APPROVED requestedAcademyId / approvedAcademyId conflict => AMBIGUOUS", () => {
+    const claims: RawProfileClaimData[] = [
+      {
+        id: "claim-acad-conflict",
+        userId: "coach-user-999",
+        requestedRole: "COACH",
+        approvedRole: "COACH",
+        requestedAcademyId: "academy-1",
+        approvedAcademyId: "academy-2", // Inconsistent academies!
+        status: "APPROVED",
+        type: "ACADEMY_JOIN",
+      },
+    ];
+    const view = resolveStaffClaimView(claims, targetCoachUser);
+    assert.equal(view.state, "AMBIGUOUS");
+  });
+
+  // Bug 4: Profile Claims Academy Resolver
+  it("Bug 4.1: Profile Claims Academy resolver handles PENDING, APPROVED, REJECTED, and legacy fallback", () => {
+    const pendingClaim = {
+      status: "PENDING",
+      requestedAcademyId: "acad-req",
+      approvedAcademyId: undefined,
+      academyId: "acad-leg",
+    };
+    assert.deepEqual(resolveClaimDisplayAcademy(pendingClaim), {
+      academyId: "acad-req",
+      label: "Requested",
+    });
+
+    const approvedClaim = {
+      status: "APPROVED",
+      requestedAcademyId: "acad-req",
+      approvedAcademyId: "acad-app",
+      academyId: "acad-leg",
+    };
+    assert.deepEqual(resolveClaimDisplayAcademy(approvedClaim), {
+      academyId: "acad-app",
+      label: "Approved",
+    });
+
+    const rejectedClaim = {
+      status: "REJECTED",
+      requestedAcademyId: "acad-req",
+      approvedAcademyId: undefined,
+    };
+    assert.deepEqual(resolveClaimDisplayAcademy(rejectedClaim), {
+      academyId: "acad-req",
+      label: "Requested",
+    });
+
+    const legacyClaim = {
+      status: "PENDING",
+      academyId: "acad-legacy-only",
+    };
+    assert.deepEqual(resolveClaimDisplayAcademy(legacyClaim), {
+      academyId: "acad-legacy-only",
+      label: "Legacy",
+    });
+
+    const missingClaim = {
+      status: "PENDING",
+    };
+    assert.deepEqual(resolveClaimDisplayAcademy(missingClaim), {
+      academyId: "-",
+    });
+  });
+
+  // Bug 5: Account status display normalization
+  it("Bug 5.1: normalizeManagedAccountStatus handles casing variants safely", () => {
+    assert.equal(normalizeManagedAccountStatus("Active"), "ACTIVE");
+    assert.equal(normalizeManagedAccountStatus("ACTIVE"), "ACTIVE");
+    assert.equal(normalizeManagedAccountStatus("active"), "ACTIVE");
+    assert.equal(normalizeManagedAccountStatus("Inactive"), "INACTIVE");
+    assert.equal(normalizeManagedAccountStatus("INACTIVE"), "INACTIVE");
+    assert.equal(normalizeManagedAccountStatus("inactive"), "INACTIVE");
+    assert.equal(normalizeManagedAccountStatus("SUSPENDED"), "INACTIVE");
+    assert.equal(normalizeManagedAccountStatus("PENDING"), "PENDING");
+    assert.equal(normalizeManagedAccountStatus("pending"), "PENDING");
+    assert.equal(normalizeManagedAccountStatus("REJECTED"), "REJECTED");
+    assert.equal(normalizeManagedAccountStatus("rejected"), "REJECTED");
+    assert.equal(normalizeManagedAccountStatus(undefined), "");
+    assert.equal(normalizeManagedAccountStatus(null), "");
+    assert.equal(normalizeManagedAccountStatus(""), "");
+    assert.equal(normalizeManagedAccountStatus("UNKNOWN_STATUS"), "");
+  });
+
+  it("Bug 5.2: isPendingAccountStatus identifies pending variants", () => {
+    assert.equal(isPendingAccountStatus("PENDING"), true);
+    assert.equal(isPendingAccountStatus("pending"), true);
+    assert.equal(isPendingAccountStatus("Inactive"), true);
+    assert.equal(isPendingAccountStatus("INACTIVE"), true);
+    assert.equal(isPendingAccountStatus("inactive"), true);
+    assert.equal(isPendingAccountStatus("Active"), false);
+    assert.equal(isPendingAccountStatus("ACTIVE"), false);
+    assert.equal(isPendingAccountStatus("REJECTED"), false);
+    assert.equal(isPendingAccountStatus(undefined), false);
+    assert.equal(isPendingAccountStatus(null), false);
+  });
+
+  it("Bug 5.3: getManagedAccountStatusDisplay returns normalized string safely", () => {
+    assert.equal(getManagedAccountStatusDisplay("Active"), "ACTIVE");
+    assert.equal(getManagedAccountStatusDisplay("ACTIVE"), "ACTIVE");
+    assert.equal(getManagedAccountStatusDisplay("Inactive"), "INACTIVE");
+    assert.equal(getManagedAccountStatusDisplay("INACTIVE"), "INACTIVE");
+    assert.equal(getManagedAccountStatusDisplay("SUSPENDED"), "INACTIVE");
+    assert.equal(getManagedAccountStatusDisplay("PENDING"), "PENDING");
+    assert.equal(getManagedAccountStatusDisplay("REJECTED"), "REJECTED");
+    assert.equal(getManagedAccountStatusDisplay(undefined), "UNKNOWN");
+    assert.equal(getManagedAccountStatusDisplay(null), "UNKNOWN");
+    assert.equal(getManagedAccountStatusDisplay({}), "UNKNOWN");
+    assert.equal(getManagedAccountStatusDisplay(""), "MISSING");
+    assert.equal(getManagedAccountStatusDisplay("   "), "MISSING");
   });
 });
