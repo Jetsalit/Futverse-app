@@ -468,3 +468,258 @@ describe("superAdminSupportModel", () => {
     );
   });
 });
+
+describe("durableSupportExitAudit", () => {
+  const baseStaffAudit = {
+    logDocId: "log-doc-123",
+    actorUid: "sa-123",
+    action: "SUPERADMIN_STAFF_WORK_ENDED" as const,
+    academyId: "academy-talumball",
+    mode: "WORK_AS_STAFF" as const,
+    targetUid: "coach-456",
+    effectiveTenantRole: "COACH" as const,
+    createdAt: Date.now(),
+  };
+
+  const baseWorkspaceAudit = {
+    logDocId: "log-doc-789",
+    actorUid: "sa-123",
+    action: "SUPERADMIN_ACADEMY_WORKSPACE_ENDED" as const,
+    academyId: "academy-talumball",
+    mode: "ACADEMY_WORKSPACE" as const,
+    targetUid: null,
+    effectiveTenantRole: null,
+    createdAt: Date.now(),
+  };
+
+  class MockStorage {
+    private store = new Map<string, string>();
+    get length() { return this.store.size; }
+    clear() { this.store.clear(); }
+    getItem(key: string) { return this.store.get(key) ?? null; }
+    key(index: number) { return Array.from(this.store.keys())[index] ?? null; }
+    removeItem(key: string) { this.store.delete(key); }
+    setItem(key: string, value: string) { this.store.set(key, value); }
+  }
+
+  it("47. WORK_AS_STAFF + STAFF_WORK_ENDED + target + ADMIN => valid", async () => {
+    const { isValidPendingSupportExitAudit } = await import("../src/lib/durableSupportExitAudit");
+    assert.equal(
+      isValidPendingSupportExitAudit({
+        ...baseStaffAudit,
+        effectiveTenantRole: "ADMIN",
+      }),
+      true,
+    );
+  });
+
+  it("48. WORK_AS_STAFF + STAFF_WORK_ENDED + target + COACH => valid", async () => {
+    const { isValidPendingSupportExitAudit } = await import("../src/lib/durableSupportExitAudit");
+    assert.equal(
+      isValidPendingSupportExitAudit({
+        ...baseStaffAudit,
+        effectiveTenantRole: "COACH",
+      }),
+      true,
+    );
+  });
+
+  it("49. WORK_AS_STAFF + workspace action => invalid", async () => {
+    const { isValidPendingSupportExitAudit } = await import("../src/lib/durableSupportExitAudit");
+    assert.equal(
+      isValidPendingSupportExitAudit({
+        ...baseStaffAudit,
+        action: "SUPERADMIN_ACADEMY_WORKSPACE_ENDED" as any,
+      }),
+      false,
+    );
+  });
+
+  it("50. WORK_AS_STAFF + null target => invalid", async () => {
+    const { isValidPendingSupportExitAudit } = await import("../src/lib/durableSupportExitAudit");
+    assert.equal(
+      isValidPendingSupportExitAudit({
+        ...baseStaffAudit,
+        targetUid: null,
+      }),
+      false,
+    );
+  });
+
+  it("51. WORK_AS_STAFF + null role => invalid", async () => {
+    const { isValidPendingSupportExitAudit } = await import("../src/lib/durableSupportExitAudit");
+    assert.equal(
+      isValidPendingSupportExitAudit({
+        ...baseStaffAudit,
+        effectiveTenantRole: null,
+      }),
+      false,
+    );
+  });
+
+  it("52. WORK_AS_STAFF + SUPERADMIN role => invalid", async () => {
+    const { isValidPendingSupportExitAudit } = await import("../src/lib/durableSupportExitAudit");
+    assert.equal(
+      isValidPendingSupportExitAudit({
+        ...baseStaffAudit,
+        effectiveTenantRole: "SUPERADMIN" as any,
+      }),
+      false,
+    );
+  });
+
+  it("53. ACADEMY_WORKSPACE + WORKSPACE_ENDED + null target/null role => valid", async () => {
+    const { isValidPendingSupportExitAudit } = await import("../src/lib/durableSupportExitAudit");
+    assert.equal(
+      isValidPendingSupportExitAudit(baseWorkspaceAudit),
+      true,
+    );
+  });
+
+  it("54. ACADEMY_WORKSPACE + STAFF_WORK_ENDED => invalid", async () => {
+    const { isValidPendingSupportExitAudit } = await import("../src/lib/durableSupportExitAudit");
+    assert.equal(
+      isValidPendingSupportExitAudit({
+        ...baseWorkspaceAudit,
+        action: "SUPERADMIN_STAFF_WORK_ENDED" as any,
+      }),
+      false,
+    );
+  });
+
+  it("55. ACADEMY_WORKSPACE + targetUid => invalid", async () => {
+    const { isValidPendingSupportExitAudit } = await import("../src/lib/durableSupportExitAudit");
+    assert.equal(
+      isValidPendingSupportExitAudit({
+        ...baseWorkspaceAudit,
+        targetUid: "coach-456",
+      }),
+      false,
+    );
+  });
+
+  it("56. ACADEMY_WORKSPACE + tenant role => invalid", async () => {
+    const { isValidPendingSupportExitAudit } = await import("../src/lib/durableSupportExitAudit");
+    assert.equal(
+      isValidPendingSupportExitAudit({
+        ...baseWorkspaceAudit,
+        effectiveTenantRole: "ADMIN" as any,
+      }),
+      false,
+    );
+  });
+
+  it("57. storage integrity: valid existing record preserved when adding another record", async () => {
+    const {
+      savePendingSupportExitAudit,
+      loadPendingSupportExitAudits,
+    } = await import("../src/lib/durableSupportExitAudit");
+    const mockStorage = new MockStorage() as unknown as Storage;
+
+    savePendingSupportExitAudit(baseStaffAudit, mockStorage);
+    savePendingSupportExitAudit(baseWorkspaceAudit, mockStorage);
+
+    const loaded = loadPendingSupportExitAudits(mockStorage);
+    assert.equal(loaded.length, 2);
+    assert.equal(loaded[0].logDocId, "log-doc-123");
+    assert.equal(loaded[1].logDocId, "log-doc-789");
+  });
+
+  it("58. storage integrity: malformed existing JSON causes save to throw and preserves raw value", async () => {
+    const { savePendingSupportExitAudit, PENDING_AUDIT_STORAGE_KEY } = await import("../src/lib/durableSupportExitAudit");
+    const mockStorage = new MockStorage() as unknown as Storage;
+    const corruptRaw = "{ broken json !!";
+    mockStorage.setItem(PENDING_AUDIT_STORAGE_KEY, corruptRaw);
+
+    assert.throws(() => {
+      savePendingSupportExitAudit(baseStaffAudit, mockStorage);
+    }, /JSON parse error/);
+
+    assert.equal(mockStorage.getItem(PENDING_AUDIT_STORAGE_KEY), corruptRaw);
+  });
+
+  it("59. storage integrity: non-array existing JSON causes save to throw and preserves raw value", async () => {
+    const { savePendingSupportExitAudit, PENDING_AUDIT_STORAGE_KEY } = await import("../src/lib/durableSupportExitAudit");
+    const mockStorage = new MockStorage() as unknown as Storage;
+    const objectRaw = JSON.stringify({ notAnArray: true });
+    mockStorage.setItem(PENDING_AUDIT_STORAGE_KEY, objectRaw);
+
+    assert.throws(() => {
+      savePendingSupportExitAudit(baseStaffAudit, mockStorage);
+    }, /expected array/);
+
+    assert.equal(mockStorage.getItem(PENDING_AUDIT_STORAGE_KEY), objectRaw);
+  });
+
+  it("60. storage integrity: existing array containing an invalid record causes save to throw and preserves raw value", async () => {
+    const { savePendingSupportExitAudit, PENDING_AUDIT_STORAGE_KEY } = await import("../src/lib/durableSupportExitAudit");
+    const mockStorage = new MockStorage() as unknown as Storage;
+    const invalidArrayRaw = JSON.stringify([baseStaffAudit, { invalid: "record" }]);
+    mockStorage.setItem(PENDING_AUDIT_STORAGE_KEY, invalidArrayRaw);
+
+    assert.throws(() => {
+      savePendingSupportExitAudit(baseWorkspaceAudit, mockStorage);
+    }, /invalid record at index 1/);
+
+    assert.equal(mockStorage.getItem(PENDING_AUDIT_STORAGE_KEY), invalidArrayRaw);
+  });
+
+  it("61. storage integrity: no storage key => strict load returns []", async () => {
+    const { loadPendingSupportExitAuditsStrict } = await import("../src/lib/durableSupportExitAudit");
+    const mockStorage = new MockStorage() as unknown as Storage;
+    assert.deepEqual(loadPendingSupportExitAuditsStrict(mockStorage), []);
+  });
+
+  it("62. storage integrity: existing empty-string value => savePendingSupportExitAudit throws and preserves raw value", async () => {
+    const { savePendingSupportExitAudit, PENDING_AUDIT_STORAGE_KEY } = await import("../src/lib/durableSupportExitAudit");
+    const mockStorage = new MockStorage() as unknown as Storage;
+    mockStorage.setItem(PENDING_AUDIT_STORAGE_KEY, "");
+
+    assert.throws(() => {
+      savePendingSupportExitAudit(baseStaffAudit, mockStorage);
+    }, /JSON parse error/);
+
+    assert.equal(mockStorage.getItem(PENDING_AUDIT_STORAGE_KEY), "");
+  });
+
+  it("63. storage integrity: storage.getItem throwing => savePendingSupportExitAudit throws and performs no write", async () => {
+    const { savePendingSupportExitAudit, PENDING_AUDIT_STORAGE_KEY } = await import("../src/lib/durableSupportExitAudit");
+    let setItemCalled = false;
+    const failingStorage = {
+      getItem: () => {
+        throw new Error("Simulated storage access denied");
+      },
+      setItem: () => {
+        setItemCalled = true;
+      },
+      removeItem: () => {},
+      clear: () => {},
+      key: () => null,
+      length: 0,
+    } as unknown as Storage;
+
+    assert.throws(() => {
+      savePendingSupportExitAudit(baseStaffAudit, failingStorage);
+    }, /Simulated storage access denied/);
+
+    assert.equal(setItemCalled, false);
+  });
+
+  it("64. actor isolation: only authenticated SuperAdmin matching actorUid replays", async () => {
+    const {
+      savePendingSupportExitAudit,
+      replayPendingSupportExitAuditsForActor,
+      loadPendingSupportExitAudits,
+    } = await import("../src/lib/durableSupportExitAudit");
+    const mockStorage = new MockStorage() as unknown as Storage;
+    savePendingSupportExitAudit(baseStaffAudit, mockStorage);
+
+    // Another SuperAdmin with different UID attempts replay
+    const otherSuperAdmin = { uid: "other-sa-999", role: "SUPERADMIN", status: "ACTIVE" };
+    const mockDb = {} as any;
+    await replayPendingSupportExitAuditsForActor(otherSuperAdmin, mockDb, mockStorage);
+
+    // Record must NOT be touched or removed
+    assert.equal(loadPendingSupportExitAudits(mockStorage).length, 1);
+  });
+});

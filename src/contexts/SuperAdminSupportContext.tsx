@@ -31,6 +31,12 @@ import {
   isExactDocumentId,
   resolveSupportPresentationRole,
 } from "../lib/superAdminSupportModel";
+import {
+  type PendingSupportExitAudit,
+  performBoundedExitAudit,
+  replayPendingSupportExitAuditsForActor,
+  savePendingSupportExitAudit,
+} from "../lib/durableSupportExitAudit";
 
 interface SuperAdminSupportContextType {
   session: SuperAdminSupportSession | null;
@@ -73,8 +79,12 @@ export function SuperAdminSupportProvider({
 
   useEffect(() => {
     actualUserRef.current = actualUser;
-    // If the authenticated user is no longer an active SuperAdmin, clear support session immediately
-    if (!isExactActiveSuperAdmin(actualUser)) {
+    if (isExactActiveSuperAdmin(actualUser)) {
+      replayPendingSupportExitAuditsForActor(actualUser, db).catch((err) => {
+        console.warn("Background replay of pending support exit audits error:", err);
+      });
+    } else {
+      // If the authenticated user is no longer an active SuperAdmin, clear support session immediately
       operationGenerationRef.current++;
       clearMembershipListener();
       sessionRef.current = null;
@@ -504,29 +514,51 @@ export function SuperAdminSupportProvider({
   };
 
   const exitSupportMode = async () => {
+    const currentSession = sessionRef.current;
+    if (!currentSession) {
+      return;
+    }
+
+    const actorUid = actualUserRef.current?.uid || actualUserRef.current?.id;
+    if (!isExactActiveSuperAdmin(actualUserRef.current) || !isExactDocumentId(actorUid)) {
+      throw new Error("Cannot safely exit support mode: actor is not an active SUPERADMIN.");
+    }
+
+    const action =
+      currentSession.mode === "WORK_AS_STAFF"
+        ? "SUPERADMIN_STAFF_WORK_ENDED"
+        : "SUPERADMIN_ACADEMY_WORKSPACE_ENDED";
+
+    const logDocId = doc(collection(db, "logs")).id;
+    const pendingRecord: PendingSupportExitAudit = {
+      logDocId,
+      actorUid,
+      action,
+      academyId: currentSession.academyId,
+      mode: currentSession.mode,
+      targetUid: currentSession.subject?.uid || null,
+      effectiveTenantRole: currentSession.subject?.tenantRole || null,
+      createdAt: Date.now(),
+    };
+
+    // 1. Save record locally BEFORE clearing memory state
+    try {
+      savePendingSupportExitAudit(pendingRecord);
+    } catch (storageErr) {
+      throw new Error(
+        "Failed to durably queue support exit audit locally before session clearance: " +
+          String(storageErr),
+      );
+    }
+
+    // 2. Clear in-memory session
     operationGenerationRef.current++;
     clearMembershipListener();
-    const currentSession = sessionRef.current;
     sessionRef.current = null;
     setSession(null);
 
-    if (currentSession) {
-      const action =
-        currentSession.mode === "WORK_AS_STAFF"
-          ? "SUPERADMIN_STAFF_WORK_ENDED"
-          : "SUPERADMIN_ACADEMY_WORKSPACE_ENDED";
-      try {
-        await writeAuditLog(
-          action,
-          currentSession.academyId,
-          currentSession.mode,
-          currentSession.subject?.uid,
-          currentSession.subject?.tenantRole,
-        );
-      } catch (err) {
-        console.warn("Failed to write support mode exit audit log:", err);
-      }
-    }
+    // 3. Attempt bounded write to Firestore
+    await performBoundedExitAudit(db, pendingRecord);
   };
 
   const isSupportActive = session !== null;
