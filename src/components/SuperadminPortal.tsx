@@ -21,6 +21,9 @@ import {
   Activity,
   FileText,
   BadgeCheck,
+  Building2,
+  UserCheck,
+  ArrowRight,
 } from "lucide-react";
 import { subscribeToUsers } from "../lib/firestore/users";
 import {
@@ -40,6 +43,8 @@ import {
   updateUserRoleAtomically,
   updateUserStatusAtomically,
 } from "../lib/firestore/adminUserMutations";
+import { useSuperAdminSupport } from "../contexts/SuperAdminSupportContext";
+import { isExactActiveStaffMembership } from "../lib/superAdminSupportModel";
 
 import SuperAdminHeader from "./superadmin/SuperAdminHeader";
 import SuperAdminOverview from "./superadmin/SuperAdminOverview";
@@ -60,6 +65,7 @@ const CLEAN_AVAILABLE_TABS = [
   "dashboard",
   "approvals",
   "users",
+  "academies",
   "system_logs",
   "profile_claims",
   "payment_approvals",
@@ -81,8 +87,29 @@ interface ProfileClaimItem {
   createdAt?: string;
 }
 
+interface AcademyListItem {
+  id: string;
+  name?: string;
+  shortName?: string;
+  logoUrl?: string | null;
+  createdAt?: string;
+}
+
+interface StaffMemberItem {
+  id: string;
+  userId: string;
+  academyId: string;
+  role: string;
+  status: string;
+  displayName?: string;
+  userEmail?: string;
+  data: Record<string, unknown>;
+}
+
 export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const { hasPermission, currentUser: authUser } = useAuth();
+  const { enterAcademyWorkspace, startStaffWorkMode } = useSuperAdminSupport();
+
   const [activeTab, setActiveTab] = useState<CleanTab>("dashboard");
   const [users, setUsers] = useState<User[]>([]);
   const [userLoadState, setUserLoadState] =
@@ -101,6 +128,12 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const [academyCount, setAcademyCount] = useState<number | null>(null);
   const [academyLoadState, setAcademyLoadState] =
     useState<DashboardLoadState>("idle");
+  const [academiesList, setAcademiesList] = useState<AcademyListItem[]>([]);
+  const [academySearchQuery, setAcademySearchQuery] = useState("");
+
+  const [selectedAcademyForStaff, setSelectedAcademyForStaff] = useState<AcademyListItem | null>(null);
+  const [staffMembersList, setStaffMembersList] = useState<StaffMemberItem[]>([]);
+  const [staffLoadState, setStaffLoadState] = useState<DashboardLoadState>("idle");
 
   const [activityLogs, setActivityLogs] = useState<AuditLogEntry[]>([]);
   const [activityLoadState, setActivityLoadState] =
@@ -141,29 +174,90 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     let cancelled = false;
-    async function fetchAcademyCount() {
+    async function fetchAcademies() {
       setAcademyLoadState("loading");
       try {
         const snapshot = await getDocs(collection(db, "academies"));
         if (cancelled) return;
-        const count = snapshot.docs.filter(
+        const academyDocs = snapshot.docs.filter(
           (academyDoc) => academyDoc.id !== "superadmin_system",
-        ).length;
+        );
+        const count = academyDocs.length;
         setAcademyCount(count);
+
+        const academyItems: AcademyListItem[] = academyDocs.map((docSnap) => {
+          const data = docSnap.data();
+          return {
+            id: docSnap.id,
+            name: typeof data.name === "string" ? data.name : undefined,
+            shortName: typeof data.shortName === "string" ? data.shortName : undefined,
+            logoUrl: typeof data.logoUrl === "string" ? data.logoUrl : undefined,
+            createdAt: typeof data.createdAt === "string" ? data.createdAt : undefined,
+          };
+        });
+        setAcademiesList(academyItems);
         setAcademyLoadState("loaded");
       } catch (err) {
         if (cancelled) return;
-        console.error("SuperAdmin failed to fetch academy count:", err);
+        console.error("SuperAdmin failed to fetch academies:", err);
         setAcademyCount(null);
+        setAcademiesList([]);
         setAcademyLoadState("unavailable");
       }
     }
 
-    fetchAcademyCount();
+    fetchAcademies();
     return () => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!selectedAcademyForStaff) {
+      setStaffMembersList([]);
+      setStaffLoadState("idle");
+      return;
+    }
+    let cancelled = false;
+    async function fetchStaffMembers() {
+      setStaffLoadState("loading");
+      try {
+        const academyId = selectedAcademyForStaff.id;
+        const membersCollection = collection(db, "academies", academyId, "members");
+        const snapshot = await getDocs(membersCollection);
+        if (cancelled) return;
+
+        const members: StaffMemberItem[] = snapshot.docs.map((memberDoc) => {
+          const data = memberDoc.data() as Record<string, unknown>;
+          const userId = typeof data.userId === "string" ? data.userId : memberDoc.id;
+          const userMeta = users.find((u) => (u.id || u.uid) === userId);
+          return {
+            id: memberDoc.id,
+            userId,
+            academyId,
+            role: typeof data.role === "string" ? data.role : "",
+            status: typeof data.status === "string" ? data.status : "",
+            displayName: userMeta?.name || (typeof data.name === "string" ? data.name : undefined),
+            userEmail: userMeta?.email || (typeof data.email === "string" ? data.email : undefined),
+            data,
+          };
+        });
+
+        setStaffMembersList(members);
+        setStaffLoadState("loaded");
+      } catch (err) {
+        if (cancelled) return;
+        console.error("Failed to fetch academy staff members:", err);
+        setStaffMembersList([]);
+        setStaffLoadState("unavailable");
+      }
+    }
+
+    fetchStaffMembers();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAcademyForStaff, users]);
 
   useEffect(() => {
     let cancelled = false;
@@ -504,6 +598,30 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     }
   };
 
+  const handleEnterWorkspace = async (targetAcademyId: string) => {
+    beginMutation();
+    try {
+      await enterAcademyWorkspace(targetAcademyId);
+      onBack();
+    } catch (error) {
+      mutationFailure(error, "Error entering Academy workspace");
+    } finally {
+      setIsMutating(false);
+    }
+  };
+
+  const handleStartWorkMode = async (targetAcademyId: string, targetUid: string) => {
+    beginMutation();
+    try {
+      await startStaffWorkMode(targetAcademyId, targetUid);
+      onBack();
+    } catch (error) {
+      mutationFailure(error, "Error starting Staff Work Mode");
+    } finally {
+      setIsMutating(false);
+    }
+  };
+
   const filteredPendingUsers = pendingUsers.filter((u) => {
     const matchesSearch =
       u.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -516,6 +634,12 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     (u) =>
       u.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       u.email?.toLowerCase().includes(searchQuery.toLowerCase()),
+  );
+
+  const filteredAcademies = academiesList.filter(
+    (academy) =>
+      academy.name?.toLowerCase().includes(academySearchQuery.toLowerCase()) ||
+      academy.id.toLowerCase().includes(academySearchQuery.toLowerCase()),
   );
 
   const filteredLogs = logsList.filter(
@@ -588,6 +712,23 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
           }`}
         >
           Manage Users
+        </button>
+        <button
+          onClick={() => setActiveTab("academies")}
+          className={`py-4 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${
+            activeTab === "academies"
+              ? "border-emerald-500 text-emerald-600"
+              : "border-transparent text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          <span className="flex items-center gap-2">
+            Academies Directory
+            {academyCount !== null && (
+              <span className="bg-slate-200 text-slate-700 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                {academyCount}
+              </span>
+            )}
+          </span>
         </button>
         <button
           onClick={() => setActiveTab("system_logs")}
@@ -710,7 +851,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
             activityLoadState={activityLoadState}
             alerts={alerts}
             onNavigate={handleNavigate}
-            availableTabs={CLEAN_AVAILABLE_TABS}
+            availableTabs={CLEAN_AVAILABLE_TABS as unknown as SuperAdminTab[]}
           />
         )}
 
@@ -1063,6 +1204,214 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "academies" && (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Building2 className="text-emerald-600" size={20} />
+                <h3 className="font-black text-slate-800 text-base">Academies Directory</h3>
+              </div>
+              <div className="relative flex-1 sm:w-64 w-full">
+                <Search
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  size={16}
+                />
+                <input
+                  type="text"
+                  placeholder="Filter academies by name or exact ID..."
+                  value={academySearchQuery}
+                  onChange={(e) => setAcademySearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+            </div>
+            <div className="bg-emerald-50/70 border-b border-emerald-100 px-4 py-3 text-xs text-emerald-800 font-medium flex items-center gap-2">
+              <ShieldAlert className="shrink-0 text-emerald-600" size={16} />
+              SuperAdmin Global Academies Directory. Select an Academy to enter its workspace directly, or view staff to operate in Work Mode.
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                  <tr>
+                    <th className="p-4">Academy Name</th>
+                    <th className="p-4">Academy Document ID</th>
+                    <th className="p-4">Short Name</th>
+                    <th className="p-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {academyLoadState === "loading" ? (
+                    <tr>
+                      <td colSpan={4} className="p-8 text-center text-slate-500">
+                        <Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" />
+                      </td>
+                    </tr>
+                  ) : academyLoadState === "unavailable" ? (
+                    <tr>
+                      <td colSpan={4} className="p-8 text-center text-rose-600">
+                        Academies inventory unavailable.
+                      </td>
+                    </tr>
+                  ) : filteredAcademies.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="p-8 text-center text-slate-500">
+                        No academies found matching filter.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredAcademies.map((academyItem) => (
+                      <tr key={academyItem.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="p-4 font-bold text-slate-800 flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">
+                            {academyItem.name?.[0] || academyItem.id[0]}
+                          </div>
+                          <span>{academyItem.name || academyItem.id}</span>
+                        </td>
+                        <td className="p-4 text-xs font-mono text-slate-600">
+                          {academyItem.id}
+                        </td>
+                        <td className="p-4 text-xs text-slate-500">
+                          {academyItem.shortName || "-"}
+                        </td>
+                        <td className="p-4 text-right space-x-2 whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => handleEnterWorkspace(academyItem.id)}
+                            disabled={isMutating}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-colors inline-flex items-center gap-1.5 shadow-sm"
+                          >
+                            <ArrowRight size={14} />
+                            Enter Workspace
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedAcademyForStaff(academyItem)}
+                            disabled={isMutating}
+                            className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition-colors inline-flex items-center gap-1.5 shadow-sm"
+                          >
+                            <UserCheck size={14} />
+                            Staff ({users.filter((u) => u.academyId === academyItem.id || u.activeAcademyId === academyItem.id).length})
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {selectedAcademyForStaff && (
+          <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-4">
+                <div>
+                  <h3 className="font-black text-slate-900 text-lg flex items-center gap-2">
+                    <UserCheck className="text-emerald-600" size={20} />
+                    Staff Directory
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Academy: <span className="font-bold text-slate-800">{selectedAcademyForStaff.name || selectedAcademyForStaff.id}</span> ({selectedAcademyForStaff.id})
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedAcademyForStaff(null)}
+                  className="p-2 text-slate-400 hover:text-slate-600 rounded-xl"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 text-amber-900 text-xs p-3 rounded-xl">
+                Work Mode requires an exact ACTIVE ADMIN or COACH membership. Firebase actor identity remains SuperAdmin.
+              </div>
+
+              <div className="flex-1 overflow-y-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                    <tr>
+                      <th className="p-3">Staff User</th>
+                      <th className="p-3">Role</th>
+                      <th className="p-3">Membership Status</th>
+                      <th className="p-3 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {staffLoadState === "loading" ? (
+                      <tr>
+                        <td colSpan={4} className="p-6 text-center text-slate-500">
+                          <Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" />
+                        </td>
+                      </tr>
+                    ) : staffMembersList.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="p-6 text-center text-slate-500">
+                          No staff members found in this Academy.
+                        </td>
+                      </tr>
+                    ) : (
+                      staffMembersList.map((staff) => {
+                        const canWorkAs = isExactActiveStaffMembership(
+                          staff.data,
+                          staff.userId,
+                          staff.academyId,
+                          staff.id,
+                        );
+                        return (
+                          <tr key={staff.id} className="hover:bg-slate-50/50">
+                            <td className="p-3">
+                              <div className="font-bold text-slate-800">
+                                {staff.displayName || staff.userId}
+                              </div>
+                              {staff.userEmail && (
+                                <div className="text-xs text-slate-500">{staff.userEmail}</div>
+                              )}
+                            </td>
+                            <td className="p-3 font-mono text-xs font-bold text-slate-700">
+                              {staff.role}
+                            </td>
+                            <td className="p-3">
+                              <span
+                                className={`px-2 py-0.5 text-[10px] font-bold rounded-lg border ${
+                                  staff.status === "ACTIVE"
+                                    ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                                    : "bg-slate-100 text-slate-700 border-slate-200"
+                                }`}
+                              >
+                                {staff.status}
+                              </span>
+                            </td>
+                            <td className="p-3 text-right">
+                              {canWorkAs ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleStartWorkMode(staff.academyId, staff.userId)
+                                  }
+                                  disabled={isMutating}
+                                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs rounded-xl transition-colors shadow-sm inline-flex items-center gap-1"
+                                >
+                                  Work As
+                                </button>
+                              ) : (
+                                <span className="text-[11px] text-slate-400 font-medium bg-slate-100 px-2.5 py-1 rounded-lg">
+                                  Unavailable
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}

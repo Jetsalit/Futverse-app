@@ -19,6 +19,8 @@ import {
   mapCanonicalSnapshot,
   withoutCanonicalDocumentId,
 } from "../lib/firestore/canonicalDocument";
+import { useSuperAdminSupport } from "../contexts/SuperAdminSupportContext";
+import { canAccessTenantCapability } from "../lib/superAdminSupportModel";
 
 export default function ProPlayerManager({
   onBack,
@@ -35,8 +37,15 @@ export default function ProPlayerManager({
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<ProPlayer | null>(null);
   const [playerToDelete, setPlayerToDelete] = useState<string | null>(null);
-  const { currentUser } = useAuth();
-  const hasManagePermission = currentUser?.role === "SUPERADMIN" || currentUser?.role === "ADMIN";
+  const { currentUser, hasPermission } = useAuth();
+  const { isSupportActive, presentationRole } = useSuperAdminSupport();
+  const effectiveRole = isSupportActive ? presentationRole : (currentUser?.role || "USER");
+  const hasManagePermission = canAccessTenantCapability(
+    effectiveRole,
+    ["SUPERADMIN", "ADMIN"],
+    isSupportActive,
+    hasPermission
+  );
 
   useEffect(() => {
     const proPlayersRef = collection(db, "proPlayers");

@@ -4,6 +4,7 @@ import App from "./App.tsx";
 import "./index.css";
 import { LanguageProvider } from "./contexts/LanguageContext";
 import { AuthProvider } from "./contexts/AuthContext";
+import { SuperAdminSupportProvider } from "./contexts/SuperAdminSupportContext";
 import { AcademyProvider } from "./contexts/AcademyContext";
 import { ErrorBoundary } from "./ErrorBoundary.tsx";
 
@@ -27,11 +28,13 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary>
       <AuthProvider>
-        <AcademyProvider>
-          <LanguageProvider>
-            <App />
-          </LanguageProvider>
-        </AcademyProvider>
+        <SuperAdminSupportProvider>
+          <AcademyProvider>
+            <LanguageProvider>
+              <App />
+            </LanguageProvider>
+          </AcademyProvider>
+        </SuperAdminSupportProvider>
       </AuthProvider>
     </ErrorBoundary>
   </StrictMode>,

@@ -56,6 +56,9 @@ import {
   type PrivilegedRole,
 } from "./lib/privilegedAuthorization";
 import { isExplicitlyActiveAccountStatus } from "./lib/accountRolePolicy";
+import { useSuperAdminSupport } from "./contexts/SuperAdminSupportContext";
+import { SuperAdminSupportBar } from "./components/superadmin/SuperAdminSupportBar";
+import { canAccessTenantCapability } from "./lib/superAdminSupportModel";
 
 function AccessResolutionScreen({
   accessState,
@@ -136,12 +139,41 @@ export default function App() {
     logout,
   } = useAuth();
   const {
+    isSupportActive,
+    presentationRole,
+    exitSupportMode,
+  } = useSuperAdminSupport();
+  const {
     settings: academySettings,
     academyId,
     accessState,
     loading: academyLoading,
     error: academyError,
   } = useAcademy();
+
+  const effectivePresentationRole = isSupportActive
+    ? presentationRole
+    : (currentUser?.role || "USER");
+
+  const handleLogout = async () => {
+    try {
+      if (isSupportActive) {
+        await exitSupportMode();
+      }
+    } catch (err) {
+      console.error("Failed to safely close support session before logout:", err);
+      alert(
+        "Unable to safely close support session. Logout was cancelled to preserve audit integrity.",
+      );
+      return;
+    }
+    try {
+      await logout();
+    } catch (err) {
+      console.error("Firebase sign-out failed:", err);
+      alert("Sign-out failed. Please try again.");
+    }
+  };
 
   const prevLandingKeyRef = useRef<string>("");
 
@@ -258,13 +290,48 @@ export default function App() {
     }
 
     // Wrap Route Protection Logic
-    if (currentPage === "settings" && !hasPermission(["ADMIN"])) {
+    if (
+      currentPage === "settings" &&
+      !canAccessTenantCapability(
+        effectivePresentationRole,
+        ["ADMIN"],
+        isSupportActive,
+        hasPermission,
+      )
+    ) {
       return <AccessDenied onBack={() => navigateTo("dashboard")} />;
     }
-    if (currentPage === "fitness" && !hasPermission(["ADMIN"])) {
+    if (
+      currentPage === "fitness" &&
+      !canAccessTenantCapability(
+        effectivePresentationRole,
+        ["ADMIN"],
+        isSupportActive,
+        hasPermission,
+      )
+    ) {
       return <AccessDenied onBack={() => navigateTo("dashboard")} />;
     }
-    if (currentPage === "scout" && !hasPermission(["ADMIN", "SCOUT"])) {
+    if (
+      currentPage === "scout" &&
+      !canAccessTenantCapability(
+        effectivePresentationRole,
+        ["ADMIN", "SCOUT"],
+        isSupportActive,
+        hasPermission,
+      )
+    ) {
+      return <AccessDenied onBack={() => navigateTo("dashboard")} />;
+    }
+    if (
+      currentPage === "coaches" &&
+      !canAccessTenantCapability(
+        effectivePresentationRole,
+        ["ADMIN", "SUPERADMIN"],
+        isSupportActive,
+        hasPermission,
+      )
+    ) {
       return <AccessDenied onBack={() => navigateTo("dashboard")} />;
     }
 
@@ -424,18 +491,20 @@ export default function App() {
   ];
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-900 font-sans overflow-hidden">
-      {/* Mobile Sidebar Overlay */}
+    <div className="flex flex-col h-screen bg-slate-50 text-slate-900 font-sans overflow-hidden">
+      <SuperAdminSupportBar />
+      <div className="flex flex-1 min-h-0 relative">
+        {/* Mobile Sidebar Overlay */}
       {isMobileMenuOpen && (
         <div
-          className="fixed inset-0 bg-slate-900/50 z-30 md:hidden transition-opacity"
+          className="absolute inset-0 bg-slate-900/50 z-30 md:hidden transition-opacity"
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
 
       {/* Sidebar Navigation */}
       <aside
-        className={`fixed inset-y-0 left-0 w-64 bg-slate-900 flex flex-col shrink-0 z-40 transform transition-transform duration-300 md:static md:translate-x-0 ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`}
+        className={`absolute inset-y-0 left-0 w-64 bg-slate-900 flex flex-col shrink-0 z-50 overflow-y-auto transform transition-transform duration-300 md:static md:translate-x-0 md:z-auto ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
         <div className="p-4 relative flex flex-col items-center">
           <button
@@ -509,7 +578,7 @@ export default function App() {
 
           <nav className="space-y-2 mt-8 w-full px-2">
             {navItems.map((item) => {
-              if (currentUser && !item.roles.includes(currentUser.role))
+              if (currentUser && !item.roles.includes(effectivePresentationRole))
                 return null;
 
               return (
@@ -546,7 +615,7 @@ export default function App() {
 
         <div className="mt-auto p-4 border-t border-slate-800">
           <button
-            onClick={() => logout()}
+            onClick={handleLogout}
             className="w-full flex items-center gap-3 p-2 rounded-xl text-slate-400 hover:bg-slate-800 transition-colors focus:outline-none"
             title="Profile & Log Out"
           >
@@ -568,7 +637,7 @@ export default function App() {
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-w-0 relative">
         {/* Top Header Bar with Dynamic Squad Switcher & Network Status */}
-        <header className="fixed top-0 right-0 left-0 md:left-64 z-40 h-16 shrink-0 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-8">
+        <header className="absolute top-0 right-0 left-0 z-40 h-16 shrink-0 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-8">
           <div className="flex items-center gap-3 sm:gap-4">
             <button
               onClick={() => setIsMobileMenuOpen(true)}
@@ -664,6 +733,7 @@ export default function App() {
         isOpen={isNotificationOpen}
         onClose={() => setIsNotificationOpen(false)}
       />
+      </div>
     </div>
   );
 }
