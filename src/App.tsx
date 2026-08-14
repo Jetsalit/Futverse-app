@@ -141,6 +141,7 @@ export default function App() {
   const {
     isSupportActive,
     presentationRole,
+    exitSupportMode,
   } = useSuperAdminSupport();
   const {
     settings: academySettings,
@@ -153,6 +154,16 @@ export default function App() {
   const effectivePresentationRole = isSupportActive
     ? presentationRole
     : (currentUser?.role || "USER");
+
+  const handleLogout = async () => {
+    try {
+      if (isSupportActive) {
+        await exitSupportMode();
+      }
+    } finally {
+      await logout();
+    }
+  };
 
   const prevLandingKeyRef = useRef<string>("");
 
@@ -476,14 +487,14 @@ export default function App() {
         {/* Mobile Sidebar Overlay */}
       {isMobileMenuOpen && (
         <div
-          className="fixed inset-0 bg-slate-900/50 z-30 md:hidden transition-opacity"
+          className="absolute inset-0 bg-slate-900/50 z-30 md:hidden transition-opacity"
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
 
       {/* Sidebar Navigation */}
       <aside
-        className={`fixed inset-y-0 left-0 w-64 bg-slate-900 flex flex-col shrink-0 z-40 transform transition-transform duration-300 md:static md:translate-x-0 ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`}
+        className={`absolute inset-y-0 left-0 w-64 bg-slate-900 flex flex-col shrink-0 z-40 transform transition-transform duration-300 md:static md:translate-x-0 ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
         <div className="p-4 relative flex flex-col items-center">
           <button
@@ -594,7 +605,7 @@ export default function App() {
 
         <div className="mt-auto p-4 border-t border-slate-800">
           <button
-            onClick={() => logout()}
+            onClick={handleLogout}
             className="w-full flex items-center gap-3 p-2 rounded-xl text-slate-400 hover:bg-slate-800 transition-colors focus:outline-none"
             title="Profile & Log Out"
           >
