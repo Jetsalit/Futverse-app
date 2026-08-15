@@ -13,7 +13,8 @@
     "test:admin-decisions": "firebase emulators:exec --project demo-futverse-admin-decisions --only firestore \"node --import tsx --test tests/firestore.admin-user-decision.rules.test.ts\"",
     "test:backfill-dry-run": "node --import tsx --test tests/membershipBackfillDryRun.test.ts",
     "test:membership-export": "node --import tsx --test tests/membershipExportReadOnly.test.ts",
-    "export:membership-planning": "node --import tsx scripts/membershipExportReadOnly.ts"
+    "export:membership-planning": "node --import tsx scripts/membershipExportReadOnly.ts",
+    "test:bootstrap-legacy-admin": "node --import tsx --test tests/bootstrapLegacyAdmin.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
