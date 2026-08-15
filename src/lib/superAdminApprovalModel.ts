@@ -2,6 +2,7 @@ import {
   SAFE_ACCOUNT_ROLES,
   assessRequestedIntent,
   genericApprovalBlockReason,
+  isExplicitlyPendingAccountStatus,
   isSafeAccountRole,
   isTenantMembershipRole,
   type SafeAccountRole,
@@ -134,72 +135,56 @@ export function isClaimCandidateForUser(
 
   const userRequestedRole = user.requestedRole;
   if (isTenantMembershipRole(userRequestedRole)) {
-    const claimRequestedRole = typeof claim.requestedRole === "string" ? claim.requestedRole.trim() : undefined;
-    const claimApprovedRole = typeof claim.approvedRole === "string" ? claim.approvedRole.trim() : undefined;
-    const claimType = typeof claim.type === "string" ? claim.type.trim() : undefined;
+    const claimRequestedRole = typeof claim.requestedRole === "string"
+      ? claim.requestedRole.trim()
+      : undefined;
+    const claimApprovedRole = typeof claim.approvedRole === "string"
+      ? claim.approvedRole.trim()
+      : undefined;
+    const claimType = typeof claim.type === "string"
+      ? claim.type.trim()
+      : undefined;
+    const claimRoles = [claimRequestedRole, claimApprovedRole].filter(
+      (role): role is string => Boolean(role),
+    );
+    const tenantRoles = claimRoles.filter(isTenantMembershipRole);
+    const hasTargetRole = tenantRoles.includes(userRequestedRole);
+    const hasSafeRole = claimRoles.some(isSafeAccountRole);
+    const hasAcademyIndicator = claim.requestedAcademyId !== undefined
+      || claim.approvedAcademyId !== undefined
+      || claim.academyId !== undefined
+      || claim.inviteCode !== undefined;
 
-    // Filter out unrelated non-tenant claims (e.g. PLAYER, PARENT, SCOUT)
-    if (
-      (claimRequestedRole && isSafeAccountRole(claimRequestedRole)) ||
-      (claimApprovedRole && isSafeAccountRole(claimApprovedRole))
-    ) {
-      return false;
-    }
+    // Any exact target-role indicator keeps the Claim in scope. Conflicting
+    // safe-role/type fields are validated later and must fail closed.
+    if (hasTargetRole) return true;
 
-    // Filter out non-tenant claim types (e.g. PLAYER_CLAIM, FUTID_CLAIM, etc.)
-    if (
-      claimType &&
-      (claimType.includes("PLAYER") ||
-        claimType.includes("PARENT") ||
-        claimType.includes("SCOUT") ||
-        claimType.includes("FUTID"))
-    ) {
-      return false;
-    }
+    // A consistently different tenant role is conclusively unrelated.
+    if (tenantRoles.length > 0) return hasSafeRole;
 
-    // If claim is explicitly for COACH_JOIN, only applies when target role is COACH
     if (claimType === "COACH_JOIN") {
-      if (userRequestedRole !== "COACH") return false;
-      return true;
+      return userRequestedRole === "COACH" || hasSafeRole;
     }
 
-    // If claim explicitly requested a DIFFERENT valid tenant role, ignore as different tenant role
-    if (
-      claimRequestedRole &&
-      isTenantMembershipRole(claimRequestedRole) &&
-      claimRequestedRole !== userRequestedRole
-    ) {
-      return false;
-    }
-
-    // If requestedRole is absent/non-tenant, but approvedRole is explicitly a DIFFERENT valid tenant role, ignore
-    if (
-      !isTenantMembershipRole(claimRequestedRole) &&
-      claimApprovedRole &&
-      isTenantMembershipRole(claimApprovedRole) &&
-      claimApprovedRole !== userRequestedRole
-    ) {
-      return false;
-    }
-
-    // ACADEMY_JOIN type is relevant for the target tenant role
     if (claimType === "ACADEMY_JOIN") {
       return true;
     }
 
-    // Legacy undefined type: relevant if role matches or if it's an academy join attempt
-    if (claimType === undefined) {
-      if (claimRequestedRole === userRequestedRole || claimApprovedRole === userRequestedRole) {
-        return true;
-      }
-      if (claim.requestedAcademyId || claim.approvedAcademyId || claim.academyId) {
-        return true;
-      }
+    // Academy metadata alone cannot turn a coherent non-staff Claim into a
+    // staff Claim. Explicit target-role indicators above still fail closed.
+    if (hasSafeRole) return false;
+
+    if (claimType === "PLAYER_CLAIM" || claimType === "FUTID_CLAIM") {
       return false;
     }
 
-    // Other/malformed types remain candidate to fail closed in resolveStaffClaimView
-    return true;
+    if (claimType === undefined) {
+      return hasAcademyIndicator;
+    }
+
+    // Malformed typed Claims are relevant only when their fields still
+    // indicate a staff/Arena join attempt.
+    return hasAcademyIndicator;
   }
 
   return true;
@@ -274,12 +259,33 @@ export function resolveStaffClaimView(
     if (!isExactDocumentId(rawAcademyId)) {
       return toAmbiguous();
     }
-    const rawRole =
-      single.requestedRole ||
-      (single.type === "COACH_JOIN" ? "COACH" : undefined) ||
-      single.approvedRole;
+    if (
+      single.requestedAcademyId !== undefined
+      && single.academyId !== undefined
+      && single.requestedAcademyId !== single.academyId
+    ) {
+      return toAmbiguous();
+    }
+    if (single.approvedAcademyId !== undefined) {
+      if (
+        !isExactDocumentId(single.approvedAcademyId)
+        || single.approvedAcademyId !== rawAcademyId
+      ) {
+        return toAmbiguous();
+      }
+    }
 
+    const rawRole = single.requestedRole;
     if (rawRole !== "ADMIN" && rawRole !== "COACH") {
+      return toAmbiguous();
+    }
+    if (
+      single.approvedRole !== undefined
+      && single.approvedRole !== rawRole
+    ) {
+      return toAmbiguous();
+    }
+    if (single.type === "COACH_JOIN" && rawRole !== "COACH") {
       return toAmbiguous();
     }
     if (isTenantMembershipRole(userRequestedRole) && rawRole !== userRequestedRole) {
@@ -335,17 +341,35 @@ export function resolveStaffClaimView(
 
   // 5. Status === "REJECTED"
   if (status === "REJECTED") {
-    const rawRole =
-      single.approvedRole ||
-      single.requestedRole ||
-      (single.type === "COACH_JOIN" ? "COACH" : undefined);
-
-    if (rawRole !== "ADMIN" && rawRole !== "COACH") {
+    const roleValues = [
+      single.requestedRole,
+      single.approvedRole,
+      single.type === "COACH_JOIN" ? "COACH" : undefined,
+    ].filter((role): role is string => typeof role === "string");
+    if (
+      roleValues.length === 0
+      || roleValues.some((role) => role !== "ADMIN" && role !== "COACH")
+      || new Set(roleValues).size !== 1
+    ) {
+      return toAmbiguous();
+    }
+    const rawRole = roleValues[0] as TenantMembershipRole;
+    if (isTenantMembershipRole(userRequestedRole) && rawRole !== userRequestedRole) {
       return toAmbiguous();
     }
 
-    const rawAcademyId =
-      single.requestedAcademyId ?? single.approvedAcademyId ?? single.academyId;
+    const academyValues = [
+      single.requestedAcademyId,
+      single.approvedAcademyId,
+      single.academyId,
+    ].filter((academyId): academyId is string => typeof academyId === "string");
+    if (
+      academyValues.some((academyId) => !isExactDocumentId(academyId))
+      || new Set(academyValues).size > 1
+    ) {
+      return toAmbiguous();
+    }
+    const rawAcademyId = academyValues[0];
 
     return {
       state: "REJECTED",
@@ -423,9 +447,7 @@ export function normalizeManagedAccountStatus(status: unknown): NormalizedManage
 }
 
 export function isPendingAccountStatus(status: unknown): boolean {
-  if (typeof status !== "string") return false;
-  const upper = status.trim().toUpperCase();
-  return upper === "PENDING" || upper === "INACTIVE";
+  return isExplicitlyPendingAccountStatus(status);
 }
 
 export function getManagedAccountStatusDisplay(status: unknown): string {
@@ -448,9 +470,11 @@ export function canReviewModeApprove(
   mode: UserReviewMode,
   userStatus: unknown,
   requestedRole: unknown,
+  currentRole: unknown,
 ): boolean {
   if (mode !== "APPROVAL_REVIEW") return false;
   if (!isPendingAccountStatus(userStatus)) return false;
+  if (currentRole !== "USER") return false;
   const intent = assessRequestedIntent(requestedRole);
   return intent.kind === "SAFE_ACCOUNT_INTENT";
 }
@@ -463,9 +487,9 @@ export function canReviewModeReject(
 ): boolean {
   if (mode !== "APPROVAL_REVIEW") return false;
   if (!isPendingAccountStatus(userStatus)) return false;
-  if (currentRole === "SUPERADMIN" || currentRole === "DATA_ADMIN") return false;
+  if (currentRole !== "USER") return false;
   const intent = assessRequestedIntent(requestedRole);
-  return intent.kind !== "TENANT_MEMBERSHIP_INTENT";
+  return intent.kind === "SAFE_ACCOUNT_INTENT";
 }
 
 export function resolveClaimDisplayAcademy(claim: {

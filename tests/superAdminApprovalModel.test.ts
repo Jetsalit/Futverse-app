@@ -38,6 +38,34 @@ function fakeAtomicDependencies() {
 
   const dependencies: AtomicAdminMutationDependencies = {
     timestamp: () => "SERVER_TIMESTAMP",
+    async runAccountDecisionTransaction(operation) {
+      const stagedUsers: Array<{ targetUid: string; patch: Record<string, unknown> }> = [];
+      const stagedLogs: Array<Record<string, unknown>> = [];
+      const result = await operation({
+        async getUser(targetUid) {
+          return {
+            exists: true,
+            data: {
+              uid: targetUid,
+              email: "authoritative@test.com",
+              role: "USER",
+              status: "Inactive",
+              requestedRole: "PARENT",
+            },
+          };
+        },
+        updateUser(targetUid, patch) {
+          stagedUsers.push({ targetUid, patch });
+        },
+        createAuditLog(log) {
+          stagedLogs.push(log);
+        },
+      });
+      commitCount += 1;
+      publishedUsers.push(...stagedUsers);
+      publishedLogs.push(...stagedLogs);
+      return result;
+    },
     createBatch: () => {
       const stagedUsers: Array<{ targetUid: string; patch: Record<string, unknown> }> = [];
       const stagedLogs: Array<Record<string, unknown>> = [];
@@ -684,24 +712,26 @@ describe("Hardening Pass: Bugs 1, 2, 3, 4, 5 Invariants", () => {
 
   // Bug 1: Review Mode Guards
   it("Bug 1.1: READ_ONLY_PROFILE mode cannot approve or reject", () => {
-    assert.equal(canReviewModeApprove("READ_ONLY_PROFILE", "PENDING", "PARENT"), false);
+    assert.equal(canReviewModeApprove("READ_ONLY_PROFILE", "PENDING", "PARENT", "USER"), false);
     assert.equal(canReviewModeReject("READ_ONLY_PROFILE", "PENDING", "PARENT", "USER"), false);
-    assert.equal(canReviewModeApprove("READ_ONLY_PROFILE", "Inactive", "SCOUT"), false);
+    assert.equal(canReviewModeApprove("READ_ONLY_PROFILE", "Inactive", "SCOUT", "USER"), false);
     assert.equal(canReviewModeReject("READ_ONLY_PROFILE", "Inactive", "SCOUT", "USER"), false);
   });
 
   it("Bug 1.2: APPROVAL_REVIEW for non-pending user cannot approve or reject", () => {
-    assert.equal(canReviewModeApprove("APPROVAL_REVIEW", "ACTIVE", "PARENT"), false);
+    assert.equal(canReviewModeApprove("APPROVAL_REVIEW", "ACTIVE", "PARENT", "USER"), false);
     assert.equal(canReviewModeReject("APPROVAL_REVIEW", "ACTIVE", "PARENT", "USER"), false);
-    assert.equal(canReviewModeApprove("APPROVAL_REVIEW", "Active", "PARENT"), false);
+    assert.equal(canReviewModeApprove("APPROVAL_REVIEW", "Active", "PARENT", "USER"), false);
     assert.equal(canReviewModeReject("APPROVAL_REVIEW", "Active", "PARENT", "USER"), false);
-    assert.equal(canReviewModeApprove("APPROVAL_REVIEW", "REJECTED", "PARENT"), false);
+    assert.equal(canReviewModeApprove("APPROVAL_REVIEW", "REJECTED", "PARENT", "USER"), false);
     assert.equal(canReviewModeReject("APPROVAL_REVIEW", "REJECTED", "PARENT", "USER"), false);
   });
 
-  it("Bug 1.3: APPROVAL_REVIEW cannot reject privileged account records", () => {
-    assert.equal(canReviewModeReject("APPROVAL_REVIEW", "PENDING", "PARENT", "SUPERADMIN"), false);
-    assert.equal(canReviewModeReject("APPROVAL_REVIEW", "PENDING", "PARENT", "DATA_ADMIN"), false);
+  it("Bug 1.3: generic decisions require current authoritative role USER", () => {
+    for (const role of ["ADMIN", "COACH", "SUPERADMIN", "DATA_ADMIN", "PLAYER", undefined]) {
+      assert.equal(canReviewModeApprove("APPROVAL_REVIEW", "PENDING", "PARENT", role), false);
+      assert.equal(canReviewModeReject("APPROVAL_REVIEW", "PENDING", "PARENT", role), false);
+    }
   });
 
   it("Bug 1.4: Staff tenant intent never exposes generic Reject Account Request", () => {
@@ -710,10 +740,16 @@ describe("Hardening Pass: Bugs 1, 2, 3, 4, 5 Invariants", () => {
   });
 
   it("Bug 1.5: Pending safe account in APPROVAL_REVIEW allows approve and reject", () => {
-    assert.equal(canReviewModeApprove("APPROVAL_REVIEW", "PENDING", "PARENT"), true);
+    assert.equal(canReviewModeApprove("APPROVAL_REVIEW", "PENDING", "PARENT", "USER"), true);
     assert.equal(canReviewModeReject("APPROVAL_REVIEW", "PENDING", "PARENT", "USER"), true);
-    assert.equal(canReviewModeApprove("APPROVAL_REVIEW", "Inactive", "SCOUT"), true);
+    assert.equal(canReviewModeApprove("APPROVAL_REVIEW", "Inactive", "SCOUT", "USER"), true);
     assert.equal(canReviewModeReject("APPROVAL_REVIEW", "Inactive", "SCOUT", "USER"), true);
+  });
+
+  it("Bug 1.6: BLOCKED requested intent cannot be rejected", () => {
+    for (const intent of [undefined, null, {}, [], "UNKNOWN", "SUPERADMIN", "DATA_ADMIN"]) {
+      assert.equal(canReviewModeReject("APPROVAL_REVIEW", "PENDING", intent, "USER"), false);
+    }
   });
 
   // Bug 2: Unrelated same-UID claim filtering
@@ -786,6 +822,85 @@ describe("Hardening Pass: Bugs 1, 2, 3, 4, 5 Invariants", () => {
     assert.equal(view.state, "AMBIGUOUS");
   });
 
+  it("Bug 2.5: PLAYER_CLAIM with requestedAcademyId does not hide a valid COACH claim", () => {
+    const view = resolveStaffClaimView([
+      {
+        id: "claim-player-with-requested-academy",
+        userId: "coach-user-999",
+        requestedRole: "PLAYER",
+        requestedAcademyId: "academy-player-context",
+        status: "PENDING",
+        type: "PLAYER_CLAIM",
+      },
+      {
+        id: "claim-valid-coach-after-player",
+        userId: "coach-user-999",
+        requestedRole: "COACH",
+        requestedAcademyId: "academy-staff-context",
+        status: "PENDING",
+        type: "ACADEMY_JOIN",
+      },
+    ], targetCoachUser);
+
+    assert.equal(view.state, "PENDING");
+    if (view.state === "PENDING") {
+      assert.equal(view.claimId, "claim-valid-coach-after-player");
+      assert.equal(view.academyId, "academy-staff-context");
+      assert.equal(view.role, "COACH");
+    }
+  });
+
+  it("Bug 2.6: PLAYER_CLAIM with academyId only => NO_CLAIM for COACH", () => {
+    const view = resolveStaffClaimView([{
+      id: "claim-player-academy-only",
+      userId: "coach-user-999",
+      academyId: "academy-player-context",
+      status: "PENDING",
+      type: "PLAYER_CLAIM",
+    }], targetCoachUser);
+
+    assert.equal(view.state, "NO_CLAIM");
+  });
+
+  it("Bug 2.7: FUTID_CLAIM with academyId => NO_CLAIM for COACH", () => {
+    const view = resolveStaffClaimView([{
+      id: "claim-futid-academy",
+      userId: "coach-user-999",
+      academyId: "academy-player-context",
+      status: "PENDING",
+      type: "FUTID_CLAIM",
+    }], targetCoachUser);
+
+    assert.equal(view.state, "NO_CLAIM");
+  });
+
+  it("Bug 2.8: PLAYER_CLAIM with requestedRole COACH => AMBIGUOUS", () => {
+    const view = resolveStaffClaimView([{
+      id: "claim-player-conflicting-requested-role",
+      userId: "coach-user-999",
+      requestedRole: "COACH",
+      requestedAcademyId: "academy-conflicting-context",
+      status: "PENDING",
+      type: "PLAYER_CLAIM",
+    }], targetCoachUser);
+
+    assert.equal(view.state, "AMBIGUOUS");
+  });
+
+  it("Bug 2.9: requestedRole PLAYER with approvedRole COACH => AMBIGUOUS", () => {
+    const view = resolveStaffClaimView([{
+      id: "claim-player-conflicting-approved-role",
+      userId: "coach-user-999",
+      requestedRole: "PLAYER",
+      approvedRole: "COACH",
+      approvedAcademyId: "academy-conflicting-context",
+      status: "APPROVED",
+      type: "PLAYER_CLAIM",
+    }], targetCoachUser);
+
+    assert.equal(view.state, "AMBIGUOUS");
+  });
+
   // Bug 3: APPROVED Claim strict invariants
   it("Bug 3.1: APPROVED without approvedAcademyId => AMBIGUOUS even if requestedAcademyId exists", () => {
     const claims: RawProfileClaimData[] = [
@@ -852,6 +967,89 @@ describe("Hardening Pass: Bugs 1, 2, 3, 4, 5 Invariants", () => {
     ];
     const view = resolveStaffClaimView(claims, targetCoachUser);
     assert.equal(view.state, "AMBIGUOUS");
+  });
+
+  it("Bug 3.5: PENDING missing requestedRole cannot fall back to approvedRole", () => {
+    const view = resolveStaffClaimView([{
+      id: "claim-pending-approved-role-only",
+      userId: "coach-user-999",
+      approvedRole: "COACH",
+      requestedAcademyId: "academy-valid",
+      status: "PENDING",
+      type: "ACADEMY_JOIN",
+    }], targetCoachUser);
+    assert.equal(view.state, "AMBIGUOUS");
+  });
+
+  it("Bug 3.6: contradictory safe role does not hide a relevant PENDING staff Claim", () => {
+    const view = resolveStaffClaimView([{
+      id: "claim-pending-role-conflict",
+      userId: "coach-user-999",
+      requestedRole: "COACH",
+      approvedRole: "PLAYER",
+      requestedAcademyId: "academy-valid",
+      status: "PENDING",
+      type: "ACADEMY_JOIN",
+    }], targetCoachUser);
+    assert.equal(view.state, "AMBIGUOUS");
+  });
+
+  it("Bug 3.7: REJECTED requestedRole / approvedRole conflict => AMBIGUOUS", () => {
+    const view = resolveStaffClaimView([{
+      id: "claim-rejected-role-conflict",
+      userId: "coach-user-999",
+      requestedRole: "COACH",
+      approvedRole: "ADMIN",
+      requestedAcademyId: "academy-valid",
+      status: "REJECTED",
+      type: "ACADEMY_JOIN",
+    }], targetCoachUser);
+    assert.equal(view.state, "AMBIGUOUS");
+  });
+
+  it("Bug 3.7b: conflicting PENDING or REJECTED Academy fields => AMBIGUOUS", () => {
+    const pending = resolveStaffClaimView([{
+      id: "claim-pending-academy-conflict",
+      userId: "coach-user-999",
+      requestedRole: "COACH",
+      requestedAcademyId: "academy-requested",
+      approvedAcademyId: "academy-approved",
+      status: "PENDING",
+      type: "ACADEMY_JOIN",
+    }], targetCoachUser);
+    assert.equal(pending.state, "AMBIGUOUS");
+
+    const rejected = resolveStaffClaimView([{
+      id: "claim-rejected-academy-conflict",
+      userId: "coach-user-999",
+      requestedRole: "COACH",
+      requestedAcademyId: "academy-requested",
+      approvedAcademyId: "academy-approved",
+      status: "REJECTED",
+      type: "ACADEMY_JOIN",
+    }], targetCoachUser);
+    assert.equal(rejected.state, "AMBIGUOUS");
+  });
+
+  it("Bug 3.8: valid legacy PENDING and canonical REJECTED Claims still resolve", () => {
+    const legacyPending = resolveStaffClaimView([{
+      id: "claim-legacy-pending",
+      userId: "coach-user-999",
+      requestedRole: "COACH",
+      academyId: "academy-legacy",
+      status: "PENDING",
+    }], targetCoachUser);
+    assert.equal(legacyPending.state, "PENDING");
+
+    const canonicalRejected = resolveStaffClaimView([{
+      id: "claim-canonical-rejected",
+      userId: "coach-user-999",
+      requestedRole: "COACH",
+      requestedAcademyId: "academy-canonical",
+      status: "REJECTED",
+      type: "ACADEMY_JOIN",
+    }], targetCoachUser);
+    assert.equal(canonicalRejected.state, "REJECTED");
   });
 
   // Bug 4: Profile Claims Academy Resolver
@@ -926,10 +1124,10 @@ describe("Hardening Pass: Bugs 1, 2, 3, 4, 5 Invariants", () => {
 
   it("Bug 5.2: isPendingAccountStatus identifies pending variants", () => {
     assert.equal(isPendingAccountStatus("PENDING"), true);
-    assert.equal(isPendingAccountStatus("pending"), true);
     assert.equal(isPendingAccountStatus("Inactive"), true);
-    assert.equal(isPendingAccountStatus("INACTIVE"), true);
-    assert.equal(isPendingAccountStatus("inactive"), true);
+    assert.equal(isPendingAccountStatus("pending"), false);
+    assert.equal(isPendingAccountStatus("INACTIVE"), false);
+    assert.equal(isPendingAccountStatus("inactive"), false);
     assert.equal(isPendingAccountStatus("Active"), false);
     assert.equal(isPendingAccountStatus("ACTIVE"), false);
     assert.equal(isPendingAccountStatus("REJECTED"), false);

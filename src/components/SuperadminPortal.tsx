@@ -394,9 +394,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     );
   }
 
-  const pendingUsers = users.filter(
-    (u) => u.status === "PENDING" || u.status === "Inactive",
-  );
+  const pendingUsers = users.filter((u) => isPendingAccountStatus(u.status));
   const today = new Date().toDateString();
   const approvedToday = users.filter(
     (u) =>
@@ -565,8 +563,13 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
       setMutationError("Account approval is only permitted in Approval Review mode.");
       return;
     }
-    if (!canReviewModeApprove(reviewMode, user.status, user.requestedRole)) {
-      setMutationError("Only pending accounts with safe account intent can be approved.");
+    if (!canReviewModeApprove(
+      reviewMode,
+      user.status,
+      user.requestedRole,
+      user.role,
+    )) {
+      setMutationError("Only pending USER accounts with safe account intent can be approved.");
       return;
     }
     if (!isSafeAccountRole(approvedRole)) {
@@ -1103,7 +1106,12 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                             {formatFirestoreDate(user.createdAt)}
                           </td>
                           <td className="p-4 text-right space-x-2 whitespace-nowrap">
-                            {assessRequestedIntent(user.requestedRole).kind === "SAFE_ACCOUNT_INTENT" ? (
+                            {canReviewModeApprove(
+                              "APPROVAL_REVIEW",
+                              user.status,
+                              user.requestedRole,
+                              user.role,
+                            ) ? (
                               <>
                                 <button
                                   onClick={() => openUserReview(user, "APPROVAL_REVIEW")}
@@ -1120,10 +1128,10 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                                   <CheckCircle size={18} />
                                 </button>
                                 <button
-                                  onClick={() => handleReject(user)}
+                                  onClick={() => openUserReview(user, "APPROVAL_REVIEW")}
                                   disabled={isMutating}
                                   className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                  title="Reject Account Request"
+                                  title="Review account rejection"
                                 >
                                   <XCircle size={18} />
                                 </button>
@@ -1137,23 +1145,13 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                                 <Eye size={18} />
                               </button>
                             ) : (
-                              <>
-                                <button
-                                  onClick={() => openUserReview(user, "APPROVAL_REVIEW")}
-                                  className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                  title="View Profile"
-                                >
-                                  <Eye size={18} />
-                                </button>
-                                <button
-                                  onClick={() => handleReject(user)}
-                                  disabled={isMutating}
-                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                  title="Reject Account Request"
-                                >
-                                  <XCircle size={18} />
-                                </button>
-                              </>
+                              <button
+                                onClick={() => openUserReview(user, "APPROVAL_REVIEW")}
+                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                title="View non-actionable account record"
+                              >
+                                <Eye size={18} />
+                              </button>
                             )}
                           </td>
                         </tr>
@@ -1828,6 +1826,14 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                   );
                 }
 
+                if (selectedUser.role !== "USER") {
+                  return (
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-900">
+                      Generic account approval and rejection require the current authoritative role to be exactly USER. This record is read-only in the generic workflow.
+                    </div>
+                  );
+                }
+
                 const intent = assessRequestedIntent(selectedUser.requestedRole);
 
                 if (intent.kind === "SAFE_ACCOUNT_INTENT") {
@@ -1975,8 +1981,25 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                             Conflicting or malformed Academy Membership claims require manual review.
                           </div>
                           <p className="text-[11px] text-slate-600">
-                            Conflicting, malformed, or multiple claims were detected for this user. Manual verification in the profile claims audit is required.
+                            Conflicting, malformed, or multiple claims were detected for exact UID <span className="font-mono font-bold">{selectedUser.id}</span>. Review these UID-scoped claim records:
                           </p>
+                          <div className="space-y-1.5" aria-label="Conflicting UID-scoped claim records">
+                            {staffClaimView.claims.map((claim) => (
+                              <div
+                                key={claim.claimId}
+                                className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-slate-700"
+                              >
+                                <div className="font-mono font-bold text-slate-900 break-all">
+                                  {claim.claimId}
+                                </div>
+                                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                                  <span>Status: <strong>{claim.status || "UNKNOWN"}</strong></span>
+                                  <span>Role: <strong>{claim.role || "UNKNOWN"}</strong></span>
+                                  <span>Academy: <strong>{claim.academyId || "UNKNOWN"}</strong></span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1995,7 +2018,22 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
             </div>
 
             <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3 shrink-0">
-              {reviewMode === "READ_ONLY_PROFILE" || !isPendingAccountStatus(selectedUser.status) ? (
+              {reviewMode === "READ_ONLY_PROFILE"
+              || !isPendingAccountStatus(selectedUser.status)
+              || (
+                !canReviewModeReject(
+                  reviewMode,
+                  selectedUser.status,
+                  selectedUser.requestedRole,
+                  selectedUser.role,
+                )
+                && !canReviewModeApprove(
+                  reviewMode,
+                  selectedUser.status,
+                  selectedUser.requestedRole,
+                  selectedUser.role,
+                )
+              ) ? (
                 <button
                   onClick={() => setSelectedUser(null)}
                   className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-100 rounded-xl transition-colors text-sm"
@@ -2013,7 +2051,12 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                       Reject Account Request
                     </button>
                   )}
-                  {canReviewModeApprove(reviewMode, selectedUser.status, selectedUser.requestedRole) && (
+                  {canReviewModeApprove(
+                    reviewMode,
+                    selectedUser.status,
+                    selectedUser.requestedRole,
+                    selectedUser.role,
+                  ) && (
                     <button
                       onClick={() => handleApprove(selectedUser)}
                       disabled={isMutating || approvedRole === ""}

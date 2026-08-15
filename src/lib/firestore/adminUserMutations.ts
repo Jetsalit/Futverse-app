@@ -2,15 +2,18 @@ import {
   collection,
   deleteField,
   doc,
+  runTransaction,
   serverTimestamp,
   writeBatch,
   type DocumentData,
   type FieldValue,
+  type Firestore,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { withoutCanonicalDocumentId } from "./canonicalDocument";
 import {
   genericApprovalBlockReason,
+  isExplicitlyPendingAccountStatus,
   isSafeAccountRole,
   requestedIntentAuditMetadata,
   type SafeAccountRole,
@@ -19,7 +22,7 @@ import {
 export const MAX_ATOMIC_BULK_APPROVAL_USERS = 250;
 export const BULK_APPROVED_ROLE: SafeAccountRole = "USER";
 export const APPROVED_ACCOUNT_STATUS = "Active" as const;
-export const REJECTED_ACCOUNT_STATUS = "Inactive" as const;
+export const REJECTED_ACCOUNT_STATUS = "REJECTED" as const;
 
 export const MANAGED_ACCOUNT_STATUSES = [
   "ACTIVE",
@@ -71,7 +74,21 @@ export interface AtomicAdminBatch {
 
 export interface AtomicAdminMutationDependencies {
   createBatch(): AtomicAdminBatch;
+  runAccountDecisionTransaction<T>(
+    operation: (transaction: AtomicAccountDecisionTransaction) => Promise<T>,
+  ): Promise<T>;
   timestamp(): unknown;
+}
+
+export interface AuthoritativeUserSnapshot {
+  exists: boolean;
+  data?: DocumentData;
+}
+
+export interface AtomicAccountDecisionTransaction {
+  getUser(targetUid: string): Promise<AuthoritativeUserSnapshot>;
+  updateUser(targetUid: string, patch: DocumentData): void;
+  createAuditLog(log: DocumentData): void;
 }
 
 export interface AtomicUserMutation {
@@ -80,28 +97,64 @@ export interface AtomicUserMutation {
   auditLog: DocumentData;
 }
 
-function createFirestoreBatch(): AtomicAdminBatch {
-  const batch = writeBatch(db);
+function createFirestoreDependencies(
+  firestore: Firestore,
+): AtomicAdminMutationDependencies {
+  const createBatch = (): AtomicAdminBatch => {
+    const batch = writeBatch(firestore);
+    return {
+      updateUser(targetUid, patch) {
+        batch.update(doc(firestore, "users", targetUid), {
+          ...withoutCanonicalDocumentId(patch),
+          uid: targetUid,
+          id: deleteField(),
+        });
+      },
+      createAuditLog(log) {
+        const logRef = doc(collection(firestore, "logs"));
+        batch.set(logRef, withoutCanonicalDocumentId(log));
+      },
+      commit: () => batch.commit(),
+    };
+  };
+
   return {
-    updateUser(targetUid, patch) {
-      batch.update(doc(db, "users", targetUid), {
-        ...withoutCanonicalDocumentId(patch),
-        uid: targetUid,
-        id: deleteField(),
-      });
+    createBatch,
+    async runAccountDecisionTransaction(operation) {
+      const logRef = doc(collection(firestore, "logs"));
+      return runTransaction(firestore, async (transaction) => operation({
+        async getUser(targetUid) {
+          const snapshot = await transaction.get(
+            doc(firestore, "users", targetUid),
+          );
+          return {
+            exists: snapshot.exists(),
+            data: snapshot.exists() ? snapshot.data() : undefined,
+          };
+        },
+        updateUser(targetUid, patch) {
+          transaction.update(doc(firestore, "users", targetUid), {
+            ...withoutCanonicalDocumentId(patch),
+            uid: targetUid,
+            id: deleteField(),
+          });
+        },
+        createAuditLog(log) {
+          transaction.set(logRef, withoutCanonicalDocumentId(log));
+        },
+      }));
     },
-    createAuditLog(log) {
-      const logRef = doc(collection(db, "logs"));
-      batch.set(logRef, withoutCanonicalDocumentId(log));
-    },
-    commit: () => batch.commit(),
+    timestamp: (): FieldValue => serverTimestamp(),
   };
 }
 
-const FIRESTORE_DEPENDENCIES: AtomicAdminMutationDependencies = {
-  createBatch: createFirestoreBatch,
-  timestamp: (): FieldValue => serverTimestamp(),
-};
+export function createFirestoreAdminMutationDependencies(
+  firestore: Firestore,
+): AtomicAdminMutationDependencies {
+  return createFirestoreDependencies(firestore);
+}
+
+const FIRESTORE_DEPENDENCIES = createFirestoreDependencies(db);
 
 function assertExactUid(value: unknown, field: string): asserts value is string {
   if (
@@ -157,6 +210,51 @@ function baseAuditLog(
   }, input.targetEmail);
 }
 
+function authoritativeDecisionTarget(
+  input: AdministrativeUserTarget & { actorUid: string },
+  snapshot: AuthoritativeUserSnapshot,
+): AdministrativeUserTarget {
+  assertDifferentActorAndTarget(input.actorUid, input.targetUid);
+  if (!snapshot.exists || !snapshot.data) {
+    throw new Error("The authoritative User document no longer exists.");
+  }
+
+  const authoritative = snapshot.data;
+  if (authoritative.uid !== input.targetUid) {
+    throw new Error("The authoritative User UID is missing or non-canonical.");
+  }
+  if (authoritative.role !== "USER") {
+    throw new Error("Generic account decisions require authoritative role USER.");
+  }
+  if (!isExplicitlyPendingAccountStatus(authoritative.status)) {
+    throw new Error("The authoritative User is no longer pending account review.");
+  }
+  if (authoritative.requestedRole !== input.requestedRole) {
+    throw new Error("The authoritative requested intent changed during review.");
+  }
+  if (
+    authoritative.role !== input.previousRole
+    || authoritative.status !== input.previousStatus
+  ) {
+    throw new Error("The authoritative User state changed during review.");
+  }
+
+  const blockReason = genericApprovalBlockReason(authoritative.requestedRole);
+  if (blockReason) {
+    throw new Error(blockReason);
+  }
+
+  return {
+    targetUid: input.targetUid,
+    targetEmail: typeof authoritative.email === "string"
+      ? authoritative.email
+      : undefined,
+    previousRole: authoritative.role,
+    previousStatus: authoritative.status,
+    requestedRole: authoritative.requestedRole,
+  };
+}
+
 export async function commitAtomicUserMutations(
   mutations: readonly AtomicUserMutation[],
   dependencies: AtomicAdminMutationDependencies = FIRESTORE_DEPENDENCIES,
@@ -185,25 +283,32 @@ export async function approveUserAtomically(
     throw new Error("approvedRole must be an explicitly selected safe account role.");
   }
 
-  const timestamp = dependencies.timestamp();
-  await commitAtomicUserMutations([{
-    targetUid: input.targetUid,
-    userPatch: {
+  await dependencies.runAccountDecisionTransaction(async (transaction) => {
+    const authoritative = authoritativeDecisionTarget(
+      input,
+      await transaction.getUser(input.targetUid),
+    );
+    const timestamp = dependencies.timestamp();
+    transaction.updateUser(input.targetUid, {
       role: input.approvedRole,
       status: APPROVED_ACCOUNT_STATUS,
       approvedBy: input.actorUid,
       approvedAt: timestamp,
       updatedAt: timestamp,
-    },
-    auditLog: {
-      ...baseAuditLog(input, "USER_APPROVED", timestamp),
+    });
+    transaction.createAuditLog({
+      ...baseAuditLog(
+        { ...authoritative, actorUid: input.actorUid },
+        "USER_APPROVED",
+        timestamp,
+      ),
       approvedBy: input.actorUid,
       approvedRole: input.approvedRole,
       approvedStatus: APPROVED_ACCOUNT_STATUS,
       newRole: input.approvedRole,
       newStatus: APPROVED_ACCOUNT_STATUS,
-    },
-  }], dependencies);
+    });
+  });
 }
 
 export async function rejectUserAtomically(
@@ -211,22 +316,32 @@ export async function rejectUserAtomically(
   dependencies: AtomicAdminMutationDependencies = FIRESTORE_DEPENDENCIES,
 ): Promise<void> {
   assertDifferentActorAndTarget(input.actorUid, input.targetUid);
-  const timestamp = dependencies.timestamp();
-  await commitAtomicUserMutations([{
-    targetUid: input.targetUid,
-    userPatch: {
+  const blockReason = genericApprovalBlockReason(input.requestedRole);
+  if (blockReason) throw new Error(blockReason);
+
+  await dependencies.runAccountDecisionTransaction(async (transaction) => {
+    const authoritative = authoritativeDecisionTarget(
+      input,
+      await transaction.getUser(input.targetUid),
+    );
+    const timestamp = dependencies.timestamp();
+    transaction.updateUser(input.targetUid, {
       status: REJECTED_ACCOUNT_STATUS,
       rejectionReason: input.rejectionReason,
       updatedAt: timestamp,
-    },
-    auditLog: {
-      ...baseAuditLog(input, "USER_REJECTED", timestamp),
+    });
+    transaction.createAuditLog({
+      ...baseAuditLog(
+        { ...authoritative, actorUid: input.actorUid },
+        "USER_REJECTED",
+        timestamp,
+      ),
       rejectedBy: input.actorUid,
-      approvedRole: authoritativeMetadata(input.previousRole),
+      approvedRole: authoritativeMetadata(authoritative.previousRole),
       approvedStatus: REJECTED_ACCOUNT_STATUS,
       newStatus: REJECTED_ACCOUNT_STATUS,
-    },
-  }], dependencies);
+    });
+  });
 }
 
 export async function updateUserRoleAtomically(

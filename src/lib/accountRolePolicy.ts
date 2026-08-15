@@ -19,11 +19,18 @@ export type TenantMembershipRole = (typeof TENANT_MEMBERSHIP_ROLES)[number];
 export type PrivilegedAccountRole = (typeof PRIVILEGED_ACCOUNT_ROLES)[number];
 
 export const ACTIVE_ACCOUNT_STATUSES = ["Active", "ACTIVE"] as const;
+export const PENDING_ACCOUNT_STATUSES = ["PENDING", "Inactive"] as const;
 
 export function isExplicitlyActiveAccountStatus(
   status: unknown,
 ): status is (typeof ACTIVE_ACCOUNT_STATUSES)[number] {
   return status === "Active" || status === "ACTIVE";
+}
+
+export function isExplicitlyPendingAccountStatus(
+  status: unknown,
+): status is (typeof PENDING_ACCOUNT_STATUSES)[number] {
+  return status === "PENDING" || status === "Inactive";
 }
 
 export type RequestedIntentAssessment =
