@@ -862,6 +862,48 @@ describe("Hardening Pass: Bugs 1, 2, 3, 4, 5 Invariants", () => {
     assert.equal(view.state, "NO_CLAIM");
   });
 
+  it("Bug 2.3a: COACH_JOIN with explicit ADMIN role remains a candidate and fails closed", () => {
+    const view = resolveStaffClaimView([{
+      id: "claim-coach-join-admin-conflict",
+      userId: "coach-user-999",
+      requestedRole: "ADMIN",
+      requestedAcademyId: "academy-conflicting-role",
+      status: "PENDING",
+      type: "COACH_JOIN",
+    }], targetCoachUser);
+
+    assert.equal(view.state, "AMBIGUOUS");
+  });
+
+  it("Bug 2.3b: malformed COACH_JOIN cannot be hidden beside a valid COACH claim", () => {
+    const view = resolveStaffClaimView([
+      {
+        id: "claim-valid-coach",
+        userId: "coach-user-999",
+        requestedRole: "COACH",
+        requestedAcademyId: "academy-valid",
+        status: "PENDING",
+        type: "ACADEMY_JOIN",
+      },
+      {
+        id: "claim-malformed-coach-join",
+        userId: "coach-user-999",
+        requestedRole: "ADMIN",
+        requestedAcademyId: "academy-conflicting-role",
+        status: "PENDING",
+        type: "COACH_JOIN",
+      },
+    ], targetCoachUser);
+
+    assert.equal(view.state, "AMBIGUOUS");
+    if (view.state === "AMBIGUOUS") {
+      assert.deepEqual(
+        view.claims.map((claim) => claim.claimId),
+        ["claim-valid-coach", "claim-malformed-coach-join"],
+      );
+    }
+  });
+
   it("Bug 2.7: FUTID_CLAIM with academyId => NO_CLAIM for COACH", () => {
     const view = resolveStaffClaimView([{
       id: "claim-futid-academy",
@@ -967,6 +1009,39 @@ describe("Hardening Pass: Bugs 1, 2, 3, 4, 5 Invariants", () => {
     ];
     const view = resolveStaffClaimView(claims, targetCoachUser);
     assert.equal(view.state, "AMBIGUOUS");
+  });
+
+  it("Bug 3.3a: APPROVED COACH_JOIN cannot resolve as ADMIN", () => {
+    const view = resolveStaffClaimView([{
+      id: "claim-approved-coach-join-admin",
+      userId: "admin-user-999",
+      requestedRole: "ADMIN",
+      approvedRole: "ADMIN",
+      approvedAcademyId: "academy-valid",
+      status: "APPROVED",
+      type: "COACH_JOIN",
+    }], { id: "admin-user-999", requestedRole: "ADMIN" });
+
+    assert.equal(view.state, "AMBIGUOUS");
+  });
+
+  it("Bug 3.3b: coherent APPROVED COACH_JOIN resolves as COACH", () => {
+    const view = resolveStaffClaimView([{
+      id: "claim-approved-coach-join",
+      userId: "coach-user-999",
+      requestedRole: "COACH",
+      approvedRole: "COACH",
+      approvedAcademyId: "academy-valid",
+      status: "APPROVED",
+      type: "COACH_JOIN",
+    }], targetCoachUser);
+
+    assert.deepEqual(view, {
+      state: "APPROVED",
+      claimId: "claim-approved-coach-join",
+      academyId: "academy-valid",
+      role: "COACH",
+    });
   });
 
   it("Bug 3.5: PENDING missing requestedRole cannot fall back to approvedRole", () => {

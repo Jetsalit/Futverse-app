@@ -150,6 +150,8 @@ export function isClaimCandidateForUser(
     const tenantRoles = claimRoles.filter(isTenantMembershipRole);
     const hasTargetRole = tenantRoles.includes(userRequestedRole);
     const hasSafeRole = claimRoles.some(isSafeAccountRole);
+    const hasCoachJoinRoleConflict = claimType === "COACH_JOIN"
+      && tenantRoles.some((role) => role !== "COACH");
     const hasAcademyIndicator = claim.requestedAcademyId !== undefined
       || claim.approvedAcademyId !== undefined
       || claim.academyId !== undefined
@@ -159,12 +161,17 @@ export function isClaimCandidateForUser(
     // safe-role/type fields are validated later and must fail closed.
     if (hasTargetRole) return true;
 
-    // A consistently different tenant role is conclusively unrelated.
-    if (tenantRoles.length > 0) return hasSafeRole;
+    // COACH_JOIN canonically implies COACH. An explicit ADMIN role conflicts
+    // with that type and must reach strict validation instead of being hidden
+    // as a consistently different tenant Claim.
+    if (hasCoachJoinRoleConflict) return true;
 
     if (claimType === "COACH_JOIN") {
       return userRequestedRole === "COACH" || hasSafeRole;
     }
+
+    // A consistently different tenant role is conclusively unrelated.
+    if (tenantRoles.length > 0) return hasSafeRole;
 
     if (claimType === "ACADEMY_JOIN") {
       return true;
@@ -313,6 +320,11 @@ export function resolveStaffClaimView(
       return toAmbiguous();
     }
     const approvedRole = single.approvedRole;
+
+    // COACH_JOIN canonically implies COACH in every Claim state.
+    if (single.type === "COACH_JOIN" && approvedRole !== "COACH") {
+      return toAmbiguous();
+    }
 
     // 4.3 approvedRole MUST match user's requested tenant role
     if (isTenantMembershipRole(userRequestedRole) && approvedRole !== userRequestedRole) {
