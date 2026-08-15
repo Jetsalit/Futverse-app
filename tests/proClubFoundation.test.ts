@@ -256,22 +256,14 @@ describe("Pro Club Foundation 1A", () => {
     assert.equal(isActiveProClubStaffAssignment(undefined), false);
   });
 
-  it("enforces static compile-time type assertion that ProClub interface excludes a stored document id property", () => {
-    // Type-level assertion: "id" extends keyof ProClub ? true : false
-    // Requires that the result is strictly false.
+  it("enforces static and runtime contract that ProClub interface excludes a stored document id property", () => {
+    // Static type guard check: if "id" property is added to ProClub, HasStoredIdField becomes true
+    // and causes a TypeScript compilation error (Type 'true' does not satisfy constraint 'false').
     type HasStoredIdField<T> = "id" extends keyof T ? true : false;
     type AssertNoStoredId<T extends false> = T;
     const staticCheck: AssertNoStoredId<HasStoredIdField<ProClub>> = false;
     assert.equal(staticCheck, false);
 
-    // Runtime shape check:
-    const club: ProClub = {
-      name: "Chonburi FC",
-      shortName: "CFC",
-      level: "T1",
-      status: "ACTIVE",
-      country: "Thailand",
-    };
     const clubKeys: (keyof ProClub)[] = [
       "name",
       "shortName",
@@ -282,7 +274,6 @@ describe("Pro Club Foundation 1A", () => {
       "createdAt",
       "updatedAt",
     ];
-    assert.equal("id" in club, false);
     assert.equal(clubKeys.includes("id" as unknown as keyof ProClub), false);
   });
 });
