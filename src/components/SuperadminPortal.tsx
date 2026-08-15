@@ -60,6 +60,7 @@ import {
 import { useSuperAdminSupport } from "../contexts/SuperAdminSupportContext";
 import { isExactActiveStaffMembership } from "../lib/superAdminSupportModel";
 
+import BootstrapLegacyAdmin from "./BootstrapLegacyAdmin";
 import SuperAdminHeader from "./superadmin/SuperAdminHeader";
 import SuperAdminOverview from "./superadmin/SuperAdminOverview";
 import {
@@ -84,6 +85,7 @@ const CLEAN_AVAILABLE_TABS = [
   "profile_claims",
   "payment_approvals",
   "observation_metrics",
+  "bootstrap_legacy",
 ] as const;
 
 type CleanTab = (typeof CLEAN_AVAILABLE_TABS)[number];
@@ -856,6 +858,16 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
               Unavailable
             </span>
           </span>
+        </button>
+        <button
+          onClick={() => setActiveTab("bootstrap_legacy")}
+          className={`py-4 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${
+            activeTab === "bootstrap_legacy"
+              ? "border-indigo-500 text-indigo-600"
+              : "border-transparent text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          <span className="flex items-center gap-2">Bootstrap Legacy</span>
         </button>
       </div>
 
@@ -1707,6 +1719,9 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
           </div>
         )}
 
+        {activeTab === "bootstrap_legacy" && (
+          <BootstrapLegacyAdmin />
+        )}
         {activeTab === "observation_metrics" && (
           <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center max-w-2xl mx-auto shadow-sm">
             <div className="w-12 h-12 bg-blue-100 text-blue-700 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-blue-200">

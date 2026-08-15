@@ -7,7 +7,8 @@ export type SuperAdminTab =
   | "users"
   | "system_logs"
   | "profile_claims"
-  | "observation_metrics";
+  | "observation_metrics"
+  | "bootstrap_legacy";
 
 export type DashboardLoadState = "idle" | "loading" | "loaded" | "unavailable";
 

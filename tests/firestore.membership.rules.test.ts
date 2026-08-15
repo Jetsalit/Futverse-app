@@ -821,3 +821,88 @@ test("40. signed-in user cannot read another user's protected observation data",
     "protected",
   )));
 });
+
+test("41. SuperAdmin legacy bootstrap transaction is allowed atomically", async () => {
+  const superAdminUid = "superadmin-bootstrap";
+
+  await seed([
+    [`users/${superAdminUid}`, {
+      uid: superAdminUid,
+      name: "Bootstrap SuperAdmin",
+      email: "bootstrap-superadmin@example.com",
+      role: "SUPERADMIN",
+      status: "Active",
+    }],
+    [`academies/${ACADEMY_A}`, {
+      name: "Academy A",
+      inviteCode: INVITE_A,
+    }],
+    [`users/${ADMIN_B}`, {
+      uid: ADMIN_B,
+      name: ADMIN_B,
+      email: `${ADMIN_B}@example.com`,
+      role: "ADMIN",
+      status: "Active",
+    }],
+  ]);
+
+  const db = authedDb(superAdminUid);
+
+  await assertSucceeds(runTransaction(db, async (transaction) => {
+    const academyRef = doc(db, "academies", ACADEMY_A);
+    const userRef = doc(db, "users", ADMIN_B);
+    const memberRef = doc(db, "academies", ACADEMY_A, "members", ADMIN_B);
+    const inviteRef = doc(db, "academy_invites", INVITE_A);
+
+    await transaction.get(academyRef);
+    await transaction.get(userRef);
+    await transaction.get(memberRef);
+    await transaction.get(inviteRef);
+
+    const timestamp = serverTimestamp();
+
+    transaction.set(memberRef, {
+      userId: ADMIN_B,
+      academyId: ACADEMY_A,
+      role: "ADMIN",
+      status: "ACTIVE",
+      source: "LEGACY_MIGRATION",
+      joinedAt: timestamp,
+      joinedBy: superAdminUid,
+      updatedAt: timestamp,
+    });
+
+    transaction.set(userRef, {
+      activeAcademyId: ACADEMY_A,
+      academyId: ACADEMY_A,
+      tenantRole: "ADMIN",
+      role: "ADMIN",
+      status: "Active",
+      updatedAt: timestamp,
+    }, { merge: true });
+
+    transaction.set(inviteRef, {
+      inviteCode: INVITE_A,
+      academyId: ACADEMY_A,
+      status: "ACTIVE",
+      createdAt: timestamp,
+      createdBy: superAdminUid,
+      updatedAt: timestamp,
+      updatedBy: superAdminUid,
+    });
+  }));
+
+  const membership = await assertSucceeds(getDoc(
+    doc(db, "academies", ACADEMY_A, "members", ADMIN_B)
+  ));
+  assert.equal(membership.data()?.source, "LEGACY_MIGRATION");
+  assert.equal(membership.data()?.joinedBy, superAdminUid);
+
+  const targetUser = await assertSucceeds(getDoc(doc(db, "users", ADMIN_B)));
+  assert.equal(targetUser.data()?.activeAcademyId, ACADEMY_A);
+  assert.equal(targetUser.data()?.tenantRole, "ADMIN");
+
+  const invite = await assertSucceeds(getDoc(doc(db, "academy_invites", INVITE_A)));
+  assert.equal(invite.data()?.academyId, ACADEMY_A);
+  assert.equal(invite.data()?.createdBy, superAdminUid);
+});
