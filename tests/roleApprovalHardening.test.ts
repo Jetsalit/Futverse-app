@@ -36,13 +36,58 @@ function fakeAtomicDependencies(options: {
   failUserQueue?: boolean;
   failLogQueue?: boolean;
   failCommit?: boolean;
+  authoritativeUser?: Record<string, unknown> | null;
 } = {}) {
   const publishedUsers: PublishedWrite[] = [];
   const publishedLogs: Array<Record<string, unknown>> = [];
   let commitCount = 0;
+  let authoritativeUser = options.authoritativeUser === undefined
+    ? {
+        uid: "target-user",
+        email: "target@example.test",
+        role: "USER",
+        status: "Inactive",
+        requestedRole: "PARENT",
+      }
+    : options.authoritativeUser;
 
   const dependencies: AtomicAdminMutationDependencies = {
     timestamp: () => "SERVER_TIMESTAMP",
+    async runAccountDecisionTransaction(operation) {
+      const stagedUsers: PublishedWrite[] = [];
+      const stagedLogs: Array<Record<string, unknown>> = [];
+      const result = await operation({
+        async getUser(targetUid) {
+          return authoritativeUser === null
+            ? { exists: false }
+            : {
+                exists: true,
+                data: targetUid === "target-user"
+                  ? { ...authoritativeUser }
+                  : undefined,
+              };
+        },
+        updateUser(targetUid, patch) {
+          if (options.failUserQueue) throw new Error("simulated User-write failure");
+          stagedUsers.push({ targetUid, patch });
+        },
+        createAuditLog(log) {
+          if (options.failLogQueue) throw new Error("simulated audit-log failure");
+          stagedLogs.push(log);
+        },
+      });
+      commitCount += 1;
+      if (options.failCommit) throw new Error("simulated atomic commit failure");
+      publishedUsers.push(...stagedUsers);
+      publishedLogs.push(...stagedLogs);
+      if (authoritativeUser && stagedUsers.length === 1) {
+        authoritativeUser = {
+          ...authoritativeUser,
+          ...stagedUsers[0].patch,
+        };
+      }
+      return result;
+    },
     createBatch: () => {
       const stagedUsers: PublishedWrite[] = [];
       const stagedLogs: Array<Record<string, unknown>> = [];
@@ -82,6 +127,20 @@ function target(requestedRole: unknown) {
     previousRole: "USER",
     previousStatus: "Inactive",
     requestedRole,
+  };
+}
+
+function authoritativePendingUser(
+  requestedRole: unknown,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    uid: "target-user",
+    email: "authoritative@example.test",
+    role: "USER",
+    status: "Inactive",
+    requestedRole,
+    ...overrides,
   };
 }
 
@@ -128,7 +187,9 @@ describe("Access A6 role policy", () => {
 
 describe("Access A6 atomic administrative mutations", () => {
   it("individual approval uses the explicit approvedRole and never copies requestedRole", async () => {
-    const fake = fakeAtomicDependencies();
+    const fake = fakeAtomicDependencies({
+      authoritativeUser: authoritativePendingUser("SCOUT"),
+    });
     await approveUserAtomically({
       ...target("SCOUT"),
       actorUid: "super-admin",
@@ -242,7 +303,10 @@ describe("Access A6 atomic administrative mutations", () => {
   });
 
   it("simulated audit-log failure leaves the User unpublished", async () => {
-    const fake = fakeAtomicDependencies({ failLogQueue: true });
+    const fake = fakeAtomicDependencies({
+      failLogQueue: true,
+      authoritativeUser: authoritativePendingUser("PLAYER"),
+    });
     await assert.rejects(approveUserAtomically({
       ...target("PLAYER"),
       actorUid: "super-admin",
@@ -254,7 +318,10 @@ describe("Access A6 atomic administrative mutations", () => {
   });
 
   it("simulated User-write failure creates no audit log", async () => {
-    const fake = fakeAtomicDependencies({ failUserQueue: true });
+    const fake = fakeAtomicDependencies({
+      failUserQueue: true,
+      authoritativeUser: authoritativePendingUser("SCOUT"),
+    });
     await assert.rejects(rejectUserAtomically({
       ...target("SCOUT"),
       actorUid: "super-admin",
@@ -301,25 +368,126 @@ describe("Access A6 atomic administrative mutations", () => {
     }, fakeAtomicDependencies().dependencies), /cannot change their own/);
   });
 
-  it("all administrative User controls route through the atomic helper", () => {
-    const portalSource = readFileSync(
-      path.join(repoRoot, "src/components/SuperadminPortal.tsx"),
-      "utf8",
-    );
-    assert.doesNotMatch(
-      portalSource,
-      /\bupdateDoc\b|\baddDoc\b|\bupdateUserStatus\s*\(/,
-    );
-    for (const helper of [
-      "approveUserAtomically",
-      "rejectUserAtomically",
-      "bulkApproveUsersAtomically",
-      "updateUserRoleAtomically",
-      "updateUserStatusAtomically",
-    ]) {
-      assert.match(portalSource, new RegExp(`\\b${helper}\\b`));
+  it("rejects canonical PENDING and legacy Inactive accounts as REJECTED", async () => {
+    for (const pendingStatus of ["PENDING", "Inactive"]) {
+      const fake = fakeAtomicDependencies({
+        authoritativeUser: authoritativePendingUser("PARENT", {
+          status: pendingStatus,
+        }),
+      });
+      await rejectUserAtomically({
+        ...target("PARENT"),
+        previousStatus: pendingStatus,
+        actorUid: "super-admin",
+        rejectionReason: "Rejected after explicit review",
+      }, fake.dependencies);
+
+      assert.equal(fake.publishedUsers[0]?.patch.status, "REJECTED");
+      assert.equal(fake.publishedLogs[0]?.newStatus, "REJECTED");
     }
   });
+
+  it("authoritative non-USER roles and final REJECTED status fail closed", async () => {
+    for (const role of ["ADMIN", "COACH", "SUPERADMIN", "DATA_ADMIN"]) {
+      const fake = fakeAtomicDependencies({
+        authoritativeUser: authoritativePendingUser("PARENT", { role }),
+      });
+      await assert.rejects(approveUserAtomically({
+        ...target("PARENT"),
+        previousRole: role,
+        actorUid: "super-admin",
+        approvedRole: "USER",
+      }, fake.dependencies), /authoritative role USER/);
+      await assert.rejects(rejectUserAtomically({
+        ...target("PARENT"),
+        previousRole: role,
+        actorUid: "super-admin",
+        rejectionReason: "Rejected",
+      }, fake.dependencies), /authoritative role USER/);
+      assert.equal(fake.commitCount, 0);
+    }
+
+    const rejected = fakeAtomicDependencies({
+      authoritativeUser: authoritativePendingUser("PARENT", {
+        status: "REJECTED",
+      }),
+    });
+    await assert.rejects(approveUserAtomically({
+      ...target("PARENT"),
+      previousStatus: "REJECTED",
+      actorUid: "super-admin",
+      approvedRole: "USER",
+    }, rejected.dependencies), /no longer pending/);
+    await assert.rejects(rejectUserAtomically({
+      ...target("PARENT"),
+      previousStatus: "REJECTED",
+      actorUid: "super-admin",
+      rejectionReason: "Rejected again",
+    }, rejected.dependencies), /no longer pending/);
+    assert.equal(rejected.commitCount, 0);
+  });
+
+  it("stale expected state cannot overwrite a newer authoritative state", async () => {
+    const fake = fakeAtomicDependencies({
+      authoritativeUser: authoritativePendingUser("PARENT", {
+        status: "REJECTED",
+      }),
+    });
+    await assert.rejects(approveUserAtomically({
+      ...target("PARENT"),
+      actorUid: "super-admin",
+      approvedRole: "PARENT",
+    }, fake.dependencies), /no longer pending/);
+    assert.equal(fake.commitCount, 0);
+    assert.deepEqual(fake.publishedUsers, []);
+    assert.deepEqual(fake.publishedLogs, []);
+  });
+
+  it(
+    "all exposed administrative User controls route through atomic helpers and bulk approval stays out of the mixed-intent UI",
+    () => {
+      const portalSource = readFileSync(
+        path.join(repoRoot, "src/components/SuperadminPortal.tsx"),
+        "utf8",
+      );
+
+      assert.doesNotMatch(
+        portalSource,
+        /\bupdateDoc\b|\bsetDoc\b|\baddDoc\b|\bdeleteDoc\b|\brunTransaction\b|\bwriteBatch\b|\bupdateUserStatus\s*\(/,
+      );
+
+      for (const helper of [
+        "approveUserAtomically",
+        "rejectUserAtomically",
+        "updateUserRoleAtomically",
+        "updateUserStatusAtomically",
+      ]) {
+        assert.match(
+          portalSource,
+          new RegExp(`\\b${helper}\\b`),
+        );
+      }
+
+      assert.doesNotMatch(
+        portalSource,
+        /\bbulkApproveUsersAtomically\b/,
+      );
+
+      assert.doesNotMatch(
+        portalSource,
+        /onClick=\{\(\) => handleReject\(user\)\}/,
+      );
+      assert.match(
+        portalSource,
+        /title="Review account rejection"/,
+      );
+
+      assert.doesNotMatch(
+        portalSource,
+        /Approve Filtered as USER/,
+      );
+    },
+  );
 
   it("explains why tenant intent cannot enter generic approval", () => {
     assert.match(genericApprovalBlockReason("ADMIN") || "", /ACTIVE Membership/);
