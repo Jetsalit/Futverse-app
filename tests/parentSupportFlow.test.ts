@@ -13,6 +13,9 @@ const dashboard = read("../src/components/Dashboard.tsx");
 const playerDashboard = read("../src/components/PlayerDashboard.tsx");
 const parentLink = read("../src/components/superadmin/SuperAdminParentLinkLauncher.tsx");
 const root = read("../src/SupportAwareRoot.tsx");
+const authContext = read("../src/contexts/AuthContext.tsx");
+const nonStaffContext = read("../src/contexts/SuperAdminNonStaffSupportContext.tsx");
+const logoutCoordinator = read("../src/lib/supportLogoutCoordinator.ts");
 
 describe("Parent support flow", () => {
   it("PARENT dashboard uses the canonical linked-player dashboard", () => {
@@ -43,5 +46,20 @@ describe("Parent support flow", () => {
       parentLink,
       /transaction\.set\(associationRef,\s*\{\s*userId:\s*parentUid,\s*academyId,\s*playerId,\s*role:\s*"PARENT",\s*status:\s*"ACTIVE",\s*\}\)/s,
     );
+  });
+
+  it("auth logout closes nonstaff Work As before Firebase sign-out", () => {
+    assert.match(authContext, /await closeSupportSessionsBeforeAuthLogout\(\);/);
+    assert.match(authContext, /await signOut\(auth\);/);
+    assert.ok(
+      authContext.indexOf("await closeSupportSessionsBeforeAuthLogout();") <
+        authContext.indexOf("await signOut(auth);"),
+    );
+  });
+
+  it("nonstaff support registers its audit-safe exit with the logout coordinator", () => {
+    assert.match(nonStaffContext, /registerNonStaffSupportLogoutExit\(exitNonStaffWorkMode\)/);
+    assert.match(nonStaffContext, /SUPERADMIN_NONSTAFF_WORK_ENDED/);
+    assert.match(logoutCoordinator, /await nonStaffSupportExit\(\);/);
   });
 });
