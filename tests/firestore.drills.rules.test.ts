@@ -13,10 +13,8 @@ import {
   doc,
   getDoc,
   getDocs,
-  query,
   setDoc,
   updateDoc,
-  where,
   type DocumentData,
   type Firestore,
 } from "firebase/firestore";
@@ -48,8 +46,8 @@ async function seed(entries: Array<[string, DocumentData]>) {
   });
 }
 
-function userDoc(uid: string, role: string): DocumentData {
-  return { uid, role, status: "Active" };
+function userDoc(uid: string, role: string, status = "Active"): DocumentData {
+  return { uid, role, status };
 }
 
 function drillDoc(createdBy: string, isShared = false): DocumentData {
@@ -99,63 +97,33 @@ after(async () => {
 });
 
 test("1. anonymous GET drill denied", async () => {
-  await seed([[`drills/owned-1`, drillDoc(USER_UID)]])
+  await seed([[`drills/owned-1`, drillDoc(USER_UID)]]);
   await assertFails(getDoc(doc(anonymousDb(), "drills", "owned-1")));
 });
 
-test("2. signed-in USER GET drill allowed", async () => {
-  await seed([[`drills/owned-1`, drillDoc(USER_UID)]])
-  await assertSucceeds(getDoc(doc(authedDb(USER_UID), "drills", "owned-1")));
+test("2. signed-in identities can read drills", async () => {
+  await seed([[`drills/owned-1`, drillDoc(USER_UID)]]);
+  for (const uid of [USER_UID, PLAYER_UID, PARENT_UID, COACH_UID, ADMIN_UID, SUPERADMIN_UID]) {
+    await assertSucceeds(getDoc(doc(authedDb(uid), "drills", "owned-1")));
+  }
 });
 
-test("3. PLAYER GET drill allowed", async () => {
-  await seed([[`drills/owned-1`, drillDoc(PLAYER_UID)]])
-  await assertSucceeds(getDoc(doc(authedDb(PLAYER_UID), "drills", "owned-1")));
-});
-
-test("4. PARENT GET drill allowed", async () => {
-  await seed([[`drills/owned-1`, drillDoc(PARENT_UID)]])
-  await assertSucceeds(getDoc(doc(authedDb(PARENT_UID), "drills", "owned-1")));
-});
-
-test("5. COACH GET drill allowed", async () => {
-  await seed([[`drills/owned-1`, drillDoc(COACH_UID)]])
-  await assertSucceeds(getDoc(doc(authedDb(COACH_UID), "drills", "owned-1")));
-});
-
-test("6. ADMIN GET drill allowed", async () => {
-  await seed([[`drills/owned-1`, drillDoc(ADMIN_UID)]])
-  await assertSucceeds(getDoc(doc(authedDb(ADMIN_UID), "drills", "owned-1")));
-});
-
-test("7. SUPERADMIN GET drill allowed", async () => {
-  await seed([[`drills/owned-1`, drillDoc(SUPERADMIN_UID)]])
-  await assertSucceeds(getDoc(doc(authedDb(SUPERADMIN_UID), "drills", "owned-1")));
-});
-
-test("8. signed-in LIST drills allowed", async () => {
+test("3. signed-in LIST drills allowed and anonymous denied", async () => {
   await seed([
     [`drills/owned-1`, drillDoc(USER_UID)],
     [`drills/owned-2`, drillDoc(OTHER_UID)],
   ]);
   await assertSucceeds(getDocs(collection(authedDb(USER_UID), "drills")));
-});
-
-test("9. anonymous LIST denied", async () => {
-  await seed([[`drills/owned-1`, drillDoc(USER_UID)]])
   await assertFails(getDocs(collection(anonymousDb(), "drills")));
 });
 
-test("10. USER can create drill when created_by == auth.uid", async () => {
-  await assertSucceeds(setDoc(doc(authedDb(USER_UID), "drills", "new-1"), drillDoc(USER_UID)));
+test("4. normal user can create only own drill", async () => {
+  await assertSucceeds(setDoc(doc(authedDb(USER_UID), "drills", "new-own"), drillDoc(USER_UID)));
+  await assertFails(setDoc(doc(authedDb(USER_UID), "drills", "new-other"), drillDoc(OTHER_UID)));
 });
 
-test("11. USER cannot create drill owned by another uid", async () => {
-  await assertFails(setDoc(doc(authedDb(USER_UID), "drills", "new-1"), drillDoc(OTHER_UID)));
-});
-
-test("12. create missing created_by denied", async () => {
-  await assertFails(setDoc(doc(authedDb(USER_UID), "drills", "new-1"), {
+test("5. missing created_by is denied", async () => {
+  await assertFails(setDoc(doc(authedDb(USER_UID), "drills", "missing-owner"), {
     title: "Missing owner",
     category: "Tactical",
     canvas_data: { elements: [], lines: [], fieldType: "half" },
@@ -163,78 +131,107 @@ test("12. create missing created_by denied", async () => {
   }));
 });
 
-test("13. PLAYER can create own drill if current app model allows any signed-in creator", async () => {
-  await assertSucceeds(setDoc(doc(authedDb(PLAYER_UID), "drills", "new-player"), drillDoc(PLAYER_UID)));
+test("6. active SUPERADMIN may create an assisted drill for an existing active target", async () => {
+  await assertSucceeds(
+    setDoc(doc(authedDb(SUPERADMIN_UID), "drills", "assisted-coach"), {
+      ...drillDoc(COACH_UID),
+      recorded_by: SUPERADMIN_UID,
+      entry_mode: "ASSISTED",
+    }),
+  );
 });
 
-test("14. PARENT can create own drill if rules intentionally allow all signed-in creators", async () => {
+test("7. SUPERADMIN assisted create fails for missing or inactive target owner", async () => {
+  await seed([[`users/inactive-coach`, userDoc("inactive-coach", "COACH", "Inactive")]]);
+  await assertFails(
+    setDoc(doc(authedDb(SUPERADMIN_UID), "drills", "missing-target"), drillDoc("missing-target-user")),
+  );
+  await assertFails(
+    setDoc(doc(authedDb(SUPERADMIN_UID), "drills", "inactive-target"), drillDoc("inactive-coach")),
+  );
+});
+
+test("8. PLAYER and PARENT keep existing ability to create their own drills", async () => {
+  await assertSucceeds(setDoc(doc(authedDb(PLAYER_UID), "drills", "new-player"), drillDoc(PLAYER_UID)));
   await assertSucceeds(setDoc(doc(authedDb(PARENT_UID), "drills", "new-parent"), drillDoc(PARENT_UID)));
 });
 
-test("15. owner can update own drill", async () => {
-  await seed([[`drills/owned-1`, drillDoc(USER_UID)]])
+test("9. owner can update own drill and non-owner cannot", async () => {
+  await seed([[`drills/owned-1`, drillDoc(USER_UID)]]);
   await assertSucceeds(updateDoc(doc(authedDb(USER_UID), "drills", "owned-1"), { title: "Updated title" }));
-});
-
-test("16. non-owner cannot update another user's drill", async () => {
-  await seed([[`drills/owned-1`, drillDoc(USER_UID)]])
   await assertFails(updateDoc(doc(authedDb(OTHER_UID), "drills", "owned-1"), { title: "Hijack" }));
 });
 
-test("17. owner cannot change created_by", async () => {
-  await seed([[`drills/owned-1`, drillDoc(USER_UID)]])
+test("10. owner cannot change created_by", async () => {
+  await seed([[`drills/owned-1`, drillDoc(USER_UID)]]);
   await assertFails(updateDoc(doc(authedDb(USER_UID), "drills", "owned-1"), { created_by: OTHER_UID }));
 });
 
-test("18. ADMIN cannot update another user's drill merely because ADMIN", async () => {
-  await seed([[`drills/owned-1`, drillDoc(USER_UID)]])
+test("11. ADMIN still cannot update another user's drill merely because ADMIN", async () => {
+  await seed([[`drills/owned-1`, drillDoc(USER_UID)]]);
   await assertFails(updateDoc(doc(authedDb(ADMIN_UID), "drills", "owned-1"), { title: "Admin edit" }));
 });
 
-test("19. SUPERADMIN cannot update another user's drill merely because SUPERADMIN", async () => {
-  await seed([[`drills/owned-1`, drillDoc(USER_UID)]])
-  await assertFails(updateDoc(doc(authedDb(SUPERADMIN_UID), "drills", "owned-1"), { title: "Superadmin edit" }));
+test("12. active SUPERADMIN may update assisted owner drill without changing ownership", async () => {
+  await seed([[`drills/coach-owned`, drillDoc(COACH_UID)]]);
+  await assertSucceeds(
+    updateDoc(doc(authedDb(SUPERADMIN_UID), "drills", "coach-owned"), {
+      title: "Assisted update",
+      last_updated_by: SUPERADMIN_UID,
+    }),
+  );
+  await assertFails(
+    updateDoc(doc(authedDb(SUPERADMIN_UID), "drills", "coach-owned"), {
+      created_by: SUPERADMIN_UID,
+    }),
+  );
 });
 
-test("20. owner can delete own drill", async () => {
-  await seed([[`drills/owned-1`, drillDoc(USER_UID)]])
+test("13. owner can delete own drill and non-owner cannot", async () => {
+  await seed([
+    [`drills/owned-1`, drillDoc(USER_UID)],
+    [`drills/owned-2`, drillDoc(USER_UID)],
+  ]);
   await assertSucceeds(deleteDoc(doc(authedDb(USER_UID), "drills", "owned-1")));
+  await assertFails(deleteDoc(doc(authedDb(OTHER_UID), "drills", "owned-2")));
 });
 
-test("21. non-owner cannot delete another user's drill", async () => {
-  await seed([[`drills/owned-1`, drillDoc(USER_UID)]])
-  await assertFails(deleteDoc(doc(authedDb(OTHER_UID), "drills", "owned-1")));
-});
-
-test("22. ADMIN cannot delete another user's drill", async () => {
-  await seed([[`drills/owned-1`, drillDoc(USER_UID)]])
+test("14. ADMIN still cannot delete another user's drill", async () => {
+  await seed([[`drills/owned-1`, drillDoc(USER_UID)]]);
   await assertFails(deleteDoc(doc(authedDb(ADMIN_UID), "drills", "owned-1")));
 });
 
-test("23. SUPERADMIN cannot delete another user's drill", async () => {
-  await seed([[`drills/owned-1`, drillDoc(USER_UID)]])
-  await assertFails(deleteDoc(doc(authedDb(SUPERADMIN_UID), "drills", "owned-1")));
+test("15. active SUPERADMIN may delete a drill while assisting its owner", async () => {
+  await seed([[`drills/coach-owned`, drillDoc(COACH_UID)]]);
+  await assertSucceeds(deleteDoc(doc(authedDb(SUPERADMIN_UID), "drills", "coach-owned")));
 });
 
-test("24. signed-in nested /drills/{id}/... read denied", async () => {
-  await seed([[`drills/owned-1/nested/x`, { ok: true }]])
+test("16. nested drill documents remain denied", async () => {
+  await seed([[`drills/owned-1/nested/x`, { ok: true }]]);
   await assertFails(getDoc(doc(authedDb(USER_UID), "drills", "owned-1", "nested", "x")));
+  await assertFails(setDoc(doc(authedDb(SUPERADMIN_UID), "drills", "owned-1", "nested", "y"), { ok: true }));
 });
 
-test("25. signed-in nested write denied", async () => {
-  await assertFails(setDoc(doc(authedDb(USER_UID), "drills", "owned-1", "nested", "x"), { ok: true }));
-});
-
-test("26. anonymous nested denied", async () => {
-  await assertFails(setDoc(doc(anonymousDb(), "drills", "owned-1", "nested", "x"), { ok: true }));
-});
-
-test("27. owner can change is_shared on own drill", async () => {
-  await seed([[`drills/owned-1`, drillDoc(USER_UID)]]);
+test("17. owner can change is_shared; ordinary non-owner cannot", async () => {
+  await seed([
+    [`drills/owned-1`, drillDoc(USER_UID)],
+    [`drills/owned-2`, drillDoc(USER_UID)],
+  ]);
   await assertSucceeds(updateDoc(doc(authedDb(USER_UID), "drills", "owned-1"), { is_shared: true }));
+  await assertFails(updateDoc(doc(authedDb(OTHER_UID), "drills", "owned-2"), { is_shared: true }));
 });
 
-test("28. non-owner cannot change is_shared on another user's drill", async () => {
-  await seed([[`drills/owned-1`, drillDoc(USER_UID)]]);
-  await assertFails(updateDoc(doc(authedDb(OTHER_UID), "drills", "owned-1"), { is_shared: true }));
+test("18. inactive SUPERADMIN receives no assisted override", async () => {
+  const inactiveSuper = "inactive-super";
+  await seed([
+    [`users/${inactiveSuper}`, userDoc(inactiveSuper, "SUPERADMIN", "Inactive")],
+    [`drills/coach-owned`, drillDoc(COACH_UID)],
+  ]);
+  await assertFails(
+    setDoc(doc(authedDb(inactiveSuper), "drills", "assisted"), drillDoc(COACH_UID)),
+  );
+  await assertFails(
+    updateDoc(doc(authedDb(inactiveSuper), "drills", "coach-owned"), { title: "No" }),
+  );
+  await assertFails(deleteDoc(doc(authedDb(inactiveSuper), "drills", "coach-owned")));
 });

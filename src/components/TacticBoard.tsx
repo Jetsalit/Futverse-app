@@ -27,7 +27,7 @@ import {
   Group,
 } from "react-konva";
 import useImage from "use-image";
-import { useDrillDatabase } from "../hooks/useDrillDatabase";
+import { useDrillDatabase, type Drill } from "../hooks/useDrillDatabase";
 
 // Custom icons based on requirements
 const RedTeamIcon = () => (
@@ -126,7 +126,13 @@ const BallNode = ({ el, onDragEnd, onClick, onTap }: any) => {
   );
 };
 
-export default function TacticBoard({ onBack }: { onBack: () => void }) {
+export default function TacticBoard({
+  onBack,
+  editingDrill,
+}: {
+  onBack: () => void;
+  editingDrill?: Drill | null;
+}) {
   const [drillMode, setDrillMode] = useState<"digital" | "upload">("digital");
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
 
@@ -135,7 +141,7 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
   const [activeColor, setActiveColor] = useState("#ffffff");
   const [fieldType, setFieldType] = useState("full");
 
-  const { saveDrill } = useDrillDatabase();
+  const { saveDrill, updateDrill } = useDrillDatabase();
   const [saveForm, setSaveForm] = useState({
     title: "",
     category: "Tactical",
@@ -154,6 +160,38 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
   const isDrawing = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const [stageSize, setStageSize] = useState({ width: 800, height: 500 });
+
+  useEffect(() => {
+    if (!editingDrill) return;
+
+    setSaveForm({
+      title: editingDrill.title || "",
+      category: editingDrill.category || "Tactical",
+      is_shared: editingDrill.is_shared === true,
+      duration: editingDrill.duration || "",
+      ageGroup: editingDrill.ageGroup || "",
+      phase: editingDrill.phase || "",
+      trainingMethod: editingDrill.trainingMethod || "",
+      coachingPoints: editingDrill.coachingPoints || "",
+    });
+
+    const canvasData = editingDrill.canvas_data;
+
+    if (canvasData) {
+      setDrillMode("digital");
+      setElements(
+        Array.isArray(canvasData.elements) ? canvasData.elements : [],
+      );
+      setLines(Array.isArray(canvasData.lines) ? canvasData.lines : []);
+      setFieldType(canvasData.fieldType || "full");
+      setUploadedImage(null);
+    } else {
+      setDrillMode("upload");
+      setElements([]);
+      setLines([]);
+      setUploadedImage(editingDrill.previewImage || null);
+    }
+  }, [editingDrill]);
 
   useEffect(() => {
     let resizeObserver: ResizeObserver;
@@ -330,7 +368,7 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
     }
   };
 
-  const handleSaveAll = () => {
+  const handleSaveAll = async () => {
     let finalPreviewImage = undefined;
     let finalCanvasData: any = undefined;
 
@@ -341,10 +379,10 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
       finalCanvasData = { elements, lines, fieldType };
     } else {
       finalPreviewImage = uploadedImage || undefined;
-      finalCanvasData = null; // Mark as paper drill essentially
+      finalCanvasData = null;
     }
 
-    saveDrill({
+    const drillPayload = {
       title: saveForm.title || "Untitled Drill",
       category: saveForm.category,
       is_shared: saveForm.is_shared,
@@ -353,15 +391,26 @@ export default function TacticBoard({ onBack }: { onBack: () => void }) {
       phase: saveForm.phase,
       trainingMethod: saveForm.trainingMethod,
       coachingPoints: saveForm.coachingPoints,
-      date: new Date().toLocaleDateString("th-TH", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      }),
       canvas_data: finalCanvasData,
-      previewImage: finalPreviewImage,
-    });
-    onBack();
+      ...(finalPreviewImage !== undefined
+        ? { previewImage: finalPreviewImage }
+        : {}),
+    };
+
+    const didSave = editingDrill
+      ? await updateDrill(editingDrill.id, drillPayload)
+      : await saveDrill({
+          ...drillPayload,
+          date: new Date().toLocaleDateString("th-TH", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          }),
+        });
+
+    if (didSave) {
+      onBack();
+    }
   };
 
   return (

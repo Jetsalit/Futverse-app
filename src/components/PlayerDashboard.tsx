@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Activity, ShieldAlert, UserCircle } from "lucide-react";
-import { collectionGroup, doc, onSnapshot, query, where } from "firebase/firestore";
+import { collection, collectionGroup, doc, onSnapshot, query, where } from "firebase/firestore";
 import { useAuth } from "../contexts/AuthContext";
+import { useSuperAdminNonStaffSupport } from "../contexts/SuperAdminNonStaffSupportContext";
 import { db } from "../lib/firebase";
 import { mapCanonicalSnapshot } from "../lib/firestore/canonicalDocument";
 import {
@@ -31,7 +32,8 @@ export default function PlayerDashboard({
 }: {
   onNavigate: (page: string) => void;
 }) {
-  const { currentUser } = useAuth();
+  const { currentUser, actualUser } = useAuth();
+  const nonStaffSupport = useSuperAdminNonStaffSupport();
   const [playerProfiles, setPlayerProfiles] = useState<any[]>([]);
   const [selectedProfileKey, setSelectedProfileKey] = useState<string | null>(null);
   const [resolvedScopeKey, setResolvedScopeKey] = useState<string | null>(null);
@@ -56,7 +58,6 @@ export default function PlayerDashboard({
     };
 
     const lookup = linkedPlayerLookupForUser(currentUser);
-    const expectedScopeKey = accessScopeKey(currentUser);
     clearResolvedProfiles();
     setReadError(null);
     setLoading(true);
@@ -68,10 +69,41 @@ export default function PlayerDashboard({
       };
     }
 
-    const associationsQuery = query(
-      collectionGroup(db, NONSTAFF_ASSOCIATION_COLLECTION),
-      where("userId", "==", lookup.uid),
+    const presentedUid = currentUser?.uid || currentUser?.id || null;
+    const actualUid = actualUser?.uid || actualUser?.id || null;
+    const supportSession = nonStaffSupport.session;
+    const isVerifiedNonStaffSupport = Boolean(
+      nonStaffSupport.isActive &&
+        supportSession &&
+        currentUser?.supportPresentation === true &&
+        actualUser?.role === "SUPERADMIN" &&
+        (actualUser.status === "ACTIVE" || actualUser.status === "Active") &&
+        actualUid &&
+        actualUid !== presentedUid &&
+        supportSession.subject.uid === presentedUid &&
+        supportSession.subject.role === currentUser.role,
     );
+    const supportAcademyId = isVerifiedNonStaffSupport
+      ? supportSession!.academyId
+      : null;
+    const expectedScopeKey = JSON.stringify([
+      accessScopeKey(currentUser),
+      supportAcademyId,
+    ]);
+
+    const associationsQuery = isVerifiedNonStaffSupport
+      ? collection(
+          db,
+          "academies",
+          supportAcademyId!,
+          "nonstaffUsers",
+          lookup.uid,
+          NONSTAFF_ASSOCIATION_COLLECTION,
+        )
+      : query(
+          collectionGroup(db, NONSTAFF_ASSOCIATION_COLLECTION),
+          where("userId", "==", lookup.uid),
+        );
 
     unsubscribeAssociations = onSnapshot(
       associationsQuery,
@@ -189,9 +221,21 @@ export default function PlayerDashboard({
       unsubscribeAssociations?.();
       stopPlayerListeners();
     };
-  }, [currentUser]);
+  }, [
+    currentUser,
+    actualUser,
+    nonStaffSupport.isActive,
+    nonStaffSupport.session,
+  ]);
 
-  const currentScopeKey = accessScopeKey(currentUser);
+  const supportAcademyId =
+    nonStaffSupport.isActive && currentUser?.supportPresentation === true
+      ? nonStaffSupport.session?.academyId ?? null
+      : null;
+  const currentScopeKey = JSON.stringify([
+    accessScopeKey(currentUser),
+    supportAcademyId,
+  ]);
   const visiblePlayerProfiles =
     resolvedScopeKey === currentScopeKey ? playerProfiles : [];
   const playerProfile =

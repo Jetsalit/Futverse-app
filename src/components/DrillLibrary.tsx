@@ -14,8 +14,10 @@ import DrillDetailModal from "./DrillDetailModal";
 
 export default function DrillLibrary({
   onNavigate,
+  onEditDrill,
 }: {
   onNavigate: (page: string) => void;
+  onEditDrill: (drill: Drill) => void;
 }) {
   const { myDrills, academyDrills, updateDrill, deleteDrill, currentUser } =
     useDrillDatabase();
@@ -120,17 +122,7 @@ export default function DrillLibrary({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            setEditingDrill(drill);
-                            setEditForm({
-                              title: drill.title,
-                              category: drill.category,
-                              is_shared: drill.is_shared,
-                              duration: drill.duration || "",
-                              ageGroup: drill.ageGroup || "",
-                              phase: drill.phase || "",
-                              trainingMethod: drill.trainingMethod || "",
-                              coachingPoints: drill.coachingPoints || "",
-                            });
+                            onEditDrill(drill);
                           }}
                           className="p-1.5 hover:text-blue-600 hover:bg-white rounded-md transition-colors text-slate-800"
                         >
@@ -457,17 +449,8 @@ export default function DrillLibrary({
           onClose={() => setSelectedDrill(null)}
           currentUser={currentUser}
           onEdit={(drill) => {
-            setEditingDrill(drill);
-            setEditForm({
-              title: drill.title,
-              category: drill.category,
-              is_shared: drill.is_shared,
-              duration: drill.duration || "",
-              ageGroup: drill.ageGroup || "",
-              phase: drill.phase || "",
-              trainingMethod: drill.trainingMethod || "",
-              coachingPoints: drill.coachingPoints || "",
-            });
+            setSelectedDrill(null);
+            onEditDrill(drill);
           }}
           onDelete={(id) => {
             deleteDrill(id);

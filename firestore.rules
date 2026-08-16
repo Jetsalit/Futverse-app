@@ -774,16 +774,32 @@ service cloud.firestore {
 
       allow create: if isSignedIn()
         && hasNoStoredDocumentId()
-        && request.resource.data.get('created_by', '') == request.auth.uid;
+        && exactDocumentId(request.resource.data.get('created_by', ''))
+        && (
+          request.resource.data.get('created_by', '') == request.auth.uid
+          || (
+            isSuperAdmin()
+            && userExists(request.resource.data.get('created_by', ''))
+            && get(
+              /databases/$(database)/documents/users/$(request.resource.data.get('created_by', ''))
+            ).data.get('status', '') in ['Active', 'ACTIVE']
+          )
+        );
 
       allow update: if isSignedIn()
         && hasNoStoredDocumentId()
-        && resource.data.get('created_by', '') == request.auth.uid
         && request.resource.data.get('created_by', '') ==
-           resource.data.get('created_by', '');
+           resource.data.get('created_by', '')
+        && (
+          resource.data.get('created_by', '') == request.auth.uid
+          || isSuperAdmin()
+        );
 
       allow delete: if isSignedIn()
-        && resource.data.get('created_by', '') == request.auth.uid;
+        && (
+          resource.data.get('created_by', '') == request.auth.uid
+          || isSuperAdmin()
+        );
 
       match /{document=**} {
         allow read, write: if false;

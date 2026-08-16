@@ -1,10 +1,12 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import App from "./App.tsx";
+import SupportAwareRoot from "./SupportAwareRoot.tsx";
 import "./index.css";
 import { LanguageProvider } from "./contexts/LanguageContext";
 import { AuthProvider } from "./contexts/AuthContext";
 import { SuperAdminSupportProvider } from "./contexts/SuperAdminSupportContext";
+import { SuperAdminNonStaffSupportProvider } from "./contexts/SuperAdminNonStaffSupportContext";
+import { SupportPresentedUserBridge } from "./contexts/SupportPresentedUserBridge";
 import { AcademyProvider } from "./contexts/AcademyContext";
 import { ErrorBoundary } from "./ErrorBoundary.tsx";
 
@@ -29,11 +31,15 @@ createRoot(document.getElementById("root")!).render(
     <ErrorBoundary>
       <AuthProvider>
         <SuperAdminSupportProvider>
-          <AcademyProvider>
-            <LanguageProvider>
-              <App />
-            </LanguageProvider>
-          </AcademyProvider>
+          <SuperAdminNonStaffSupportProvider>
+            <SupportPresentedUserBridge>
+              <AcademyProvider>
+                <LanguageProvider>
+                  <SupportAwareRoot />
+                </LanguageProvider>
+              </AcademyProvider>
+            </SupportPresentedUserBridge>
+          </SuperAdminNonStaffSupportProvider>
         </SuperAdminSupportProvider>
       </AuthProvider>
     </ErrorBoundary>

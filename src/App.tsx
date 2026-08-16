@@ -59,6 +59,7 @@ import { isExplicitlyActiveAccountStatus } from "./lib/accountRolePolicy";
 import { useSuperAdminSupport } from "./contexts/SuperAdminSupportContext";
 import { SuperAdminSupportBar } from "./components/superadmin/SuperAdminSupportBar";
 import { canAccessTenantCapability } from "./lib/superAdminSupportModel";
+import type { Drill } from "./hooks/useDrillDatabase";
 
 function AccessResolutionScreen({
   accessState,
@@ -209,6 +210,7 @@ export default function App() {
     null,
   );
   const [selectedYouthPlayer, setSelectedYouthPlayer] = useState<any>(null);
+  const [editingDrill, setEditingDrill] = useState<Drill | null>(null);
 
   // Simulate Next.js usePathname feature for Route-based Conditional Rendering
   const pathname = currentPage.startsWith("/")
@@ -218,8 +220,16 @@ export default function App() {
     pathname.startsWith("/superadmin") || pathname.startsWith("/settings");
 
   const navigateTo = (page: string) => {
+    if (page === "drills") {
+      setEditingDrill(null);
+    }
     setCurrentPage(page);
     setIsMobileMenuOpen(false);
+  };
+
+  const openDrillEditor = (drill: Drill) => {
+    setEditingDrill(drill);
+    navigateTo("tactic");
   };
 
   if (!currentUser) {
@@ -398,9 +408,19 @@ export default function App() {
           />
         ) : null;
       case "tactic":
-        return <TacticBoard onBack={() => navigateTo("drills")} />;
+        return (
+          <TacticBoard
+            editingDrill={editingDrill}
+            onBack={() => navigateTo("drills")}
+          />
+        );
       case "drills":
-        return <DrillLibrary onNavigate={navigateTo} />;
+        return (
+          <DrillLibrary
+            onNavigate={navigateTo}
+            onEditDrill={openDrillEditor}
+          />
+        );
       case "scout":
         return <ScoutDashboard onBack={() => navigateTo("dashboard")} />;
       case "recovery":

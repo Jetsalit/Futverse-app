@@ -14,6 +14,8 @@ import { useLanguage } from "../contexts/LanguageContext";
 import { useAuth, UserRole } from "../contexts/AuthContext";
 import { useSuperAdminSupport } from "../contexts/SuperAdminSupportContext";
 import { canAccessTenantCapability } from "../lib/superAdminSupportModel";
+import { isFeatureEnabled } from "../config/featureFlags";
+import PlayerDashboard from "./PlayerDashboard";
 
 type DashboardItem = {
   id: string;
@@ -166,8 +168,15 @@ export default function Dashboard({
   onNavigate: (page: string) => void;
 }) {
   const { t } = useLanguage();
-  const { hasPermission } = useAuth();
+  const { hasPermission, currentUser } = useAuth();
   const { isSupportActive, presentationRole } = useSuperAdminSupport();
+
+  // Parent and Player share the same canonical player-association engine.
+  // App already routes PLAYER directly here; this restores the same linked-player
+  // owner experience for PARENT without inventing a second Parent data path.
+  if (currentUser?.role === "PARENT") {
+    return <PlayerDashboard onNavigate={onNavigate} />;
+  }
 
   return (
     <div className="w-full max-w-6xl mx-auto pb-10">
@@ -183,6 +192,12 @@ export default function Dashboard({
       <div className="space-y-8">
         {SECTIONS.map((section, idx) => {
           const visibleItems = section.items.filter((item) => {
+            if (
+              item.id === "concierge" &&
+              !isFeatureEnabled("dataAdminConciergeEnabled")
+            ) {
+              return false;
+            }
             if (!item.allowedRoles) return true;
             const effectiveAllowedRoles = isSupportActive && item.supportAllowedRoles
               ? item.supportAllowedRoles
