@@ -48,10 +48,10 @@ export function useDrillDatabase() {
     return () => unsubscribe();
   }, []);
 
-  const saveDrill = async (newDrill: Omit<Drill, 'id' | 'created_by'>): Promise<boolean> => {
+  const saveDrill = async (newDrill: Omit<Drill, 'id' | 'created_by'>) => {
     if (!authenticatedUid || !ownerUid) {
       console.error('Cannot save drill without authenticated actor and owner UID');
-      return false;
+      return;
     }
 
     try {
@@ -67,29 +67,27 @@ export function useDrillDatabase() {
           : {}),
       };
       await addDoc(collection(db, 'drills'), drillData);
-      return true;
     } catch (e) {
       console.error("Error saving drill: ", e);
-      return false;
     }
   };
 
-  const updateDrill = async (id: string, updates: Partial<Drill>): Promise<boolean> => {
+  const updateDrill = async (id: string, updates: Partial<Drill>) => {
     if (!authenticatedUid || !ownerUid) {
       console.error('Cannot update drill without authenticated actor and owner UID');
-      return false;
+      return;
     }
 
     const target = drills.find((drill) => drill.id === id);
     if (!target || target.created_by !== ownerUid) {
       console.error('Cannot update drill outside the presented owner scope.');
-      return false;
+      return;
     }
 
     try {
       if (Object.prototype.hasOwnProperty.call(updates, 'created_by')) {
         console.error('Drill ownership is immutable on client update.');
-        return false;
+        return;
       }
 
       const safeUpdates = withoutCanonicalDocumentId(updates) as Partial<Drill>;
@@ -104,10 +102,8 @@ export function useDrillDatabase() {
         ...(identity.isAssisted ? { last_updated_by: authenticatedUid } : {}),
         id: deleteField(),
       });
-      return true;
     } catch (e) {
       console.error("Error updating drill: ", e);
-      return false;
     }
   };
 
