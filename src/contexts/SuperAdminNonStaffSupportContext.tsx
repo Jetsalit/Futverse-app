@@ -7,14 +7,17 @@ import React, {
   useState,
 } from "react";
 import {
+  addDoc,
   collection,
   doc,
   getDocFromServer,
   getDocsFromServer,
   onSnapshot,
+  serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth, type User } from "./AuthContext";
+import { useSuperAdminSupport } from "./SuperAdminSupportContext";
 import {
   buildNonStaffSupportSubject,
   isExactActiveNonStaffSupportUser,
@@ -34,7 +37,7 @@ interface SuperAdminNonStaffSupportContextValue {
   presentationRole: NonStaffSupportRole | "NONE";
   effectiveUser: User | null;
   startNonStaffWorkMode: (academyId: string, targetUid: string) => Promise<void>;
-  exitNonStaffWorkMode: () => void;
+  exitNonStaffWorkMode: () => Promise<void>;
 }
 
 const SuperAdminNonStaffSupportContext = createContext<
@@ -47,11 +50,13 @@ export function SuperAdminNonStaffSupportProvider({
   children: ReactNode;
 }) {
   const { actualUser } = useAuth();
+  const staffSupport = useSuperAdminSupport();
   const [session, setSession] = useState<NonStaffSupportSession | null>(null);
   const [effectiveUser, setEffectiveUser] = useState<User | null>(null);
   const unsubscribeUserRef = useRef<(() => void) | null>(null);
   const unsubscribeAssociationsRef = useRef<(() => void) | null>(null);
   const generationRef = useRef(0);
+  const sessionRef = useRef<NonStaffSupportSession | null>(null);
 
   const clearListeners = () => {
     unsubscribeUserRef.current?.();
@@ -60,16 +65,37 @@ export function SuperAdminNonStaffSupportProvider({
     unsubscribeAssociationsRef.current = null;
   };
 
-  const clearSession = () => {
+  const clearSessionState = () => {
     generationRef.current += 1;
     clearListeners();
+    sessionRef.current = null;
     setSession(null);
     setEffectiveUser(null);
   };
 
+  const writeAudit = async (
+    action: "SUPERADMIN_NONSTAFF_WORK_STARTED" | "SUPERADMIN_NONSTAFF_WORK_ENDED" | "SUPERADMIN_NONSTAFF_WORK_INVALIDATED",
+    targetSession: NonStaffSupportSession,
+  ) => {
+    const actorUid = actualUser?.uid || actualUser?.id;
+    if (!isExactActiveSuperAdmin(actualUser) || !isExactDocumentId(actorUid)) {
+      throw new Error("Active SUPERADMIN actor is required for support audit.");
+    }
+
+    await addDoc(collection(db, "logs"), {
+      action,
+      actorUid,
+      academyId: targetSession.academyId,
+      mode: "WORK_AS_NONSTAFF",
+      targetUid: targetSession.subject.uid,
+      effectiveRole: targetSession.subject.role,
+      timestamp: serverTimestamp(),
+    });
+  };
+
   useEffect(() => {
     if (!isExactActiveSuperAdmin(actualUser)) {
-      clearSession();
+      clearSessionState();
     }
     return () => clearListeners();
   }, [actualUser]);
@@ -80,9 +106,13 @@ export function SuperAdminNonStaffSupportProvider({
   ) => {
     const generation = ++generationRef.current;
     clearListeners();
+    sessionRef.current = null;
     setSession(null);
     setEffectiveUser(null);
 
+    if (staffSupport.isSupportActive) {
+      throw new Error("Exit the current Academy/Staff support session before starting Parent/Player Work As.");
+    }
     if (!isExactActiveSuperAdmin(actualUser)) {
       throw new Error("Only an active SUPERADMIN can start non-staff Work As mode.");
     }
@@ -159,11 +189,25 @@ export function SuperAdminNonStaffSupportProvider({
       startedAt: Date.now(),
     };
 
+    // Fail closed: do not present the target identity until START audit succeeds.
+    await writeAudit("SUPERADMIN_NONSTAFF_WORK_STARTED", nextSession);
+    if (generation !== generationRef.current) {
+      throw new Error("Work As activation changed while audit was being written.");
+    }
+
+    sessionRef.current = nextSession;
     setEffectiveUser(targetUser);
     setSession(nextSession);
 
     const invalidate = () => {
-      if (generation === generationRef.current) clearSession();
+      if (generation !== generationRef.current) return;
+      const invalidatedSession = sessionRef.current;
+      clearSessionState();
+      if (invalidatedSession && isExactActiveSuperAdmin(actualUser)) {
+        writeAudit("SUPERADMIN_NONSTAFF_WORK_INVALIDATED", invalidatedSession).catch(
+          (error) => console.warn("Failed to write nonstaff invalidation audit:", error),
+        );
+      }
     };
 
     unsubscribeUserRef.current = onSnapshot(
@@ -205,8 +249,7 @@ export function SuperAdminNonStaffSupportProvider({
       { includeMetadataChanges: true },
       (snapshot) => {
         if (generation !== generationRef.current) return;
-        const currentUser = effectiveUser || targetUser;
-        const liveResolution = resolveAuthoritativeAssociationSnapshot(currentUser, {
+        const liveResolution = resolveAuthoritativeAssociationSnapshot(targetUser, {
           fromCache: snapshot.metadata.fromCache,
           hasPendingWrites: snapshot.metadata.hasPendingWrites,
           documents: snapshot.docs.map((associationDocument) => ({
@@ -228,7 +271,14 @@ export function SuperAdminNonStaffSupportProvider({
     );
   };
 
-  const exitNonStaffWorkMode = () => clearSession();
+  const exitNonStaffWorkMode = async () => {
+    const activeSession = sessionRef.current;
+    if (!activeSession) return;
+
+    // Fail closed: if END audit cannot be persisted, keep the Work As session visible.
+    await writeAudit("SUPERADMIN_NONSTAFF_WORK_ENDED", activeSession);
+    clearSessionState();
+  };
 
   return (
     <SuperAdminNonStaffSupportContext.Provider
