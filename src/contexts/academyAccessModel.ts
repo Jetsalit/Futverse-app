@@ -72,12 +72,14 @@ export function isStaffTenantRole(role?: unknown): boolean {
 
 export function requiresStaffMembership(user?: User | null): boolean {
   if (!user) return false;
+  if (user.supportPresentation === true) return false;
   if (user.role === "SUPERADMIN") return false;
   return isStaffTenantRole(user.role);
 }
 
 export function isStaffOnboardingRequest(user?: User | null): boolean {
   if (!user) return false;
+  if (user.supportPresentation === true) return false;
   if (user.role !== "USER") return false;
   return isStaffTenantRole(user.requestedRole);
 }
