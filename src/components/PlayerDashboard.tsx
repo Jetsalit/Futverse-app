@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { Activity, ShieldAlert, UserCircle } from "lucide-react";
 import { collectionGroup, doc, onSnapshot, query, where } from "firebase/firestore";
-import { useAuth, type User } from "../contexts/AuthContext";
-import { useSuperAdminNonStaffSupport } from "../contexts/SuperAdminNonStaffSupportContext";
+import { useAuth } from "../contexts/AuthContext";
 import { db } from "../lib/firebase";
 import { mapCanonicalSnapshot } from "../lib/firestore/canonicalDocument";
 import {
@@ -15,7 +14,7 @@ import { EmptyState } from "./common/EmptyState";
 const associationKey = (academyId: string, playerId: string) =>
   JSON.stringify([academyId, playerId]);
 
-const accessScopeKey = (user: User | null) =>
+const accessScopeKey = (user: ReturnType<typeof useAuth>["currentUser"]) =>
   user
     ? JSON.stringify([
         user.uid || user.id || null,
@@ -33,10 +32,6 @@ export default function PlayerDashboard({
   onNavigate: (page: string) => void;
 }) {
   const { currentUser } = useAuth();
-  const nonStaffSupport = useSuperAdminNonStaffSupport();
-  const presentedUser = nonStaffSupport.isActive
-    ? nonStaffSupport.effectiveUser
-    : currentUser;
   const [playerProfiles, setPlayerProfiles] = useState<any[]>([]);
   const [selectedProfileKey, setSelectedProfileKey] = useState<string | null>(null);
   const [resolvedScopeKey, setResolvedScopeKey] = useState<string | null>(null);
@@ -60,8 +55,8 @@ export default function PlayerDashboard({
       setResolvedScopeKey(null);
     };
 
-    const lookup = linkedPlayerLookupForUser(presentedUser);
-    const expectedScopeKey = accessScopeKey(presentedUser);
+    const lookup = linkedPlayerLookupForUser(currentUser);
+    const expectedScopeKey = accessScopeKey(currentUser);
     clearResolvedProfiles();
     setReadError(null);
     setLoading(true);
@@ -87,7 +82,7 @@ export default function PlayerDashboard({
         stopPlayerListeners();
         clearResolvedProfiles();
 
-        const resolution = resolveAuthoritativeAssociationSnapshot(presentedUser, {
+        const resolution = resolveAuthoritativeAssociationSnapshot(currentUser, {
           fromCache: snapshot.metadata.fromCache,
           hasPendingWrites: snapshot.metadata.hasPendingWrites,
           documents: snapshot.docs.map((associationDocument) => ({
@@ -194,9 +189,9 @@ export default function PlayerDashboard({
       unsubscribeAssociations?.();
       stopPlayerListeners();
     };
-  }, [presentedUser]);
+  }, [currentUser]);
 
-  const currentScopeKey = accessScopeKey(presentedUser);
+  const currentScopeKey = accessScopeKey(currentUser);
   const visiblePlayerProfiles =
     resolvedScopeKey === currentScopeKey ? playerProfiles : [];
   const playerProfile =
