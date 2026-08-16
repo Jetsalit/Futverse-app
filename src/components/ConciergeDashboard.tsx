@@ -2,6 +2,7 @@ import React from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { Database, Users } from "lucide-react";
 import { EmptyState } from "./common/EmptyState";
+import { isFeatureEnabled } from "../config/featureFlags";
 
 export default function ConciergeDashboard({
   onNavigate: _onNavigate,
@@ -9,6 +10,18 @@ export default function ConciergeDashboard({
   onNavigate: (page: string) => void;
 }) {
   const { hasPermission } = useAuth();
+
+  if (!isFeatureEnabled("dataAdminConciergeEnabled")) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-6">
+        <EmptyState
+          icon={Database}
+          title="Data Admin Concierge is not enabled"
+          description="The assignment-backed Data Admin foundation is reserved for future rollout and is currently disabled."
+        />
+      </div>
+    );
+  }
 
   if (!hasPermission(["DATA_ADMIN"])) {
     return (
