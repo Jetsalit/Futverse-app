@@ -54,6 +54,7 @@ interface SuperAdminSupportContextType {
   supportSubject: SuperAdminSupportSubject | null;
   isSupportActive: boolean;
   isStaffWorkMode: boolean;
+  isStaffAuthorityRevalidating: boolean;
   presentationRole: "SUPERADMIN" | "ADMIN" | "COACH" | "NONE";
   enterAcademyWorkspace: (academyId: string) => Promise<void>;
   startStaffWorkMode: (academyId: string, targetUid: string) => Promise<void>;
@@ -75,17 +76,25 @@ export function SuperAdminSupportProvider({
   const [session, setSession] = useState<SuperAdminSupportSession | null>(
     null,
   );
+  const [isStaffAuthorityRevalidating, setIsStaffAuthorityRevalidating] =
+    useState(false);
   const membershipUnsubscribeRef = useRef<(() => void) | null>(null);
   const operationGenerationRef = useRef<number>(0);
   const sessionRef = useRef<SuperAdminSupportSession | null>(null);
   const actualUserRef = useRef(actualUser);
   const activeSessionIdRef = useRef<string | null>(null);
+  const authorityRevalidationGenerationRef = useRef(0);
 
   const clearMembershipListener = () => {
     if (membershipUnsubscribeRef.current) {
       membershipUnsubscribeRef.current();
       membershipUnsubscribeRef.current = null;
     }
+  };
+
+  const clearAuthorityRevalidation = () => {
+    authorityRevalidationGenerationRef.current += 1;
+    setIsStaffAuthorityRevalidating(false);
   };
 
   // ==========================================
@@ -122,10 +131,8 @@ export function SuperAdminSupportProvider({
       if (isExactDocumentId(actorUid)) {
         const tabId = getOrCreateTabId();
 
-        // Recover stale orphan markers from other tabs (heartbeat-based)
         recoverStaleOrphanMarkers(actorUid, tabId);
 
-        // Replay pending audits with auth guard
         const guard = createAuthGuard(actorUid, operationGenerationRef.current);
         replayPendingSupportExitAuditsForActor(actualUser, db, {
           guard,
@@ -137,11 +144,9 @@ export function SuperAdminSupportProvider({
         });
       }
     } else {
-      // Auth loss: clear privileged support presentation immediately.
-      // DO NOT delete active session markers or pending closure records.
-      // Those will be recovered by the same actor on next login.
       operationGenerationRef.current++;
       clearMembershipListener();
+      clearAuthorityRevalidation();
       sessionRef.current = null;
       activeSessionIdRef.current = null;
       setSession(null);
@@ -154,8 +159,7 @@ export function SuperAdminSupportProvider({
 
   useEffect(() => {
     const handlePageHide = () => {
-      const actorUid =
-        actualUserRef.current?.uid;
+      const actorUid = actualUserRef.current?.uid;
       if (!actorUid || !activeSessionIdRef.current) return;
 
       const tabId = getOrCreateTabId();
@@ -260,46 +264,37 @@ export function SuperAdminSupportProvider({
       createdAt: Date.now(),
     };
 
-    // 1. Save durable record — fail-closed
     savePendingSupportExitAudit(pendingRecord);
 
-    // 2. Remove active session marker (closure record now exists as recovery)
     if (sessionId) {
       removeActiveSessionMarker(actorUid, sessionId);
     }
 
-    // 3. Attempt bounded authoritative write
     await performBoundedExitAudit(db, pendingRecord, {
       guard: guard ?? undefined,
     });
   };
 
   // ==========================================
-  // Forced membership invalidation (Section D — corrected per review)
-  //
-  // MUST revoke UI immediately. Any Firestore write MUST still be actor-guarded.
-  // Never permit Actor B credentials to write an audit whose actorUid is Actor A.
+  // Forced membership invalidation
   // ==========================================
 
   const invalidateWorkMode = (reason: string) => {
     console.warn(`Work Mode invalidated: ${reason}`);
 
-    // 1. Capture current state BEFORE clearing
     const capturedSession = sessionRef.current;
-    const capturedActorUid =
-      actualUserRef.current?.uid;
+    const capturedActorUid = actualUserRef.current?.uid;
     const capturedSessionId = activeSessionIdRef.current;
 
-    // 2. Revoke session presentation IMMEDIATELY regardless of audit outcome
     operationGenerationRef.current++;
     clearMembershipListener();
+    clearAuthorityRevalidation();
     sessionRef.current = null;
     activeSessionIdRef.current = null;
     setSession(null);
 
     if (!capturedSession || !isExactDocumentId(capturedActorUid)) return;
 
-    // 3. Best-effort: persist INVALIDATED pending record locally
     try {
       const logDocId = doc(collection(db, "logs")).id;
       const closureRecord: PendingSupportExitAudit = {
@@ -314,15 +309,11 @@ export function SuperAdminSupportProvider({
       };
       savePendingSupportExitAudit(closureRecord);
 
-      // Remove active session marker (closure record provides recovery)
       if (capturedSessionId) {
         removeActiveSessionMarker(capturedActorUid, capturedSessionId);
       }
 
-      // 4. ONLY attempt Firestore write if captured actor is STILL the exact
-      // authenticated active SUPERADMIN. Never write Actor A payload under Actor B.
-      const currentActorUid =
-        actualUserRef.current?.uid;
+      const currentActorUid = actualUserRef.current?.uid;
       if (
         isExactActiveSuperAdmin(actualUserRef.current) &&
         currentActorUid === capturedActorUid
@@ -333,11 +324,8 @@ export function SuperAdminSupportProvider({
           console.warn("Bounded invalidation audit write failed:", err);
         });
       }
-      // If actor changed, durable record remains for future replay by same actor
     } catch (err) {
       console.warn("Failed to persist invalidation audit record:", err);
-      // Session already revoked. Active marker may still exist — will be
-      // recovered as orphan on next login by same actor.
     }
   };
 
@@ -347,6 +335,7 @@ export function SuperAdminSupportProvider({
 
   const enterAcademyWorkspace = async (academyId: string) => {
     const currentOpGen = ++operationGenerationRef.current;
+    clearAuthorityRevalidation();
 
     if (sessionRef.current === null) {
       clearMembershipListener();
@@ -373,7 +362,6 @@ export function SuperAdminSupportProvider({
 
     assertAuthoritativeSessionActivation(currentOpGen);
 
-    // ---- Voluntary session replacement: durable closure FIRST ----
     const previousSession = sessionRef.current;
 
     if (previousSession) {
@@ -383,8 +371,6 @@ export function SuperAdminSupportProvider({
           : "SUPERADMIN_ACADEMY_WORKSPACE_ENDED";
       const guard = createAuthGuard(actorUid, currentOpGen);
 
-      // Durable closure MUST succeed before replacement.
-      // savePendingSupportExitAudit is synchronous — throws on failure → abort.
       await durableSessionClosure(
         previousSession,
         actorUid,
@@ -393,7 +379,6 @@ export function SuperAdminSupportProvider({
         guard,
       );
 
-      // Clear previous session state
       clearMembershipListener();
       sessionRef.current = null;
       activeSessionIdRef.current = null;
@@ -402,7 +387,6 @@ export function SuperAdminSupportProvider({
 
     assertAuthoritativeSessionActivation(currentOpGen);
 
-    // START audit must throw if it fails so session is not presented as active
     let startAuditSucceeded = false;
     await writeAuditLog(
       "SUPERADMIN_ACADEMY_WORKSPACE_STARTED",
@@ -432,7 +416,6 @@ export function SuperAdminSupportProvider({
       throw err;
     }
 
-    // Save active session marker AFTER start audit is acknowledged
     const sessionId = doc(collection(db, "_")).id;
     saveActiveSessionMarker({
       sessionId,
@@ -465,6 +448,7 @@ export function SuperAdminSupportProvider({
     targetUid: string,
   ) => {
     const currentOpGen = ++operationGenerationRef.current;
+    clearAuthorityRevalidation();
 
     if (sessionRef.current === null) {
       clearMembershipListener();
@@ -488,7 +472,6 @@ export function SuperAdminSupportProvider({
       );
     }
 
-    // Server-validate BOTH Academy document AND Membership document
     const academyRef = doc(db, "academies", academyId);
     const academySnap = await getDocFromServer(academyRef);
     if (!academySnap.exists()) {
@@ -526,7 +509,6 @@ export function SuperAdminSupportProvider({
 
     const tenantRole = memberData.role as "ADMIN" | "COACH";
 
-    // Optionally fetch user display name (best effort)
     let displayName: string | undefined = undefined;
     try {
       const userSnap = await getDoc(doc(db, "users", targetUid));
@@ -534,12 +516,11 @@ export function SuperAdminSupportProvider({
         displayName = userSnap.data()?.name;
       }
     } catch {
-      // Ignored — display name is optional metadata
+      // Display name is optional metadata.
     }
 
     assertAuthoritativeSessionActivation(currentOpGen);
 
-    // ---- Voluntary session replacement: durable closure FIRST ----
     const previousSession = sessionRef.current;
 
     if (previousSession) {
@@ -628,7 +609,7 @@ export function SuperAdminSupportProvider({
               return;
             }
             if (snapshot.metadata.fromCache) {
-              return; // Ignore initial cache
+              return;
             }
 
             if (!snapshot.exists()) {
@@ -659,15 +640,71 @@ export function SuperAdminSupportProvider({
             return;
           }
 
-          // Active Phase — continuous monitoring
+          if (snapshot.metadata.fromCache) {
+            isAuthorityValidForActivation = false;
+            if (!isExpectedSession()) return;
+
+            const revalidationGeneration =
+              ++authorityRevalidationGenerationRef.current;
+            setIsStaffAuthorityRevalidating(true);
+
+            getDocFromServer(memberRef)
+              .then((serverSnapshot) => {
+                if (
+                  authorityRevalidationGenerationRef.current !==
+                    revalidationGeneration ||
+                  !isExpectedSession()
+                ) {
+                  return;
+                }
+
+                if (
+                  !serverSnapshot.exists() ||
+                  !isExactActiveStaffMembershipForRole(
+                    serverSnapshot.data(),
+                    expectedUid,
+                    expectedAcademyId,
+                    serverSnapshot.id,
+                    tenantRole,
+                  )
+                ) {
+                  clearAuthorityRevalidation();
+                  invalidateWorkMode(
+                    "Target Membership failed authoritative server revalidation.",
+                  );
+                  return;
+                }
+
+                isAuthorityValidForActivation = true;
+                clearAuthorityRevalidation();
+              })
+              .catch((error) => {
+                if (
+                  authorityRevalidationGenerationRef.current !==
+                    revalidationGeneration ||
+                  !isExpectedSession()
+                ) {
+                  return;
+                }
+                console.error(
+                  "Unable to revalidate target Membership from server:",
+                  error,
+                );
+                clearAuthorityRevalidation();
+                invalidateWorkMode(
+                  "Unable to revalidate target Membership from server.",
+                );
+              });
+            return;
+          }
+
+          authorityRevalidationGenerationRef.current += 1;
+          setIsStaffAuthorityRevalidating(false);
+
           let isValid = true;
           let invalidReason = "";
 
-          if (snapshot.metadata.fromCache) {
-            isValid = false;
-            invalidReason =
-              "Authoritative target Membership data lost (fell back to cache).";
-          } else if (snapshot.metadata.hasPendingWrites) {
+          if (snapshot.metadata.hasPendingWrites) {
             isValid = false;
             invalidReason =
               "Pending writes detected on active session.";
@@ -691,11 +728,14 @@ export function SuperAdminSupportProvider({
             }
           }
 
-          if (!isValid) {
-            isAuthorityValidForActivation = false;
-            if (isExpectedSession()) {
-              invalidateWorkMode(invalidReason);
-            }
+          if (isValid) {
+            isAuthorityValidForActivation = true;
+            return;
+          }
+
+          isAuthorityValidForActivation = false;
+          if (isExpectedSession()) {
+            invalidateWorkMode(invalidReason);
           }
         },
         (error) => {
@@ -723,7 +763,6 @@ export function SuperAdminSupportProvider({
 
     assertAuthoritativeSessionActivation(currentOpGen);
 
-    // START audit must succeed before presentation
     let startAuditSucceeded = false;
     await writeAuditLog(
       "SUPERADMIN_STAFF_WORK_STARTED",
@@ -773,7 +812,6 @@ export function SuperAdminSupportProvider({
       );
     }
 
-    // Save active session marker AFTER start audit is acknowledged
     const sessionId = doc(collection(db, "_")).id;
     saveActiveSessionMarker({
       sessionId,
@@ -819,8 +857,6 @@ export function SuperAdminSupportProvider({
         ? "SUPERADMIN_STAFF_WORK_ENDED"
         : "SUPERADMIN_ACADEMY_WORKSPACE_ENDED";
 
-    // Durable closure: save + bounded write.
-    // If savePendingSupportExitAudit fails, throws fail-closed (no session clear).
     await durableSessionClosure(
       currentSession,
       actorUid,
@@ -829,9 +865,9 @@ export function SuperAdminSupportProvider({
       guard,
     );
 
-    // Clear in-memory session
     operationGenerationRef.current++;
     clearMembershipListener();
+    clearAuthorityRevalidation();
     sessionRef.current = null;
     activeSessionIdRef.current = null;
     setSession(null);
@@ -851,6 +887,7 @@ export function SuperAdminSupportProvider({
         supportSubject,
         isSupportActive,
         isStaffWorkMode,
+        isStaffAuthorityRevalidating,
         presentationRole,
         enterAcademyWorkspace,
         startStaffWorkMode,
