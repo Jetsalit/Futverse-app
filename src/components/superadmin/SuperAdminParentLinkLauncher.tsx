@@ -1,13 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  addDoc,
   collection,
   doc,
-  getDocFromServer,
   getDocs,
+  runTransaction,
   serverTimestamp,
-  setDoc,
-  updateDoc,
 } from "firebase/firestore";
 import { Link2, Shield, X } from "lucide-react";
 import { db } from "../../lib/firebase";
@@ -192,43 +189,79 @@ export function SuperAdminParentLinkLauncher() {
         NONSTAFF_ASSOCIATION_COLLECTION,
         playerId,
       );
-      const existing = await getDocFromServer(associationRef);
+      const parentRef = doc(db, "users", parentUid);
+      const playerRef = doc(db, "academies", academyId, "players", playerId);
+      const academyRef = doc(db, "academies", academyId);
+      const logRef = doc(collection(db, "logs"));
 
-      if (existing.exists()) {
-        const data = existing.data();
+      await runTransaction(db, async (transaction) => {
+        const [academySnapshot, parentSnapshot, playerSnapshot, associationSnapshot] =
+          await Promise.all([
+            transaction.get(academyRef),
+            transaction.get(parentRef),
+            transaction.get(playerRef),
+            transaction.get(associationRef),
+          ]);
+
+        if (!academySnapshot.exists()) {
+          throw new Error("Academy no longer exists.");
+        }
+        if (!parentSnapshot.exists()) {
+          throw new Error("Parent account no longer exists.");
+        }
+        const parentData = parentSnapshot.data();
         if (
-          data.userId !== parentUid ||
-          data.academyId !== academyId ||
-          data.playerId !== playerId ||
-          data.role !== "PARENT"
+          parentSnapshot.id !== parentUid ||
+          parentData.uid !== parentUid ||
+          parentData.role !== "PARENT" ||
+          !["ACTIVE", "Active"].includes(String(parentData.status))
         ) {
-          throw new Error("Existing association identity is inconsistent; refusing to overwrite it.");
+          throw new Error("Parent account is not an active canonical PARENT account.");
         }
-        if (data.status !== "ACTIVE") {
-          await updateDoc(associationRef, { status: "ACTIVE" });
+        if (!playerSnapshot.exists() || playerSnapshot.id !== playerId) {
+          throw new Error("Player no longer exists in the selected Academy.");
         }
-      } else {
-        await setDoc(associationRef, {
-          userId: parentUid,
-          academyId,
-          playerId,
-          role: "PARENT",
-          status: "ACTIVE",
-        });
-      }
 
-      await addDoc(collection(db, "logs"), {
-        action: "SUPERADMIN_PARENT_PLAYER_LINKED",
-        actorUid,
-        academyId,
-        targetUid: parentUid,
-        playerId,
-        mode: "ASSISTED_SUPPORT",
-        timestamp: serverTimestamp(),
+        if (associationSnapshot.exists()) {
+          const data = associationSnapshot.data();
+          if (
+            data.userId !== parentUid ||
+            data.academyId !== academyId ||
+            data.playerId !== playerId ||
+            data.role !== "PARENT"
+          ) {
+            throw new Error(
+              "Existing association identity is inconsistent; refusing to overwrite it.",
+            );
+          }
+          if (data.status !== "ACTIVE") {
+            transaction.update(associationRef, { status: "ACTIVE" });
+          }
+        } else {
+          transaction.set(associationRef, {
+            userId: parentUid,
+            academyId,
+            playerId,
+            role: "PARENT",
+            status: "ACTIVE",
+          });
+        }
+
+        transaction.set(logRef, {
+          action: "SUPERADMIN_PARENT_PLAYER_LINKED",
+          actorUid,
+          academyId,
+          targetUid: parentUid,
+          playerId,
+          mode: "ASSISTED_SUPPORT",
+          timestamp: serverTimestamp(),
+        });
       });
 
       const parentName = selectedParent.name || selectedParent.email || parentUid;
-      const playerName = `${selectedPlayer.firstName || ""} ${selectedPlayer.lastName || ""}`.trim() || playerId;
+      const playerName =
+        `${selectedPlayer.firstName || ""} ${selectedPlayer.lastName || ""}`.trim() ||
+        playerId;
       setNotice(`Linked ${parentName} to ${playerName} successfully.`);
     } catch (linkError) {
       console.error("Failed to link Parent to Player:", linkError);
@@ -348,7 +381,8 @@ export function SuperAdminParentLinkLauncher() {
                         {player.firstName || "Player"} {player.lastName || ""}
                       </div>
                       <div className="text-xs text-slate-500">
-                        {player.futId ? `${player.futId} • ` : ""}{player.id}
+                        {player.futId ? `${player.futId} • ` : ""}
+                        {player.id}
                       </div>
                     </button>
                   ))}
