@@ -1,7 +1,6 @@
 import type {
   SuperAdminSupportSession,
   SuperAdminSupportSubject,
-  SuperAdminSupportSubjectRole,
 } from "../types/SuperAdminSupport";
 
 export function isExactDocumentId(value: unknown): value is string {
@@ -97,35 +96,17 @@ export function canStartStaffWorkMode(
   );
 }
 
-export function isSupportedWorkAsRole(
-  role: unknown,
-): role is SuperAdminSupportSubjectRole {
-  return (
-    role === "ADMIN" ||
-    role === "COACH" ||
-    role === "PARENT" ||
-    role === "PLAYER"
-  );
-}
-
 export function resolveSupportPresentationRole(
   session: SuperAdminSupportSession | null,
-): "SUPERADMIN" | "ADMIN" | "COACH" | "PARENT" | "PLAYER" | "NONE" {
+): "SUPERADMIN" | "ADMIN" | "COACH" | "NONE" {
   if (!session) return "SUPERADMIN";
   if (session.mode === "ACADEMY_WORKSPACE") return "SUPERADMIN";
-
   if (session.mode === "WORK_AS_STAFF") {
     if (session.subject?.tenantRole === "ADMIN") return "ADMIN";
     if (session.subject?.tenantRole === "COACH") return "COACH";
     return "NONE";
   }
-
-  if (session.mode === "WORK_AS_NONSTAFF") {
-    if (session.subject?.role === "PARENT") return "PARENT";
-    if (session.subject?.role === "PLAYER") return "PLAYER";
-    return "NONE";
-  }
-
+  // Unknown/unsupported mode — fail closed
   return "NONE";
 }
 
@@ -135,13 +116,15 @@ export function validateSupportSubject(
   if (!subject || typeof subject !== "object") return false;
   const candidate = subject as Record<string, unknown>;
   if (!isExactDocumentId(candidate.uid)) return false;
-  if (!isSupportedWorkAsRole(candidate.role)) return false;
 
-  if (candidate.role === "ADMIN" || candidate.role === "COACH") {
-    return candidate.tenantRole === candidate.role;
+  const role = candidate.role;
+  if (role !== "ADMIN" && role !== "COACH") {
+    return false;
   }
 
-  return candidate.tenantRole === undefined;
+  if (candidate.tenantRole !== role) return false;
+
+  return true;
 }
 
 export function isAuthoritativeSnapshotMetadata(
