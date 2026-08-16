@@ -30,6 +30,7 @@ import {
   NONSTAFF_ASSOCIATION_COLLECTION,
   resolveAuthoritativeAssociationSnapshot,
 } from "../lib/nonStaffPlayerAccess";
+import { registerNonStaffSupportLogoutExit } from "../lib/supportLogoutCoordinator";
 
 interface SuperAdminNonStaffSupportContextValue {
   session: NonStaffSupportSession | null;
@@ -279,6 +280,10 @@ export function SuperAdminNonStaffSupportProvider({
     await writeAudit("SUPERADMIN_NONSTAFF_WORK_ENDED", activeSession);
     clearSessionState();
   };
+
+  useEffect(() => {
+    return registerNonStaffSupportLogoutExit(exitNonStaffWorkMode);
+  }, [session, actualUser]);
 
   return (
     <SuperAdminNonStaffSupportContext.Provider
