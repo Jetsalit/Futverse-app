@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, LogOut, ShieldAlert, UserCircle } from "lucide-react";
+import { Activity, AlertCircle, LogOut, ShieldAlert, UserCircle } from "lucide-react";
 import { collection, doc, onSnapshot } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import { mapCanonicalSnapshot } from "../../lib/firestore/canonicalDocument";
@@ -23,6 +23,8 @@ export function SuperAdminNonStaffWorkAsShell() {
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isExiting, setIsExiting] = useState(false);
+  const [exitError, setExitError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!support.session || !support.effectiveUser) {
@@ -170,6 +172,24 @@ export function SuperAdminNonStaffWorkAsShell() {
 
   if (!support.session || !support.effectiveUser) return null;
 
+  const handleExit = async () => {
+    if (isExiting) return;
+    setIsExiting(true);
+    setExitError(null);
+    try {
+      await support.exitNonStaffWorkMode();
+    } catch (exitFailure) {
+      console.error("Failed to safely exit Parent/Player Work As:", exitFailure);
+      setExitError(
+        exitFailure instanceof Error
+          ? exitFailure.message
+          : "Unable to safely close this Work As session. Please try again.",
+      );
+    } finally {
+      setIsExiting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <div className="sticky top-0 z-50 border-b border-amber-400/40 bg-slate-950 px-4 py-3 text-white shadow-lg">
@@ -186,13 +206,22 @@ export function SuperAdminNonStaffWorkAsShell() {
               Academy scope: {support.session.academyId} • Authenticated actor remains SUPERADMIN
             </div>
           </div>
-          <button
-            type="button"
-            onClick={support.exitNonStaffWorkMode}
-            className="flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-sm font-black text-slate-950 hover:bg-amber-400"
-          >
-            <LogOut size={16} /> Exit Work As
-          </button>
+          <div className="flex flex-col items-end gap-2">
+            <button
+              type="button"
+              onClick={handleExit}
+              disabled={isExiting}
+              className="flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-sm font-black text-slate-950 hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <LogOut size={16} /> {isExiting ? "Exiting..." : "Exit Work As"}
+            </button>
+            {exitError && (
+              <div className="flex max-w-md items-center gap-1 text-[11px] font-semibold text-amber-300">
+                <AlertCircle size={12} className="shrink-0" />
+                <span>{exitError}</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
