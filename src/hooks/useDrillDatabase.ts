@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { db } from '../lib/firebase';
 import { collection, addDoc, updateDoc, deleteDoc, deleteField, doc, onSnapshot, query } from 'firebase/firestore';
 import { mapCanonicalSnapshot, withoutCanonicalDocumentId } from '../lib/firestore/canonicalDocument';
+import { resolveAssistedRecordIdentity } from '../lib/assistedRecordIdentity';
 
 export interface Drill {
   id: string;
@@ -23,12 +24,17 @@ export interface Drill {
   trainingMethod?: string;
   coachingPoints?: string;
   date?: string;
+  recorded_by?: string;
+  entry_mode?: 'SELF' | 'ASSISTED';
+  last_updated_by?: string;
 }
 
 export function useDrillDatabase() {
   const [drills, setDrills] = useState<Drill[]>([]);
-  const { actualUser } = useAuth();
-  const authenticatedUid = actualUser?.uid || actualUser?.id || null;
+  const { actualUser, currentUser } = useAuth();
+  const identity = resolveAssistedRecordIdentity(actualUser, currentUser);
+  const authenticatedUid = identity.actorUid;
+  const ownerUid = identity.ownerUid;
 
   useEffect(() => {
     const q = query(collection(db, 'drills'));
@@ -43,16 +49,22 @@ export function useDrillDatabase() {
   }, []);
 
   const saveDrill = async (newDrill: Omit<Drill, 'id' | 'created_by'>) => {
-    if (!authenticatedUid) {
-      console.error('Cannot save drill without authenticated UID');
+    if (!authenticatedUid || !ownerUid) {
+      console.error('Cannot save drill without authenticated actor and owner UID');
       return;
     }
 
     try {
       const drillData = {
         ...withoutCanonicalDocumentId(newDrill),
-        created_by: authenticatedUid,
+        created_by: ownerUid,
         createdAt: new Date().toISOString(),
+        ...(identity.isAssisted
+          ? {
+              recorded_by: authenticatedUid,
+              entry_mode: 'ASSISTED' as const,
+            }
+          : {}),
       };
       await addDoc(collection(db, 'drills'), drillData);
     } catch (e) {
@@ -61,8 +73,14 @@ export function useDrillDatabase() {
   };
 
   const updateDrill = async (id: string, updates: Partial<Drill>) => {
-    if (!authenticatedUid) {
-      console.error('Cannot update drill without authenticated UID');
+    if (!authenticatedUid || !ownerUid) {
+      console.error('Cannot update drill without authenticated actor and owner UID');
+      return;
+    }
+
+    const target = drills.find((drill) => drill.id === id);
+    if (!target || target.created_by !== ownerUid) {
+      console.error('Cannot update drill outside the presented owner scope.');
       return;
     }
 
@@ -74,17 +92,30 @@ export function useDrillDatabase() {
 
       const safeUpdates = withoutCanonicalDocumentId(updates) as Partial<Drill>;
       delete safeUpdates.created_by;
+      delete safeUpdates.recorded_by;
+      delete safeUpdates.entry_mode;
+      delete safeUpdates.last_updated_by;
 
       const docRef = doc(db, 'drills', id);
-      await updateDoc(docRef, { ...safeUpdates, id: deleteField() });
+      await updateDoc(docRef, {
+        ...safeUpdates,
+        ...(identity.isAssisted ? { last_updated_by: authenticatedUid } : {}),
+        id: deleteField(),
+      });
     } catch (e) {
       console.error("Error updating drill: ", e);
     }
   };
 
   const deleteDrill = async (id: string) => {
-    if (!authenticatedUid) {
-      console.error('Cannot delete drill without authenticated UID');
+    if (!authenticatedUid || !ownerUid) {
+      console.error('Cannot delete drill without authenticated actor and owner UID');
+      return;
+    }
+
+    const target = drills.find((drill) => drill.id === id);
+    if (!target || target.created_by !== ownerUid) {
+      console.error('Cannot delete drill outside the presented owner scope.');
       return;
     }
 
@@ -96,8 +127,18 @@ export function useDrillDatabase() {
     }
   };
 
-  const myDrills = drills.filter(d => d.created_by === authenticatedUid);
+  const myDrills = drills.filter(d => d.created_by === ownerUid);
   const academyDrills = drills.filter(d => d.is_shared === true);
 
-  return { drills, myDrills, academyDrills, saveDrill, updateDrill, deleteDrill, currentUser: authenticatedUid };
+  return {
+    drills,
+    myDrills,
+    academyDrills,
+    saveDrill,
+    updateDrill,
+    deleteDrill,
+    currentUser: ownerUid,
+    authenticatedActor: authenticatedUid,
+    isAssisted: identity.isAssisted,
+  };
 }
