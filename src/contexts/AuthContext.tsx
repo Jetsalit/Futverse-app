@@ -12,6 +12,7 @@ import { doc, onSnapshot } from "firebase/firestore";
 import { mapCanonicalSnapshot } from "../lib/firestore/canonicalDocument";
 import type { TenantRole } from "../types/Membership";
 import { hasClientPermission } from "../lib/privilegedAuthorization";
+import { closeSupportSessionsBeforeAuthLogout } from "../lib/supportLogoutCoordinator";
 
 export type UserRole =
   | "SUPERADMIN"
@@ -158,6 +159,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = async () => {
+    await closeSupportSessionsBeforeAuthLogout();
     await signOut(auth);
     setActualUser(null);
     setSupportPresentedUserState(null);
