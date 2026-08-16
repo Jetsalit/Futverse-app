@@ -6,6 +6,7 @@ import { LanguageProvider } from "./contexts/LanguageContext";
 import { AuthProvider } from "./contexts/AuthContext";
 import { SuperAdminSupportProvider } from "./contexts/SuperAdminSupportContext";
 import { SuperAdminNonStaffSupportProvider } from "./contexts/SuperAdminNonStaffSupportContext";
+import { SupportPresentedUserBridge } from "./contexts/SupportPresentedUserBridge";
 import { AcademyProvider } from "./contexts/AcademyContext";
 import { ErrorBoundary } from "./ErrorBoundary.tsx";
 
@@ -31,11 +32,13 @@ createRoot(document.getElementById("root")!).render(
       <AuthProvider>
         <SuperAdminSupportProvider>
           <SuperAdminNonStaffSupportProvider>
-            <AcademyProvider>
-              <LanguageProvider>
-                <SupportAwareRoot />
-              </LanguageProvider>
-            </AcademyProvider>
+            <SupportPresentedUserBridge>
+              <AcademyProvider>
+                <LanguageProvider>
+                  <SupportAwareRoot />
+                </LanguageProvider>
+              </AcademyProvider>
+            </SupportPresentedUserBridge>
           </SuperAdminNonStaffSupportProvider>
         </SuperAdminSupportProvider>
       </AuthProvider>
