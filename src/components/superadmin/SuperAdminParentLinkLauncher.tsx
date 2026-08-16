@@ -195,13 +195,11 @@ export function SuperAdminParentLinkLauncher() {
       const logRef = doc(collection(db, "logs"));
 
       await runTransaction(db, async (transaction) => {
-        const [academySnapshot, parentSnapshot, playerSnapshot, associationSnapshot] =
-          await Promise.all([
-            transaction.get(academyRef),
-            transaction.get(parentRef),
-            transaction.get(playerRef),
-            transaction.get(associationRef),
-          ]);
+        const [academySnapshot, parentSnapshot, playerSnapshot] = await Promise.all([
+          transaction.get(academyRef),
+          transaction.get(parentRef),
+          transaction.get(playerRef),
+        ]);
 
         if (!academySnapshot.exists()) {
           throw new Error("Academy no longer exists.");
@@ -222,30 +220,16 @@ export function SuperAdminParentLinkLauncher() {
           throw new Error("Player no longer exists in the selected Academy.");
         }
 
-        if (associationSnapshot.exists()) {
-          const data = associationSnapshot.data();
-          if (
-            data.userId !== parentUid ||
-            data.academyId !== academyId ||
-            data.playerId !== playerId ||
-            data.role !== "PARENT"
-          ) {
-            throw new Error(
-              "Existing association identity is inconsistent; refusing to overwrite it.",
-            );
-          }
-          if (data.status !== "ACTIVE") {
-            transaction.update(associationRef, { status: "ACTIVE" });
-          }
-        } else {
-          transaction.set(associationRef, {
-            userId: parentUid,
-            academyId,
-            playerId,
-            role: "PARENT",
-            status: "ACTIVE",
-          });
-        }
+        // Do not read a possibly-missing association first. The existing rules allow
+        // canonical create, and for an existing canonical record this full set changes
+        // only status. Any corrupted identity/extra-field record fails the update rule.
+        transaction.set(associationRef, {
+          userId: parentUid,
+          academyId,
+          playerId,
+          role: "PARENT",
+          status: "ACTIVE",
+        });
 
         transaction.set(logRef, {
           action: "SUPERADMIN_PARENT_PLAYER_LINKED",
