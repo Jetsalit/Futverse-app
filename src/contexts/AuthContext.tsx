@@ -4,6 +4,7 @@ import React, {
   useState,
   ReactNode,
   useEffect,
+  useCallback,
 } from "react";
 import { auth, db } from "../lib/firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
@@ -130,25 +131,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const setSupportPresentedUser = (user: User | null) => {
-    if (user === null) {
-      setSupportPresentedUserState(null);
-      return;
-    }
+  const setSupportPresentedUser = useCallback(
+    (user: User | null) => {
+      if (user === null) {
+        setSupportPresentedUserState(null);
+        return;
+      }
 
-    if (
-      !actualUser ||
-      actualUser.role !== "SUPERADMIN" ||
-      !isExplicitlyActiveUser(actualUser) ||
-      !isExplicitlyActiveUser(user)
-    ) {
-      throw new Error(
-        "Support presentation override requires an active SUPERADMIN actor and active target user.",
-      );
-    }
+      if (
+        !actualUser ||
+        actualUser.role !== "SUPERADMIN" ||
+        !isExplicitlyActiveUser(actualUser) ||
+        !isExplicitlyActiveUser(user)
+      ) {
+        throw new Error(
+          "Support presentation override requires an active SUPERADMIN actor and active target user.",
+        );
+      }
 
-    setSupportPresentedUserState(user);
-  };
+      setSupportPresentedUserState(user);
+    },
+    [actualUser],
+  );
 
   const logout = async () => {
     await signOut(auth);
