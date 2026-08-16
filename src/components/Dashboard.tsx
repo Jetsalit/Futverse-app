@@ -14,6 +14,7 @@ import { useLanguage } from "../contexts/LanguageContext";
 import { useAuth, UserRole } from "../contexts/AuthContext";
 import { useSuperAdminSupport } from "../contexts/SuperAdminSupportContext";
 import { canAccessTenantCapability } from "../lib/superAdminSupportModel";
+import { isFeatureEnabled } from "../config/featureFlags";
 
 type DashboardItem = {
   id: string;
@@ -183,6 +184,12 @@ export default function Dashboard({
       <div className="space-y-8">
         {SECTIONS.map((section, idx) => {
           const visibleItems = section.items.filter((item) => {
+            if (
+              item.id === "concierge" &&
+              !isFeatureEnabled("dataAdminConciergeEnabled")
+            ) {
+              return false;
+            }
             if (!item.allowedRoles) return true;
             const effectiveAllowedRoles = isSupportActive && item.supportAllowedRoles
               ? item.supportAllowedRoles
