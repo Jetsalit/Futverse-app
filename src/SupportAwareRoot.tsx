@@ -7,6 +7,7 @@ import { SuperAdminNonStaffSupportBar } from "./components/superadmin/SuperAdmin
 import { SuperAdminNonStaffPresentationGate } from "./components/superadmin/SuperAdminNonStaffPresentationGate";
 import { SuperAdminParentLinkLauncher } from "./components/superadmin/SuperAdminParentLinkLauncher";
 import { SuperAdminStaffPresentationGate } from "./components/superadmin/SuperAdminStaffPresentationGate";
+import { SuperAdminStaffAuthorityGate } from "./components/superadmin/SuperAdminStaffAuthorityGate";
 
 export default function SupportAwareRoot() {
   const { currentUser } = useAuth();
@@ -57,6 +58,10 @@ export default function SupportAwareRoot() {
     <>
       {nonStaffSupport.isActive && <SuperAdminNonStaffSupportBar />}
       <App key={appKey} />
+      {staffSupport.isStaffWorkMode &&
+        staffSupport.isStaffAuthorityRevalidating && (
+          <SuperAdminStaffAuthorityGate />
+        )}
       {supportToolsAvailable && (
         <>
           <SuperAdminNonStaffWorkAsLauncher />
