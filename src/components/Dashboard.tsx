@@ -15,6 +15,7 @@ import { useAuth, UserRole } from "../contexts/AuthContext";
 import { useSuperAdminSupport } from "../contexts/SuperAdminSupportContext";
 import { canAccessTenantCapability } from "../lib/superAdminSupportModel";
 import { isFeatureEnabled } from "../config/featureFlags";
+import PlayerDashboard from "./PlayerDashboard";
 
 type DashboardItem = {
   id: string;
@@ -167,8 +168,15 @@ export default function Dashboard({
   onNavigate: (page: string) => void;
 }) {
   const { t } = useLanguage();
-  const { hasPermission } = useAuth();
+  const { hasPermission, currentUser } = useAuth();
   const { isSupportActive, presentationRole } = useSuperAdminSupport();
+
+  // Parent and Player share the same canonical player-association engine.
+  // App already routes PLAYER directly here; this restores the same linked-player
+  // owner experience for PARENT without inventing a second Parent data path.
+  if (currentUser?.role === "PARENT") {
+    return <PlayerDashboard onNavigate={onNavigate} />;
+  }
 
   return (
     <div className="w-full max-w-6xl mx-auto pb-10">
