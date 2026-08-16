@@ -34,6 +34,10 @@ export default function Settings({
     setSaveState("idle");
   }, [settings]);
 
+  const hasAuthorizedAcademyAccess =
+    accessState === "ACTIVE_MEMBERSHIP" ||
+    accessState === "SUPERADMIN_WORKSPACE";
+
   const addSquad = () => {
     const nextSquad = newSquad.trim().toUpperCase();
     if (!nextSquad || squads.includes(nextSquad)) return;
@@ -43,7 +47,7 @@ export default function Settings({
   };
 
   const saveProfile = async () => {
-    if (accessState !== "ACTIVE_MEMBERSHIP" || !academyName.trim()) return;
+    if (!hasAuthorizedAcademyAccess || !academyName.trim()) return;
     setSaving(true);
     setSaveState("idle");
     try {
@@ -61,7 +65,7 @@ export default function Settings({
     }
   };
 
-  const unavailable = accessState !== "ACTIVE_MEMBERSHIP";
+  const unavailable = !hasAuthorizedAcademyAccess;
 
   return (
     <div className="mx-auto w-full max-w-4xl pb-10">
@@ -87,7 +91,7 @@ export default function Settings({
         <div className="mb-5 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
           <AlertTriangle className="mt-0.5 shrink-0" size={20} />
           <p className="text-sm font-semibold">
-            Academy settings are unavailable because an active Membership could not be verified.
+            Academy settings are unavailable because authorized Academy access could not be verified.
           </p>
         </div>
       )}
