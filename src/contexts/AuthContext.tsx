@@ -44,7 +44,7 @@ export interface User {
   approvedAt?: string;
   lastLogin?: string;
   rejectionReason?: string;
-  assignedClients?: string[]; // Array of User IDs they can manage
+  assignedClients?: string[]; // Legacy metadata only; never authority.
 }
 
 interface AuthContextType {
@@ -53,14 +53,21 @@ interface AuthContextType {
   isLoading: boolean;
   logout: () => void;
   hasPermission: (allowedRoles: UserRole[]) => boolean;
+  setSupportPresentedUser: (user: User | null) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const isExplicitlyActiveUser = (user: User | null): boolean =>
+  Boolean(user && (user.status === "ACTIVE" || user.status === "Active"));
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [actualUser, setActualUser] = useState<User | null>(null);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [supportPresentedUser, setSupportPresentedUserState] =
+    useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  const currentUser = supportPresentedUser ?? actualUser;
 
   useEffect(() => {
     let unsubscribeUserDoc: (() => void) | undefined;
@@ -70,45 +77,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       unsubscribeUserDoc?.();
       unsubscribeUserDoc = undefined;
       setActualUser(null);
-      setCurrentUser(null);
+      setSupportPresentedUserState(null);
       setIsLoading(true);
 
       if (firebaseUser) {
         const userRef = doc(db, "users", firebaseUser.uid);
-        unsubscribeUserDoc = onSnapshot(userRef, { includeMetadataChanges: true }, (userDoc) => {
-          if (resolutionVersion !== authResolutionVersion) return;
+        unsubscribeUserDoc = onSnapshot(
+          userRef,
+          { includeMetadataChanges: true },
+          (userDoc) => {
+            if (resolutionVersion !== authResolutionVersion) return;
 
-          if (userDoc.metadata.fromCache || userDoc.metadata.hasPendingWrites) {
-            setActualUser(null);
-            setCurrentUser(null);
+            if (userDoc.metadata.fromCache || userDoc.metadata.hasPendingWrites) {
+              setActualUser(null);
+              setSupportPresentedUserState(null);
+              setIsLoading(false);
+              return;
+            }
+
+            if (userDoc.exists()) {
+              const userData = userDoc.data() as User;
+              const fullUser = {
+                ...userData,
+                ...mapCanonicalSnapshot<User>(userDoc),
+                id: firebaseUser.uid,
+                uid: firebaseUser.uid,
+                email: firebaseUser.email || undefined,
+              };
+              setActualUser(fullUser);
+            } else {
+              setActualUser(null);
+              setSupportPresentedUserState(null);
+            }
             setIsLoading(false);
-            return;
-          }
-
-          if (userDoc.exists()) {
-            const userData = userDoc.data() as User;
-
-            const fullUser = {
-              ...userData,
-              ...mapCanonicalSnapshot<User>(userDoc),
-              id: firebaseUser.uid,
-              uid: firebaseUser.uid,
-              email: firebaseUser.email || undefined,
-            };
-            setActualUser(fullUser);
-            setCurrentUser(fullUser);
-          } else {
+          },
+          (error) => {
+            if (resolutionVersion !== authResolutionVersion) return;
+            console.error("Error fetching user data:", error);
             setActualUser(null);
-            setCurrentUser(null);
-          }
-          setIsLoading(false);
-        }, (error) => {
-          if (resolutionVersion !== authResolutionVersion) return;
-          console.error("Error fetching user data:", error);
-          setActualUser(null);
-          setCurrentUser(null);
-          setIsLoading(false);
-        });
+            setSupportPresentedUserState(null);
+            setIsLoading(false);
+          },
+        );
       } else {
         setIsLoading(false);
       }
@@ -120,13 +130,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const setSupportPresentedUser = (user: User | null) => {
+    if (user === null) {
+      setSupportPresentedUserState(null);
+      return;
+    }
+
+    if (
+      !actualUser ||
+      actualUser.role !== "SUPERADMIN" ||
+      !isExplicitlyActiveUser(actualUser) ||
+      !isExplicitlyActiveUser(user)
+    ) {
+      throw new Error(
+        "Support presentation override requires an active SUPERADMIN actor and active target user.",
+      );
+    }
+
+    setSupportPresentedUserState(user);
+  };
+
   const logout = async () => {
     await signOut(auth);
     setActualUser(null);
-    setCurrentUser(null);
+    setSupportPresentedUserState(null);
   };
 
   const hasPermission = (allowedRoles: UserRole[]) => {
+    if (supportPresentedUser) {
+      return (
+        actualUser?.role === "SUPERADMIN" &&
+        isExplicitlyActiveUser(actualUser) &&
+        isExplicitlyActiveUser(supportPresentedUser) &&
+        allowedRoles.includes(supportPresentedUser.role)
+      );
+    }
     return hasClientPermission(actualUser, currentUser, allowedRoles);
   };
 
@@ -138,6 +176,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         logout,
         hasPermission,
+        setSupportPresentedUser,
       }}
     >
       {!isLoading && children}
