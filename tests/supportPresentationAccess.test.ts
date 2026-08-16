@@ -1,7 +1,17 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { requiresStaffMembership, isStaffOnboardingRequest } from "../src/contexts/academyAccessModel";
 import { isFeatureEnabled } from "../src/config/featureFlags";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const settingsCode = fs.readFileSync(
+  path.resolve(__dirname, "../src/components/Settings.tsx"),
+  "utf8",
+);
 
 const normalCoach = {
   uid: "coach-1",
@@ -48,6 +58,17 @@ describe("support presentation access isolation", () => {
         supportPresentation: true,
       }),
       false,
+    );
+  });
+
+  it("settings accepts both normal active membership and authorized SuperAdmin workspace", () => {
+    assert.match(
+      settingsCode,
+      /accessState\s*===\s*"ACTIVE_MEMBERSHIP"\s*\|\|\s*accessState\s*===\s*"SUPERADMIN_WORKSPACE"/s,
+    );
+    assert.doesNotMatch(
+      settingsCode,
+      /if\s*\(accessState\s*!==\s*"ACTIVE_MEMBERSHIP"/,
     );
   });
 
