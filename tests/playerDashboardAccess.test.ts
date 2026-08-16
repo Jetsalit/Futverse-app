@@ -12,11 +12,22 @@ const code = fs.readFileSync(
 );
 
 describe("PlayerDashboard authoritative association contract", () => {
-  it("resolves through the authoritative association model", () => {
+  it("normal owner path preserves canonical collection-group resolution", () => {
     assert.match(code, /resolveAuthoritativeAssociationSnapshot/);
     assert.match(code, /linkedPlayerLookupForUser\(currentUser\)/);
     assert.match(code, /collectionGroup\(db,\s*NONSTAFF_ASSOCIATION_COLLECTION\)/);
     assert.match(code, /where\("userId",\s*"==",\s*lookup\.uid\)/);
+  });
+
+  it("verified SuperAdmin Work As uses exact scoped canonical association path", () => {
+    assert.match(code, /currentUser\?\.supportPresentation\s*===\s*true/);
+    assert.match(code, /actualUser\?\.role\s*===\s*"SUPERADMIN"/);
+    assert.match(code, /supportSession\.subject\.uid\s*===\s*presentedUid/);
+    assert.match(code, /supportSession\.subject\.role\s*===\s*currentUser\.role/);
+    assert.match(
+      code,
+      /collection\(\s*db,\s*"academies",\s*supportAcademyId!,\s*"nonstaffUsers",\s*lookup\.uid,\s*NONSTAFF_ASSOCIATION_COLLECTION/s,
+    );
   });
 
   it("never uses legacy user pointers or Player linkedUserId as authority", () => {
@@ -25,7 +36,6 @@ describe("PlayerDashboard authoritative association contract", () => {
     assert.doesNotMatch(code, /where\(["']academyId["']/);
     assert.doesNotMatch(code, /where\(["']playerId["']/);
     assert.doesNotMatch(code, /linkedUserId/);
-    assert.doesNotMatch(code, /collection\(\s*db,\s*["']academies["']/);
   });
 
   it("uses continuous metadata-aware association and exact player listeners", () => {
@@ -50,13 +60,13 @@ describe("PlayerDashboard authoritative association contract", () => {
     assert.match(code, /Authoritative player listener failed/);
   });
 
-  it("guards stale callbacks and unsubscribes on account switch or unmount", () => {
+  it("guards stale callbacks and includes support scope in stale-data key", () => {
     assert.match(code, /currentVersion\s*!==\s*resolutionVersion/);
     assert.match(code, /\+\+resolutionVersion/);
     assert.match(code, /unsubscribeAssociations\?\.\(\)/);
     assert.match(code, /stopPlayerListeners\(\)/);
-    assert.match(code, /\}, \[currentUser\]\)/);
     assert.match(code, /resolvedScopeKey\s*===\s*currentScopeKey/);
+    assert.match(code, /supportAcademyId/);
     assert.match(code, /user\.activeAcademyId\s*\?\?\s*null/);
   });
 
@@ -64,6 +74,6 @@ describe("PlayerDashboard authoritative association contract", () => {
     assert.match(code, /resolution\.associations\.map/);
     assert.match(code, /visiblePlayerProfiles\.length\s*>\s*1/);
     assert.match(code, /setSelectedProfileKey/);
-    assert.doesNotMatch(code, /collection\(\s*db,\s*"academies"/);
+    assert.doesNotMatch(code, /collection\(\s*db,\s*"academies",\s*[^s]/);
   });
 });
