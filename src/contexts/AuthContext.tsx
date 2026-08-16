@@ -46,6 +46,8 @@ export interface User {
   lastLogin?: string;
   rejectionReason?: string;
   assignedClients?: string[]; // Legacy metadata only; never authority.
+  // Client-only marker. Never persisted and never grants Firestore authority.
+  supportPresentation?: boolean;
 }
 
 interface AuthContextType {
@@ -104,6 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 id: firebaseUser.uid,
                 uid: firebaseUser.uid,
                 email: firebaseUser.email || undefined,
+                supportPresentation: undefined,
               };
               setActualUser(fullUser);
             } else {
@@ -149,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         );
       }
 
-      setSupportPresentedUserState(user);
+      setSupportPresentedUserState({ ...user, supportPresentation: true });
     },
     [actualUser],
   );
