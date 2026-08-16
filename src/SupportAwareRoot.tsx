@@ -3,7 +3,8 @@ import { useAuth } from "./contexts/AuthContext";
 import { useSuperAdminSupport } from "./contexts/SuperAdminSupportContext";
 import { useSuperAdminNonStaffSupport } from "./contexts/SuperAdminNonStaffSupportContext";
 import { SuperAdminNonStaffWorkAsLauncher } from "./components/superadmin/SuperAdminNonStaffWorkAsLauncher";
-import { SuperAdminNonStaffWorkAsShell } from "./components/superadmin/SuperAdminNonStaffWorkAsShell";
+import { SuperAdminNonStaffSupportBar } from "./components/superadmin/SuperAdminNonStaffSupportBar";
+import { SuperAdminNonStaffPresentationGate } from "./components/superadmin/SuperAdminNonStaffPresentationGate";
 import { SuperAdminParentLinkLauncher } from "./components/superadmin/SuperAdminParentLinkLauncher";
 import { SuperAdminStaffPresentationGate } from "./components/superadmin/SuperAdminStaffPresentationGate";
 
@@ -12,8 +13,20 @@ export default function SupportAwareRoot() {
   const staffSupport = useSuperAdminSupport();
   const nonStaffSupport = useSuperAdminNonStaffSupport();
 
-  if (nonStaffSupport.isActive) {
-    return <SuperAdminNonStaffWorkAsShell />;
+  if (nonStaffSupport.isActive && nonStaffSupport.session) {
+    const presentedUid = currentUser?.uid || currentUser?.id || null;
+    const expectedUid = nonStaffSupport.session.subject.uid;
+    const expectedRole = nonStaffSupport.session.subject.role;
+    const hasExactPresentedIdentity = Boolean(
+      currentUser?.supportPresentation === true &&
+        presentedUid === expectedUid &&
+        currentUser.role === expectedRole &&
+        (currentUser.status === "ACTIVE" || currentUser.status === "Active"),
+    );
+
+    if (!hasExactPresentedIdentity) {
+      return <SuperAdminNonStaffPresentationGate />;
+    }
   }
 
   if (staffSupport.isStaffWorkMode && staffSupport.supportSubject) {
@@ -32,11 +45,18 @@ export default function SupportAwareRoot() {
     }
   }
 
-  const supportToolsAvailable = !staffSupport.isSupportActive;
+  const supportToolsAvailable =
+    !staffSupport.isSupportActive && !nonStaffSupport.isActive;
+  const appKey = nonStaffSupport.isActive && nonStaffSupport.session
+    ? `nonstaff:${nonStaffSupport.session.academyId}:${nonStaffSupport.session.subject.uid}:${nonStaffSupport.session.startedAt}`
+    : staffSupport.isSupportActive && staffSupport.session
+      ? `staff:${staffSupport.session.academyId}:${staffSupport.session.mode}:${staffSupport.session.subject?.uid || "workspace"}:${staffSupport.session.startedAt}`
+      : "normal";
 
   return (
     <>
-      <App />
+      {nonStaffSupport.isActive && <SuperAdminNonStaffSupportBar />}
+      <App key={appKey} />
       {supportToolsAvailable && (
         <>
           <SuperAdminNonStaffWorkAsLauncher />
