@@ -5,6 +5,7 @@ import "./index.css";
 import { LanguageProvider } from "./contexts/LanguageContext";
 import { AuthProvider } from "./contexts/AuthContext";
 import { SuperAdminSupportProvider } from "./contexts/SuperAdminSupportContext";
+import { SuperAdminNonStaffSupportProvider } from "./contexts/SuperAdminNonStaffSupportContext";
 import { AcademyProvider } from "./contexts/AcademyContext";
 import { ErrorBoundary } from "./ErrorBoundary.tsx";
 
@@ -29,11 +30,13 @@ createRoot(document.getElementById("root")!).render(
     <ErrorBoundary>
       <AuthProvider>
         <SuperAdminSupportProvider>
-          <AcademyProvider>
-            <LanguageProvider>
-              <App />
-            </LanguageProvider>
-          </AcademyProvider>
+          <SuperAdminNonStaffSupportProvider>
+            <AcademyProvider>
+              <LanguageProvider>
+                <App />
+              </LanguageProvider>
+            </AcademyProvider>
+          </SuperAdminNonStaffSupportProvider>
         </SuperAdminSupportProvider>
       </AuthProvider>
     </ErrorBoundary>
