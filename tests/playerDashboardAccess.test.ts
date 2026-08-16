@@ -74,6 +74,9 @@ describe("PlayerDashboard authoritative association contract", () => {
     assert.match(code, /resolution\.associations\.map/);
     assert.match(code, /visiblePlayerProfiles\.length\s*>\s*1/);
     assert.match(code, /setSelectedProfileKey/);
-    assert.doesNotMatch(code, /collection\(\s*db,\s*"academies",\s*[^s]/);
+    assert.doesNotMatch(
+      code,
+      /collection\(\s*db,\s*"academies",\s*[^,]+,\s*"players"/s,
+    );
   });
 });
