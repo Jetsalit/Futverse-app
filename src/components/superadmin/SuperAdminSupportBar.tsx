@@ -7,7 +7,7 @@ import { useAcademy } from "../../contexts/AcademyContext";
 export function SuperAdminSupportBar() {
   const { session, isSupportActive, exitSupportMode, presentationRole } =
     useSuperAdminSupport();
-  const { currentUser } = useAuth();
+  const { actualUser } = useAuth();
   const { academy } = useAcademy();
   const [isExiting, setIsExiting] = useState(false);
   const [exitError, setExitError] = useState<string | null>(null);
@@ -16,7 +16,7 @@ export function SuperAdminSupportBar() {
 
   const academyDisplayName =
     academy?.name || academy?.shortName || session.academyId;
-  const superAdminName = currentUser?.name || currentUser?.email || "SuperAdmin";
+  const superAdminName = actualUser?.name || actualUser?.email || "SuperAdmin";
 
   const handleExit = async () => {
     if (isExiting) return;
