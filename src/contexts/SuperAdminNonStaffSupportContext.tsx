@@ -31,6 +31,22 @@ import {
   resolveAuthoritativeAssociationSnapshot,
 } from "../lib/nonStaffPlayerAccess";
 import { registerNonStaffSupportLogoutExit } from "../lib/supportLogoutCoordinator";
+import {
+  type NonStaffSupportAuthGuard,
+  type PendingNonStaffSupportExitAction,
+  type PendingNonStaffSupportExitAudit,
+  convertNonStaffOrphanMarkerToClosureRecord,
+  getOrCreateNonStaffTabId,
+  loadActiveNonStaffSupportSessionMarkersForActor,
+  NONSTAFF_HEARTBEAT_INTERVAL_MS,
+  performBoundedNonStaffExitAudit,
+  recoverStaleNonStaffOrphanMarkers,
+  refreshActiveNonStaffSupportSessionHeartbeat,
+  removeActiveNonStaffSupportSessionMarker,
+  replayPendingNonStaffSupportExitAuditsForActor,
+  saveActiveNonStaffSupportSessionMarker,
+  savePendingNonStaffSupportExitAudit,
+} from "../lib/durableNonStaffSupportAudit";
 
 interface SuperAdminNonStaffSupportContextValue {
   session: NonStaffSupportSession | null;
@@ -58,6 +74,8 @@ export function SuperAdminNonStaffSupportProvider({
   const unsubscribeAssociationsRef = useRef<(() => void) | null>(null);
   const generationRef = useRef(0);
   const sessionRef = useRef<NonStaffSupportSession | null>(null);
+  const actualUserRef = useRef<User | null>(actualUser);
+  const activeSessionIdRef = useRef<string | null>(null);
 
   const clearListeners = () => {
     unsubscribeUserRef.current?.();
@@ -70,21 +88,40 @@ export function SuperAdminNonStaffSupportProvider({
     generationRef.current += 1;
     clearListeners();
     sessionRef.current = null;
+    activeSessionIdRef.current = null;
     setSession(null);
     setEffectiveUser(null);
   };
 
-  const writeAudit = async (
-    action: "SUPERADMIN_NONSTAFF_WORK_STARTED" | "SUPERADMIN_NONSTAFF_WORK_ENDED" | "SUPERADMIN_NONSTAFF_WORK_INVALIDATED",
-    targetSession: NonStaffSupportSession,
-  ) => {
-    const actorUid = actualUser?.uid || actualUser?.id;
-    if (!isExactActiveSuperAdmin(actualUser) || !isExactDocumentId(actorUid)) {
+  const createAuthGuard = (
+    actorUid: string,
+    generation: number,
+  ): NonStaffSupportAuthGuard => ({
+    validate() {
+      if (generationRef.current !== generation) {
+        throw new Error("Nonstaff support generation changed.");
+      }
+      if (!isExactActiveSuperAdmin(actualUserRef.current)) {
+        throw new Error("Actor is no longer an active SUPERADMIN.");
+      }
+      const liveUid = actualUserRef.current?.uid || actualUserRef.current?.id;
+      if (liveUid !== actorUid) {
+        throw new Error("Actor UID changed during nonstaff support audit.");
+      }
+    },
+  });
+
+  const writeStartAudit = async (targetSession: NonStaffSupportSession) => {
+    const actorUid = actualUserRef.current?.uid || actualUserRef.current?.id;
+    if (
+      !isExactActiveSuperAdmin(actualUserRef.current) ||
+      !isExactDocumentId(actorUid)
+    ) {
       throw new Error("Active SUPERADMIN actor is required for support audit.");
     }
 
     await addDoc(collection(db, "logs"), {
-      action,
+      action: "SUPERADMIN_NONSTAFF_WORK_STARTED",
       actorUid,
       academyId: targetSession.academyId,
       mode: "WORK_AS_NONSTAFF",
@@ -94,12 +131,95 @@ export function SuperAdminNonStaffSupportProvider({
     });
   };
 
-  useEffect(() => {
-    if (!isExactActiveSuperAdmin(actualUser)) {
-      clearSessionState();
+  const durableSessionClosure = async (
+    closingSession: NonStaffSupportSession,
+    actorUid: string,
+    action: PendingNonStaffSupportExitAction,
+    sessionId: string | null,
+    guard?: NonStaffSupportAuthGuard,
+  ) => {
+    const pendingRecord: PendingNonStaffSupportExitAudit = {
+      logDocId: doc(collection(db, "logs")).id,
+      actorUid,
+      action,
+      academyId: closingSession.academyId,
+      mode: "WORK_AS_NONSTAFF",
+      targetUid: closingSession.subject.uid,
+      effectiveRole: closingSession.subject.role,
+      createdAt: Date.now(),
+    };
+
+    savePendingNonStaffSupportExitAudit(pendingRecord);
+    if (sessionId) {
+      removeActiveNonStaffSupportSessionMarker(actorUid, sessionId);
     }
+    await performBoundedNonStaffExitAudit(db, pendingRecord, { guard });
+  };
+
+  useEffect(() => {
+    actualUserRef.current = actualUser;
+
+    if (isExactActiveSuperAdmin(actualUser)) {
+      const actorUid = actualUser.uid || actualUser.id;
+      if (isExactDocumentId(actorUid)) {
+        const tabId = getOrCreateNonStaffTabId();
+        recoverStaleNonStaffOrphanMarkers(actorUid, tabId);
+        const guard = createAuthGuard(actorUid, generationRef.current);
+        replayPendingNonStaffSupportExitAuditsForActor(actualUser, db, {
+          guard,
+        }).catch((error) => {
+          console.warn("Nonstaff support audit replay failed:", error);
+        });
+      }
+    } else {
+      generationRef.current += 1;
+      clearListeners();
+      sessionRef.current = null;
+      activeSessionIdRef.current = null;
+      setSession(null);
+      setEffectiveUser(null);
+    }
+
     return () => clearListeners();
   }, [actualUser]);
+
+  useEffect(() => {
+    const handlePageHide = () => {
+      const actorUid = actualUserRef.current?.uid || actualUserRef.current?.id;
+      const activeSessionId = activeSessionIdRef.current;
+      if (!isExactDocumentId(actorUid) || !activeSessionId) return;
+
+      const tabId = getOrCreateNonStaffTabId();
+      const markers = loadActiveNonStaffSupportSessionMarkersForActor(actorUid).filter(
+        (marker) => marker.tabId === tabId && marker.sessionId === activeSessionId,
+      );
+
+      for (const marker of markers) {
+        try {
+          const closure = convertNonStaffOrphanMarkerToClosureRecord(marker);
+          savePendingNonStaffSupportExitAudit(closure);
+          removeActiveNonStaffSupportSessionMarker(actorUid, marker.sessionId);
+        } catch {
+          // Best effort during unload. Marker remains for stale-orphan recovery.
+        }
+      }
+    };
+
+    window.addEventListener("pagehide", handlePageHide);
+    return () => window.removeEventListener("pagehide", handlePageHide);
+  }, []);
+
+  useEffect(() => {
+    const activeSessionId = activeSessionIdRef.current;
+    const actorUid = actualUserRef.current?.uid || actualUserRef.current?.id;
+    if (!session || !activeSessionId || !isExactDocumentId(actorUid)) return;
+
+    const intervalId = window.setInterval(() => {
+      refreshActiveNonStaffSupportSessionHeartbeat(actorUid, activeSessionId);
+    }, NONSTAFF_HEARTBEAT_INTERVAL_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [session]);
 
   const startNonStaffWorkMode = async (
     academyId: string,
@@ -108,19 +228,20 @@ export function SuperAdminNonStaffSupportProvider({
     const generation = ++generationRef.current;
     clearListeners();
     sessionRef.current = null;
+    activeSessionIdRef.current = null;
     setSession(null);
     setEffectiveUser(null);
 
     if (staffSupport.isSupportActive) {
       throw new Error("Exit the current Academy/Staff support session before starting Parent/Player Work As.");
     }
-    if (!isExactActiveSuperAdmin(actualUser)) {
+    if (!isExactActiveSuperAdmin(actualUserRef.current)) {
       throw new Error("Only an active SUPERADMIN can start non-staff Work As mode.");
     }
     if (!isExactDocumentId(academyId) || !isExactDocumentId(targetUid)) {
       throw new Error("Academy ID and target UID must be exact Firestore document IDs.");
     }
-    const actorUid = actualUser.uid || actualUser.id;
+    const actorUid = actualUserRef.current.uid || actualUserRef.current.id;
     if (!isExactDocumentId(actorUid) || actorUid === targetUid) {
       throw new Error("Invalid Work As target.");
     }
@@ -190,12 +311,24 @@ export function SuperAdminNonStaffSupportProvider({
       startedAt: Date.now(),
     };
 
-    // Fail closed: do not present the target identity until START audit succeeds.
-    await writeAudit("SUPERADMIN_NONSTAFF_WORK_STARTED", nextSession);
+    await writeStartAudit(nextSession);
     if (generation !== generationRef.current) {
       throw new Error("Work As activation changed while audit was being written.");
     }
 
+    const sessionId = doc(collection(db, "_")).id;
+    saveActiveNonStaffSupportSessionMarker({
+      sessionId,
+      actorUid,
+      academyId,
+      mode: "WORK_AS_NONSTAFF",
+      targetUid,
+      effectiveRole: subject.role,
+      startedAt: nextSession.startedAt,
+      tabId: getOrCreateNonStaffTabId(),
+      heartbeatAt: Date.now(),
+    });
+    activeSessionIdRef.current = sessionId;
     sessionRef.current = nextSession;
     setEffectiveUser(targetUser);
     setSession(nextSession);
@@ -203,11 +336,44 @@ export function SuperAdminNonStaffSupportProvider({
     const invalidate = () => {
       if (generation !== generationRef.current) return;
       const invalidatedSession = sessionRef.current;
+      const invalidatedSessionId = activeSessionIdRef.current;
+      const capturedActorUid = actualUserRef.current?.uid || actualUserRef.current?.id;
+
       clearSessionState();
-      if (invalidatedSession && isExactActiveSuperAdmin(actualUser)) {
-        writeAudit("SUPERADMIN_NONSTAFF_WORK_INVALIDATED", invalidatedSession).catch(
-          (error) => console.warn("Failed to write nonstaff invalidation audit:", error),
-        );
+
+      if (!invalidatedSession || !isExactDocumentId(capturedActorUid)) return;
+      const pendingRecord: PendingNonStaffSupportExitAudit = {
+        logDocId: doc(collection(db, "logs")).id,
+        actorUid: capturedActorUid,
+        action: "SUPERADMIN_NONSTAFF_WORK_INVALIDATED",
+        academyId: invalidatedSession.academyId,
+        mode: "WORK_AS_NONSTAFF",
+        targetUid: invalidatedSession.subject.uid,
+        effectiveRole: invalidatedSession.subject.role,
+        createdAt: Date.now(),
+      };
+
+      try {
+        savePendingNonStaffSupportExitAudit(pendingRecord);
+        if (invalidatedSessionId) {
+          removeActiveNonStaffSupportSessionMarker(
+            capturedActorUid,
+            invalidatedSessionId,
+          );
+        }
+
+        const liveUid = actualUserRef.current?.uid || actualUserRef.current?.id;
+        if (
+          isExactActiveSuperAdmin(actualUserRef.current) &&
+          liveUid === capturedActorUid
+        ) {
+          const guard = createAuthGuard(capturedActorUid, generationRef.current);
+          performBoundedNonStaffExitAudit(db, pendingRecord, { guard }).catch(
+            (error) => console.warn("Nonstaff invalidation audit failed:", error),
+          );
+        }
+      } catch (error) {
+        console.warn("Unable to persist nonstaff invalidation audit:", error);
       }
     };
 
@@ -276,8 +442,23 @@ export function SuperAdminNonStaffSupportProvider({
     const activeSession = sessionRef.current;
     if (!activeSession) return;
 
-    // Fail closed: if END audit cannot be persisted, keep the Work As session visible.
-    await writeAudit("SUPERADMIN_NONSTAFF_WORK_ENDED", activeSession);
+    const actorUid = actualUserRef.current?.uid || actualUserRef.current?.id;
+    if (
+      !isExactActiveSuperAdmin(actualUserRef.current) ||
+      !isExactDocumentId(actorUid)
+    ) {
+      throw new Error("Cannot safely exit nonstaff Work As without active SUPERADMIN actor.");
+    }
+
+    const generation = generationRef.current;
+    const guard = createAuthGuard(actorUid, generation);
+    await durableSessionClosure(
+      activeSession,
+      actorUid,
+      "SUPERADMIN_NONSTAFF_WORK_ENDED",
+      activeSessionIdRef.current,
+      guard,
+    );
     clearSessionState();
   };
 
