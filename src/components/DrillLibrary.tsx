@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import DrillDetailModal from "./DrillDetailModal";
+import { clearDrillEditorId, setDrillEditorId } from "../lib/drillEditorSession";
 
 export default function DrillLibrary({
   onNavigate,
@@ -49,6 +50,16 @@ export default function DrillLibrary({
       d.category.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
+  const openNewDrill = () => {
+    clearDrillEditorId();
+    onNavigate("tactic");
+  };
+
+  const openTacticBoardEditor = (drill: Drill) => {
+    setDrillEditorId(drill.id);
+    onNavigate("tactic");
+  };
+
   return (
     <div className="flex flex-col h-full animate-in fade-in duration-300">
       {/* Header */}
@@ -63,7 +74,7 @@ export default function DrillLibrary({
         </div>
 
         <button
-          onClick={() => onNavigate("tactic")}
+          onClick={openNewDrill}
           className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition shadow-sm w-full sm:w-auto justify-center"
         >
           <Plus size={18} />
@@ -120,17 +131,7 @@ export default function DrillLibrary({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            setEditingDrill(drill);
-                            setEditForm({
-                              title: drill.title,
-                              category: drill.category,
-                              is_shared: drill.is_shared,
-                              duration: drill.duration || "",
-                              ageGroup: drill.ageGroup || "",
-                              phase: drill.phase || "",
-                              trainingMethod: drill.trainingMethod || "",
-                              coachingPoints: drill.coachingPoints || "",
-                            });
+                            openTacticBoardEditor(drill);
                           }}
                           className="p-1.5 hover:text-blue-600 hover:bg-white rounded-md transition-colors text-slate-800"
                         >
@@ -149,7 +150,6 @@ export default function DrillLibrary({
                     )}
                   </div>
 
-                  {/* Subtle Grid Pattern */}
                   <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMSIgY3k9IjEiIHI9IjEiIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC4wNykiLz48L3N2Zz4=')] z-0 pointer-events-none opacity-50"></div>
 
                   <div className="absolute inset-4 ring-[1px] ring-slate-800 pointer-events-none z-0">
@@ -158,38 +158,13 @@ export default function DrillLibrary({
                         <div className="absolute top-0 bottom-0 left-1/2 w-[1px] bg-slate-800 -translate-x-1/2"></div>
                         <div className="absolute top-1/2 left-1/2 w-[22%] max-w-[200px] aspect-square border-[1px] border-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
                         <div className="absolute top-1/2 left-1/2 w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
-
                         <div className="absolute top-1/2 left-0 w-[16%] h-[55%] border-[1px] border-slate-800 -translate-y-1/2 border-l-0"></div>
-                        <div className="absolute top-1/2 left-0 w-[5%] h-[24%] border-[1px] border-slate-800 -translate-y-1/2 border-l-0"></div>
-                        <div className="absolute top-1/2 left-[11%] w-1.5 h-1.5 bg-slate-800 rounded-full -translate-y-1/2"></div>
-                        <div className="absolute top-1/2 left-[16%] w-[8%] max-w-[80px] h-[20%] border-[1px] border-slate-800 border-l-0 rounded-r-full -translate-y-1/2"></div>
-                        <div className="absolute top-1/2 left-0 w-[2.5%] h-[12%] border-[1px] border-slate-800 -translate-y-1/2 -translate-x-full border-r-0"></div>
-
                         <div className="absolute top-1/2 right-0 w-[16%] h-[55%] border-[1px] border-slate-800 -translate-y-1/2 border-r-0"></div>
-                        <div className="absolute top-1/2 right-0 w-[5%] h-[24%] border-[1px] border-slate-800 -translate-y-1/2 border-r-0"></div>
-                        <div className="absolute top-1/2 right-[11%] w-1.5 h-1.5 bg-slate-800 rounded-full -translate-y-1/2"></div>
-                        <div className="absolute top-1/2 right-[16%] w-[8%] max-w-[80px] h-[20%] border-[1px] border-slate-800 border-r-0 rounded-l-full -translate-y-1/2"></div>
-                        <div className="absolute top-1/2 right-0 w-[2.5%] h-[12%] border-[1px] border-slate-800 -translate-y-1/2 translate-x-full border-l-0"></div>
-
-                        <div className="absolute top-0 left-0 w-3 h-3 border-b-[1px] border-r-[1px] border-slate-800 rounded-br-full"></div>
-                        <div className="absolute bottom-0 left-0 w-3 h-3 border-t-[1px] border-r-[1px] border-slate-800 rounded-tr-full"></div>
-                        <div className="absolute top-0 right-0 w-3 h-3 border-b-[1px] border-l-[1px] border-slate-800 rounded-bl-full"></div>
-                        <div className="absolute bottom-0 right-0 w-3 h-3 border-t-[1px] border-l-[1px] border-slate-800 rounded-tl-full"></div>
                       </>
                     ) : (
                       <>
                         <div className="absolute top-0 left-1/2 w-[55%] h-[35%] border-[1px] border-slate-800 border-t-0 -translate-x-1/2"></div>
-                        <div className="absolute top-0 left-1/2 w-[24%] h-[12%] border-[1px] border-slate-800 border-t-0 -translate-x-1/2"></div>
-                        <div className="absolute top-[24%] left-1/2 w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2"></div>
-                        <div className="absolute top-[35%] left-1/2 w-[20%] max-w-[200px] h-[15%] border-[1px] border-slate-800 border-t-0 rounded-b-full -translate-x-1/2"></div>
-
-                        <div className="absolute top-0 left-1/2 w-[12%] h-[5%] border-[1px] border-slate-800 border-b-0 -translate-y-full -translate-x-1/2"></div>
-
-                        <div className="absolute top-0 left-0 w-4 h-4 border-b-[1px] border-r-[1px] border-slate-800 rounded-br-full"></div>
-                        <div className="absolute top-0 right-0 w-4 h-4 border-b-[1px] border-l-[1px] border-slate-800 rounded-bl-full"></div>
-
                         <div className="absolute bottom-0 left-1/2 w-[35%] max-w-[300px] aspect-square border-[1px] border-slate-800 border-b-0 rounded-t-full -translate-x-1/2 translate-y-[50%]"></div>
-                        <div className="absolute bottom-0 left-1/2 w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 translate-y-1/2"></div>
                       </>
                     )}
                   </div>
@@ -235,7 +210,6 @@ export default function DrillLibrary({
         )}
       </div>
 
-      {/* Edit Modal */}
       {editingDrill && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
@@ -269,115 +243,6 @@ export default function DrillLibrary({
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-1">
-                    หมวดหมู่ (Category)
-                  </label>
-                  <select
-                    value={editForm.category}
-                    onChange={(e) =>
-                      setEditForm({ ...editForm, category: e.target.value })
-                    }
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  >
-                    <option value="Tactical">Tactical</option>
-                    <option value="Technical">Technical</option>
-                    <option value="Physical">Physical</option>
-                    <option value="Psychological">Psychological</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-1">
-                    ระยะเวลา (Duration)
-                  </label>
-                  <input
-                    type="text"
-                    value={editForm.duration}
-                    onChange={(e) =>
-                      setEditForm({ ...editForm, duration: e.target.value })
-                    }
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-1">
-                    กลุ่มผู้เล่น (Age Group)
-                  </label>
-                  <input
-                    type="text"
-                    value={editForm.ageGroup}
-                    onChange={(e) =>
-                      setEditForm({ ...editForm, ageGroup: e.target.value })
-                    }
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-1">
-                    Phase
-                  </label>
-                  <input
-                    type="text"
-                    value={editForm.phase}
-                    onChange={(e) =>
-                      setEditForm({ ...editForm, phase: e.target.value })
-                    }
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-bold text-slate-500 mb-1">
-                    วิธีการฝึก (Training Method)
-                  </label>
-                  <textarea
-                    value={editForm.trainingMethod}
-                    onChange={(e) =>
-                      setEditForm({
-                        ...editForm,
-                        trainingMethod: e.target.value,
-                      })
-                    }
-                    rows={2}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  ></textarea>
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-bold text-slate-500 mb-1">
-                    จุดโค้ชชิ่ง (Coaching Points)
-                  </label>
-                  <textarea
-                    value={editForm.coachingPoints}
-                    onChange={(e) =>
-                      setEditForm({
-                        ...editForm,
-                        coachingPoints: e.target.value,
-                      })
-                    }
-                    rows={2}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  ></textarea>
-                </div>
-              </div>
-              <div className="flex items-center justify-between pt-2">
-                <div>
-                  <div className="font-bold text-sm text-slate-800">
-                    แชร์ลงคลังส่วนกลาง
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    ให้โค้ชคนอื่นเห็นแผนซ้อมนี้
-                  </div>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="sr-only peer"
-                    checked={editForm.is_shared}
-                    onChange={(e) =>
-                      setEditForm({ ...editForm, is_shared: e.target.checked })
-                    }
-                  />
-                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                </label>
               </div>
               <div className="pt-4 flex gap-3">
                 <button
@@ -410,7 +275,6 @@ export default function DrillLibrary({
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
       {deletingDrillId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
@@ -449,7 +313,6 @@ export default function DrillLibrary({
         </div>
       )}
 
-      {/* Drill Detail Modal */}
       {selectedDrill && (
         <DrillDetailModal
           drill={selectedDrill}
@@ -457,17 +320,8 @@ export default function DrillLibrary({
           onClose={() => setSelectedDrill(null)}
           currentUser={currentUser}
           onEdit={(drill) => {
-            setEditingDrill(drill);
-            setEditForm({
-              title: drill.title,
-              category: drill.category,
-              is_shared: drill.is_shared,
-              duration: drill.duration || "",
-              ageGroup: drill.ageGroup || "",
-              phase: drill.phase || "",
-              trainingMethod: drill.trainingMethod || "",
-              coachingPoints: drill.coachingPoints || "",
-            });
+            setSelectedDrill(null);
+            openTacticBoardEditor(drill);
           }}
           onDelete={(id) => {
             deleteDrill(id);
