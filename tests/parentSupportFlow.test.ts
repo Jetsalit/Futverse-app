@@ -62,4 +62,28 @@ describe("Parent support flow", () => {
     assert.match(nonStaffContext, /SUPERADMIN_NONSTAFF_WORK_ENDED/);
     assert.match(logoutCoordinator, /await nonStaffSupportExit\(\);/);
   });
+
+  it("nonstaff Work As preserves the last server-authoritative session across transient cache/pending snapshots", () => {
+    const transientGuards =
+      nonStaffContext.match(
+        /if\s*\(\s*snapshot\.metadata\.fromCache\s*\|\|\s*snapshot\.metadata\.hasPendingWrites\s*\)\s*\{\s*\/\/ Preserve the last server-authoritative nonstaff support session\.[\s\S]*?return;\s*\}/g,
+      ) || [];
+
+    assert.equal(transientGuards.length, 2);
+
+    assert.doesNotMatch(
+      nonStaffContext,
+      /snapshot\.metadata\.fromCache\s*\|\|\s*snapshot\.metadata\.hasPendingWrites\s*\|\|\s*!snapshot\.exists\(\)/,
+    );
+
+    assert.match(
+      nonStaffContext,
+      /if\s*\(\s*!snapshot\.exists\(\)\s*\)\s*\{\s*invalidate\(\);\s*return;\s*\}/,
+    );
+
+    assert.match(
+      nonStaffContext,
+      /snapshot\.metadata\.fromCache[\s\S]*?snapshot\.metadata\.hasPendingWrites[\s\S]*?return;[\s\S]*?if\s*\(\s*!snapshot\.exists\(\)\s*\)[\s\S]*?invalidate\(\);[\s\S]*?const liveUser/,
+    );
+  });
 });
