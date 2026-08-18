@@ -31,7 +31,6 @@ export default function Settings({
   useEffect(() => {
     setAcademyName(settings.name);
     setSquads(settings.squads);
-    setSaveState("idle");
   }, [settings]);
 
   const hasAuthorizedAcademyAccess =
