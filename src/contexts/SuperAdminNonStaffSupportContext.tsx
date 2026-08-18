@@ -384,9 +384,13 @@ export function SuperAdminNonStaffSupportProvider({
         if (generation !== generationRef.current) return;
         if (
           snapshot.metadata.fromCache ||
-          snapshot.metadata.hasPendingWrites ||
-          !snapshot.exists()
+          snapshot.metadata.hasPendingWrites
         ) {
+          // Preserve the last server-authoritative nonstaff support session.
+          // Do not consume transient cache/local-pending user snapshots.
+          return;
+        }
+        if (!snapshot.exists()) {
           invalidate();
           return;
         }
@@ -416,6 +420,14 @@ export function SuperAdminNonStaffSupportProvider({
       { includeMetadataChanges: true },
       (snapshot) => {
         if (generation !== generationRef.current) return;
+        if (
+          snapshot.metadata.fromCache ||
+          snapshot.metadata.hasPendingWrites
+        ) {
+          // Preserve the last server-authoritative nonstaff support session.
+          // Do not consume transient cache/local-pending association snapshots.
+          return;
+        }
         const liveResolution = resolveAuthoritativeAssociationSnapshot(targetUser, {
           fromCache: snapshot.metadata.fromCache,
           hasPendingWrites: snapshot.metadata.hasPendingWrites,
