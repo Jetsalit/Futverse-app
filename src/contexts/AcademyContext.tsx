@@ -155,14 +155,17 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
         (academySnapshot) => {
           if (cancelled) return;
 
-          if (
-            academySnapshot.metadata.fromCache ||
-            academySnapshot.metadata.hasPendingWrites
-          ) {
+          if (academySnapshot.metadata.fromCache) {
             clearTenantAccess();
             setAccessState("ERROR");
             setError(new Error("Authoritative Academy data is unavailable."));
             setLoading(false);
+            return;
+          }
+
+          if (academySnapshot.metadata.hasPendingWrites) {
+            // Preserve the last server-authoritative Academy context.
+            // Do not consume locally pending Academy data.
             return;
           }
 
@@ -299,14 +302,17 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
           (academySnapshot) => {
             if (cancelled || currentVersion !== resolutionVersion) return;
 
-            if (
-              academySnapshot.metadata.fromCache ||
-              academySnapshot.metadata.hasPendingWrites
-            ) {
+            if (academySnapshot.metadata.fromCache) {
               clearTenantAccess();
               setAccessState("ERROR");
               setError(new Error("Authoritative Academy data is unavailable."));
               setLoading(false);
+              return;
+            }
+
+            if (academySnapshot.metadata.hasPendingWrites) {
+              // Preserve the last server-authoritative Academy context.
+              // Do not consume locally pending Academy data.
               return;
             }
 
