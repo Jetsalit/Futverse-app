@@ -12,6 +12,10 @@ import {
 import type {
   LegacyPlayerEvaluationRecord,
 } from "../services/playerEvaluationCompatibility";
+import {
+  comparePlayerEvaluationsNewestFirst,
+  evaluationDateLabel,
+} from "../services/playerEvaluationDate";
 import { EmptyState } from "./common/EmptyState";
 
 interface YouthDevelopmentReportProps {
@@ -21,30 +25,6 @@ interface YouthDevelopmentReportProps {
     firstName?: string;
     lastName?: string;
   } | null;
-}
-
-function evaluationSortKey(
-  evaluation: LegacyPlayerEvaluationRecord,
-): string {
-  return String(
-    evaluation.evaluation_date ||
-      evaluation.timestamp ||
-      "",
-  );
-}
-
-function evaluationDateLabel(
-  evaluation: LegacyPlayerEvaluationRecord,
-): string {
-  const value =
-    evaluation.evaluation_date ||
-    evaluation.timestamp;
-
-  if (typeof value !== "string" || !value.trim()) {
-    return "Date unavailable";
-  }
-
-  return value.slice(0, 10);
 }
 
 function numericScoreEntries(
@@ -138,11 +118,7 @@ export default function YouthDevelopmentReport({
             (evaluation) =>
               evaluation.player_id === playerId,
           )
-          .sort((left, right) =>
-            evaluationSortKey(right).localeCompare(
-              evaluationSortKey(left),
-            ),
-          );
+          .sort(comparePlayerEvaluationsNewestFirst);
 
         setEvaluations(playerRecords);
         setReadError(null);
