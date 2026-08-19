@@ -727,6 +727,11 @@ service cloud.firestore {
         }
       }
 
+      match /player_evaluations/{evaluationId} {
+        allow get, list: if tenantMemberCanRead(academyId);
+        allow create, update, delete: if false;
+      }
+
       match /matches/{document=**} {
         allow read: if tenantMemberCanRead(academyId);
         allow write: if tenantFootballCanWrite(academyId);
