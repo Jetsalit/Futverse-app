@@ -92,8 +92,9 @@ export default function YouthDevelopmentReport({
 
   useEffect(() => {
     let cancelled = false;
+    const playerId = player?.id;
 
-    if (!player?.id) {
+    if (!playerId) {
       setEvaluations([]);
       setReadError(null);
       setLoading(false);
@@ -125,6 +126,7 @@ export default function YouthDevelopmentReport({
           await readAcademyPlayerEvaluations(
             academyId,
             getAcademyCollection("player_evaluations"),
+            playerId,
           );
 
         if (cancelled) {
@@ -134,7 +136,7 @@ export default function YouthDevelopmentReport({
         const playerRecords = records
           .filter(
             (evaluation) =>
-              evaluation.player_id === player.id,
+              evaluation.player_id === playerId,
           )
           .sort((left, right) =>
             evaluationSortKey(right).localeCompare(

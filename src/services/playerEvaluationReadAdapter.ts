@@ -1,5 +1,7 @@
 import {
   getDocs,
+  query,
+  where,
   type CollectionReference,
   type DocumentData,
 } from "firebase/firestore";
@@ -20,11 +22,31 @@ export interface PlayerEvaluationReadSnapshotLike {
 
 export type PlayerEvaluationCollectionReader = (
   collectionRef: CollectionReference<DocumentData>,
+  playerId: string,
 ) => Promise<PlayerEvaluationReadSnapshotLike>;
 
 const defaultCollectionReader: PlayerEvaluationCollectionReader = async (
   collectionRef,
-) => getDocs(collectionRef);
+  playerId,
+) =>
+  getDocs(
+    query(
+      collectionRef,
+      where("player_id", "==", playerId),
+    ),
+  );
+
+function requirePlayerId(
+  playerId: string,
+): string {
+  if (!playerId.trim()) {
+    throw new Error(
+      "playerId must be a non-empty Player identity.",
+    );
+  }
+
+  return playerId;
+}
 
 /**
  * Maps legacy Evaluation snapshots without trusting stored document identity
@@ -66,6 +88,7 @@ export function mapAcademyPlayerEvaluationSnapshots(
 export async function readAcademyPlayerEvaluations(
   academyId: string,
   collectionRef: CollectionReference<DocumentData>,
+  playerId: string,
   readCollection: PlayerEvaluationCollectionReader = defaultCollectionReader,
 ): Promise<LegacyPlayerEvaluationRecord[]> {
   const expectedPath = getAcademyPlayerEvaluationsPath(academyId);
@@ -76,11 +99,20 @@ export async function readAcademyPlayerEvaluations(
     );
   }
 
-  const snapshot = await readCollection(collectionRef);
+  const safePlayerId =
+    requirePlayerId(playerId);
+
+  const snapshot = await readCollection(
+    collectionRef,
+    safePlayerId,
+  );
 
   return mapAcademyPlayerEvaluationSnapshots(
     academyId,
     collectionRef.path,
     snapshot.docs,
+  ).filter(
+    (evaluation) =>
+      evaluation.player_id === safePlayerId,
   );
 }

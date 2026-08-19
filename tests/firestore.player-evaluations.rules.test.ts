@@ -18,6 +18,10 @@ import {
   type Firestore,
 } from "firebase/firestore";
 
+import {
+  readAcademyPlayerEvaluations,
+} from "../src/services/playerEvaluationReadAdapter";
+
 const PROJECT_ID = "demo-futverse-player-evaluations";
 
 const ACADEMY_A = "academy-a";
@@ -207,6 +211,43 @@ test("2. ACTIVE Academy COACH can GET and LIST Evaluations", async () => {
 
   if (snapshot.size !== 1) {
     throw new Error("Expected exactly one Evaluation.");
+  }
+});
+
+test("2b. ACTIVE Academy COACH adapter query returns only the requested Player Evaluation", async () => {
+  await seed([
+    [
+      `academies/${ACADEMY_A}/player_evaluations/evaluation-player-2`,
+      {
+        ...evaluationData(),
+        player_id: "player-2",
+      },
+    ],
+  ]);
+
+  const db = authedDb(COACH_A);
+
+  const records = await assertSucceeds(
+    readAcademyPlayerEvaluations(
+      ACADEMY_A,
+      collection(
+        db,
+        "academies",
+        ACADEMY_A,
+        "player_evaluations",
+      ),
+      "player-1",
+    ),
+  );
+
+  if (
+    records.length !== 1 ||
+    records[0].id !== EVALUATION_ID ||
+    records[0].player_id !== "player-1"
+  ) {
+    throw new Error(
+      "Expected adapter query to return only player-1 Evaluation.",
+    );
   }
 });
 

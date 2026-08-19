@@ -113,6 +113,7 @@ export default function YouthPlayerCV({
           await readAcademyPlayerEvaluations(
             academyId,
             getAcademyCollection("player_evaluations"),
+            player.id,
           );
 
         if (cancelled) {
