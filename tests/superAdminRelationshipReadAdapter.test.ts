@@ -343,4 +343,61 @@ describe("superAdminRelationshipReadAdapter", () => {
     );
     assert.equal("online" in result.inventory.rows[0], false);
   });
+
+  it("12. missing membership academyId is not repaired from the collection path", async () => {
+    const result = await loadSuperAdminRelationshipInventory(
+      makeOps({
+        users: [{ id: "admin-1", data: { role: "ADMIN", status: "ACTIVE" } }],
+        academies: [academy],
+        "academies/academy-talumball/members": [
+          {
+            id: "admin-1",
+            data: {
+              userId: "admin-1",
+              role: "ADMIN",
+              status: "ACTIVE",
+              source: "SUPERADMIN_ASSIGNMENT",
+            },
+          },
+        ],
+      }),
+    );
+
+    assert.equal(result.state, "READY");
+    if (result.state !== "READY") return;
+    const [row] = result.inventory.rows;
+    assert.equal(row.source, "UNASSIGNED");
+    assert.equal(row.integrity, "REVIEW_REQUIRED");
+    assert.deepEqual(row.organizations, []);
+    assert.ok(row.issues.includes("INVALID_STAFF_MEMBERSHIP_EVIDENCE"));
+  });
+
+  it("13. membership academyId must agree with the Academy collection path", async () => {
+    const result = await loadSuperAdminRelationshipInventory(
+      makeOps({
+        users: [{ id: "admin-1", data: { role: "ADMIN", status: "ACTIVE" } }],
+        academies: [academy],
+        "academies/academy-talumball/members": [
+          {
+            id: "admin-1",
+            data: {
+              userId: "admin-1",
+              academyId: "academy-other",
+              role: "ADMIN",
+              status: "ACTIVE",
+              source: "SUPERADMIN_ASSIGNMENT",
+            },
+          },
+        ],
+      }),
+    );
+
+    assert.equal(result.state, "READY");
+    if (result.state !== "READY") return;
+    const [row] = result.inventory.rows;
+    assert.equal(row.source, "UNASSIGNED");
+    assert.equal(row.integrity, "REVIEW_REQUIRED");
+    assert.deepEqual(row.organizations, []);
+    assert.ok(row.issues.includes("INVALID_STAFF_MEMBERSHIP_EVIDENCE"));
+  });
 });
