@@ -8,16 +8,22 @@ import {
 
 function makeOps(
   collections: Record<string, SuperAdminReadDocument[]>,
-  onRead?: (path: readonly string[]) => void,
+  associationDocs: SuperAdminReadDocument[] = [],
+  onRead?: (path: string) => void,
 ): SuperAdminRelationshipReadOps {
   return {
     async listCollection(path) {
-      onRead?.(path);
       const key = path.join("/");
+      onRead?.(key);
       if (!(key in collections)) {
         throw new Error(`Unexpected collection read: ${key}`);
       }
       return collections[key];
+    },
+    async listCollectionGroup(collectionId) {
+      onRead?.(`collectionGroup:${collectionId}`);
+      assert.equal(collectionId, "playerAssociations");
+      return associationDocs;
     },
   };
 }
@@ -38,8 +44,20 @@ const canonicalAdmin = {
   },
 };
 
+const canonicalParentAssociation: SuperAdminReadDocument = {
+  id: "player-1",
+  path: "academies/academy-talumball/nonstaffUsers/parent-1/playerAssociations/player-1",
+  data: {
+    userId: "parent-1",
+    academyId: "academy-talumball",
+    playerId: "player-1",
+    role: "PARENT",
+    status: "ACTIVE",
+  },
+};
+
 describe("superAdminRelationshipReadAdapter", () => {
-  it("1. reads only global users, academies, and per-academy members in Phase 2A", async () => {
+  it("1. reads users, academies, staff memberships, and one global association collection-group", async () => {
     const reads: string[] = [];
     const result = await loadSuperAdminRelationshipInventory(
       makeOps(
@@ -49,7 +67,6 @@ describe("superAdminRelationshipReadAdapter", () => {
               id: "admin-1",
               data: {
                 name: "Max Coach",
-                email: "max@example.com",
                 role: "ADMIN",
                 status: "ACTIVE",
               },
@@ -58,7 +75,8 @@ describe("superAdminRelationshipReadAdapter", () => {
           academies: [academy],
           "academies/academy-talumball/members": [canonicalAdmin],
         },
-        (path) => reads.push(path.join("/")),
+        [],
+        (path) => reads.push(path),
       ),
     );
 
@@ -66,9 +84,9 @@ describe("superAdminRelationshipReadAdapter", () => {
     assert.deepEqual(reads.sort(), [
       "academies",
       "academies/academy-talumball/members",
+      "collectionGroup:playerAssociations",
       "users",
     ]);
-    assert.equal(reads.some((path) => path.includes("playerAssociations")), false);
   });
 
   it("2. composes canonical staff membership into a verified relationship row", async () => {
@@ -77,12 +95,7 @@ describe("superAdminRelationshipReadAdapter", () => {
         users: [
           {
             id: "admin-1",
-            data: {
-              name: "Max Coach",
-              email: "max@example.com",
-              role: "ADMIN",
-              status: "ACTIVE",
-            },
+            data: { name: "Max Coach", role: "ADMIN", status: "ACTIVE" },
           },
         ],
         academies: [academy],
@@ -95,44 +108,118 @@ describe("superAdminRelationshipReadAdapter", () => {
     const [row] = result.inventory.rows;
     assert.equal(row.source, "CANONICAL");
     assert.equal(row.integrity, "VERIFIED");
-    assert.equal(row.organizations.length, 1);
-    assert.equal(row.organizations[0].organizationName, "Talumball Academy");
-    assert.equal(row.organizations[0].relationship, "ADMIN");
-    assert.equal(result.inventory.isCompleteForCurrentAccounts, true);
+    assert.equal(row.organizations[0]?.relationship, "ADMIN");
+    assert.equal(row.organizations[0]?.organizationName, "Talumball Academy");
   });
 
-  it("3. excludes the superadmin_system pseudo-academy from membership scans", async () => {
-    const reads: string[] = [];
+  it("3. composes canonical PARENT association from exact collection-group path", async () => {
     const result = await loadSuperAdminRelationshipInventory(
       makeOps(
         {
-          users: [],
-          academies: [
-            { id: "superadmin_system", data: { name: "System" } },
-            academy,
+          users: [
+            {
+              id: "parent-1",
+              data: { name: "Parent One", role: "PARENT", status: "ACTIVE" },
+            },
           ],
+          academies: [academy],
           "academies/academy-talumball/members": [],
         },
-        (path) => reads.push(path.join("/")),
+        [canonicalParentAssociation],
       ),
     );
 
     assert.equal(result.state, "READY");
-    assert.equal(
-      reads.includes("academies/superadmin_system/members"),
-      false,
-    );
+    if (result.state !== "READY") return;
+    const [row] = result.inventory.rows;
+    assert.equal(row.source, "CANONICAL");
+    assert.equal(row.integrity, "VERIFIED");
+    assert.equal(row.organizations[0]?.relationship, "PARENT");
+    assert.equal(row.organizations[0]?.playerId, "player-1");
+    assert.equal(row.organizations[0]?.organizationId, "academy-talumball");
+    assert.equal(result.inventory.coverage.nonStaffAssociations, "AVAILABLE");
+    assert.equal(result.inventory.isCompleteForCurrentAccounts, true);
   });
 
-  it("4. preserves malformed membership evidence for resolver review instead of dropping it", async () => {
+  it("4. composes canonical PLAYER association without using legacy routing metadata", async () => {
     const result = await loadSuperAdminRelationshipInventory(
-      makeOps({
-        users: [
+      makeOps(
+        {
+          users: [
+            {
+              id: "player-user",
+              data: {
+                role: "PLAYER",
+                status: "ACTIVE",
+                academyId: "legacy-other-academy",
+              },
+            },
+          ],
+          academies: [academy],
+          "academies/academy-talumball/members": [],
+        },
+        [
           {
-            id: "admin-1",
-            data: { role: "ADMIN", status: "ACTIVE" },
+            id: "player-9",
+            path: "academies/academy-talumball/nonstaffUsers/player-user/playerAssociations/player-9",
+            data: {
+              userId: "player-user",
+              academyId: "academy-talumball",
+              playerId: "player-9",
+              role: "PLAYER",
+              status: "ACTIVE",
+            },
           },
         ],
+      ),
+    );
+
+    assert.equal(result.state, "READY");
+    if (result.state !== "READY") return;
+    const [row] = result.inventory.rows;
+    assert.equal(row.organizations[0]?.organizationId, "academy-talumball");
+    assert.equal(row.organizations[0]?.relationship, "PLAYER");
+    assert.equal(row.integrity, "REVIEW_REQUIRED");
+    assert.ok(row.issues.includes("LEGACY_ORGANIZATION_DIVERGES"));
+  });
+
+  it("5. rejects a collection-group document when canonical fields disagree with its path", async () => {
+    const result = await loadSuperAdminRelationshipInventory(
+      makeOps(
+        {
+          users: [
+            {
+              id: "parent-1",
+              data: { role: "PARENT", status: "ACTIVE" },
+            },
+          ],
+          academies: [academy],
+          "academies/academy-talumball/members": [],
+        },
+        [
+          {
+            ...canonicalParentAssociation,
+            data: {
+              ...canonicalParentAssociation.data,
+              userId: "different-parent",
+            },
+          },
+        ],
+      ),
+    );
+
+    assert.equal(result.state, "READY");
+    if (result.state !== "READY") return;
+    const [row] = result.inventory.rows;
+    assert.equal(row.source, "UNASSIGNED");
+    assert.equal(row.integrity, "REVIEW_REQUIRED");
+    assert.ok(row.issues.includes("INVALID_NONSTAFF_ASSOCIATION_EVIDENCE"));
+  });
+
+  it("6. preserves malformed membership evidence for resolver review", async () => {
+    const result = await loadSuperAdminRelationshipInventory(
+      makeOps({
+        users: [{ id: "admin-1", data: { role: "ADMIN", status: "ACTIVE" } }],
         academies: [academy],
         "academies/academy-talumball/members": [
           {
@@ -151,76 +238,42 @@ describe("superAdminRelationshipReadAdapter", () => {
 
     assert.equal(result.state, "READY");
     if (result.state !== "READY") return;
-    const [row] = result.inventory.rows;
-    assert.equal(row.source, "UNASSIGNED");
-    assert.equal(row.integrity, "REVIEW_REQUIRED");
-    assert.deepEqual(row.issues, ["INVALID_STAFF_MEMBERSHIP_EVIDENCE"]);
+    assert.equal(result.inventory.rows[0].integrity, "REVIEW_REQUIRED");
+    assert.ok(
+      result.inventory.rows[0].issues.includes("INVALID_STAFF_MEMBERSHIP_EVIDENCE"),
+    );
   });
 
-  it("5. marks PLAYER/PARENT inventory coverage incomplete instead of pretending missing associations are authoritative", async () => {
+  it("7. excludes the superadmin_system pseudo-academy from membership scans", async () => {
+    const reads: string[] = [];
     const result = await loadSuperAdminRelationshipInventory(
-      makeOps({
-        users: [
-          {
-            id: "parent-1",
-            data: {
-              name: "Rachata",
-              role: "PARENT",
-              status: "ACTIVE",
-            },
-          },
-        ],
-        academies: [academy],
-        "academies/academy-talumball/members": [],
-      }),
+      makeOps(
+        {
+          users: [],
+          academies: [
+            { id: "superadmin_system", data: { name: "System" } },
+            academy,
+          ],
+          "academies/academy-talumball/members": [],
+        },
+        [],
+        (path) => reads.push(path),
+      ),
     );
 
     assert.equal(result.state, "READY");
-    if (result.state !== "READY") return;
-    assert.equal(result.inventory.isCompleteForCurrentAccounts, false);
-    assert.equal(
-      result.inventory.coverage.nonStaffAssociations,
-      "BLOCKED_BY_CURRENT_RULES",
-    );
-    assert.deepEqual(result.inventory.warnings, [
-      "NONSTAFF_ASSOCIATION_GLOBAL_READ_BLOCKED_BY_CURRENT_RULES",
-    ]);
+    assert.equal(reads.includes("academies/superadmin_system/members"), false);
   });
 
-  it("6. legacy Parent evidence remains informational while nonstaff canonical coverage is blocked", async () => {
-    const result = await loadSuperAdminRelationshipInventory(
-      makeOps({
-        users: [
-          {
-            id: "parent-1",
-            data: {
-              role: "PARENT",
-              status: "ACTIVE",
-              academyId: "academy-talumball",
-              linkedPlayerId: "player-1",
-            },
-          },
-        ],
-        academies: [academy],
-        "academies/academy-talumball/members": [],
-      }),
-    );
-
-    assert.equal(result.state, "READY");
-    if (result.state !== "READY") return;
-    const [row] = result.inventory.rows;
-    assert.equal(row.source, "LEGACY_COMPATIBLE");
-    assert.equal(row.integrity, "REVIEW_REQUIRED");
-    assert.equal(row.organizations.length, 0);
-    assert.equal(row.legacyEvidence?.linkedPlayerId, "player-1");
-  });
-
-  it("7. membership read failure fails the inventory closed instead of returning partial canonical data", async () => {
+  it("8. a collection-group read failure fails the whole inventory closed", async () => {
     const result = await loadSuperAdminRelationshipInventory({
       async listCollection(path) {
         const key = path.join("/");
         if (key === "users") return [];
-        if (key === "academies") return [academy];
+        if (key === "academies") return [];
+        throw new Error(`Unexpected collection read: ${key}`);
+      },
+      async listCollectionGroup() {
         throw new Error("permission-denied");
       },
     });
@@ -230,7 +283,25 @@ describe("superAdminRelationshipReadAdapter", () => {
     assert.match(result.error.message, /permission-denied/);
   });
 
-  it("8. sorts composed user rows predictably by display identity", async () => {
+  it("9. a membership read failure fails the whole inventory closed", async () => {
+    const result = await loadSuperAdminRelationshipInventory({
+      async listCollection(path) {
+        const key = path.join("/");
+        if (key === "users") return [];
+        if (key === "academies") return [academy];
+        throw new Error("membership-permission-denied");
+      },
+      async listCollectionGroup() {
+        return [];
+      },
+    });
+
+    assert.equal(result.state, "UNAVAILABLE");
+    if (result.state !== "UNAVAILABLE") return;
+    assert.match(result.error.message, /membership-permission-denied/);
+  });
+
+  it("10. sorts composed user rows predictably by display identity", async () => {
     const result = await loadSuperAdminRelationshipInventory(
       makeOps({
         users: [
@@ -243,13 +314,10 @@ describe("superAdminRelationshipReadAdapter", () => {
 
     assert.equal(result.state, "READY");
     if (result.state !== "READY") return;
-    assert.deepEqual(
-      result.inventory.rows.map((row) => row.name),
-      ["Alpha", "Zed"],
-    );
+    assert.deepEqual(result.inventory.rows.map((row) => row.name), ["Alpha", "Zed"]);
   });
 
-  it("9. historical lastLogin is carried through without creating online presence semantics", async () => {
+  it("11. historical lastLogin is carried through without online-presence semantics", async () => {
     const result = await loadSuperAdminRelationshipInventory(
       makeOps({
         users: [
