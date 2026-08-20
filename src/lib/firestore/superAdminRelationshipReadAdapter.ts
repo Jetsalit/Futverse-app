@@ -1,21 +1,18 @@
-import { collection, getDocs } from "firebase/firestore";
+import { collection, collectionGroup, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
 import {
   resolveSuperAdminUserRelationshipRow,
   type SuperAdminLegacyEvidence,
+  type SuperAdminNonStaffAssociationInput,
   type SuperAdminStaffMembershipInput,
   type SuperAdminUserRelationshipRow,
 } from "../superAdminRelationshipReadModel";
-
-export type SuperAdminRelationshipCoverage =
-  | "AVAILABLE"
-  | "BLOCKED_BY_CURRENT_RULES";
 
 export interface SuperAdminRelationshipInventoryCoverage {
   accounts: "AVAILABLE";
   academies: "AVAILABLE";
   staffMemberships: "AVAILABLE";
-  nonStaffAssociations: SuperAdminRelationshipCoverage;
+  nonStaffAssociations: "AVAILABLE";
 }
 
 export interface SuperAdminRelationshipInventory {
@@ -26,22 +23,20 @@ export interface SuperAdminRelationshipInventory {
 }
 
 export type SuperAdminRelationshipInventoryResult =
-  | {
-      state: "READY";
-      inventory: SuperAdminRelationshipInventory;
-    }
-  | {
-      state: "UNAVAILABLE";
-      error: Error;
-    };
+  | { state: "READY"; inventory: SuperAdminRelationshipInventory }
+  | { state: "UNAVAILABLE"; error: Error };
 
 export interface SuperAdminReadDocument {
   id: string;
   data: Record<string, unknown>;
+  path?: string;
 }
 
 export interface SuperAdminRelationshipReadOps {
   listCollection(path: readonly string[]): Promise<SuperAdminReadDocument[]>;
+  listCollectionGroup(
+    collectionId: "playerAssociations",
+  ): Promise<SuperAdminReadDocument[]>;
 }
 
 interface AcademyReadIdentity {
@@ -77,26 +72,28 @@ function legacyEvidenceFromUser(
     assignedClients,
   };
 
-  const hasEvidence =
+  return (
     (typeof evidence.academyId === "string" && evidence.academyId.length > 0) ||
     (typeof evidence.activeAcademyId === "string" &&
       evidence.activeAcademyId.length > 0) ||
-    (typeof evidence.tenantRole === "string" &&
-      evidence.tenantRole.length > 0) ||
+    (typeof evidence.tenantRole === "string" && evidence.tenantRole.length > 0) ||
     (typeof evidence.linkedPlayerId === "string" &&
       evidence.linkedPlayerId.length > 0) ||
-    Boolean(evidence.assignedClients?.length);
-
-  return hasEvidence ? evidence : undefined;
+    Boolean(evidence.assignedClients?.length)
+  )
+    ? evidence
+    : undefined;
 }
 
 function academyIdentityFromDocument(
   academyDoc: SuperAdminReadDocument,
 ): AcademyReadIdentity | null {
   if (academyDoc.id === "superadmin_system") return null;
-  const name =
-    stringValue(academyDoc.data.name) ?? stringValue(academyDoc.data.shortName);
-  return { id: academyDoc.id, name };
+  return {
+    id: academyDoc.id,
+    name:
+      stringValue(academyDoc.data.name) ?? stringValue(academyDoc.data.shortName),
+  };
 }
 
 function membershipInputFromDocument(
@@ -114,6 +111,36 @@ function membershipInputFromDocument(
   };
 }
 
+function associationInputFromDocument(
+  associationDoc: SuperAdminReadDocument,
+  academyNames: ReadonlyMap<string, string | undefined>,
+): SuperAdminNonStaffAssociationInput {
+  const pathParts = associationDoc.path?.split("/") ?? [];
+  const exactPathShape =
+    pathParts.length === 6 &&
+    pathParts[0] === "academies" &&
+    pathParts[2] === "nonstaffUsers" &&
+    pathParts[4] === "playerAssociations";
+
+  const pathAcademyId = exactPathShape ? pathParts[1] : "";
+  const pathUserId = exactPathShape ? pathParts[3] : "";
+  const pathPlayerId = exactPathShape ? pathParts[5] : "";
+  const academyId = stringValue(associationDoc.data.academyId) ?? "";
+
+  return {
+    documentId: associationDoc.id,
+    userId: stringValue(associationDoc.data.userId) ?? "",
+    academyId,
+    playerId: stringValue(associationDoc.data.playerId) ?? "",
+    role: associationDoc.data.role,
+    status: associationDoc.data.status,
+    organizationName: academyNames.get(academyId),
+    pathAcademyId,
+    pathUserId,
+    pathPlayerId,
+  };
+}
+
 async function mapWithConcurrency<T, R>(
   values: readonly T[],
   concurrency: number,
@@ -126,8 +153,7 @@ async function mapWithConcurrency<T, R>(
 
   async function worker() {
     while (true) {
-      const index = nextIndex;
-      nextIndex += 1;
+      const index = nextIndex++;
       if (index >= values.length) return;
       results[index] = await mapper(values[index], index);
     }
@@ -141,10 +167,14 @@ function membershipBelongsToAccountCandidate(
   membership: SuperAdminStaffMembershipInput,
   userId: string,
 ): boolean {
-  // Include either exact data identity or exact document identity. This allows
-  // the pure resolver to surface a mismatched canonical document as a review
-  // issue rather than silently dropping corrupted evidence.
   return membership.userId === userId || membership.documentId === userId;
+}
+
+function associationBelongsToAccountCandidate(
+  association: SuperAdminNonStaffAssociationInput,
+  userId: string,
+): boolean {
+  return association.userId === userId || association.pathUserId === userId;
 }
 
 export async function loadSuperAdminRelationshipInventory(
@@ -152,14 +182,18 @@ export async function loadSuperAdminRelationshipInventory(
   options?: { membershipReadConcurrency?: number },
 ): Promise<SuperAdminRelationshipInventoryResult> {
   try {
-    const [userDocs, academyDocs] = await Promise.all([
+    const [userDocs, academyDocs, associationDocs] = await Promise.all([
       ops.listCollection(["users"]),
       ops.listCollection(["academies"]),
+      ops.listCollectionGroup("playerAssociations"),
     ]);
 
     const academies = academyDocs
       .map(academyIdentityFromDocument)
       .filter((academy): academy is AcademyReadIdentity => academy !== null);
+    const academyNames = new Map(
+      academies.map((academy) => [academy.id, academy.name] as const),
+    );
 
     const membershipsByAcademy = await mapWithConcurrency(
       academies,
@@ -177,35 +211,29 @@ export async function loadSuperAdminRelationshipInventory(
     );
 
     const staffMemberships = membershipsByAcademy.flat();
-    const warnings = new Set<string>();
-    let hasNonStaffAccount = false;
+    const nonStaffAssociations = associationDocs.map((document) =>
+      associationInputFromDocument(document, academyNames),
+    );
 
-    const rows = userDocs.map((userDoc) => {
-      const accountRole = stringValue(userDoc.data.role);
-      if (accountRole === "PLAYER" || accountRole === "PARENT") {
-        hasNonStaffAccount = true;
-        warnings.add("NONSTAFF_ASSOCIATION_GLOBAL_READ_BLOCKED_BY_CURRENT_RULES");
-      }
-
-      return resolveSuperAdminUserRelationshipRow({
+    const rows = userDocs.map((userDoc) =>
+      resolveSuperAdminUserRelationshipRow({
         account: {
           userId: userDoc.id,
           name: stringValue(userDoc.data.name),
           email: stringValue(userDoc.data.email),
-          accountRole,
+          accountRole: stringValue(userDoc.data.role),
           accountStatus: stringValue(userDoc.data.status),
           lastKnownAccountActivity: userDoc.data.lastLogin,
         },
         staffMemberships: staffMemberships.filter((membership) =>
           membershipBelongsToAccountCandidate(membership, userDoc.id),
         ),
-        // Current Firestore rules intentionally do not allow a SuperAdmin to
-        // enumerate all playerAssociations by collection-group query. Do not
-        // substitute legacy pointers or pretend an empty list is authoritative.
-        nonStaffAssociations: [],
+        nonStaffAssociations: nonStaffAssociations.filter((association) =>
+          associationBelongsToAccountCandidate(association, userDoc.id),
+        ),
         legacyEvidence: legacyEvidenceFromUser(userDoc.data),
-      });
-    });
+      }),
+    );
 
     rows.sort((left, right) =>
       (left.name ?? left.email ?? left.userId).localeCompare(
@@ -221,10 +249,10 @@ export async function loadSuperAdminRelationshipInventory(
           accounts: "AVAILABLE",
           academies: "AVAILABLE",
           staffMemberships: "AVAILABLE",
-          nonStaffAssociations: "BLOCKED_BY_CURRENT_RULES",
+          nonStaffAssociations: "AVAILABLE",
         },
-        isCompleteForCurrentAccounts: !hasNonStaffAccount,
-        warnings: Array.from(warnings),
+        isCompleteForCurrentAccounts: true,
+        warnings: [],
       },
     };
   } catch (error) {
@@ -244,6 +272,16 @@ export const firestoreSuperAdminRelationshipReadOps: SuperAdminRelationshipReadO
     const snapshot = await getDocs(reference);
     return snapshot.docs.map((document) => ({
       id: document.id,
+      path: document.ref.path,
+      data: document.data() as Record<string, unknown>,
+    }));
+  },
+
+  async listCollectionGroup(collectionId) {
+    const snapshot = await getDocs(collectionGroup(db, collectionId));
+    return snapshot.docs.map((document) => ({
+      id: document.id,
+      path: document.ref.path,
       data: document.data() as Record<string, unknown>,
     }));
   },
