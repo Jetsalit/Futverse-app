@@ -324,4 +324,33 @@ describe("superAdminRelationshipReadModel", () => {
       /requires an exact userId/,
     );
   });
+
+  it("20. staff membership without required source is review required and never canonical", () => {
+    const row = resolveSuperAdminUserRelationshipRow({
+      account: { userId, accountRole: "ADMIN", accountStatus: "ACTIVE" },
+      staffMemberships: [staffMembership({ source: undefined })],
+    });
+
+    assert.equal(row.source, "UNASSIGNED");
+    assert.equal(row.integrity, "REVIEW_REQUIRED");
+    assert.deepEqual(row.organizations, []);
+    assert.ok(row.issues.includes("INVALID_STAFF_MEMBERSHIP_EVIDENCE"));
+  });
+
+  it("21. staff membership academy field must match the Academy path", () => {
+    const row = resolveSuperAdminUserRelationshipRow({
+      account: { userId, accountRole: "ADMIN", accountStatus: "ACTIVE" },
+      staffMemberships: [
+        staffMembership({
+          academyId: academyB,
+          pathAcademyId: academyA,
+        }),
+      ],
+    });
+
+    assert.equal(row.source, "UNASSIGNED");
+    assert.equal(row.integrity, "REVIEW_REQUIRED");
+    assert.deepEqual(row.organizations, []);
+    assert.ok(row.issues.includes("INVALID_STAFF_MEMBERSHIP_EVIDENCE"));
+  });
 });
