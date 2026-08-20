@@ -86,6 +86,7 @@ export interface SuperAdminStaffMembershipInput {
   status: unknown;
   source?: unknown;
   organizationName?: string;
+  pathAcademyId?: string;
 }
 
 export interface SuperAdminNonStaffAssociationInput {
@@ -197,16 +198,20 @@ function validateStaffMembership(
   accountUserId: string,
   membership: SuperAdminStaffMembershipInput,
 ): SuperAdminOrganizationRelationship | null {
+  const pathIdentityIsValid =
+    membership.pathAcademyId === undefined ||
+    membership.pathAcademyId === membership.academyId;
+
   if (
     !isExactReadModelDocumentId(membership.documentId) ||
     !isExactReadModelDocumentId(membership.userId) ||
     !isExactReadModelDocumentId(membership.academyId) ||
     membership.documentId !== membership.userId ||
     membership.userId !== accountUserId ||
+    !pathIdentityIsValid ||
     !STAFF_ROLES.has(String(membership.role)) ||
     !STAFF_STATUSES.has(String(membership.status)) ||
-    (membership.source !== undefined &&
-      !STAFF_SOURCES.has(String(membership.source)))
+    !STAFF_SOURCES.has(String(membership.source))
   ) {
     return null;
   }
