@@ -742,8 +742,11 @@ service cloud.firestore {
     // The userId equality is query-provable; the client then validates the exact
     // Academy/UID/Player path and complete schema before resolving any access.
     match /{associationPath=**}/playerAssociations/{playerId} {
-      allow list: if isSignedIn()
-        && resource.data.userId == request.auth.uid;
+      allow list: if isSuperAdmin()
+        || (
+          isSignedIn()
+          && resource.data.userId == request.auth.uid
+        );
     }
 
     match /settings/{document=**} {
