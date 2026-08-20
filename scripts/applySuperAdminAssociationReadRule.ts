@@ -26,10 +26,19 @@ const after = [
   "    }",
 ].join(newline);
 
-const occurrences = current.split(before).length - 1;
-if (occurrences !== 1) {
+const beforeOccurrences = current.split(before).length - 1;
+const afterOccurrences = current.split(after).length - 1;
+
+if (beforeOccurrences === 0 && afterOccurrences === 1) {
+  console.log("ACTIVE SUPERADMIN collection-group read rule is already applied.");
+  console.log(`Preserved ${newline === "\r\n" ? "CRLF" : "LF"} line endings.`);
+  console.log("No file changes were needed.");
+  process.exit(0);
+}
+
+if (beforeOccurrences !== 1 || afterOccurrences !== 0) {
   throw new Error(
-    `Guarded patch aborted: expected exactly 1 recursive playerAssociations rule, found ${occurrences}.`,
+    `Guarded patch aborted: expected exactly 1 unapplied rule and 0 applied rules, found ${beforeOccurrences} unapplied and ${afterOccurrences} applied.`,
   );
 }
 
