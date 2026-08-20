@@ -1,4 +1,8 @@
-import { collection, collectionGroup, getDocs } from "firebase/firestore";
+import {
+  collection,
+  collectionGroup,
+  getDocsFromServer,
+} from "firebase/firestore";
 import { db } from "../firebase";
 import {
   resolveSuperAdminUserRelationshipRow,
@@ -45,6 +49,13 @@ interface AcademyReadIdentity {
 }
 
 const DEFAULT_READ_CONCURRENCY = 6;
+const NONSTAFF_ASSOCIATION_KEYS = [
+  "userId",
+  "academyId",
+  "playerId",
+  "role",
+  "status",
+] as const;
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
@@ -53,6 +64,18 @@ function stringValue(value: unknown): string | undefined {
 function optionalLegacyString(value: unknown): string | null | undefined {
   if (value === null) return null;
   return typeof value === "string" ? value : undefined;
+}
+
+function hasExactNonStaffAssociationSchema(
+  data: Record<string, unknown>,
+): boolean {
+  const keys = Object.keys(data);
+  return (
+    keys.length === NONSTAFF_ASSOCIATION_KEYS.length &&
+    NONSTAFF_ASSOCIATION_KEYS.every((key) =>
+      Object.prototype.hasOwnProperty.call(data, key),
+    )
+  );
 }
 
 function legacyEvidenceFromUser(
@@ -127,14 +150,15 @@ function associationInputFromDocument(
   const pathUserId = exactPathShape ? pathParts[3] : "";
   const pathPlayerId = exactPathShape ? pathParts[5] : "";
   const academyId = stringValue(associationDoc.data.academyId) ?? "";
+  const hasExactSchema = hasExactNonStaffAssociationSchema(associationDoc.data);
 
   return {
     documentId: associationDoc.id,
     userId: stringValue(associationDoc.data.userId) ?? "",
     academyId,
     playerId: stringValue(associationDoc.data.playerId) ?? "",
-    role: associationDoc.data.role,
-    status: associationDoc.data.status,
+    role: hasExactSchema ? associationDoc.data.role : undefined,
+    status: hasExactSchema ? associationDoc.data.status : undefined,
     organizationName: academyNames.get(academyId),
     pathAcademyId,
     pathUserId,
@@ -270,7 +294,7 @@ export const firestoreSuperAdminRelationshipReadOps: SuperAdminRelationshipReadO
       throw new Error("Firestore collection path must not be empty.");
     }
     const reference = collection(db, path[0], ...path.slice(1));
-    const snapshot = await getDocs(reference);
+    const snapshot = await getDocsFromServer(reference);
     return snapshot.docs.map((document) => ({
       id: document.id,
       path: document.ref.path,
@@ -279,7 +303,7 @@ export const firestoreSuperAdminRelationshipReadOps: SuperAdminRelationshipReadO
   },
 
   async listCollectionGroup(collectionId) {
-    const snapshot = await getDocs(collectionGroup(db, collectionId));
+    const snapshot = await getDocsFromServer(collectionGroup(db, collectionId));
     return snapshot.docs.map((document) => ({
       id: document.id,
       path: document.ref.path,
