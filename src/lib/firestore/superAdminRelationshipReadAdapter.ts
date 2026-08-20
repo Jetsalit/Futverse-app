@@ -103,11 +103,12 @@ function membershipInputFromDocument(
   return {
     documentId: membershipDoc.id,
     userId: stringValue(membershipDoc.data.userId) ?? "",
-    academyId: stringValue(membershipDoc.data.academyId) ?? academy.id,
+    academyId: stringValue(membershipDoc.data.academyId) ?? "",
     role: membershipDoc.data.role,
     status: membershipDoc.data.status,
     source: membershipDoc.data.source,
     organizationName: academy.name,
+    pathAcademyId: academy.id,
   };
 }
 
