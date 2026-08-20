@@ -98,6 +98,9 @@ export interface SuperAdminNonStaffAssociationInput {
   organizationName?: string;
   futId?: string;
   playerName?: string;
+  pathAcademyId?: string;
+  pathUserId?: string;
+  pathPlayerId?: string;
 }
 
 export interface ResolveSuperAdminRelationshipRowInput {
@@ -231,6 +234,14 @@ function validateNonStaffAssociation(
   account: SuperAdminAccountIdentityInput,
   association: SuperAdminNonStaffAssociationInput,
 ): SuperAdminOrganizationRelationship | null {
+  const pathIdentityIsValid =
+    (association.pathAcademyId === undefined ||
+      association.pathAcademyId === association.academyId) &&
+    (association.pathUserId === undefined ||
+      association.pathUserId === association.userId) &&
+    (association.pathPlayerId === undefined ||
+      association.pathPlayerId === association.playerId);
+
   if (
     !isExactReadModelDocumentId(association.documentId) ||
     !isExactReadModelDocumentId(association.userId) ||
@@ -238,6 +249,7 @@ function validateNonStaffAssociation(
     !isExactReadModelDocumentId(association.playerId) ||
     association.documentId !== association.playerId ||
     association.userId !== account.userId ||
+    !pathIdentityIsValid ||
     !NONSTAFF_ROLES.has(String(association.role)) ||
     !NONSTAFF_STATUSES.has(String(association.status))
   ) {
