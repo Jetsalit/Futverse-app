@@ -66,6 +66,32 @@ export interface DashboardSearchResult {
   academyFilter?: string;
 }
 
+export interface DashboardSearchSelection {
+  tab: SuperAdminTab;
+  accountQuery: string;
+  academyQuery: string;
+  claimQuery: string;
+}
+
+export function resolveDashboardSearchSelection(
+  result: DashboardSearchResult,
+): DashboardSearchSelection {
+  return {
+    tab: result.tab,
+    accountQuery:
+      result.type === "user"
+        ? result.searchValue || result.title
+        : "",
+    academyQuery:
+      result.type === "academy"
+        ? result.academyFilter || result.title
+        : "",
+    claimQuery:
+      result.type === "claim"
+        ? result.searchValue || result.title
+        : "",
+  };
+}
 export interface DashboardAlert {
   id: string;
   severity: "critical" | "warning" | "info";
@@ -217,6 +243,7 @@ export function searchDashboardData(input: {
       title: claim.playerName || claim.futId || "Profile claim",
       subtitle: [claim.futId, claim.userEmail].filter(Boolean).join(" · "),
       tab: "profile_claims",
+      searchValue: claim.futId || claim.userEmail || claim.playerName,
     });
     if (results.length >= resultLimit) return results;
   }

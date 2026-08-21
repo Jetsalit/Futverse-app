@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   searchDashboardData,
+  resolveDashboardSearchSelection,
   type SuperAdminTab,
 } from "../src/components/superadmin/dashboardModel";
 import {
@@ -147,5 +148,106 @@ test("11. academy search results target Organizations academy directory", () => 
   assert.equal(
     findSuperAdminSectionForTab(result.tab)?.id,
     "organizations",
+  );
+});
+
+test("12. academy search selection resolves Academy Directory filter", () => {
+  const [result] = searchDashboardData({
+    query: "Talum",
+    users: [],
+    academies: [
+      {
+        id: "academy-talumball",
+        name: "Talumball Academy",
+      },
+    ],
+    claims: [],
+  });
+
+  assert.ok(result);
+
+  assert.deepEqual(
+    resolveDashboardSearchSelection(result),
+    {
+      tab: "academies",
+      accountQuery: "",
+      academyQuery: "Talumball Academy",
+      claimQuery: "",
+    },
+  );
+});
+
+test("13. search selection resolves account-specific query", () => {
+  const [result] = searchDashboardData({
+    query: "coach",
+    users: [
+      {
+        id: "coach-1",
+        uid: "coach-1",
+        name: "Max Coach",
+        email: "maxcoach@example.com",
+        role: "COACH",
+      } as any,
+    ],
+    academies: [],
+    claims: [],
+  });
+
+  assert.ok(result);
+
+  assert.deepEqual(
+    resolveDashboardSearchSelection(result),
+    {
+      tab: "users",
+      accountQuery: "maxcoach@example.com",
+      academyQuery: "",
+      claimQuery: "",
+    },
+  );
+});
+
+test("14. claim search selection resolves Profile Claims FUTID query", () => {
+  const [result] = searchDashboardData({
+    query: "FUT-0001",
+    users: [],
+    academies: [],
+    claims: [
+      {
+        id: "claim-1",
+        playerName: "Pandin",
+        futId: "FUT-0001",
+        userEmail: "parent@example.com",
+      },
+    ],
+  });
+
+  assert.ok(result);
+  assert.equal(result.tab, "profile_claims");
+  assert.equal(result.searchValue, "FUT-0001");
+
+  assert.deepEqual(
+    resolveDashboardSearchSelection(result),
+    {
+      tab: "profile_claims",
+      accountQuery: "",
+      academyQuery: "",
+      claimQuery: "FUT-0001",
+    },
+  );
+});
+
+test("15. Support Tools description uses production-facing language", () => {
+  const section = getSuperAdminPrimarySection("support_tools");
+
+  assert.ok(section);
+
+  assert.match(
+    section.description,
+    /match-observation configuration/i,
+  );
+
+  assert.equal(
+    /provisional|deferred/i.test(section.description),
+    false,
   );
 });

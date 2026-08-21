@@ -68,6 +68,7 @@ import SuperAdminUsersRelationships from "./superadmin/SuperAdminUsersRelationsh
 import {
   deriveEffectiveRoleCounts,
   searchDashboardData,
+  resolveDashboardSearchSelection,
   deriveDashboardAlerts,
   parseAuditLog,
   buildRecentActivities,
@@ -426,7 +427,10 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const searchResults = searchDashboardData({
     query: headerSearchQuery,
     users,
-    academies: [],
+    academies: academiesList.map((academy) => ({
+      id: academy.id,
+      name: academy.name || academy.id,
+    })),
     claims: profileClaimsList.map((c) => ({
       id: c.id,
       playerName: c.playerName || c.userName,
@@ -442,12 +446,15 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   };
 
   const handleSearchSelect = (result: DashboardSearchResult) => {
-    if ((CLEAN_AVAILABLE_TABS as readonly string[]).includes(result.tab)) {
-      setActiveTab(result.tab as CleanTab);
+    const selection = resolveDashboardSearchSelection(result);
+
+    if ((CLEAN_AVAILABLE_TABS as readonly string[]).includes(selection.tab)) {
+      setActiveTab(selection.tab as CleanTab);
     }
-    if (result.searchValue) {
-      setSearchQuery(result.searchValue);
-    }
+
+    setSearchQuery(selection.accountQuery);
+    setAcademySearchQuery(selection.academyQuery);
+    setClaimsSearchQuery(selection.claimQuery);
   };
 
   const handleExportReport = () => {
@@ -723,6 +730,8 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
 
   const filteredClaims = profileClaimsList.filter(
     (claim) =>
+      claim.playerName?.toLowerCase().includes(claimsSearchQuery.toLowerCase()) ||
+      claim.futId?.toLowerCase().includes(claimsSearchQuery.toLowerCase()) ||
       claim.userEmail?.toLowerCase().includes(claimsSearchQuery.toLowerCase()) ||
       claim.userName?.toLowerCase().includes(claimsSearchQuery.toLowerCase()) ||
       claim.requestedRole?.toLowerCase().includes(claimsSearchQuery.toLowerCase()) ||

@@ -77,7 +77,7 @@ export const SUPERADMIN_PRIMARY_NAVIGATION: readonly SuperAdminNavigationSection
     id: "support_tools",
     label: "Support Tools",
     description:
-      "Preserved global tools and deferred modules. Observation Metrics placement remains provisional.",
+      "Controlled global tools for support workflows, payments, and match-observation configuration.",
     kind: "tabs",
     tabs: ["observation_metrics", "payment_approvals"],
     defaultTab: "observation_metrics",
