@@ -58,18 +58,20 @@ function relationshipLabel(
   const organization =
     relationship.organizationName || relationship.organizationId;
 
-  if (
-    relationship.relationship === "PARENT" &&
-    relationship.playerId
-  ) {
-    return `PARENT → Player ${relationship.playerId} → ${organization}`;
+  const playerIdentity = [
+    relationship.playerName,
+    relationship.futId,
+    relationship.playerId ? `Player ${relationship.playerId}` : undefined,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" · ");
+
+  if (relationship.relationship === "PARENT" && playerIdentity) {
+    return `PARENT → ${playerIdentity} → ${organization}`;
   }
 
-  if (
-    relationship.relationship === "PLAYER" &&
-    relationship.playerId
-  ) {
-    return `PLAYER ${relationship.playerId} → ${organization}`;
+  if (relationship.relationship === "PLAYER" && playerIdentity) {
+    return `PLAYER → ${playerIdentity} → ${organization}`;
   }
 
   return `${relationship.relationship} → ${organization}`;
@@ -95,6 +97,8 @@ function rowMatchesQuery(
       relationship.relationship,
       relationship.relationshipStatus,
       relationship.playerId,
+      relationship.futId,
+      relationship.playerName,
     ]),
     ...row.issues,
   ];
