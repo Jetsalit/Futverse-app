@@ -63,6 +63,7 @@ import { isExactActiveStaffMembership } from "../lib/superAdminSupportModel";
 import BootstrapLegacyAdmin from "./BootstrapLegacyAdmin";
 import SuperAdminHeader from "./superadmin/SuperAdminHeader";
 import SuperAdminOverview from "./superadmin/SuperAdminOverview";
+import SuperAdminUsersRelationships from "./superadmin/SuperAdminUsersRelationships";
 import {
   deriveEffectiveRoleCounts,
   searchDashboardData,
@@ -80,6 +81,7 @@ const CLEAN_AVAILABLE_TABS = [
   "dashboard",
   "approvals",
   "users",
+  "relationships",
   "academies",
   "system_logs",
   "profile_claims",
@@ -786,6 +788,16 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
           Manage Users
         </button>
         <button
+          onClick={() => setActiveTab("relationships")}
+          className={`py-4 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${
+            activeTab === "relationships"
+              ? "border-emerald-500 text-emerald-600"
+              : "border-transparent text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          Users & Relationships
+        </button>
+        <button
           onClick={() => setActiveTab("academies")}
           className={`py-4 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${
             activeTab === "academies"
@@ -935,6 +947,10 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
             onNavigate={handleNavigate}
             availableTabs={CLEAN_AVAILABLE_TABS as unknown as SuperAdminTab[]}
           />
+        )}
+
+        {activeTab === "relationships" && (
+          <SuperAdminUsersRelationships />
         )}
 
         {activeTab === "approvals" && (
