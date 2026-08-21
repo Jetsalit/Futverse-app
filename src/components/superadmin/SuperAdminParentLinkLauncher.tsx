@@ -263,10 +263,13 @@ export function SuperAdminParentLinkLauncher() {
     <>
       <button
         type="button"
+        aria-label="Link Parent to Player"
+        title="Link Parent to Player"
         onClick={() => setOpen(true)}
-        className="fixed bottom-20 right-5 z-[80] flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-black text-white shadow-xl hover:bg-indigo-500"
+
+        className="fixed bottom-20 right-3 z-[80] inline-flex h-12 w-12 items-center justify-center gap-2 rounded-full bg-indigo-600 text-sm font-black text-white shadow-xl transition hover:bg-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 xl:right-5 xl:h-auto xl:w-auto xl:rounded-2xl xl:px-4 xl:py-3"
       >
-        <Link2 size={16} /> Link Parent
+        <Link2 size={18} className="shrink-0" /> <span className="hidden xl:inline">Link Parent</span>
       </button>
 
       {open && (

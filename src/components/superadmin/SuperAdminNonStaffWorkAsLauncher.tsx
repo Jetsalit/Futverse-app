@@ -111,10 +111,15 @@ export function SuperAdminNonStaffWorkAsLauncher() {
     <>
       <button
         type="button"
+        aria-label="Work As Parent or Player"
+        title="Work As Parent or Player"
         onClick={() => setOpen(true)}
-        className="fixed bottom-5 right-5 z-[80] rounded-2xl bg-amber-500 px-4 py-3 text-sm font-black text-slate-950 shadow-xl hover:bg-amber-400"
+
+        className="fixed bottom-4 right-3 z-[80] inline-flex h-12 w-12 items-center justify-center gap-2 rounded-full bg-amber-500 text-sm font-black text-slate-950 shadow-xl transition hover:bg-amber-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 xl:bottom-5 xl:right-5 xl:h-auto xl:w-auto xl:rounded-2xl xl:px-4 xl:py-3"
       >
-        Work As Parent / Player
+        <Shield size={18} className="shrink-0 xl:hidden" />
+        <span className="hidden xl:inline">Work As Parent / Player</span>
+
       </button>
 
       {open && (
