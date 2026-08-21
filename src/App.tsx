@@ -219,10 +219,48 @@ export default function App() {
   const isGlobalRoute =
     pathname.startsWith("/superadmin") || pathname.startsWith("/settings");
 
-  const isSuperAdminGlobalShell =
-    currentPage === "superadmin" &&
-    !isSupportActive &&
+  const isActiveSuperAdminActor =
     isActivePrivilegedActor(actualUser, ["SUPERADMIN"]);
+
+  const isSuperAdminTenantPresentation =
+    isActiveSuperAdminActor &&
+    (isSupportActive || currentUser?.supportPresentation === true);
+
+  const isSuperAdminGlobalShell =
+    isActiveSuperAdminActor && !isSuperAdminTenantPresentation;
+
+  const wasSuperAdminTenantPresentationRef = useRef(false);
+
+  useEffect(() => {
+    if (!isActiveSuperAdminActor) {
+      wasSuperAdminTenantPresentationRef.current = false;
+      return;
+    }
+
+    const wasTenantPresentation =
+      wasSuperAdminTenantPresentationRef.current;
+
+    if (
+      isSuperAdminTenantPresentation &&
+      currentPage === "superadmin"
+    ) {
+      setCurrentPage("dashboard");
+      setIsMobileMenuOpen(false);
+    } else if (
+      wasTenantPresentation &&
+      !isSuperAdminTenantPresentation
+    ) {
+      setCurrentPage("superadmin");
+      setIsMobileMenuOpen(false);
+    }
+
+    wasSuperAdminTenantPresentationRef.current =
+      isSuperAdminTenantPresentation;
+  }, [
+    isActiveSuperAdminActor,
+    isSuperAdminTenantPresentation,
+    currentPage,
+  ]);
 
   const navigateTo = (page: string) => {
     if (page === "drills") {
