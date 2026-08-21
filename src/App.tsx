@@ -219,6 +219,11 @@ export default function App() {
   const isGlobalRoute =
     pathname.startsWith("/superadmin") || pathname.startsWith("/settings");
 
+  const isSuperAdminGlobalShell =
+    currentPage === "superadmin" &&
+    !isSupportActive &&
+    isActivePrivilegedActor(actualUser, ["SUPERADMIN"]);
+
   const navigateTo = (page: string) => {
     if (page === "drills") {
       setEditingDrill(null);
@@ -510,6 +515,17 @@ export default function App() {
     },
   ];
 
+  const shellNavItems = isSuperAdminGlobalShell
+    ? [
+        {
+          id: "superadmin",
+          label: "Command Center",
+          icon: Shield,
+          roles: ["SUPERADMIN"],
+        },
+      ]
+    : navItems;
+
   return (
     <div className="flex flex-col h-screen bg-slate-50 text-slate-900 font-sans overflow-hidden">
       <SuperAdminSupportBar />
@@ -536,7 +552,7 @@ export default function App() {
 
           <div className="flex items-center gap-3 mt-4 mb-4 w-full px-2">
             <div className="w-10 h-10 flex shrink-0 items-center justify-center rounded-xl overflow-hidden bg-white/10">
-              {academySettings.logoUrl ? (
+              {!isSuperAdminGlobalShell && academySettings.logoUrl ? (
                 <img src={academySettings.logoUrl} alt="Logo" className="w-full h-full object-cover" />
               ) : (
                 <svg
@@ -592,12 +608,12 @@ export default function App() {
               )}
             </div>
             <span className="font-black text-xl text-white tracking-tight truncate max-w-[150px]">
-              {academySettings.shortName || academySettings.name}
+              {isSuperAdminGlobalShell ? "FutVerse" : academySettings.shortName || academySettings.name}
             </span>
           </div>
 
           <nav className="space-y-2 mt-8 w-full px-2">
-            {navItems.map((item) => {
+            {shellNavItems.map((item) => {
               if (currentUser && !item.roles.includes(effectivePresentationRole))
                 return null;
 
@@ -666,7 +682,7 @@ export default function App() {
               <Menu size={20} />
             </button>
             <div className="hidden sm:block text-sm font-semibold text-slate-600">
-              {academySettings.name}
+              {isSuperAdminGlobalShell ? "Global Administration" : academySettings.name}
             </div>
             <div className="hidden md:block h-4 w-[1px] bg-slate-300"></div>
 
