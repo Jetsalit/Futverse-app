@@ -3,10 +3,12 @@ import type { User, UserRole } from "../../contexts/AuthContext";
 export type SuperAdminTab =
   | "dashboard"
   | "approvals"
-  | "payment_approvals"
   | "users"
+  | "relationships"
+  | "academies"
   | "system_logs"
   | "profile_claims"
+  | "payment_approvals"
   | "observation_metrics"
   | "bootstrap_legacy";
 
@@ -201,7 +203,7 @@ export function searchDashboardData(input: {
       type: "academy",
       title: academy.name,
       subtitle: `Academy · ${academy.id}`,
-      tab: "users",
+      tab: "academies",
       academyFilter: academy.name,
     });
     if (results.length >= resultLimit) return results;
