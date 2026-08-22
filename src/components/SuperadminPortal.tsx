@@ -76,6 +76,14 @@ import {
   firestoreSuperAdminRelationshipReadOps,
   loadSuperAdminRelationshipInventory,
 } from "../lib/firestore/superAdminRelationshipReadAdapter";
+import {
+  buildSuperAdminAccountOrganizationContext,
+  type SuperAdminAccountOrganizationInventoryState,
+} from "./superadmin/superAdminAccountOrganizationContext";
+import SuperAdminAccountOrganizationCells from "./superadmin/SuperAdminAccountOrganizationCells";
+import type {
+  SuperAdminUserRelationshipRow,
+} from "../lib/superAdminRelationshipReadModel";
 import { SuperAdminNonStaffWorkAsLauncher } from "./superadmin/SuperAdminNonStaffWorkAsLauncher";
 import {
   deriveEffectiveRoleCounts,
@@ -210,6 +218,30 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     relationshipInventoryScopedState.actorUid === relationshipInventoryActorUid
       ? relationshipInventoryScopedState.inventoryState
       : createSuperAdminRelationshipInventoryLifecycleState();
+
+  const accountOrganizationInventoryState:
+    SuperAdminAccountOrganizationInventoryState =
+      relationshipInventoryState.status === "READY"
+        ? "READY"
+        : relationshipInventoryState.status === "UNAVAILABLE"
+          ? "UNAVAILABLE"
+          : "LOADING";
+
+  const relationshipRowsByUserId =
+    new Map<string, SuperAdminUserRelationshipRow>();
+
+  if (relationshipInventoryState.status === "READY") {
+    for (const row of relationshipInventoryState.inventory.rows) {
+      relationshipRowsByUserId.set(row.userId, row);
+    }
+  }
+
+  const accountOrganizationContextFor = (userId: string) =>
+    buildSuperAdminAccountOrganizationContext({
+      userId,
+      inventoryState: accountOrganizationInventoryState,
+      row: relationshipRowsByUserId.get(userId),
+    });
 
   useEffect(() => {
     const inventoryState =
@@ -1273,32 +1305,38 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                   <tr>
                     <th className="p-4">User</th>
                     <th className="p-4">Contact</th>
-                    <th className="p-4">Authoritative Status</th>
-                    <th className="p-4">Authoritative Role</th>
+                    <th className="p-4">Organization Context</th>
+                    <th className="p-4">Current Authority</th>
+                    <th className="p-4">Account Status</th>
+                    <th className="p-4">Account Role</th>
                     <th className="p-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {isLoadingUsers ? (
                     <tr>
-                      <td colSpan={5} className="p-8 text-center text-slate-500">
+                      <td colSpan={7} className="p-8 text-center text-slate-500">
                         <Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" />
                       </td>
                     </tr>
                   ) : userLoadState === "unavailable" ? (
                     <tr>
-                      <td colSpan={5} className="p-8 text-center text-rose-600">
+                      <td colSpan={7} className="p-8 text-center text-rose-600">
                         User inventory unavailable.
                       </td>
                     </tr>
                   ) : filteredUsers.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="p-8 text-center text-slate-500">
+                      <td colSpan={7} className="p-8 text-center text-slate-500">
                         No users found.
                       </td>
                     </tr>
                   ) : (
-                    filteredUsers.map((user) => (
+                    filteredUsers.map((user) => {
+                      const organizationContext =
+                        accountOrganizationContextFor(user.id);
+
+                      return (
                       <tr
                         key={user.id}
                         className="hover:bg-slate-50/50 transition-colors"
@@ -1309,6 +1347,11 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                         <td className="p-4">
                           <div className="text-slate-800">{user.email}</div>
                         </td>
+
+                        <SuperAdminAccountOrganizationCells
+                          context={organizationContext}
+                        />
+
                         <td className="p-4">
                           <select
                             value={normalizeManagedAccountStatus(user.status)}
@@ -1352,7 +1395,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                             }
                             title={
                               isSafeAccountRole(user.role)
-                                ? "Authoritative account role"
+                                ? "Account role (not organization authority)"
                                 : "Tenant and privileged roles are managed outside this generic control"
                             }
                             className="text-xs font-bold rounded-xl px-2 py-1 bg-slate-50 border border-slate-200 text-slate-800 outline-none cursor-pointer"
@@ -1380,7 +1423,8 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                           </button>
                         </td>
                       </tr>
-                    ))
+                      );
+                    })
                   )}
                 </tbody>
               </table>
