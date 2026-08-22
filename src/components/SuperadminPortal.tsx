@@ -62,11 +62,14 @@ import { isExactActiveStaffMembership } from "../lib/superAdminSupportModel";
 
 import BootstrapLegacyAdmin from "./BootstrapLegacyAdmin";
 import SuperAdminHeader from "./superadmin/SuperAdminHeader";
+import SuperAdminPortalNavigation from "./superadmin/SuperAdminPortalNavigation";
 import SuperAdminOverview from "./superadmin/SuperAdminOverview";
 import SuperAdminUsersRelationships from "./superadmin/SuperAdminUsersRelationships";
+import { SuperAdminNonStaffWorkAsLauncher } from "./superadmin/SuperAdminNonStaffWorkAsLauncher";
 import {
   deriveEffectiveRoleCounts,
   searchDashboardData,
+  resolveDashboardSearchSelection,
   deriveDashboardAlerts,
   parseAuditLog,
   buildRecentActivities,
@@ -425,7 +428,10 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const searchResults = searchDashboardData({
     query: headerSearchQuery,
     users,
-    academies: [],
+    academies: academiesList.map((academy) => ({
+      id: academy.id,
+      name: academy.name || academy.id,
+    })),
     claims: profileClaimsList.map((c) => ({
       id: c.id,
       playerName: c.playerName || c.userName,
@@ -441,12 +447,15 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   };
 
   const handleSearchSelect = (result: DashboardSearchResult) => {
-    if ((CLEAN_AVAILABLE_TABS as readonly string[]).includes(result.tab)) {
-      setActiveTab(result.tab as CleanTab);
+    const selection = resolveDashboardSearchSelection(result);
+
+    if ((CLEAN_AVAILABLE_TABS as readonly string[]).includes(selection.tab)) {
+      setActiveTab(selection.tab as CleanTab);
     }
-    if (result.searchValue) {
-      setSearchQuery(result.searchValue);
-    }
+
+    setSearchQuery(selection.accountQuery);
+    setAcademySearchQuery(selection.academyQuery);
+    setClaimsSearchQuery(selection.claimQuery);
   };
 
   const handleExportReport = () => {
@@ -722,6 +731,8 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
 
   const filteredClaims = profileClaimsList.filter(
     (claim) =>
+      claim.playerName?.toLowerCase().includes(claimsSearchQuery.toLowerCase()) ||
+      claim.futId?.toLowerCase().includes(claimsSearchQuery.toLowerCase()) ||
       claim.userEmail?.toLowerCase().includes(claimsSearchQuery.toLowerCase()) ||
       claim.userName?.toLowerCase().includes(claimsSearchQuery.toLowerCase()) ||
       claim.requestedRole?.toLowerCase().includes(claimsSearchQuery.toLowerCase()) ||
@@ -749,139 +760,13 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
         onSearchSelect={handleSearchSelect}
       />
 
-      <div className="bg-white border-b border-slate-200 px-6 flex gap-6 shrink-0 overflow-x-auto">
-        <button
-          onClick={() => setActiveTab("dashboard")}
-          className={`py-4 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${
-            activeTab === "dashboard"
-              ? "border-emerald-500 text-emerald-600"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          Dashboard
-        </button>
-        <button
-          onClick={() => setActiveTab("approvals")}
-          className={`py-4 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${
-            activeTab === "approvals"
-              ? "border-emerald-500 text-emerald-600"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          <span className="flex items-center gap-2">
-            User Approval Center
-            {pendingUsers.length > 0 && (
-              <span className="bg-rose-500 text-white text-[10px] px-2 py-0.5 rounded-full">
-                {pendingUsers.length}
-              </span>
-            )}
-          </span>
-        </button>
-        <button
-          onClick={() => setActiveTab("users")}
-          className={`py-4 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${
-            activeTab === "users"
-              ? "border-emerald-500 text-emerald-600"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          Manage Users
-        </button>
-        <button
-          onClick={() => setActiveTab("relationships")}
-          className={`py-4 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${
-            activeTab === "relationships"
-              ? "border-emerald-500 text-emerald-600"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          Users & Relationships
-        </button>
-        <button
-          onClick={() => setActiveTab("academies")}
-          className={`py-4 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${
-            activeTab === "academies"
-              ? "border-emerald-500 text-emerald-600"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          <span className="flex items-center gap-2">
-            Academies Directory
-            {academyCount !== null && (
-              <span className="bg-slate-200 text-slate-700 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                {academyCount}
-              </span>
-            )}
-          </span>
-        </button>
-        <button
-          onClick={() => setActiveTab("system_logs")}
-          className={`py-4 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${
-            activeTab === "system_logs"
-              ? "border-emerald-500 text-emerald-600"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          System Audit Logs
-        </button>
-        <button
-          onClick={() => setActiveTab("profile_claims")}
-          className={`py-4 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${
-            activeTab === "profile_claims"
-              ? "border-emerald-500 text-emerald-600"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          <span className="flex items-center gap-2">
-            Profile Claims
-            {pendingProfileClaimsCount > 0 && (
-              <span className="bg-amber-500 text-white text-[10px] px-2 py-0.5 rounded-full">
-                {pendingProfileClaimsCount}
-              </span>
-            )}
-          </span>
-        </button>
-        <button
-          onClick={() => setActiveTab("payment_approvals")}
-          className={`py-4 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${
-            activeTab === "payment_approvals"
-              ? "border-emerald-500 text-emerald-600"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          <span className="flex items-center gap-1.5">
-            Payment Approvals
-            <span className="bg-slate-100 text-slate-500 text-[10px] px-1.5 py-0.5 rounded border border-slate-200">
-              Unavailable
-            </span>
-          </span>
-        </button>
-        <button
-          onClick={() => setActiveTab("observation_metrics")}
-          className={`py-4 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${
-            activeTab === "observation_metrics"
-              ? "border-emerald-500 text-emerald-600"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          <span className="flex items-center gap-1.5">
-            Observation Metrics
-            <span className="bg-slate-100 text-slate-500 text-[10px] px-1.5 py-0.5 rounded border border-slate-200">
-              Unavailable
-            </span>
-          </span>
-        </button>
-        <button
-          onClick={() => setActiveTab("bootstrap_legacy")}
-          className={`py-4 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${
-            activeTab === "bootstrap_legacy"
-              ? "border-indigo-500 text-indigo-600"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          <span className="flex items-center gap-2">Bootstrap Legacy</span>
-        </button>
-      </div>
+      <SuperAdminPortalNavigation
+        activeTab={activeTab}
+        onNavigate={handleNavigate}
+        pendingUsers={pendingUsers.length}
+        pendingProfileClaims={pendingProfileClaimsCount}
+        academyCount={academyCount}
+      />
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         {isLoadingUsers && (
@@ -931,6 +816,27 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
           </div>
         )}
 
+        {(activeTab === "observation_metrics" ||
+          activeTab === "payment_approvals") && (
+          <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-sm font-black text-amber-950">
+                Parent / Player support session
+              </div>
+              <p className="mt-1 max-w-3xl text-xs leading-relaxed text-amber-800">
+                Start the existing controlled Work As workflow. The
+                authenticated actor remains SUPERADMIN and the existing support
+                engine continues to validate the presented Parent or Player
+                context.
+              </p>
+            </div>
+
+            <div className="shrink-0">
+              <SuperAdminNonStaffWorkAsLauncher />
+            </div>
+          </div>
+        )}
+
         {activeTab === "dashboard" && (
           <SuperAdminOverview
             pendingUsers={pendingUsers.length}
@@ -945,7 +851,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
             activityLoadState={activityLoadState}
             alerts={alerts}
             onNavigate={handleNavigate}
-            availableTabs={CLEAN_AVAILABLE_TABS as unknown as SuperAdminTab[]}
+            availableTabs={CLEAN_AVAILABLE_TABS}
           />
         )}
 
@@ -1744,14 +1650,14 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
               <Activity size={24} />
             </div>
             <h3 className="text-lg font-black text-slate-900 mb-2">
-              Observation Metrics Telemetry Unavailable
+              Observation Metrics Configuration Unavailable
             </h3>
             <p className="text-slate-600 text-sm leading-relaxed mb-6">
-              Platform observation metrics are unavailable because no authoritative telemetry collector is active in current main. Synthetic and mock metrics have been excluded to preserve data integrity.
+              This module is reserved for defining the match observation and statistic buttons available to Parent and other authorized match-observation flows. The authoritative configuration backend is not connected in this release, so no synthetic button definitions are shown.
             </p>
             <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl border border-slate-200">
               <ShieldAlert size={14} className="text-blue-600" />
-              Data Integrity Rule Enforced (No Mock Metrics)
+              Match Observation Configuration Preserved
             </div>
           </div>
         )}

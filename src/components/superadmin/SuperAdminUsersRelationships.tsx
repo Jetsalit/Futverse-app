@@ -23,6 +23,7 @@ import type {
   SuperAdminOrganizationRelationship,
   SuperAdminUserRelationshipRow,
 } from "../../lib/superAdminRelationshipReadModel";
+import { SuperAdminParentLinkLauncher } from "./SuperAdminParentLinkLauncher";
 
 type RelationshipLoadState = "loading" | "ready" | "unavailable";
 
@@ -202,6 +203,23 @@ export default function SuperAdminUsersRelationships() {
           )}
           Refresh authoritative inventory
         </button>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="text-sm font-black text-indigo-950">
+            Relationship support action
+          </div>
+          <p className="mt-1 max-w-3xl text-xs leading-relaxed text-indigo-800">
+            The authoritative inventory below remains read-only. Link Parent
+            opens the existing canonical Parent-to-Player workflow; it does not
+            enable inline editing of relationship evidence.
+          </p>
+        </div>
+
+        <div className="shrink-0">
+          <SuperAdminParentLinkLauncher />
+        </div>
       </div>
 
       {loadState === "loading" && (

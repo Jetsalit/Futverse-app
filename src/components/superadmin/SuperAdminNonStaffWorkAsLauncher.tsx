@@ -4,6 +4,7 @@ import { Shield, X } from "lucide-react";
 import { db } from "../../lib/firebase";
 import { useAuth, type User } from "../../contexts/AuthContext";
 import { useSuperAdminNonStaffSupport } from "../../contexts/SuperAdminNonStaffSupportContext";
+import { useSuperAdminSupport } from "../../contexts/SuperAdminSupportContext";
 import { isExactActiveSuperAdmin } from "../../lib/superAdminSupportModel";
 
 interface AcademyOption {
@@ -14,6 +15,7 @@ interface AcademyOption {
 export function SuperAdminNonStaffWorkAsLauncher() {
   const { actualUser } = useAuth();
   const support = useSuperAdminNonStaffSupport();
+  const staffSupport = useSuperAdminSupport();
   const [open, setOpen] = useState(false);
   const [academies, setAcademies] = useState<AcademyOption[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -23,7 +25,10 @@ export function SuperAdminNonStaffWorkAsLauncher() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const enabled = isExactActiveSuperAdmin(actualUser) && !support.isActive;
+  const enabled =
+    isExactActiveSuperAdmin(actualUser) &&
+    !support.isActive &&
+    !staffSupport.isSupportActive;
 
   useEffect(() => {
     if (!open || !enabled) return;
@@ -111,10 +116,15 @@ export function SuperAdminNonStaffWorkAsLauncher() {
     <>
       <button
         type="button"
+        aria-label="Work As Parent or Player"
+        title="Work As Parent or Player"
         onClick={() => setOpen(true)}
-        className="fixed bottom-5 right-5 z-[80] rounded-2xl bg-amber-500 px-4 py-3 text-sm font-black text-slate-950 shadow-xl hover:bg-amber-400"
+
+        className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-black text-slate-950 shadow-sm transition hover:bg-amber-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2"
       >
-        Work As Parent / Player
+        <Shield size={18} className="shrink-0" />
+        <span>Work As Parent / Player</span>
+
       </button>
 
       {open && (
