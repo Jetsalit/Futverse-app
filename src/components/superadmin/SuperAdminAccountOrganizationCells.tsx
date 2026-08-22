@@ -180,7 +180,16 @@ export default function SuperAdminAccountOrganizationCells({
 
         <td className="min-w-[230px] p-4 align-top">
           <div className="space-y-2">
-            {current.length > 0 ? (
+            {context.presentation.integrity === "CONFLICT" ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2">
+                <div className="text-xs font-black text-amber-900">
+                  Authority unresolved
+                </div>
+                <div className="mt-1 text-[10px] leading-relaxed text-amber-700">
+                  Conflicting canonical evidence requires review. No organization role is asserted as current authority.
+                </div>
+              </div>
+            ) : current.length > 0 ? (
               current.map((relationship) => {
                 const organizationName = relationship.organizationName || relationship.organizationId;
 

@@ -347,4 +347,48 @@ describe("SuperAdmin Accounts organization-context wiring", () => {
       "global/account profile role must not be presented as current organization authority",
     );
   });
+  it("9. conflicting canonical evidence must never be presented as resolved Current Authority", () => {
+    const readyIndex =
+      organizationCellsSource.indexOf(
+        'if (context.state === "READY")',
+      );
+
+    assert.notEqual(
+      readyIndex,
+      -1,
+      "READY organization presentation must remain explicit",
+    );
+
+    const readyBlock =
+      organizationCellsSource.slice(readyIndex);
+
+    assert.match(
+      readyBlock,
+      /context\.presentation\.integrity === "CONFLICT"/,
+      "Current Authority must explicitly guard canonical conflict",
+    );
+
+    assert.match(
+      readyBlock,
+      /Authority unresolved/,
+      "canonical conflict must be displayed as unresolved authority",
+    );
+
+    const conflictGuardIndex =
+      readyBlock.indexOf(
+        'context.presentation.integrity === "CONFLICT"',
+      );
+
+    const authorityMapIndex =
+      readyBlock.indexOf(
+        'current.map((relationship)',
+        conflictGuardIndex,
+      );
+
+    assert.ok(
+      conflictGuardIndex >= 0 &&
+        authorityMapIndex > conflictGuardIndex,
+      "conflict guard must precede resolved Current Authority relationship rendering",
+    );
+  });
 });
