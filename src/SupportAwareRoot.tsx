@@ -2,10 +2,8 @@ import App from "./App";
 import { useAuth } from "./contexts/AuthContext";
 import { useSuperAdminSupport } from "./contexts/SuperAdminSupportContext";
 import { useSuperAdminNonStaffSupport } from "./contexts/SuperAdminNonStaffSupportContext";
-import { SuperAdminNonStaffWorkAsLauncher } from "./components/superadmin/SuperAdminNonStaffWorkAsLauncher";
 import { SuperAdminNonStaffSupportBar } from "./components/superadmin/SuperAdminNonStaffSupportBar";
 import { SuperAdminNonStaffPresentationGate } from "./components/superadmin/SuperAdminNonStaffPresentationGate";
-import { SuperAdminParentLinkLauncher } from "./components/superadmin/SuperAdminParentLinkLauncher";
 import { SuperAdminStaffPresentationGate } from "./components/superadmin/SuperAdminStaffPresentationGate";
 import { SuperAdminStaffAuthorityGate } from "./components/superadmin/SuperAdminStaffAuthorityGate";
 
@@ -46,8 +44,6 @@ export default function SupportAwareRoot() {
     }
   }
 
-  const supportToolsAvailable =
-    !staffSupport.isSupportActive && !nonStaffSupport.isActive;
   const appKey = nonStaffSupport.isActive && nonStaffSupport.session
     ? `nonstaff:${nonStaffSupport.session.academyId}:${nonStaffSupport.session.subject.uid}:${nonStaffSupport.session.startedAt}`
     : staffSupport.isSupportActive && staffSupport.session
@@ -62,12 +58,6 @@ export default function SupportAwareRoot() {
         staffSupport.isStaffAuthorityRevalidating && (
           <SuperAdminStaffAuthorityGate />
         )}
-      {supportToolsAvailable && (
-        <>
-          <SuperAdminNonStaffWorkAsLauncher />
-          <SuperAdminParentLinkLauncher />
-        </>
-      )}
     </>
   );
 }

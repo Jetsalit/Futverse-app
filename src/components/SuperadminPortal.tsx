@@ -65,6 +65,7 @@ import SuperAdminHeader from "./superadmin/SuperAdminHeader";
 import SuperAdminPortalNavigation from "./superadmin/SuperAdminPortalNavigation";
 import SuperAdminOverview from "./superadmin/SuperAdminOverview";
 import SuperAdminUsersRelationships from "./superadmin/SuperAdminUsersRelationships";
+import { SuperAdminNonStaffWorkAsLauncher } from "./superadmin/SuperAdminNonStaffWorkAsLauncher";
 import {
   deriveEffectiveRoleCounts,
   searchDashboardData,
@@ -812,6 +813,27 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
             role="status"
           >
             {mutationNotice}
+          </div>
+        )}
+
+        {(activeTab === "observation_metrics" ||
+          activeTab === "payment_approvals") && (
+          <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-sm font-black text-amber-950">
+                Parent / Player support session
+              </div>
+              <p className="mt-1 max-w-3xl text-xs leading-relaxed text-amber-800">
+                Start the existing controlled Work As workflow. The
+                authenticated actor remains SUPERADMIN and the existing support
+                engine continues to validate the presented Parent or Player
+                context.
+              </p>
+            </div>
+
+            <div className="shrink-0">
+              <SuperAdminNonStaffWorkAsLauncher />
+            </div>
           </div>
         )}
 

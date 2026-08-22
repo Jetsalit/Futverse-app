@@ -9,6 +9,8 @@ import {
 import { Link2, Shield, X } from "lucide-react";
 import { db } from "../../lib/firebase";
 import { useAuth, type User } from "../../contexts/AuthContext";
+import { useSuperAdminSupport } from "../../contexts/SuperAdminSupportContext";
+import { useSuperAdminNonStaffSupport } from "../../contexts/SuperAdminNonStaffSupportContext";
 import { isExactActiveSuperAdmin, isExactDocumentId } from "../../lib/superAdminSupportModel";
 import { NONSTAFF_ASSOCIATION_COLLECTION } from "../../lib/nonStaffPlayerAccess";
 
@@ -26,6 +28,8 @@ interface PlayerOption {
 
 export function SuperAdminParentLinkLauncher() {
   const { actualUser } = useAuth();
+  const staffSupport = useSuperAdminSupport();
+  const nonStaffSupport = useSuperAdminNonStaffSupport();
   const [open, setOpen] = useState(false);
   const [academies, setAcademies] = useState<AcademyOption[]>([]);
   const [parents, setParents] = useState<User[]>([]);
@@ -39,7 +43,10 @@ export function SuperAdminParentLinkLauncher() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const enabled = isExactActiveSuperAdmin(actualUser);
+  const enabled =
+    isExactActiveSuperAdmin(actualUser) &&
+    !staffSupport.isSupportActive &&
+    !nonStaffSupport.isActive;
 
   useEffect(() => {
     if (!open || !enabled) return;
@@ -267,9 +274,10 @@ export function SuperAdminParentLinkLauncher() {
         title="Link Parent to Player"
         onClick={() => setOpen(true)}
 
-        className="fixed bottom-20 right-3 z-[80] inline-flex h-12 w-12 items-center justify-center gap-2 rounded-full bg-indigo-600 text-sm font-black text-white shadow-xl transition hover:bg-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 xl:right-5 xl:h-auto xl:w-auto xl:rounded-2xl xl:px-4 xl:py-3"
+        className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-black text-white shadow-sm transition hover:bg-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2"
       >
-        <Link2 size={18} className="shrink-0" /> <span className="hidden xl:inline">Link Parent</span>
+        <Link2 size={18} className="shrink-0" />
+        <span>Link Parent</span>
       </button>
 
       {open && (
