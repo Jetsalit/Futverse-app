@@ -1,10 +1,4 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useMemo, useState } from "react";
 import {
   AlertTriangle,
   Building2,
@@ -14,11 +8,9 @@ import {
   ShieldCheck,
   UserRound,
 } from "lucide-react";
-import {
-  firestoreSuperAdminRelationshipReadOps,
-  loadSuperAdminRelationshipInventory,
-  type SuperAdminRelationshipInventory,
-} from "../../lib/firestore/superAdminRelationshipReadAdapter";
+import type {
+  SuperAdminRelationshipInventoryLifecycleState,
+} from "./superAdminRelationshipInventoryLifecycle";
 import type {
   SuperAdminOrganizationRelationship,
   SuperAdminUserRelationshipRow,
@@ -111,45 +103,35 @@ function rowMatchesQuery(
   );
 }
 
-export default function SuperAdminUsersRelationships() {
-  const [loadState, setLoadState] =
-    useState<RelationshipLoadState>("loading");
-  const [inventory, setInventory] =
-    useState<SuperAdminRelationshipInventory | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+interface SuperAdminUsersRelationshipsProps {
+  inventoryState: SuperAdminRelationshipInventoryLifecycleState;
+  onRefresh: () => Promise<void>;
+  onInventoryInvalidated: () => void;
+}
+
+export default function SuperAdminUsersRelationships({
+  inventoryState,
+  onRefresh,
+  onInventoryInvalidated,
+}: SuperAdminUsersRelationshipsProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const requestIdRef = useRef(0);
 
-  const loadInventory = useCallback(async () => {
-    const requestId = ++requestIdRef.current;
+  const loadState: RelationshipLoadState =
+    inventoryState.status === "READY"
+      ? "ready"
+      : inventoryState.status === "UNAVAILABLE"
+        ? "unavailable"
+        : "loading";
 
-    setLoadState("loading");
-    setErrorMessage(null);
+  const inventory =
+    inventoryState.status === "READY"
+      ? inventoryState.inventory
+      : null;
 
-    const result = await loadSuperAdminRelationshipInventory(
-      firestoreSuperAdminRelationshipReadOps,
-    );
-
-    if (requestId !== requestIdRef.current) return;
-
-    if (result.state === "UNAVAILABLE") {
-      setInventory(null);
-      setErrorMessage(result.error.message);
-      setLoadState("unavailable");
-      return;
-    }
-
-    setInventory(result.inventory);
-    setLoadState("ready");
-  }, []);
-
-  useEffect(() => {
-    void loadInventory();
-
-    return () => {
-      requestIdRef.current += 1;
-    };
-  }, [loadInventory]);
+  const errorMessage =
+    inventoryState.status === "UNAVAILABLE"
+      ? inventoryState.errorMessage
+      : null;
 
   const filteredRows = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -192,7 +174,7 @@ export default function SuperAdminUsersRelationships() {
 
         <button
           type="button"
-          onClick={() => void loadInventory()}
+          onClick={() => void onRefresh()}
           disabled={loadState === "loading"}
           className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
         >
@@ -218,7 +200,7 @@ export default function SuperAdminUsersRelationships() {
         </div>
 
         <div className="shrink-0">
-          <SuperAdminParentLinkLauncher />
+          <SuperAdminParentLinkLauncher onLinked={onInventoryInvalidated} />
         </div>
       </div>
 

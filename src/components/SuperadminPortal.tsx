@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useAuth, User } from "../contexts/AuthContext";
 import { db } from "../lib/firebase";
 import {
@@ -58,13 +58,32 @@ import {
   updateUserStatusAtomically,
 } from "../lib/firestore/adminUserMutations";
 import { useSuperAdminSupport } from "../contexts/SuperAdminSupportContext";
-import { isExactActiveStaffMembership } from "../lib/superAdminSupportModel";
+import { isExactActiveStaffMembership, isExactActiveSuperAdmin } from "../lib/superAdminSupportModel";
 
 import BootstrapLegacyAdmin from "./BootstrapLegacyAdmin";
 import SuperAdminHeader from "./superadmin/SuperAdminHeader";
 import SuperAdminPortalNavigation from "./superadmin/SuperAdminPortalNavigation";
 import SuperAdminOverview from "./superadmin/SuperAdminOverview";
 import SuperAdminUsersRelationships from "./superadmin/SuperAdminUsersRelationships";
+import {
+  createSuperAdminRelationshipInventoryOwner,
+  type SuperAdminRelationshipInventoryOwner,
+} from "./superadmin/superAdminRelationshipInventoryOwner";
+import {
+  createSuperAdminRelationshipInventoryLifecycleState,
+} from "./superadmin/superAdminRelationshipInventoryLifecycle";
+import {
+  firestoreSuperAdminRelationshipReadOps,
+  loadSuperAdminRelationshipInventory,
+} from "../lib/firestore/superAdminRelationshipReadAdapter";
+import {
+  buildSuperAdminAccountOrganizationContext,
+  type SuperAdminAccountOrganizationInventoryState,
+} from "./superadmin/superAdminAccountOrganizationContext";
+import SuperAdminAccountOrganizationCells from "./superadmin/SuperAdminAccountOrganizationCells";
+import type {
+  SuperAdminUserRelationshipRow,
+} from "../lib/superAdminRelationshipReadModel";
 import { SuperAdminNonStaffWorkAsLauncher } from "./superadmin/SuperAdminNonStaffWorkAsLauncher";
 import {
   deriveEffectiveRoleCounts,
@@ -131,7 +150,7 @@ interface StaffMemberItem {
 }
 
 export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
-  const { hasPermission, currentUser: authUser } = useAuth();
+  const { hasPermission, currentUser: authUser, actualUser } = useAuth();
   const { enterAcademyWorkspace, startStaffWorkMode } = useSuperAdminSupport();
 
   const [activeTab, setActiveTab] = useState<CleanTab>("dashboard");
@@ -175,6 +194,163 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const [profileClaimsList, setProfileClaimsList] = useState<ProfileClaimItem[]>([]);
   const [profileClaimsLoadState, setProfileClaimsLoadState] = useState<DashboardLoadState>("idle");
   const [claimsSearchQuery, setClaimsSearchQuery] = useState("");
+
+  const relationshipInventoryActorUid =
+    isExactActiveSuperAdmin(actualUser)
+      ? actualUser?.uid || actualUser?.id || null
+      : null;
+
+  const relationshipInventoryOwnerRef =
+    useRef<SuperAdminRelationshipInventoryOwner | null>(null);
+
+  const relationshipInventoryOwnerActorUidRef =
+    useRef<string | null>(null);
+
+  const [
+    relationshipInventoryScopedState,
+    setRelationshipInventoryScopedState,
+  ] = useState(() => ({
+    actorUid: null as string | null,
+    inventoryState: createSuperAdminRelationshipInventoryLifecycleState(),
+  }));
+
+  const relationshipInventoryState =
+    relationshipInventoryScopedState.actorUid === relationshipInventoryActorUid
+      ? relationshipInventoryScopedState.inventoryState
+      : createSuperAdminRelationshipInventoryLifecycleState();
+
+  const accountOrganizationInventoryState:
+    SuperAdminAccountOrganizationInventoryState =
+      relationshipInventoryState.status === "READY"
+        ? "READY"
+        : relationshipInventoryState.status === "UNAVAILABLE"
+          ? "UNAVAILABLE"
+          : "LOADING";
+
+  const relationshipRowsByUserId =
+    new Map<string, SuperAdminUserRelationshipRow>();
+
+  if (relationshipInventoryState.status === "READY") {
+    for (const row of relationshipInventoryState.inventory.rows) {
+      relationshipRowsByUserId.set(row.userId, row);
+    }
+  }
+
+  const accountOrganizationContextFor = (userId: string) =>
+    buildSuperAdminAccountOrganizationContext({
+      userId,
+      inventoryState: accountOrganizationInventoryState,
+      row: relationshipRowsByUserId.get(userId),
+    });
+
+  useEffect(() => {
+    const inventoryState =
+      createSuperAdminRelationshipInventoryLifecycleState();
+
+    setRelationshipInventoryScopedState({
+      actorUid: relationshipInventoryActorUid,
+      inventoryState,
+    });
+
+    relationshipInventoryOwnerRef.current = null;
+    relationshipInventoryOwnerActorUidRef.current = null;
+
+    if (!relationshipInventoryActorUid) {
+      return;
+    }
+
+    relationshipInventoryOwnerActorUidRef.current =
+      relationshipInventoryActorUid;
+
+    const relationshipInventoryOwner =
+      createSuperAdminRelationshipInventoryOwner({
+        loadInventory: () =>
+          loadSuperAdminRelationshipInventory(
+            firestoreSuperAdminRelationshipReadOps,
+          ),
+        onStateChange: (inventoryState) => {
+          if (
+            relationshipInventoryOwnerActorUidRef.current !==
+            relationshipInventoryActorUid
+          ) {
+            return;
+          }
+
+          setRelationshipInventoryScopedState({
+            actorUid: relationshipInventoryActorUid,
+            inventoryState,
+          });
+        },
+      });
+
+    relationshipInventoryOwnerRef.current = relationshipInventoryOwner;
+
+    return () => {
+      relationshipInventoryOwner.dispose();
+
+      if (
+        relationshipInventoryOwnerRef.current ===
+        relationshipInventoryOwner
+      ) {
+        relationshipInventoryOwnerRef.current = null;
+        relationshipInventoryOwnerActorUidRef.current = null;
+      }
+    };
+  }, [relationshipInventoryActorUid]);
+
+  useEffect(() => {
+    const relationshipInventoryOwner =
+      relationshipInventoryOwnerRef.current;
+
+    if (!relationshipInventoryActorUid ||
+        !relationshipInventoryOwner ||
+        relationshipInventoryOwnerActorUidRef.current !== relationshipInventoryActorUid) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        await relationshipInventoryOwner.activate(activeTab);
+      } catch (error) {
+        console.error(
+          "SuperAdmin relationship inventory activation failed:",
+          error,
+        );
+      }
+    })();
+  }, [activeTab, relationshipInventoryActorUid]);
+
+  const refreshRelationshipInventory = async () => {
+    if (!relationshipInventoryActorUid ||
+        relationshipInventoryOwnerActorUidRef.current !== relationshipInventoryActorUid) {
+      return;
+    }
+
+    try {
+      await relationshipInventoryOwnerRef.current?.refresh();
+    } catch (error) {
+      console.error(
+        "SuperAdmin relationship inventory refresh failed:",
+        error,
+      );
+    }
+  };
+
+  const invalidateRelationshipInventory = async () => {
+    if (!relationshipInventoryActorUid ||
+        relationshipInventoryOwnerActorUidRef.current !== relationshipInventoryActorUid) {
+      return;
+    }
+
+    try {
+      await relationshipInventoryOwnerRef.current?.invalidate();
+    } catch (error) {
+      console.error(
+        "SuperAdmin relationship inventory invalidation failed:",
+        error,
+      );
+    }
+  };
 
   useEffect(() => {
     setUserLoadState("loading");
@@ -596,6 +772,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
         actorUid,
         approvedRole,
       });
+      void invalidateRelationshipInventory();
       setSelectedUser(null);
       setMutationNotice(
         `${user.email || user.name} approved explicitly as ${approvedRole} / ${APPROVED_ACCOUNT_STATUS}.`,
@@ -628,6 +805,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
         actorUid,
         rejectionReason: rejectReason,
       });
+      void invalidateRelationshipInventory();
       setSelectedUser(null);
       setMutationNotice(`${user.email || user.name} rejected with an atomic audit record.`);
     } catch (error) {
@@ -649,6 +827,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
         actorUid,
         approvedRole: newRole,
       });
+      void invalidateRelationshipInventory();
       setMutationNotice(`${user.email || user.name} role updated atomically to ${newRole}.`);
     } catch (error) {
       mutationFailure(error, "Error updating role");
@@ -669,6 +848,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
         actorUid,
         approvedStatus: newStatus,
       });
+      void invalidateRelationshipInventory();
       setMutationNotice(`${user.email || user.name} status updated atomically to ${newStatus}.`);
     } catch (error) {
       mutationFailure(error, "Error updating status");
@@ -856,7 +1036,11 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
         )}
 
         {activeTab === "relationships" && (
-          <SuperAdminUsersRelationships />
+          <SuperAdminUsersRelationships
+            inventoryState={relationshipInventoryState}
+            onRefresh={refreshRelationshipInventory}
+            onInventoryInvalidated={invalidateRelationshipInventory}
+          />
         )}
 
         {activeTab === "approvals" && (
@@ -1121,32 +1305,38 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                   <tr>
                     <th className="p-4">User</th>
                     <th className="p-4">Contact</th>
-                    <th className="p-4">Authoritative Status</th>
-                    <th className="p-4">Authoritative Role</th>
+                    <th className="p-4">Organization Context</th>
+                    <th className="p-4">Current Authority</th>
+                    <th className="p-4">Account Status</th>
+                    <th className="p-4">Account Role</th>
                     <th className="p-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {isLoadingUsers ? (
                     <tr>
-                      <td colSpan={5} className="p-8 text-center text-slate-500">
+                      <td colSpan={7} className="p-8 text-center text-slate-500">
                         <Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" />
                       </td>
                     </tr>
                   ) : userLoadState === "unavailable" ? (
                     <tr>
-                      <td colSpan={5} className="p-8 text-center text-rose-600">
+                      <td colSpan={7} className="p-8 text-center text-rose-600">
                         User inventory unavailable.
                       </td>
                     </tr>
                   ) : filteredUsers.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="p-8 text-center text-slate-500">
+                      <td colSpan={7} className="p-8 text-center text-slate-500">
                         No users found.
                       </td>
                     </tr>
                   ) : (
-                    filteredUsers.map((user) => (
+                    filteredUsers.map((user) => {
+                      const organizationContext =
+                        accountOrganizationContextFor(user.id);
+
+                      return (
                       <tr
                         key={user.id}
                         className="hover:bg-slate-50/50 transition-colors"
@@ -1157,6 +1347,11 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                         <td className="p-4">
                           <div className="text-slate-800">{user.email}</div>
                         </td>
+
+                        <SuperAdminAccountOrganizationCells
+                          context={organizationContext}
+                        />
+
                         <td className="p-4">
                           <select
                             value={normalizeManagedAccountStatus(user.status)}
@@ -1200,7 +1395,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                             }
                             title={
                               isSafeAccountRole(user.role)
-                                ? "Authoritative account role"
+                                ? "Account role (not organization authority)"
                                 : "Tenant and privileged roles are managed outside this generic control"
                             }
                             className="text-xs font-bold rounded-xl px-2 py-1 bg-slate-50 border border-slate-200 text-slate-800 outline-none cursor-pointer"
@@ -1228,7 +1423,8 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                           </button>
                         </td>
                       </tr>
-                    ))
+                      );
+                    })
                   )}
                 </tbody>
               </table>
