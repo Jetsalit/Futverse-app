@@ -26,7 +26,13 @@ interface PlayerOption {
   futId?: string;
 }
 
-export function SuperAdminParentLinkLauncher() {
+interface SuperAdminParentLinkLauncherProps {
+  onLinked?: () => void;
+}
+
+export function SuperAdminParentLinkLauncher({
+  onLinked,
+}: SuperAdminParentLinkLauncherProps) {
   const { actualUser } = useAuth();
   const staffSupport = useSuperAdminSupport();
   const nonStaffSupport = useSuperAdminNonStaffSupport();
@@ -254,6 +260,15 @@ export function SuperAdminParentLinkLauncher() {
         `${selectedPlayer.firstName || ""} ${selectedPlayer.lastName || ""}`.trim() ||
         playerId;
       setNotice(`Linked ${parentName} to ${playerName} successfully.`);
+
+      try {
+        onLinked?.();
+      } catch (callbackError) {
+        console.error(
+          "Parent Link relationship inventory invalidation callback failed:",
+          callbackError,
+        );
+      }
     } catch (linkError) {
       console.error("Failed to link Parent to Player:", linkError);
       setError(
