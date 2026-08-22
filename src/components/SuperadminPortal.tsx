@@ -81,6 +81,7 @@ import {
   type SuperAdminAccountOrganizationInventoryState,
 } from "./superadmin/superAdminAccountOrganizationContext";
 import SuperAdminAccountOrganizationCells from "./superadmin/SuperAdminAccountOrganizationCells";
+import SuperAdminUserRelationshipInspector from "./superadmin/SuperAdminUserRelationshipInspector";
 import type {
   SuperAdminUserRelationshipRow,
 } from "../lib/superAdminRelationshipReadModel";
@@ -1924,7 +1925,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                 </div>
                 <div>
                   <div className="text-slate-500 text-xs font-bold uppercase mb-1">
-                    Authoritative Account Role
+                    Account Role
                   </div>
                   <div className="font-bold text-slate-800">
                     {selectedUser.role || "MISSING"}
@@ -1944,9 +1945,18 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
               {(() => {
                 if (reviewMode === "READ_ONLY_PROFILE") {
                   return (
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-                      Manage Users profile view is read-only. Role and status modifications must be performed using the table controls.
-                    </div>
+                    <>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                        Manage Users profile view is read-only. Role and status modifications must be performed using the table controls.
+                      </div>
+
+                      <SuperAdminUserRelationshipInspector
+                        userId={selectedUser.id}
+                        context={accountOrganizationContextFor(selectedUser.id)}
+                        row={relationshipRowsByUserId.get(selectedUser.id)}
+                        onRefresh={refreshRelationshipInventory}
+                      />
+                    </>
                   );
                 }
 
