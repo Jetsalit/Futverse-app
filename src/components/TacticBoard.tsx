@@ -28,6 +28,11 @@ import {
 } from "react-konva";
 import useImage from "use-image";
 import { useDrillDatabase, type Drill } from "../hooks/useDrillDatabase";
+import {
+  normalizeDrillFieldType,
+  type DrillCanvasData,
+  type DrillFieldType,
+} from "../lib/drillDataModel";
 
 // Custom icons based on requirements
 const RedTeamIcon = () => (
@@ -139,7 +144,7 @@ export default function TacticBoard({
   const [activeTool, setActiveTool] = useState("select");
   const [activeLineTool, setActiveLineTool] = useState("freehand");
   const [activeColor, setActiveColor] = useState("#ffffff");
-  const [fieldType, setFieldType] = useState("full");
+  const [fieldType, setFieldType] = useState<DrillFieldType>("full");
 
   const { saveDrill, updateDrill } = useDrillDatabase();
   const [saveForm, setSaveForm] = useState({
@@ -183,7 +188,7 @@ export default function TacticBoard({
         Array.isArray(canvasData.elements) ? canvasData.elements : [],
       );
       setLines(Array.isArray(canvasData.lines) ? canvasData.lines : []);
-      setFieldType(canvasData.fieldType || "full");
+      setFieldType(normalizeDrillFieldType(canvasData.fieldType));
       setUploadedImage(null);
     } else {
       setDrillMode("upload");
@@ -369,8 +374,8 @@ export default function TacticBoard({
   };
 
   const handleSaveAll = async () => {
-    let finalPreviewImage = undefined;
-    let finalCanvasData: any = undefined;
+    let finalPreviewImage: string | undefined;
+    let finalCanvasData: DrillCanvasData | null;
 
     if (drillMode === "digital") {
       finalPreviewImage = stageRef.current
@@ -566,7 +571,9 @@ export default function TacticBoard({
                     </span>
                     <select
                       value={fieldType}
-                      onChange={(e) => setFieldType(e.target.value)}
+                      onChange={(e) =>
+                        setFieldType(normalizeDrillFieldType(e.target.value))
+                      }
                       className="border border-slate-300 rounded-md px-2 py-1 text-sm bg-white outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-slate-700 shadow-sm"
                     >
                       <option value="full">เต็มสนาม</option>
