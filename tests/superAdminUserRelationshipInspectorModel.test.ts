@@ -531,4 +531,31 @@ describe("SuperAdmin User Relationship Inspector Model", () => {
       [],
     );
   });
+  it("10. invalid or future authority coverage fails closed", async () => {
+    const {
+      buildSuperAdminUserRelationshipInspectorModel,
+    } = await loadInspectorModule();
+
+    const result =
+      buildSuperAdminUserRelationshipInspectorModel({
+        userId: "user-1",
+        context: {
+          ...readyContext(),
+          coverage: {
+            academyAuthority: "PARTIAL",
+            proClubAuthority: "NOT_CONNECTED",
+          },
+        },
+        row: verifiedStaffRow(),
+      });
+
+    assert.equal(result.state, "OUT_OF_SYNC");
+    assert.equal(
+      result.authorityState,
+      "NO_CURRENT_AUTHORITY",
+    );
+    assert.deepEqual(result.resolvedAuthority, []);
+    assert.deepEqual(result.currentEvidence, []);
+    assert.deepEqual(result.historical, []);
+  });
 });

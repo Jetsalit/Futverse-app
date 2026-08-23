@@ -130,16 +130,15 @@ function fallbackCoverage(
 
 function coverageFromContext(
   context: unknown,
-  state: InspectorContextState,
-): SuperAdminAccountOrganizationCoverage {
+): SuperAdminAccountOrganizationCoverage | null {
   if (!isRecord(context)) {
-    return fallbackCoverage(state);
+    return null;
   }
 
   const coverage = context.coverage;
 
   if (!isRecord(coverage)) {
-    return fallbackCoverage(state);
+    return null;
   }
 
   const academyAuthority =
@@ -154,7 +153,7 @@ function coverageFromContext(
     !COVERAGE_VALUES.has(academyAuthority) ||
     !COVERAGE_VALUES.has(proClubAuthority)
   ) {
-    return fallbackCoverage(state);
+    return null;
   }
 
   return {
@@ -259,10 +258,16 @@ export function buildSuperAdminUserRelationshipInspectorModel(
   }
 
   const coverage =
-    coverageFromContext(
-      input.context,
-      state,
+    coverageFromContext(input.context);
+
+  if (!coverage) {
+    return failClosed(
+      "OUT_OF_SYNC",
+      input.userId,
+      fallbackCoverage("OUT_OF_SYNC"),
+      "The organization authority coverage is invalid or unsupported.",
     );
+  }
 
   if (state === "LOADING") {
     return failClosed(
