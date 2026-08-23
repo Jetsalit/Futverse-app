@@ -906,3 +906,312 @@ test("41. SuperAdmin legacy bootstrap transaction is allowed atomically", async 
   assert.equal(invite.data()?.academyId, ACADEMY_A);
   assert.equal(invite.data()?.createdBy, superAdminUid);
 });
+test("42. SuperAdmin membership status action atomically updates Membership and creates audit log", async () => {
+  const superAdminUid = "superadmin-membership-action";
+  const targetUid = "controlled-coach";
+  const auditLogId = "controlled-membership-action-success";
+
+  await seed([
+    [`users/${superAdminUid}`, {
+      uid: superAdminUid,
+      name: "Controlled Action SuperAdmin",
+      email: "controlled-superadmin@example.com",
+      role: "SUPERADMIN",
+      status: "Active",
+    }],
+    [`academies/${ACADEMY_A}`, {
+      name: "Academy A",
+      inviteCode: INVITE_A,
+    }],
+    [`users/${targetUid}`, {
+      uid: targetUid,
+      name: "Controlled Coach",
+      email: "controlled-coach@example.com",
+      role: "COACH",
+      status: "Active",
+    }],
+    [
+      `academies/${ACADEMY_A}/members/${targetUid}`,
+      membershipData(
+        targetUid,
+        ACADEMY_A,
+        "COACH",
+        "ACTIVE",
+        superAdminUid,
+        "SUPERADMIN_ASSIGNMENT",
+      ),
+    ],
+  ]);
+
+  const db = authedDb(superAdminUid);
+
+  await assertSucceeds(
+    runTransaction(db, async (transaction) => {
+      const actorRef = doc(
+        db,
+        "users",
+        superAdminUid,
+      );
+
+      const membershipRef = doc(
+        db,
+        "academies",
+        ACADEMY_A,
+        "members",
+        targetUid,
+      );
+
+      const auditRef = doc(
+        db,
+        "logs",
+        auditLogId,
+      );
+
+      const actorSnapshot =
+        await transaction.get(actorRef);
+
+      const membershipSnapshot =
+        await transaction.get(membershipRef);
+
+      assert.equal(
+        actorSnapshot.data()?.role,
+        "SUPERADMIN",
+      );
+
+      assert.equal(
+        membershipSnapshot.data()?.status,
+        "ACTIVE",
+      );
+
+      const timestamp =
+        serverTimestamp();
+
+      transaction.update(
+        membershipRef,
+        {
+          status: "SUSPENDED",
+          updatedAt: timestamp,
+        },
+      );
+
+      transaction.set(
+        auditRef,
+        {
+          action:
+            "SUPERADMIN_MEMBERSHIP_STATUS_CHANGED",
+          actorUid:
+            superAdminUid,
+          targetUid,
+          targetUser:
+            targetUid,
+          academyId:
+            ACADEMY_A,
+          controlledAction:
+            "SUSPEND",
+          previousStatus:
+            "ACTIVE",
+          newStatus:
+            "SUSPENDED",
+          membershipRole:
+            "COACH",
+          membershipSource:
+            "SUPERADMIN_ASSIGNMENT",
+          timestamp,
+        },
+      );
+    }),
+  );
+
+  const membership =
+    await assertSucceeds(
+      getDoc(
+        doc(
+          db,
+          "academies",
+          ACADEMY_A,
+          "members",
+          targetUid,
+        ),
+      ),
+    );
+
+  assert.equal(
+    membership.data()?.status,
+    "SUSPENDED",
+  );
+
+  assert.equal(
+    membership.data()?.role,
+    "COACH",
+  );
+
+  assert.equal(
+    membership.data()?.source,
+    "SUPERADMIN_ASSIGNMENT",
+  );
+
+  assert.equal(
+    membership.data()?.joinedBy,
+    superAdminUid,
+  );
+
+  const audit =
+    await assertSucceeds(
+      getDoc(
+        doc(
+          db,
+          "logs",
+          auditLogId,
+        ),
+      ),
+    );
+
+  assert.equal(
+    audit.data()?.action,
+    "SUPERADMIN_MEMBERSHIP_STATUS_CHANGED",
+  );
+
+  assert.equal(
+    audit.data()?.actorUid,
+    superAdminUid,
+  );
+
+  assert.equal(
+    audit.data()?.newStatus,
+    "SUSPENDED",
+  );
+
+  const targetUser =
+    await assertSucceeds(
+      getDoc(
+        doc(
+          db,
+          "users",
+          targetUid,
+        ),
+      ),
+    );
+
+  assert.equal(
+    targetUser.data()?.role,
+    "COACH",
+  );
+
+  assert.equal(
+    targetUser.data()?.status,
+    "Active",
+  );
+});
+
+test("43. Academy Admin cannot partially commit a SuperAdmin controlled Membership action", async () => {
+  const targetUid = "controlled-coach";
+  const auditLogId = "controlled-membership-action-denied";
+
+  await seedAdminA();
+
+  await seed([
+    [`users/${targetUid}`, {
+      uid: targetUid,
+      name: "Controlled Coach",
+      email: "controlled-coach@example.com",
+      role: "COACH",
+      status: "Active",
+    }],
+    [
+      `academies/${ACADEMY_A}/members/${targetUid}`,
+      membershipData(
+        targetUid,
+        ACADEMY_A,
+        "COACH",
+        "ACTIVE",
+        ADMIN_A,
+        "SUPERADMIN_ASSIGNMENT",
+      ),
+    ],
+  ]);
+
+  const db = authedDb(ADMIN_A);
+
+  await assertFails(
+    runTransaction(db, async (transaction) => {
+      const membershipRef = doc(
+        db,
+        "academies",
+        ACADEMY_A,
+        "members",
+        targetUid,
+      );
+
+      const auditRef = doc(
+        db,
+        "logs",
+        auditLogId,
+      );
+
+      const membershipSnapshot =
+        await transaction.get(
+          membershipRef,
+        );
+
+      assert.equal(
+        membershipSnapshot.data()?.status,
+        "ACTIVE",
+      );
+
+      const timestamp =
+        serverTimestamp();
+
+      transaction.update(
+        membershipRef,
+        {
+          status: "SUSPENDED",
+          updatedAt: timestamp,
+        },
+      );
+
+      transaction.set(
+        auditRef,
+        {
+          action:
+            "SUPERADMIN_MEMBERSHIP_STATUS_CHANGED",
+          actorUid:
+            ADMIN_A,
+          targetUid,
+          targetUser:
+            targetUid,
+          academyId:
+            ACADEMY_A,
+          controlledAction:
+            "SUSPEND",
+          previousStatus:
+            "ACTIVE",
+          newStatus:
+            "SUSPENDED",
+          membershipRole:
+            "COACH",
+          membershipSource:
+            "SUPERADMIN_ASSIGNMENT",
+          timestamp,
+        },
+      );
+    }),
+  );
+
+  const membership =
+    await assertSucceeds(
+      getDoc(
+        doc(
+          db,
+          "academies",
+          ACADEMY_A,
+          "members",
+          targetUid,
+        ),
+      ),
+    );
+
+  assert.equal(
+    membership.data()?.status,
+    "ACTIVE",
+  );
+});
