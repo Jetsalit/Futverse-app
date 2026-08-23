@@ -337,6 +337,48 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     }
   };
 
+  const refreshRelationshipInventoryAfterMutation = async () => {
+    const actorUid =
+      relationshipInventoryActorUid;
+
+    const owner =
+      relationshipInventoryOwnerRef.current;
+
+    if (!actorUid) {
+      throw new Error(
+        "Active SuperAdmin relationship inventory actor is unavailable.",
+      );
+    }
+
+    if (!owner) {
+      throw new Error(
+        "Relationship inventory owner is unavailable for authoritative refresh.",
+      );
+    }
+
+    if (
+      relationshipInventoryOwnerActorUidRef.current !==
+      actorUid
+    ) {
+      throw new Error(
+        "Relationship inventory actor changed before authoritative refresh.",
+      );
+    }
+
+    await owner.refresh();
+
+    if (
+      relationshipInventoryOwnerActorUidRef.current !==
+        actorUid ||
+      relationshipInventoryOwnerRef.current !==
+        owner
+    ) {
+      throw new Error(
+        "SuperAdmin relationship inventory ownership changed during authoritative refresh.",
+      );
+    }
+  };
+
   const invalidateRelationshipInventory = async () => {
     if (!relationshipInventoryActorUid ||
         relationshipInventoryOwnerActorUidRef.current !== relationshipInventoryActorUid) {
@@ -1947,7 +1989,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                   return (
                     <>
                       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-                        Manage Users profile view is read-only. Role and status modifications must be performed using the table controls.
+                        Account Role and Account Status remain read-only in this profile. Controlled Academy Membership status actions appear below only for verified canonical Membership evidence.
                       </div>
 
                       <SuperAdminUserRelationshipInspector
@@ -1955,6 +1997,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                         context={accountOrganizationContextFor(selectedUser.id)}
                         row={relationshipRowsByUserId.get(selectedUser.id)}
                         onRefresh={refreshRelationshipInventory}
+                        onMutationRefresh={refreshRelationshipInventoryAfterMutation}
                       />
                     </>
                   );
