@@ -6,6 +6,18 @@ import {
   buildSuperAdminUserRelationshipInspectorModel,
 } from "./superAdminUserRelationshipInspectorModel";
 
+import SuperAdminControlledMembershipActions from "./SuperAdminControlledMembershipActions";
+
+import {
+  buildSuperAdminControlledMembershipActionPresentation,
+} from "./superAdminControlledMembershipActionPresentation";
+
+import { useAuth } from "../../contexts/AuthContext";
+
+import {
+  isExactActiveSuperAdmin,
+} from "../../lib/superAdminSupportModel";
+
 import type {
   SuperAdminUserRelationshipRow,
 } from "../../lib/superAdminRelationshipReadModel";
@@ -15,6 +27,7 @@ interface SuperAdminUserRelationshipInspectorProps {
   context: SuperAdminAccountOrganizationContext;
   row?: SuperAdminUserRelationshipRow;
   onRefresh: () => Promise<void>;
+  onMutationRefresh: () => Promise<void>;
 }
 
 type InspectorModel =
@@ -173,13 +186,35 @@ export default function SuperAdminUserRelationshipInspector({
   context,
   row,
   onRefresh,
+  onMutationRefresh,
 }: SuperAdminUserRelationshipInspectorProps) {
+  const { actualUser } = useAuth();
+
   const model =
     buildSuperAdminUserRelationshipInspectorModel({
       userId,
       context,
       row,
     });
+
+  const actorIsActiveSuperAdmin =
+    isExactActiveSuperAdmin(actualUser);
+
+  const controlledMembershipActionModels =
+    model.controlledMembershipEvidence
+      .map((item) =>
+        buildSuperAdminControlledMembershipActionPresentation({
+          actorIsActiveSuperAdmin,
+          userId: model.userId,
+          relationshipSource: model.source,
+          integrity: model.integrity,
+          item,
+        }),
+      )
+      .filter(
+        (candidate) =>
+          candidate.availability === "AVAILABLE",
+      );
 
   const refreshButton = (
     <button
@@ -328,6 +363,35 @@ export default function SuperAdminUserRelationshipInspector({
             items={model.currentEvidence}
             emptyMessage="No current canonical relationship evidence."
           />
+        </div>
+
+        <div>
+          <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-600">
+            Controlled Membership Actions
+          </div>
+
+          {controlledMembershipActionModels.length > 0 ? (
+            <div className="space-y-3">
+              {controlledMembershipActionModels.map(
+                (actionModel) => (
+                  <SuperAdminControlledMembershipActions
+                    key={[
+                      actionModel.academyId,
+                      actionModel.role,
+                      actionModel.status,
+                      actionModel.membershipSource || "",
+                    ].join(":")}
+                    model={actionModel}
+                    onAuthoritativeRefresh={onMutationRefresh}
+                  />
+                ),
+              )}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
+              No controlled Membership actions are available from the current verified canonical Academy staff Membership evidence.
+            </div>
+          )}
         </div>
 
         <div>

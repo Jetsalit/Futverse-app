@@ -45,8 +45,14 @@ describe("SuperAdmin User Relationship Inspector UI wiring", () => {
 
     assert.doesNotMatch(
       source,
-      /\b(assign|revoke|transfer|approve|reject)\b.*\b(membership|authority)\b/i,
-      "2C.2B must not introduce controlled membership actions",
+      /mutateMembershipStatusAtomically|superAdminControlledMembershipMutations/,
+      "Inspector must delegate mutation ownership to the dedicated Controlled Membership Actions component",
+    );
+
+    assert.match(
+      source,
+      /SuperAdminControlledMembershipActions/,
+      "Inspector must delegate controlled action UI to the dedicated component",
     );
   });
 
@@ -216,8 +222,256 @@ describe("SuperAdmin User Relationship Inspector UI wiring", () => {
     );
   });
 
-  it("8. mounts relationship inspection only in READ_ONLY_PROFILE and keeps Account Role separate from organization authority", () => {
+  it("8. derives controlled Membership actions only from dedicated eligible canonical staff evidence through the audited presentation policy", () => {
+    const source = readInspectorComponent();
+
+    const controlledBuilderStart =
+      source.indexOf(
+        "const controlledMembershipActionModels",
+      );
+
+    const refreshButtonStart =
+      source.indexOf(
+        "const refreshButton",
+        controlledBuilderStart,
+      );
+
+    assert.ok(
+      controlledBuilderStart >= 0 &&
+        refreshButtonStart > controlledBuilderStart,
+      "Controlled Membership action presentation block must exist",
+    );
+
+    const controlledBuilder =
+      source.slice(
+        controlledBuilderStart,
+        refreshButtonStart,
+      );
+
+    assert.match(
+      controlledBuilder,
+      /model\.controlledMembershipEvidence/,
+      "Controlled actions must start from the dedicated eligible canonical staff Membership evidence",
+    );
+
+    assert.match(
+      controlledBuilder,
+      /buildSuperAdminControlledMembershipActionPresentation/,
+      "Controlled actions must use the audited presentation policy",
+    );
+
+    assert.match(
+      controlledBuilder,
+      /candidate\.availability\s*===\s*["']AVAILABLE["']/,
+      "Only policy-AVAILABLE action models may reach the action UI",
+    );
+
+    assert.doesNotMatch(
+      controlledBuilder,
+      /model\.currentEvidence|model\.resolvedAuthority|model\.historical|legacyEvidence/,
+      "Current authority evidence, resolved authority, historical display data and legacy evidence must never be used directly as mutation sources",
+    );
+
+    const actorDerivationStart =
+      source.indexOf(
+        "const actorIsActiveSuperAdmin",
+      );
+
+    assert.ok(
+      actorDerivationStart >= 0 &&
+        actorDerivationStart < controlledBuilderStart,
+      "Actor eligibility must be derived before building controlled action presentations",
+    );
+
+    const actorDerivation =
+      source.slice(
+        actorDerivationStart,
+        controlledBuilderStart,
+      );
+
+    assert.match(
+      actorDerivation,
+      /isExactActiveSuperAdmin\(actualUser\)/,
+      "Inspector must derive actor eligibility from actualUser",
+    );
+  });
+
+  it("9. keeps Controlled Membership Actions as a separate section after Current Evidence and before Historical Relationships", () => {
+    const source = readInspectorComponent();
+
+    const currentEvidence =
+      source.indexOf(
+        "Current Evidence",
+      );
+
+    const controlledActions =
+      source.indexOf(
+        "Controlled Membership Actions",
+        currentEvidence,
+      );
+
+    const historical =
+      source.indexOf(
+        "Historical Relationships",
+        controlledActions,
+      );
+
+    assert.ok(
+      currentEvidence >= 0,
+      "Current Evidence section must remain",
+    );
+
+    assert.ok(
+      controlledActions > currentEvidence,
+      "Controlled Membership Actions must follow Current Evidence",
+    );
+
+    assert.ok(
+      historical > controlledActions,
+      "Historical Relationships must remain after controlled actions",
+    );
+
+    const relationshipCardStart =
+      source.indexOf(
+        "function RelationshipCard",
+      );
+
+    const relationshipListStart =
+      source.indexOf(
+        "function RelationshipList",
+        relationshipCardStart,
+      );
+
+    const relationshipCard =
+      source.slice(
+        relationshipCardStart,
+        relationshipListStart,
+      );
+
+    assert.doesNotMatch(
+      relationshipCard,
+      /SuperAdminControlledMembershipActions|Controlled Membership Actions/,
+      "Read-only relationship cards must not own mutation controls",
+    );
+  });
+
+  it("10. Portal preserves normal read refresh and provides a separate strict post-mutation refresh", () => {
     const portal = readPortal();
+
+    const mount =
+      portal.match(
+        /<SuperAdminUserRelationshipInspector[\s\S]*?\/>/,
+      )?.[0] || "";
+
+    assert.match(
+      mount,
+      /onRefresh=\{refreshRelationshipInventory\}/,
+      "Existing read refresh wiring must remain",
+    );
+
+    assert.match(
+      mount,
+      /onMutationRefresh=\{refreshRelationshipInventoryAfterMutation\}/,
+      "Mutation refresh must use the strict callback",
+    );
+
+    const strictStart =
+      portal.indexOf(
+        "const refreshRelationshipInventoryAfterMutation",
+      );
+
+    const invalidateStart =
+      portal.indexOf(
+        "const invalidateRelationshipInventory",
+        strictStart,
+      );
+
+    assert.ok(
+      strictStart >= 0 &&
+        invalidateStart > strictStart,
+      "Strict post-mutation refresh callback must exist",
+    );
+
+    const strictRefresh =
+      portal.slice(
+        strictStart,
+        invalidateStart,
+      );
+
+    assert.match(
+      strictRefresh,
+      /throw new Error/,
+      "Strict mutation refresh must fail closed when ownership is invalid",
+    );
+
+    assert.match(
+      strictRefresh,
+      /await owner\.refresh\(\)/,
+      "Strict mutation refresh must await the authoritative owner",
+    );
+
+    const refreshAwait =
+      strictRefresh.indexOf(
+        "await owner.refresh()",
+      );
+
+    const postRefreshVerification =
+      strictRefresh.slice(
+        refreshAwait +
+          "await owner.refresh()".length,
+      );
+
+    assert.match(
+      postRefreshVerification,
+      /relationshipInventoryOwnerActorUidRef\.current/,
+      "Strict mutation refresh must recheck actor ownership after refresh",
+    );
+
+    assert.match(
+      postRefreshVerification,
+      /relationshipInventoryOwnerRef\.current\s*!==\s*owner/,
+      "Strict mutation refresh must recheck the exact inventory owner after refresh",
+    );
+
+    assert.match(
+      postRefreshVerification,
+      /owner\.getState\(\)/,
+      "Strict mutation refresh must inspect the authoritative lifecycle state after refresh",
+    );
+
+    assert.match(
+      postRefreshVerification,
+      /refreshedState\.status\s*!==\s*["']READY["']/,
+      "Strict mutation refresh must reject a non-READY lifecycle state",
+    );
+
+    assert.match(
+      postRefreshVerification,
+      /refreshedState\.inventory\s*===\s*null/,
+      "Strict mutation refresh must reject READY-without-inventory anomalies",
+    );
+
+    assert.doesNotMatch(
+      strictRefresh,
+      /\bcatch\s*\(/,
+      "Strict mutation refresh must propagate failure to the action UI",
+    );
+  });
+
+  it("11. mounts relationship inspection only in READ_ONLY_PROFILE and keeps Account Role separate from organization authority", () => {
+    const portal = readPortal();
+
+    assert.match(
+      portal,
+      /Account Role and Account Status remain read-only in this profile\./,
+      "Profile copy must keep Account Role and Account Status separate from Membership authority",
+    );
+
+    assert.match(
+      portal,
+      /Controlled Academy Membership status actions appear below only for verified canonical Membership evidence\./,
+      "Profile copy must explicitly describe the controlled Membership action boundary",
+    );
 
     const readOnlyBranch =
       portal.indexOf(
