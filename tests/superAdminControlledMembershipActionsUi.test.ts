@@ -339,7 +339,56 @@ describe(
       );
     });
 
-    it("12. owns no account-role mutation, Membership delete or generic activation UI", () => {
+    it("12. identifies the exact Academy and Membership role before an action is chosen", () => {
+      const text = source();
+
+      const availablePanel =
+        text.indexOf(
+          'data-controlled-membership-actions="available"',
+        );
+
+      const actionButtons =
+        text.indexOf(
+          "model.actions.map",
+          availablePanel,
+        );
+
+      assert.ok(
+        availablePanel >= 0,
+        "Available controlled action panel must exist",
+      );
+
+      assert.ok(
+        actionButtons > availablePanel,
+        "Action buttons must follow the Membership identity context",
+      );
+
+      const preActionIdentity =
+        text.slice(
+          availablePanel,
+          actionButtons,
+        );
+
+      assert.match(
+        preActionIdentity,
+        /model\.organizationName\s*\|\|\s*model\.academyId/,
+        "Academy identity must be visible before the action buttons",
+      );
+
+      assert.match(
+        preActionIdentity,
+        /Academy ID:\s*\{model\.academyId\}/,
+        "Exact Academy ID must remain inspectable before mutation",
+      );
+
+      assert.match(
+        preActionIdentity,
+        /\{model\.role\}/,
+        "Membership role must be visible before mutation",
+      );
+    });
+
+    it("13. owns no account-role mutation, Membership delete or generic activation UI", () => {
       const text = source();
 
       assert.doesNotMatch(
@@ -354,7 +403,7 @@ describe(
 
       assert.doesNotMatch(
         text,
-        /PENDING\s*(?:โ’|->|to)\s*ACTIVE/i,
+        /PENDING\s*(?:เนยโ€|->|to)\s*ACTIVE/i,
       );
 
       assert.match(

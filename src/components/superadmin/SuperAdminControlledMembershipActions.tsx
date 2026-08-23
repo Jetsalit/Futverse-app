@@ -411,13 +411,27 @@ export default function SuperAdminControlledMembershipActions({
       className="mt-3 space-y-3 border-t border-slate-200 pt-3"
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
+        <div className="min-w-0">
           <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-700">
             <ShieldAlert className="h-4 w-4" />
             Controlled Membership Actions
           </div>
 
-          <div className="mt-1 text-[11px] leading-relaxed text-slate-500">
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <span className="max-w-full truncate rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-black text-white">
+              {model.organizationName || model.academyId}
+            </span>
+
+            <span className="rounded-lg bg-blue-50 px-2.5 py-1 text-[10px] font-black text-blue-700">
+              {model.role}
+            </span>
+          </div>
+
+          <div className="mt-1 break-all text-[10px] text-slate-400">
+            Academy ID: {model.academyId}
+          </div>
+
+          <div className="mt-2 text-[11px] leading-relaxed text-slate-500">
             Changes this exact Academy Membership status only.
             Account role and other Academy Memberships are not changed.
           </div>
