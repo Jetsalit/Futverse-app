@@ -377,6 +377,19 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
         "SuperAdmin relationship inventory ownership changed during authoritative refresh.",
       );
     }
+
+    const refreshedState =
+      owner.getState();
+
+    if (
+      refreshedState.status !== "READY" ||
+      refreshedState.inventory === null
+    ) {
+      throw new Error(
+        refreshedState.errorMessage ||
+          "Authoritative relationship inventory refresh did not reach READY state.",
+      );
+    }
   };
 
   const invalidateRelationshipInventory = async () => {

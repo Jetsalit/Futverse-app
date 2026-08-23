@@ -48,6 +48,7 @@ export interface SuperAdminUserRelationshipInspectorModel {
   source?: SuperAdminRelationshipSource;
   integrity?: SuperAdminIntegrityState;
   currentEvidence: SuperAdminUserRelationshipInspectorItem[];
+  controlledMembershipEvidence: SuperAdminUserRelationshipInspectorItem[];
   resolvedAuthority: SuperAdminUserRelationshipInspectorItem[];
   historical: SuperAdminUserRelationshipInspectorItem[];
   legacyEvidence?: SuperAdminLegacyEvidence;
@@ -235,6 +236,7 @@ function failClosed(
     userId,
     coverage,
     currentEvidence: [],
+    controlledMembershipEvidence: [],
     resolvedAuthority: [],
     historical: [],
     issues: [],
@@ -360,6 +362,25 @@ export function buildSuperAdminUserRelationshipInspectorModel(
       )
       .map(toInspectorItem);
 
+  const controlledMembershipEvidence =
+    input.row.organizations
+      .filter(
+        (relationship) =>
+          relationship.source === "CANONICAL" &&
+          relationship.organizationType === "ACADEMY" &&
+          relationship.evidenceKind === "STAFF_MEMBERSHIP" &&
+          (
+            relationship.relationship === "ADMIN" ||
+            relationship.relationship === "COACH"
+          ) &&
+          (
+            relationship.relationshipStatus === "PENDING" ||
+            relationship.relationshipStatus === "ACTIVE" ||
+            relationship.relationshipStatus === "SUSPENDED"
+          ),
+      )
+      .map(toInspectorItem);
+
   const historical =
     input.row.organizations
       .filter(
@@ -404,6 +425,7 @@ export function buildSuperAdminUserRelationshipInspectorModel(
     source: input.row.source,
     integrity: input.row.integrity,
     currentEvidence,
+    controlledMembershipEvidence,
     resolvedAuthority,
     historical,
     legacyEvidence:

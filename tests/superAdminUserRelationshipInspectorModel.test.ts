@@ -558,4 +558,106 @@ describe("SuperAdmin User Relationship Inspector Model", () => {
     assert.deepEqual(result.currentEvidence, []);
     assert.deepEqual(result.historical, []);
   });
+
+  it("11. exposes non-active reversible canonical staff Memberships through a separate controlled-evidence channel without promoting them to Current Authority", async () => {
+    const {
+      buildSuperAdminUserRelationshipInspectorModel,
+    } = await loadInspectorModule();
+
+    const row = verifiedStaffRow();
+
+    row.organizations = [
+      {
+        organizationId: "academy-pending",
+        organizationName: "Pending Academy",
+        organizationType: "ACADEMY",
+        relationship: "COACH",
+        relationshipStatus: "PENDING",
+        source: "CANONICAL",
+        evidenceKind: "STAFF_MEMBERSHIP",
+        isCurrent: false,
+        membershipSource: "INVITE",
+      },
+      {
+        organizationId: "academy-suspended",
+        organizationName: "Suspended Academy",
+        organizationType: "ACADEMY",
+        relationship: "ADMIN",
+        relationshipStatus: "SUSPENDED",
+        source: "CANONICAL",
+        evidenceKind: "STAFF_MEMBERSHIP",
+        isCurrent: false,
+        membershipSource: "SUPERADMIN_ASSIGNMENT",
+      },
+      {
+        organizationId: "academy-left",
+        organizationName: "Former Academy",
+        organizationType: "ACADEMY",
+        relationship: "COACH",
+        relationshipStatus: "LEFT",
+        source: "CANONICAL",
+        evidenceKind: "STAFF_MEMBERSHIP",
+        isCurrent: false,
+        membershipSource: "CLAIM_APPROVAL",
+      },
+      {
+        organizationId: "academy-player",
+        organizationName: "Player Academy",
+        organizationType: "ACADEMY",
+        relationship: "PLAYER",
+        relationshipStatus: "INACTIVE",
+        source: "CANONICAL",
+        evidenceKind: "PLAYER_ASSOCIATION",
+        isCurrent: false,
+        playerId: "player-1",
+      },
+    ];
+
+    const result =
+      buildSuperAdminUserRelationshipInspectorModel({
+        userId: "user-1",
+        context: readyContext(),
+        row,
+      });
+
+    assert.equal(result.state, "READY");
+
+    assert.deepEqual(
+      result.currentEvidence,
+      [],
+      "PENDING and SUSPENDED must not be promoted to Current Authority evidence",
+    );
+
+    assert.deepEqual(
+      result.resolvedAuthority,
+      [],
+      "non-ACTIVE staff Memberships must not become resolved authority",
+    );
+
+    assert.equal(
+      result.historical.length,
+      4,
+      "non-current relationships must remain visible in Historical Relationships",
+    );
+
+    assert.deepEqual(
+      result.controlledMembershipEvidence.map(
+        (item: { organizationId: string; status: string }) => ({
+          organizationId: item.organizationId,
+          status: item.status,
+        }),
+      ),
+      [
+        {
+          organizationId: "academy-pending",
+          status: "PENDING",
+        },
+        {
+          organizationId: "academy-suspended",
+          status: "SUSPENDED",
+        },
+      ],
+      "only reversible/nonterminal canonical Academy staff Memberships may enter the controlled-evidence channel",
+    );
+  });
 });

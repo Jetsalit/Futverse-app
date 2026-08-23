@@ -222,7 +222,7 @@ describe("SuperAdmin User Relationship Inspector UI wiring", () => {
     );
   });
 
-  it("8. derives controlled Membership actions only from current evidence through the audited presentation policy", () => {
+  it("8. derives controlled Membership actions only from dedicated eligible canonical staff evidence through the audited presentation policy", () => {
     const source = readInspectorComponent();
 
     const controlledBuilderStart =
@@ -250,8 +250,8 @@ describe("SuperAdmin User Relationship Inspector UI wiring", () => {
 
     assert.match(
       controlledBuilder,
-      /model\.currentEvidence/,
-      "Controlled actions must start from current relationship evidence",
+      /model\.controlledMembershipEvidence/,
+      "Controlled actions must start from the dedicated eligible canonical staff Membership evidence",
     );
 
     assert.match(
@@ -268,8 +268,8 @@ describe("SuperAdmin User Relationship Inspector UI wiring", () => {
 
     assert.doesNotMatch(
       controlledBuilder,
-      /model\.resolvedAuthority|model\.historical|legacyEvidence/,
-      "Resolved authority, historical and legacy evidence must never become mutation sources",
+      /model\.currentEvidence|model\.resolvedAuthority|model\.historical|legacyEvidence/,
+      "Current authority evidence, resolved authority, historical display data and legacy evidence must never be used directly as mutation sources",
     );
 
     const actorDerivationStart =
@@ -431,6 +431,24 @@ describe("SuperAdmin User Relationship Inspector UI wiring", () => {
       postRefreshVerification,
       /relationshipInventoryOwnerRef\.current\s*!==\s*owner/,
       "Strict mutation refresh must recheck the exact inventory owner after refresh",
+    );
+
+    assert.match(
+      postRefreshVerification,
+      /owner\.getState\(\)/,
+      "Strict mutation refresh must inspect the authoritative lifecycle state after refresh",
+    );
+
+    assert.match(
+      postRefreshVerification,
+      /refreshedState\.status\s*!==\s*["']READY["']/,
+      "Strict mutation refresh must reject a non-READY lifecycle state",
+    );
+
+    assert.match(
+      postRefreshVerification,
+      /refreshedState\.inventory\s*===\s*null/,
+      "Strict mutation refresh must reject READY-without-inventory anomalies",
     );
 
     assert.doesNotMatch(
