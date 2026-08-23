@@ -144,8 +144,9 @@ export default function DrillLibrary({
                   {/* Subtle Grid Pattern */}
                   <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMSIgY3k9IjEiIHI9IjEiIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC4wNykiLz48L3N2Zz4=')] z-0 pointer-events-none opacity-50"></div>
 
-                  <div className="absolute inset-4 ring-[1px] ring-slate-800 pointer-events-none z-0">
-                    {drill.canvas_data.fieldType === "full" ? (
+                  {drill.canvas_data && (
+                    <div className="absolute inset-4 ring-[1px] ring-slate-800 pointer-events-none z-0">
+                      {drill.canvas_data.fieldType === "full" ? (
                       <>
                         <div className="absolute top-0 bottom-0 left-1/2 w-[1px] bg-slate-800 -translate-x-1/2"></div>
                         <div className="absolute top-1/2 left-1/2 w-[22%] max-w-[200px] aspect-square border-[1px] border-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
@@ -168,7 +169,7 @@ export default function DrillLibrary({
                         <div className="absolute top-0 right-0 w-3 h-3 border-b-[1px] border-l-[1px] border-slate-800 rounded-bl-full"></div>
                         <div className="absolute bottom-0 right-0 w-3 h-3 border-t-[1px] border-l-[1px] border-slate-800 rounded-tl-full"></div>
                       </>
-                    ) : (
+                    ) : drill.canvas_data.fieldType === "half" ? (
                       <>
                         <div className="absolute top-0 left-1/2 w-[55%] h-[35%] border-[1px] border-slate-800 border-t-0 -translate-x-1/2"></div>
                         <div className="absolute top-0 left-1/2 w-[24%] h-[12%] border-[1px] border-slate-800 border-t-0 -translate-x-1/2"></div>
@@ -183,8 +184,9 @@ export default function DrillLibrary({
                         <div className="absolute bottom-0 left-1/2 w-[35%] max-w-[300px] aspect-square border-[1px] border-slate-800 border-b-0 rounded-t-full -translate-x-1/2 translate-y-[50%]"></div>
                         <div className="absolute bottom-0 left-1/2 w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 translate-y-1/2"></div>
                       </>
-                    )}
-                  </div>
+                    ) : null}
+                    </div>
+                  )}
                   {drill.previewImage ? (
                     <img
                       src={drill.previewImage}

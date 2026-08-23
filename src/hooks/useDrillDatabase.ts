@@ -2,32 +2,12 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../lib/firebase';
 import { collection, addDoc, updateDoc, deleteDoc, deleteField, doc, onSnapshot, query } from 'firebase/firestore';
-import { mapCanonicalSnapshot, withoutCanonicalDocumentId } from '../lib/firestore/canonicalDocument';
+import { withoutCanonicalDocumentId } from '../lib/firestore/canonicalDocument';
 import { resolveAssistedRecordIdentity } from '../lib/assistedRecordIdentity';
+import { normalizeDrillRecord } from '../lib/drillDataModel';
+import type { Drill } from '../lib/drillDataModel';
 
-export interface Drill {
-  id: string;
-  title: string;
-  category: string;
-  canvas_data: {
-    elements: any[];
-    lines: any[];
-    fieldType: string;
-  };
-  created_by: string;
-  is_shared: boolean;
-  duration?: string;
-  description?: string;
-  previewImage?: string;
-  ageGroup?: string;
-  phase?: string;
-  trainingMethod?: string;
-  coachingPoints?: string;
-  date?: string;
-  recorded_by?: string;
-  entry_mode?: 'SELF' | 'ASSISTED';
-  last_updated_by?: string;
-}
+export type { Drill } from '../lib/drillDataModel';
 
 export function useDrillDatabase() {
   const [drills, setDrills] = useState<Drill[]>([]);
@@ -41,7 +21,7 @@ export function useDrillDatabase() {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const drillsData: Drill[] = [];
       snapshot.forEach((doc) => {
-        drillsData.push(mapCanonicalSnapshot<Drill>(doc));
+        drillsData.push(normalizeDrillRecord(doc.id, doc.data()));
       });
       setDrills(drillsData);
     });
