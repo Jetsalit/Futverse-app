@@ -1,5 +1,6 @@
 import type {
   DashboardLoadState,
+  DashboardOperationalSignal,
   EffectiveRoleCounts,
   RecentActivityItem,
 } from "./dashboardModel";
@@ -8,6 +9,8 @@ import { assessRequestedIntent } from "../../lib/accountRolePolicy";
 
 export const DASHBOARD_CSV_MIME_TYPE = "text/csv;charset=utf-8";
 export const DASHBOARD_EXPORT_UNAVAILABLE = "Unavailable";
+export const DASHBOARD_EXPORT_NOT_CONNECTED = "Not Connected";
+export const DASHBOARD_EXPORT_LOADING = "Loading";
 
 const CSV_HEADERS = [
   "section",
@@ -31,17 +34,11 @@ type CsvRow = Record<CsvHeader, unknown>;
 
 export interface SuperAdminDashboardExportInput {
   exportedAt: Date;
-  pendingUsers: number;
   academyCount: number | null;
   academyLoadState: DashboardLoadState;
   roleCounts: EffectiveRoleCounts;
   users: readonly User[];
-  paymentApprovals: number | null;
-  paymentApprovalsLoadState: DashboardLoadState;
-  profileClaims: number | null;
-  profileClaimsLoadState: DashboardLoadState;
-  errorReports: number | null;
-  errorReportsLoadState: DashboardLoadState;
+  operationalSignals: readonly DashboardOperationalSignal[];
   recentActivities: readonly RecentActivityItem[];
   recentActivityLoadState: DashboardLoadState;
 }
@@ -92,6 +89,54 @@ function metricValue(
     : DASHBOARD_EXPORT_UNAVAILABLE;
 }
 
+function operationalSignalValue(
+  signals: readonly DashboardOperationalSignal[],
+  id: DashboardOperationalSignal["id"],
+):
+  | number
+  | typeof DASHBOARD_EXPORT_UNAVAILABLE
+  | typeof DASHBOARD_EXPORT_NOT_CONNECTED
+  | typeof DASHBOARD_EXPORT_LOADING {
+  const matchingSignals =
+    signals.filter(
+      (signal) => signal.id === id,
+    );
+
+  if (matchingSignals.length !== 1) {
+    return DASHBOARD_EXPORT_UNAVAILABLE;
+  }
+
+  const signal = matchingSignals[0];
+
+  switch (signal.state) {
+    case "LOADING":
+      return DASHBOARD_EXPORT_LOADING;
+
+    case "UNAVAILABLE":
+      return DASHBOARD_EXPORT_UNAVAILABLE;
+
+    case "NOT_CONNECTED":
+      return DASHBOARD_EXPORT_NOT_CONNECTED;
+
+    case "CLEAR":
+      return signal.count === 0
+        ? 0
+        : DASHBOARD_EXPORT_UNAVAILABLE;
+
+    case "PENDING": {
+      const validPendingCount =
+        typeof signal.count === "number" &&
+        Number.isFinite(signal.count) &&
+        Number.isInteger(signal.count) &&
+        signal.count > 0;
+
+      return validPendingCount
+        ? signal.count
+        : DASHBOARD_EXPORT_UNAVAILABLE;
+    }
+  }
+}
+
 function summaryRow(
   metric: string,
   value: unknown,
@@ -121,7 +166,14 @@ export function buildSuperAdminDashboardCsv(
   const exportedAt = input.exportedAt.toISOString();
   const rows: CsvRow[] = [
     summaryRow("Export Timestamp", exportedAt, exportedAt),
-    summaryRow("Pending Users", input.pendingUsers, exportedAt),
+    summaryRow(
+      "Pending Users",
+      operationalSignalValue(
+        input.operationalSignals,
+        "user-approvals",
+      ),
+      exportedAt,
+    ),
     summaryRow(
       "Academies",
       metricValue(input.academyLoadState, input.academyCount),
@@ -133,17 +185,26 @@ export function buildSuperAdminDashboardCsv(
     summaryRow("Scouts", input.roleCounts.scouts, exportedAt),
     summaryRow(
       "Payment Approvals",
-      metricValue(input.paymentApprovalsLoadState, input.paymentApprovals),
+      operationalSignalValue(
+        input.operationalSignals,
+        "payment-approvals",
+      ),
       exportedAt,
     ),
     summaryRow(
       "Pending Profile Claims",
-      metricValue(input.profileClaimsLoadState, input.profileClaims),
+      operationalSignalValue(
+        input.operationalSignals,
+        "profile-claims",
+      ),
       exportedAt,
     ),
     summaryRow(
       "Error Reports",
-      metricValue(input.errorReportsLoadState, input.errorReports),
+      operationalSignalValue(
+        input.operationalSignals,
+        "error-reports",
+      ),
       exportedAt,
     ),
     summaryRow(

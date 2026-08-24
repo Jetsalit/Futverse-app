@@ -4,6 +4,7 @@ import type { User } from "../src/contexts/AuthContext.js";
 import {
   buildRecentActivities,
   deriveDashboardAlerts,
+  deriveDashboardOperationalSignals,
   deriveEffectiveRoleCounts,
   parseAuditLog,
   searchDashboardData,
@@ -48,15 +49,34 @@ describe("SuperAdmin Dashboard model", () => {
     assert.deepEqual(searchDashboardData({ query: "x", users, academies, claims }), []);
   });
 
-  it("omits unavailable lazy sources from alert derivation", () => {
-    const alerts = deriveDashboardAlerts({
-      pendingUsers: 2,
-      paymentApprovals: null,
-      profileClaims: null,
-      errorReports: null,
-    });
+  it("derives only confirmed pending alerts when other sources are unavailable", () => {
+    const alerts = deriveDashboardAlerts([
+      {
+        id: "user-approvals",
+        state: "PENDING",
+        count: 2,
+      },
+      {
+        id: "profile-claims",
+        state: "UNAVAILABLE",
+        count: null,
+      },
+      {
+        id: "payment-approvals",
+        state: "NOT_CONNECTED",
+        count: null,
+      },
+      {
+        id: "error-reports",
+        state: "UNAVAILABLE",
+        count: null,
+      },
+    ]);
 
-    assert.deepEqual(alerts.map((alert) => alert.id), ["pending-users"]);
+    assert.deepEqual(
+      alerts.map((alert) => alert.id),
+      ["pending-users"],
+    );
   });
 
   it("maps audit actors from users already in memory", () => {
@@ -101,5 +121,200 @@ describe("SuperAdmin Dashboard model", () => {
     assert.equal(activities[0]?.action, "custom event");
     assert.equal(activities[0]?.actor, "System");
     assert.equal(activities[0]?.target, "—");
+  });
+
+  it("derives truthful operational signal states", () => {
+    const signals = deriveDashboardOperationalSignals({
+      userApprovals: {
+        loadState: "loaded",
+        count: 2,
+      },
+      profileClaims: {
+        loadState: "loaded",
+        count: 0,
+      },
+    });
+
+    assert.deepEqual(
+      signals.map((signal) => ({
+        id: signal.id,
+        state: signal.state,
+        count: signal.count,
+      })),
+      [
+        {
+          id: "user-approvals",
+          state: "PENDING",
+          count: 2,
+        },
+        {
+          id: "profile-claims",
+          state: "CLEAR",
+          count: 0,
+        },
+        {
+          id: "payment-approvals",
+          state: "NOT_CONNECTED",
+          count: null,
+        },
+        {
+          id: "error-reports",
+          state: "NOT_CONNECTED",
+          count: null,
+        },
+      ],
+    );
+  });
+
+  it("keeps loading and unavailable sources distinct", () => {
+    const loading = deriveDashboardOperationalSignals({
+      userApprovals: {
+        loadState: "loading",
+        count: null,
+      },
+      profileClaims: {
+        loadState: "idle",
+        count: null,
+      },
+    });
+
+    assert.equal(loading[0]?.state, "LOADING");
+    assert.equal(loading[1]?.state, "LOADING");
+
+    const unavailable = deriveDashboardOperationalSignals({
+      userApprovals: {
+        loadState: "unavailable",
+        count: null,
+      },
+      profileClaims: {
+        loadState: "unavailable",
+        count: null,
+      },
+    });
+
+    assert.equal(unavailable[0]?.state, "UNAVAILABLE");
+    assert.equal(unavailable[1]?.state, "UNAVAILABLE");
+  });
+
+  it("fails closed for invalid loaded counts", () => {
+    const signals = deriveDashboardOperationalSignals({
+      userApprovals: {
+        loadState: "loaded",
+        count: null,
+      },
+      profileClaims: {
+        loadState: "loaded",
+        count: -1,
+      },
+    });
+
+    assert.equal(signals[0]?.state, "UNAVAILABLE");
+    assert.equal(signals[1]?.state, "UNAVAILABLE");
+  });
+  it("derives action alerts from explicit operational signals", () => {
+    const signals = deriveDashboardOperationalSignals({
+      userApprovals: {
+        loadState: "loaded",
+        count: 2,
+      },
+      profileClaims: {
+        loadState: "loaded",
+        count: 0,
+      },
+    });
+
+    const alerts = deriveDashboardAlerts(signals);
+
+    assert.deepEqual(
+      alerts.map((alert) => alert.id),
+      ["pending-users"],
+    );
+  });
+
+  it("never claims all-clear while operational coverage is incomplete", () => {
+    const signals = deriveDashboardOperationalSignals({
+      userApprovals: {
+        loadState: "loaded",
+        count: 0,
+      },
+      profileClaims: {
+        loadState: "loaded",
+        count: 0,
+      },
+    });
+
+    const alerts = deriveDashboardAlerts(signals);
+
+    assert.equal(
+      alerts.some((alert) => alert.id === "all-clear"),
+      false,
+    );
+  });
+
+  it("claims all-clear only when every operational signal is explicitly CLEAR", () => {
+    const alerts = deriveDashboardAlerts([
+      {
+        id: "user-approvals",
+        state: "CLEAR",
+        count: 0,
+      },
+      {
+        id: "profile-claims",
+        state: "CLEAR",
+        count: 0,
+      },
+      {
+        id: "payment-approvals",
+        state: "CLEAR",
+        count: 0,
+      },
+      {
+        id: "error-reports",
+        state: "CLEAR",
+        count: 0,
+      },
+    ]);
+
+    assert.deepEqual(
+      alerts.map((alert) => alert.id),
+      ["all-clear"],
+    );
+  });
+  it("never routes Error Reports to System Logs", () => {
+    const alerts = deriveDashboardAlerts([
+      {
+        id: "user-approvals",
+        state: "CLEAR",
+        count: 0,
+      },
+      {
+        id: "profile-claims",
+        state: "CLEAR",
+        count: 0,
+      },
+      {
+        id: "payment-approvals",
+        state: "CLEAR",
+        count: 0,
+      },
+      {
+        id: "error-reports",
+        state: "PENDING",
+        count: 1,
+      },
+    ]);
+
+    const errorAlert =
+      alerts.find(
+        (alert) => alert.id === "error-reports",
+      );
+
+    assert.ok(errorAlert);
+
+    assert.equal(
+      errorAlert.tab,
+      undefined,
+      "Error Reports must not proxy-route to System Logs",
+    );
   });
 });

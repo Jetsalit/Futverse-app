@@ -28,6 +28,10 @@ import {
 } from "lucide-react";
 import { subscribeToUsers } from "../lib/firestore/users";
 import {
+  firestoreSuperAdminDashboardSignalReadOps,
+  loadPendingProfileClaimCount,
+} from "../lib/firestore/superAdminDashboardSignalReadAdapter";
+import {
   SAFE_ACCOUNT_ROLES,
   assessRequestedIntent,
   genericApprovalBlockReason,
@@ -91,6 +95,7 @@ import {
   searchDashboardData,
   resolveDashboardSearchSelection,
   deriveDashboardAlerts,
+  deriveDashboardOperationalSignals,
   parseAuditLog,
   buildRecentActivities,
   type SuperAdminTab,
@@ -195,6 +200,13 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const [profileClaimsList, setProfileClaimsList] = useState<ProfileClaimItem[]>([]);
   const [profileClaimsLoadState, setProfileClaimsLoadState] = useState<DashboardLoadState>("idle");
   const [claimsSearchQuery, setClaimsSearchQuery] = useState("");
+
+  // Command Center authoritative Profile Claim signal.
+  // Kept separate from the limited Profile Claims audit list.
+  const [profileClaimSignalCount, setProfileClaimSignalCount] =
+    useState<number | null>(null);
+  const [profileClaimSignalLoadState, setProfileClaimSignalLoadState] =
+    useState<DashboardLoadState>("idle");
 
   const relationshipInventoryActorUid =
     isExactActiveSuperAdmin(actualUser)
@@ -625,6 +637,46 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (
+      activeTab !== "dashboard" ||
+      !relationshipInventoryActorUid
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    setProfileClaimSignalCount(null);
+    setProfileClaimSignalLoadState("loading");
+
+    void (async () => {
+      const result =
+        await loadPendingProfileClaimCount(
+          firestoreSuperAdminDashboardSignalReadOps,
+        );
+
+      if (cancelled) return;
+
+      if (result.state === "READY") {
+        setProfileClaimSignalCount(result.count);
+        setProfileClaimSignalLoadState("loaded");
+        return;
+      }
+
+      console.error(
+        "SuperAdmin failed to count pending Profile Claims:",
+        result.error,
+      );
+      setProfileClaimSignalCount(null);
+      setProfileClaimSignalLoadState("unavailable");
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, relationshipInventoryActorUid]);
+
   if (!hasPermission(["SUPERADMIN"])) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -646,16 +698,26 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const roleCounts = deriveEffectiveRoleCounts(users);
   const recentActivities = buildRecentActivities(activityLogs, users);
 
-  const pendingProfileClaimsCount = profileClaimsList.filter(
-    (c) => c.status === "PENDING",
-  ).length;
+  const operationalSignals =
+    deriveDashboardOperationalSignals({
+      userApprovals: {
+        loadState: userLoadState,
+        count:
+          userLoadState === "loaded"
+            ? pendingUsers.length
+            : null,
+      },
+      profileClaims: {
+        loadState: profileClaimSignalLoadState,
+        count:
+          profileClaimSignalLoadState === "loaded"
+            ? profileClaimSignalCount
+            : null,
+      },
+    });
 
-  const alerts = deriveDashboardAlerts({
-    pendingUsers: pendingUsers.length,
-    paymentApprovals: null,
-    profileClaims: profileClaimsLoadState === "loaded" ? pendingProfileClaimsCount : null,
-    errorReports: null,
-  });
+  const alerts =
+    deriveDashboardAlerts(operationalSignals);
 
   const searchResults = searchDashboardData({
     query: headerSearchQuery,
@@ -693,17 +755,11 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const handleExportReport = () => {
     downloadSuperAdminDashboardCsv({
       exportedAt: new Date(),
-      pendingUsers: pendingUsers.length,
       academyCount,
       academyLoadState,
       roleCounts,
       users,
-      paymentApprovals: null,
-      paymentApprovalsLoadState: "unavailable",
-      profileClaims: profileClaimsLoadState === "loaded" ? pendingProfileClaimsCount : null,
-      profileClaimsLoadState,
-      errorReports: null,
-      errorReportsLoadState: "unavailable",
+      operationalSignals,
       recentActivities,
       recentActivityLoadState: activityLoadState,
     });
@@ -999,8 +1055,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
       <SuperAdminPortalNavigation
         activeTab={activeTab}
         onNavigate={handleNavigate}
-        pendingUsers={pendingUsers.length}
-        pendingProfileClaims={pendingProfileClaimsCount}
+        operationalSignals={operationalSignals}
         academyCount={academyCount}
       />
 
@@ -1075,14 +1130,9 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
 
         {activeTab === "dashboard" && (
           <SuperAdminOverview
-            pendingUsers={pendingUsers.length}
             academyCount={academyCount}
             roleCounts={roleCounts}
-            paymentApprovals={null}
-            profileClaims={profileClaimsLoadState === "loaded" ? pendingProfileClaimsCount : null}
-            errorReports={null}
-            profileClaimsAvailable={profileClaimsLoadState === "loaded"}
-            errorReportsAvailable={false}
+            operationalSignals={operationalSignals}
             activities={recentActivities}
             activityLoadState={activityLoadState}
             alerts={alerts}

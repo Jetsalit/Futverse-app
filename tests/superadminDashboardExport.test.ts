@@ -7,13 +7,55 @@ import {
   dashboardExportFilename,
   type SuperAdminDashboardExportInput,
 } from "../src/components/superadmin/dashboardExport.js";
+import type {
+  DashboardOperationalSignal,
+} from "../src/components/superadmin/dashboardModel.js";
+
+function operationalSignals(
+  overrides: Partial<
+    Record<
+      DashboardOperationalSignal["id"],
+      DashboardOperationalSignal
+    >
+  > = {},
+): readonly DashboardOperationalSignal[] {
+  const defaults: Record<
+    DashboardOperationalSignal["id"],
+    DashboardOperationalSignal
+  > = {
+    "user-approvals": {
+      id: "user-approvals",
+      state: "PENDING",
+      count: 3,
+    },
+    "profile-claims": {
+      id: "profile-claims",
+      state: "UNAVAILABLE",
+      count: null,
+    },
+    "payment-approvals": {
+      id: "payment-approvals",
+      state: "PENDING",
+      count: 2,
+    },
+    "error-reports": {
+      id: "error-reports",
+      state: "UNAVAILABLE",
+      count: null,
+    },
+  };
+
+  return Object.values({
+    ...defaults,
+    ...overrides,
+  });
+}
 
 function exportInput(
   overrides: Partial<SuperAdminDashboardExportInput> = {},
 ): SuperAdminDashboardExportInput {
   return {
     exportedAt: new Date("2026-08-08T10:20:30.000Z"),
-    pendingUsers: 3,
     academyCount: 4,
     academyLoadState: "loaded",
     roleCounts: {
@@ -23,12 +65,7 @@ function exportInput(
       scouts: 8,
     },
     users: [],
-    paymentApprovals: 2,
-    paymentApprovalsLoadState: "loaded",
-    profileClaims: null,
-    profileClaimsLoadState: "idle",
-    errorReports: null,
-    errorReportsLoadState: "unavailable",
+    operationalSignals: operationalSignals(),
     recentActivities: [],
     recentActivityLoadState: "loading",
     ...overrides,
@@ -65,21 +102,34 @@ describe("SuperAdmin Dashboard CSV export", () => {
     assert.doesNotMatch(csv, /"recent_activity"/);
   });
 
-  it("exports Payment Approvals as Unavailable when payment data is unavailable", () => {
+  it("exports Payment Approvals as Unavailable when the signal is unavailable", () => {
     const csv = buildSuperAdminDashboardCsv(exportInput({
-      paymentApprovals: null,
-      paymentApprovalsLoadState: "unavailable",
+      operationalSignals: operationalSignals({
+        "payment-approvals": {
+          id: "payment-approvals",
+          state: "UNAVAILABLE",
+          count: null,
+        },
+      }),
     }));
 
     assert.match(csv, /"Payment Approvals","Unavailable"/);
   });
 
-  it("includes lazy counts and recent activity only after those sources are loaded", () => {
+  it("includes authoritative action counts and recent activity when available", () => {
     const csv = buildSuperAdminDashboardCsv(exportInput({
-      profileClaims: 2,
-      profileClaimsLoadState: "loaded",
-      errorReports: 1,
-      errorReportsLoadState: "loaded",
+      operationalSignals: operationalSignals({
+        "profile-claims": {
+          id: "profile-claims",
+          state: "PENDING",
+          count: 2,
+        },
+        "error-reports": {
+          id: "error-reports",
+          state: "PENDING",
+          count: 1,
+        },
+      }),
       recentActivityLoadState: "loaded",
       recentActivities: [{
         id: "activity-1",
@@ -93,7 +143,10 @@ describe("SuperAdmin Dashboard CSV export", () => {
     assert.match(csv, /"Pending Profile Claims","2"/);
     assert.match(csv, /"Error Reports","1"/);
     assert.match(csv, /"Recent Activity Count","1"/);
-    assert.match(csv, /"recent_activity","Activity 1","","User approved","HQ Admin","player@example.com","2026-08-08T10:20:30.000Z"/);
+    assert.match(
+      csv,
+      /"recent_activity","Activity 1","","User approved","HQ Admin","player@example.com","2026-08-08T10:20:30.000Z"/,
+    );
   });
 
   it("exports authoritative account role separately from requested intent metadata", () => {
@@ -114,17 +167,35 @@ describe("SuperAdmin Dashboard CSV export", () => {
       csv,
       /"user_authority","User authority record"[^\r\n]*"USER","Inactive","COACH \(pending Membership intent\)"/,
     );
-    assert.doesNotMatch(csv, /"authoritative_role"[^\r\n]*"COACH"/);
+    assert.doesNotMatch(
+      csv,
+      /"authoritative_role"[^\r\n]*"COACH"/,
+    );
   });
 
   it("quotes CSV safely, preserves UTF-8 text, and protects formula prefixes", () => {
-    assert.equal(dashboardCsvCell('Coach "A", North'), '"Coach ""A"", North"');
-    assert.equal(dashboardCsvCell("=SUM(1,2)"), '"\'=SUM(1,2)"');
+    assert.equal(
+      dashboardCsvCell('Coach "A", North'),
+      '"Coach ""A"", North"',
+    );
+    assert.equal(
+      dashboardCsvCell("=SUM(1,2)"),
+      '"\'=SUM(1,2)"',
+    );
     assert.equal(dashboardCsvCell("+1"), '"\'+1"');
     assert.equal(dashboardCsvCell("-1"), '"\'-1"');
     assert.equal(dashboardCsvCell("@name"), '"\'@name"');
-    assert.equal(dashboardCsvCell("\tformula"), '"\'\tformula"');
-    assert.equal(dashboardCsvCell("\rformula"), '"\'\rformula"');
-    assert.equal(dashboardCsvCell("สวัสดี FUTVerse"), '"สวัสดี FUTVerse"');
+    assert.equal(
+      dashboardCsvCell("\tformula"),
+      '"\'\tformula"',
+    );
+    assert.equal(
+      dashboardCsvCell("\rformula"),
+      '"\'\rformula"',
+    );
+    assert.equal(
+      dashboardCsvCell("สวัสดี FUTVerse"),
+      '"สวัสดี FUTVerse"',
+    );
   });
 });
