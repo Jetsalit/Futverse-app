@@ -13,6 +13,34 @@ export type SuperAdminTab =
   | "bootstrap_legacy";
 
 export type DashboardLoadState = "idle" | "loading" | "loaded" | "unavailable";
+export type DashboardOperationalSignalState =
+  | "LOADING"
+  | "PENDING"
+  | "CLEAR"
+  | "UNAVAILABLE"
+  | "NOT_CONNECTED";
+
+export type DashboardOperationalSignalId =
+  | "user-approvals"
+  | "profile-claims"
+  | "payment-approvals"
+  | "error-reports";
+
+export interface DashboardOperationalSignalSource {
+  loadState: DashboardLoadState;
+  count: number | null;
+}
+
+export interface DashboardOperationalSignal {
+  id: DashboardOperationalSignalId;
+  state: DashboardOperationalSignalState;
+  count: number | null;
+}
+
+export interface DashboardOperationalSignalInput {
+  userApprovals: DashboardOperationalSignalSource;
+  profileClaims: DashboardOperationalSignalSource;
+}
 
 export interface AcademyDirectoryItem {
   id: string;
@@ -251,57 +279,204 @@ export function searchDashboardData(input: {
   return results;
 }
 
-export function deriveDashboardAlerts(input: {
-  pendingUsers: number;
-  paymentApprovals: number | null;
-  profileClaims: number | null;
-  errorReports: number | null;
-}): DashboardAlert[] {
+function deriveConnectedOperationalSignal(
+  id: DashboardOperationalSignalId,
+  source: DashboardOperationalSignalSource,
+): DashboardOperationalSignal {
+  if (
+    source.loadState === "idle" ||
+    source.loadState === "loading"
+  ) {
+    return {
+      id,
+      state: "LOADING",
+      count: null,
+    };
+  }
+
+  if (source.loadState === "unavailable") {
+    return {
+      id,
+      state: "UNAVAILABLE",
+      count: null,
+    };
+  }
+
+  const hasValidCount =
+    typeof source.count === "number" &&
+    Number.isFinite(source.count) &&
+    Number.isInteger(source.count) &&
+    source.count >= 0;
+
+  if (!hasValidCount) {
+    return {
+      id,
+      state: "UNAVAILABLE",
+      count: null,
+    };
+  }
+
+  return {
+    id,
+    state: source.count === 0 ? "CLEAR" : "PENDING",
+    count: source.count,
+  };
+}
+
+export function deriveDashboardOperationalSignals(
+  input: DashboardOperationalSignalInput,
+): DashboardOperationalSignal[] {
+  return [
+    deriveConnectedOperationalSignal(
+      "user-approvals",
+      input.userApprovals,
+    ),
+    deriveConnectedOperationalSignal(
+      "profile-claims",
+      input.profileClaims,
+    ),
+    {
+      id: "payment-approvals",
+      state: "NOT_CONNECTED",
+      count: null,
+    },
+    {
+      id: "error-reports",
+      state: "NOT_CONNECTED",
+      count: null,
+    },
+  ];
+}
+
+const DASHBOARD_OPERATIONAL_SIGNAL_IDS:
+  readonly DashboardOperationalSignalId[] = [
+    "user-approvals",
+    "profile-claims",
+    "payment-approvals",
+    "error-reports",
+  ];
+
+
+
+function validPendingSignalCount(
+  signal: DashboardOperationalSignal | undefined,
+): number | null {
+  if (
+    !signal ||
+    signal.state !== "PENDING" ||
+    typeof signal.count !== "number" ||
+    !Number.isFinite(signal.count) ||
+    !Number.isInteger(signal.count) ||
+    signal.count <= 0
+  ) {
+    return null;
+  }
+
+  return signal.count;
+}
+
+export function deriveDashboardAlerts(
+  signals: readonly DashboardOperationalSignal[],
+): DashboardAlert[] {
+
+  const signalById =
+    new Map<DashboardOperationalSignalId, DashboardOperationalSignal>();
+
+  for (const signal of signals) {
+    if (!signalById.has(signal.id)) {
+      signalById.set(signal.id, signal);
+    }
+  }
+
   const alerts: DashboardAlert[] = [];
 
-  if (input.errorReports !== null && input.errorReports > 0) {
+  const errorReports =
+    validPendingSignalCount(
+      signalById.get("error-reports"),
+    );
+
+  if (errorReports !== null) {
     alerts.push({
       id: "error-reports",
       severity: "critical",
-      title: `${input.errorReports} error report${input.errorReports === 1 ? "" : "s"}`,
+      title: `${errorReports} error report${errorReports === 1 ? "" : "s"}`,
       detail: "Review the latest captured application errors.",
-      tab: "system_logs",
     });
   }
-  if (input.pendingUsers > 0) {
+
+  const pendingUsers =
+    validPendingSignalCount(
+      signalById.get("user-approvals"),
+    );
+
+  if (pendingUsers !== null) {
     alerts.push({
       id: "pending-users",
       severity: "warning",
-      title: `${input.pendingUsers} user approval${input.pendingUsers === 1 ? "" : "s"} pending`,
+      title: `${pendingUsers} user approval${pendingUsers === 1 ? "" : "s"} pending`,
       detail: "New accounts are waiting for an approval decision.",
       tab: "approvals",
     });
   }
-  if (input.profileClaims !== null && input.profileClaims > 0) {
+
+  const profileClaims =
+    validPendingSignalCount(
+      signalById.get("profile-claims"),
+    );
+
+  if (profileClaims !== null) {
     alerts.push({
       id: "profile-claims",
       severity: "warning",
-      title: `${input.profileClaims} profile claim${input.profileClaims === 1 ? "" : "s"} pending`,
+      title: `${profileClaims} profile claim${profileClaims === 1 ? "" : "s"} pending`,
       detail: "Player profile linking requests require review.",
       tab: "profile_claims",
     });
   }
-  if (input.paymentApprovals !== null && input.paymentApprovals > 0) {
+
+  const paymentApprovals =
+    validPendingSignalCount(
+      signalById.get("payment-approvals"),
+    );
+
+  if (paymentApprovals !== null) {
     alerts.push({
       id: "payment-approvals",
       severity: "info",
-      title: `${input.paymentApprovals} payment approval${input.paymentApprovals === 1 ? "" : "s"} pending`,
+      title: `${paymentApprovals} payment approval${paymentApprovals === 1 ? "" : "s"} pending`,
       detail: "Uploaded payment evidence is ready for review.",
       tab: "payment_approvals",
     });
   }
 
-  if (alerts.length === 0) {
+  const hasCompleteClearCoverage =
+    signals.length ===
+      DASHBOARD_OPERATIONAL_SIGNAL_IDS.length &&
+    DASHBOARD_OPERATIONAL_SIGNAL_IDS.every(
+      (id) => {
+        const matchingSignals =
+          signals.filter(
+            (signal) => signal.id === id,
+          );
+
+        return (
+          matchingSignals.length === 1 &&
+          matchingSignals[0].state === "CLEAR" &&
+          matchingSignals[0].count === 0
+        );
+      },
+    );
+
+  if (
+    alerts.length === 0 &&
+    hasCompleteClearCoverage
+  ) {
     alerts.push({
       id: "all-clear",
       severity: "info",
       title: "No known actions require attention",
-      detail: "Unavailable data sources are shown separately and are not treated as healthy.",
+      detail:
+        "All operational signal sources are confirmed clear.",
     });
   }
 

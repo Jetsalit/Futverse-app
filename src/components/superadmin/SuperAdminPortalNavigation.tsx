@@ -9,7 +9,11 @@ import {
   Users,
 } from "lucide-react";
 
-import type { SuperAdminTab } from "./dashboardModel";
+import type {
+  DashboardOperationalSignal,
+  DashboardOperationalSignalId,
+  SuperAdminTab,
+} from "./dashboardModel";
 import {
   SUPERADMIN_PRIMARY_NAVIGATION,
   findSuperAdminSectionForTab,
@@ -18,8 +22,7 @@ import {
 interface SuperAdminPortalNavigationProps {
   activeTab: SuperAdminTab;
   onNavigate: (tab: SuperAdminTab) => void;
-  pendingUsers: number;
-  pendingProfileClaims: number;
+  operationalSignals: readonly DashboardOperationalSignal[];
   academyCount: number | null;
 }
 
@@ -50,26 +53,62 @@ const TAB_LABELS = {
 export default function SuperAdminPortalNavigation({
   activeTab,
   onNavigate,
-  pendingUsers,
-  pendingProfileClaims,
+  operationalSignals,
   academyCount,
 }: SuperAdminPortalNavigationProps) {
-  const tabSections = SUPERADMIN_PRIMARY_NAVIGATION.filter(
-    (section) => section.kind === "tabs",
-  );
+  const tabSections =
+    SUPERADMIN_PRIMARY_NAVIGATION.filter(
+      (section) => section.kind === "tabs",
+    );
 
-  const activeSection = findSuperAdminSectionForTab(activeTab);
+  const activeSection =
+    findSuperAdminSectionForTab(activeTab);
 
   if (!activeSection) {
     return null;
   }
 
-  const getTabBadge = (tab: SuperAdminTab): string | null => {
-    if (tab === "approvals" && pendingUsers > 0) {
+  const pendingCountFor = (
+    id: DashboardOperationalSignalId,
+  ): number => {
+    const signal =
+      operationalSignals.find(
+        (candidate) => candidate.id === id,
+      );
+
+    if (
+      signal?.state !== "PENDING" ||
+      typeof signal.count !== "number" ||
+      !Number.isFinite(signal.count) ||
+      !Number.isInteger(signal.count) ||
+      signal.count <= 0
+    ) {
+      return 0;
+    }
+
+    return signal.count;
+  };
+
+  const pendingUsers =
+    pendingCountFor("user-approvals");
+
+  const pendingProfileClaims =
+    pendingCountFor("profile-claims");
+
+  const getTabBadge = (
+    tab: SuperAdminTab,
+  ): string | null => {
+    if (
+      tab === "approvals" &&
+      pendingUsers > 0
+    ) {
       return String(pendingUsers);
     }
 
-    if (tab === "profile_claims" && pendingProfileClaims > 0) {
+    if (
+      tab === "profile_claims" &&
+      pendingProfileClaims > 0
+    ) {
       return String(pendingProfileClaims);
     }
 
@@ -87,11 +126,19 @@ export default function SuperAdminPortalNavigation({
     sectionId: (typeof tabSections)[number]["id"],
   ): string | null => {
     if (sectionId === "users_access") {
-      const reviewCount = pendingUsers + pendingProfileClaims;
-      return reviewCount > 0 ? String(reviewCount) : null;
+      const reviewCount =
+        pendingUsers +
+        pendingProfileClaims;
+
+      return reviewCount > 0
+        ? String(reviewCount)
+        : null;
     }
 
-    if (sectionId === "organizations" && academyCount !== null) {
+    if (
+      sectionId === "organizations" &&
+      academyCount !== null
+    ) {
       return String(academyCount);
     }
 
@@ -103,16 +150,20 @@ export default function SuperAdminPortalNavigation({
       className="shrink-0 border-b border-slate-200 bg-white"
       aria-label="SuperAdmin workspace navigation"
     >
-      {/* Desktop primary navigation */}
       <div className="hidden xl:flex min-h-[58px] items-stretch">
         <nav
           className="flex min-w-0 flex-1 items-stretch"
           aria-label="SuperAdmin primary sections"
         >
           {tabSections.map((section) => {
-            const Icon = SECTION_ICONS[section.id];
-            const isActive = section.id === activeSection.id;
-            const badge = getSectionBadge(section.id);
+            const Icon =
+              SECTION_ICONS[section.id];
+
+            const isActive =
+              section.id === activeSection.id;
+
+            const badge =
+              getSectionBadge(section.id);
 
             return (
               <button
@@ -120,10 +171,16 @@ export default function SuperAdminPortalNavigation({
                 type="button"
                 onClick={() => {
                   if (section.defaultTab) {
-                    onNavigate(section.defaultTab);
+                    onNavigate(
+                      section.defaultTab,
+                    );
                   }
                 }}
-                aria-current={isActive ? "page" : undefined}
+                aria-current={
+                  isActive
+                    ? "page"
+                    : undefined
+                }
                 className={`group relative flex min-w-0 flex-1 items-center justify-center gap-2 border-b-2 px-3 py-3 text-sm font-bold transition ${
                   isActive
                     ? "border-emerald-500 bg-emerald-50/50 text-slate-950"
@@ -139,7 +196,9 @@ export default function SuperAdminPortalNavigation({
                   }
                 />
 
-                <span className="truncate">{section.label}</span>
+                <span className="truncate">
+                  {section.label}
+                </span>
 
                 {badge && (
                   <span
@@ -158,7 +217,6 @@ export default function SuperAdminPortalNavigation({
         </nav>
       </div>
 
-      {/* Tablet / mobile primary navigation */}
       <div className="border-b border-slate-200 px-4 py-3 xl:hidden sm:px-6">
         <label
           htmlFor="superadmin-primary-section"
@@ -171,25 +229,32 @@ export default function SuperAdminPortalNavigation({
           id="superadmin-primary-section"
           value={activeSection.id}
           onChange={(event) => {
-            const section = tabSections.find(
-              (candidate) => candidate.id === event.target.value,
-            );
+            const section =
+              tabSections.find(
+                (candidate) =>
+                  candidate.id ===
+                  event.target.value,
+              );
 
             if (section?.defaultTab) {
-              onNavigate(section.defaultTab);
+              onNavigate(
+                section.defaultTab,
+              );
             }
           }}
           className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-800 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
         >
           {tabSections.map((section) => (
-            <option key={section.id} value={section.id}>
+            <option
+              key={section.id}
+              value={section.id}
+            >
               {section.label}
             </option>
           ))}
         </select>
       </div>
 
-      {/* Active section context + secondary navigation */}
       <div className="bg-slate-50/80 px-4 py-3 sm:px-6 lg:px-8">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
@@ -217,38 +282,51 @@ export default function SuperAdminPortalNavigation({
               className="flex flex-wrap items-center gap-1.5"
               aria-label={`${activeSection.label} views`}
             >
-              {activeSection.tabs.map((tab) => {
-                const isActive = activeTab === tab;
-                const badge = getTabBadge(tab);
+              {activeSection.tabs.map(
+                (tab) => {
+                  const isActive =
+                    activeTab === tab;
 
-                return (
-                  <button
-                    key={tab}
-                    type="button"
-                    onClick={() => onNavigate(tab)}
-                    aria-current={isActive ? "page" : undefined}
-                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-bold transition ${
-                      isActive
-                        ? "border-slate-900 bg-slate-900 text-white shadow-sm"
-                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
-                    }`}
-                  >
-                    <span>{TAB_LABELS[tab]}</span>
+                  const badge =
+                    getTabBadge(tab);
 
-                    {badge && (
-                      <span
-                        className={`rounded px-1.5 py-0.5 text-[9px] font-black ${
-                          isActive
-                            ? "bg-white/15 text-white"
-                            : "bg-slate-100 text-slate-500"
-                        }`}
-                      >
-                        {badge}
+                  return (
+                    <button
+                      key={tab}
+                      type="button"
+                      onClick={() =>
+                        onNavigate(tab)
+                      }
+                      aria-current={
+                        isActive
+                          ? "page"
+                          : undefined
+                      }
+                      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-bold transition ${
+                        isActive
+                          ? "border-slate-900 bg-slate-900 text-white shadow-sm"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                      }`}
+                    >
+                      <span>
+                        {TAB_LABELS[tab]}
                       </span>
-                    )}
-                  </button>
-                );
-              })}
+
+                      {badge && (
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[9px] font-black ${
+                            isActive
+                              ? "bg-white/15 text-white"
+                              : "bg-slate-100 text-slate-500"
+                          }`}
+                        >
+                          {badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                },
+              )}
             </nav>
           )}
         </div>
