@@ -313,6 +313,122 @@ describe("SuperAdmin Dashboard operational signal UI wiring", () => {
     );
   });
 
+  it("one-shot SuperAdmin reads invalidate stale actor-owned data", () => {
+    const portal = read(
+      "src/components/SuperadminPortal.tsx",
+    );
+
+    const effectFor = (functionName: string) => {
+      const functionMarker =
+        `async function ${functionName}()`;
+
+      const functionIndex =
+        portal.indexOf(functionMarker);
+
+      assert.notEqual(
+        functionIndex,
+        -1,
+        `Expected ${functionName} effect`,
+      );
+
+      const effectStart =
+        portal.lastIndexOf(
+          "  useEffect(() => {",
+          functionIndex,
+        );
+
+      const effectEnd =
+        portal.indexOf(
+          "\n  useEffect(() => {",
+          functionIndex,
+        );
+
+      assert.notEqual(
+        effectStart,
+        -1,
+        `Expected useEffect start for ${functionName}`,
+      );
+
+      assert.ok(
+        effectEnd > functionIndex,
+        `Expected useEffect end for ${functionName}`,
+      );
+
+      return portal.slice(
+        effectStart,
+        effectEnd,
+      );
+    };
+
+    const academies =
+      effectFor("fetchAcademies");
+
+    assert.match(
+      academies,
+      /!relationshipInventoryActorUid/,
+    );
+    assert.match(
+      academies,
+      /setAcademyCount\(null\)/,
+    );
+    assert.match(
+      academies,
+      /setAcademiesList\(\[\]\)/,
+    );
+    assert.match(
+      academies,
+      /\}, \[relationshipInventoryActorUid\]\);/,
+    );
+
+    const recentActivity =
+      effectFor("fetchRecentActivity");
+
+    assert.match(
+      recentActivity,
+      /!relationshipInventoryActorUid/,
+    );
+    assert.match(
+      recentActivity,
+      /setActivityLogs\(\[\]\)/,
+    );
+    assert.match(
+      recentActivity,
+      /\}, \[relationshipInventoryActorUid\]\);/,
+    );
+
+    const systemLogs =
+      effectFor("fetchSystemLogs");
+
+    assert.match(
+      systemLogs,
+      /!relationshipInventoryActorUid/,
+    );
+    assert.match(
+      systemLogs,
+      /setLogsList\(\[\]\)/,
+    );
+    assert.match(
+      systemLogs,
+      /\}, \[relationshipInventoryActorUid\]\);/,
+    );
+
+    const profileClaims =
+      effectFor("fetchProfileClaims");
+
+    assert.match(
+      profileClaims,
+      /!relationshipInventoryActorUid/,
+    );
+    assert.match(
+      profileClaims,
+      /setProfileClaimsList\(\[\]\)/,
+    );
+    assert.match(
+      profileClaims,
+      /\}, \[relationshipInventoryActorUid\]\);/,
+    );
+  });
+
   it("never uses System Logs as the Error Reports review module", () => {
     const source = read(
       "src/components/superadmin/PendingActions.tsx",

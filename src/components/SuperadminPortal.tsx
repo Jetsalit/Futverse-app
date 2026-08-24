@@ -447,6 +447,16 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     let cancelled = false;
+
+    if (!relationshipInventoryActorUid) {
+      setAcademyCount(null);
+      setAcademiesList([]);
+      setAcademyLoadState("idle");
+      return;
+    }
+
+    setAcademyCount(null);
+    setAcademiesList([]);
     async function fetchAcademies() {
       setAcademyLoadState("loading");
       try {
@@ -483,7 +493,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [relationshipInventoryActorUid]);
 
   useEffect(() => {
     if (!selectedAcademyForStaff) {
@@ -534,6 +544,14 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     let cancelled = false;
+
+    if (!relationshipInventoryActorUid) {
+      setActivityLogs([]);
+      setActivityLoadState("idle");
+      return;
+    }
+
+    setActivityLogs([]);
     async function fetchRecentActivity() {
       setActivityLoadState("loading");
       try {
@@ -561,10 +579,18 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [relationshipInventoryActorUid]);
 
   useEffect(() => {
     let cancelled = false;
+
+    if (!relationshipInventoryActorUid) {
+      setLogsList([]);
+      setLogsLoadState("idle");
+      return;
+    }
+
+    setLogsList([]);
     async function fetchSystemLogs() {
       setLogsLoadState("loading");
       try {
@@ -592,10 +618,18 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [relationshipInventoryActorUid]);
 
   useEffect(() => {
     let cancelled = false;
+
+    if (!relationshipInventoryActorUid) {
+      setProfileClaimsList([]);
+      setProfileClaimsLoadState("idle");
+      return;
+    }
+
+    setProfileClaimsList([]);
     async function fetchProfileClaims() {
       setProfileClaimsLoadState("loading");
       try {
@@ -637,7 +671,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [relationshipInventoryActorUid]);
 
   useEffect(() => {
     if (
