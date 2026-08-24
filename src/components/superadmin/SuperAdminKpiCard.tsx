@@ -1,8 +1,9 @@
 import type { LucideIcon } from "lucide-react";
+import type { DashboardMetric } from "./dashboardModel";
 
 interface SuperAdminKpiCardProps {
   label: string;
-  value: number | null;
+  metric: DashboardMetric;
   detail: string;
   icon: LucideIcon;
   tone: "emerald" | "blue" | "indigo" | "violet" | "amber" | "rose" | "slate";
@@ -20,7 +21,7 @@ const toneClasses: Record<SuperAdminKpiCardProps["tone"], string> = {
 
 export default function SuperAdminKpiCard({
   label,
-  value,
+  metric,
   detail,
   icon: Icon,
   tone,
@@ -32,12 +33,22 @@ export default function SuperAdminKpiCard({
           <Icon size={19} />
         </div>
         <span className="rounded-full bg-slate-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-          {value === null ? "Unavailable" : "Live"}
+          {metric.state === "LOADING"
+            ? "Loading"
+            : metric.state === "READY"
+              ? "Live"
+              : "Unavailable"}
         </span>
       </div>
       <p className="mt-4 text-xs font-bold uppercase tracking-wider text-slate-500">{label}</p>
-      <p className="mt-1 text-3xl font-black tracking-tight text-slate-900">{value ?? "—"}</p>
-      <p className="mt-2 min-h-8 text-xs leading-4 text-slate-500">{value === null ? "Unavailable" : detail}</p>
+      <p className="mt-1 text-3xl font-black tracking-tight text-slate-900">{metric.state === "READY"
+        ? metric.value
+        : "\u2014"}</p>
+      <p className="mt-2 min-h-8 text-xs leading-4 text-slate-500">{metric.state === "LOADING"
+          ? "Loading authoritative value"
+          : metric.state === "UNAVAILABLE"
+            ? "Unavailable"
+            : detail}</p>
     </article>
   );
 }

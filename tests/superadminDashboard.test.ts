@@ -6,6 +6,7 @@ import {
   deriveDashboardAlerts,
   deriveDashboardOperationalSignals,
   deriveEffectiveRoleCounts,
+  deriveDashboardMetric,
   parseAuditLog,
   searchDashboardData,
 } from "../src/components/superadmin/dashboardModel.js";
@@ -20,6 +21,85 @@ function user(overrides: Partial<User>): User {
 }
 
 describe("SuperAdmin Dashboard model", () => {
+  it("keeps dashboard metric loading unavailable and ready states distinct", () => {
+    assert.deepEqual(
+      deriveDashboardMetric({
+        loadState: "idle",
+        value: 0,
+      }),
+      {
+        state: "LOADING",
+        value: null,
+      },
+    );
+
+    assert.deepEqual(
+      deriveDashboardMetric({
+        loadState: "loading",
+        value: 0,
+      }),
+      {
+        state: "LOADING",
+        value: null,
+      },
+    );
+
+    assert.deepEqual(
+      deriveDashboardMetric({
+        loadState: "unavailable",
+        value: 0,
+      }),
+      {
+        state: "UNAVAILABLE",
+        value: null,
+      },
+    );
+
+    assert.deepEqual(
+      deriveDashboardMetric({
+        loadState: "loaded",
+        value: 0,
+      }),
+      {
+        state: "READY",
+        value: 0,
+      },
+    );
+
+    assert.deepEqual(
+      deriveDashboardMetric({
+        loadState: "loaded",
+        value: 7,
+      }),
+      {
+        state: "READY",
+        value: 7,
+      },
+    );
+
+    assert.deepEqual(
+      deriveDashboardMetric({
+        loadState: "loaded",
+        value: null,
+      }),
+      {
+        state: "UNAVAILABLE",
+        value: null,
+      },
+    );
+
+    assert.deepEqual(
+      deriveDashboardMetric({
+        loadState: "loaded",
+        value: -1,
+      }),
+      {
+        state: "UNAVAILABLE",
+        value: null,
+      },
+    );
+  });
+
   it("counts only effective roles and never requested roles", () => {
     const counts = deriveEffectiveRoleCounts([
       user({ id: "coach", role: "COACH" }),

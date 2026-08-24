@@ -1137,7 +1137,9 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
         {activeTab === "dashboard" && (
           <SuperAdminOverview
             academyCount={academyCount}
+            academyLoadState={academyLoadState}
             roleCounts={roleCounts}
+            userLoadState={userLoadState}
             operationalSignals={operationalSignals}
             reviewQueue={reviewQueue}
             activities={recentActivities}

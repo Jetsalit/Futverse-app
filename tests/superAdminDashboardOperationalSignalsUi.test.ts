@@ -172,6 +172,85 @@ describe("SuperAdmin Dashboard operational signal UI wiring", () => {
       /errorReports:\s*number \| null/,
     );
   });
+  it("Platform Overview KPI wiring preserves authoritative metric states", () => {
+    const portal = read(
+      "src/components/SuperadminPortal.tsx",
+    );
+    const overview = read(
+      "src/components/superadmin/SuperAdminOverview.tsx",
+    );
+    const card = read(
+      "src/components/superadmin/SuperAdminKpiCard.tsx",
+    );
+
+    assert.match(
+      portal,
+      /academyLoadState=\{academyLoadState\}/,
+    );
+
+    assert.match(
+      portal,
+      /userLoadState=\{userLoadState\}/,
+    );
+
+    assert.match(
+      overview,
+      /deriveDashboardMetric/,
+    );
+
+    assert.match(
+      overview,
+      /loadState:\s*academyLoadState/,
+    );
+
+    assert.match(
+      overview,
+      /loadState:\s*userLoadState/,
+    );
+
+    assert.match(
+      card,
+      /metric:\s*DashboardMetric/,
+    );
+
+    assert.match(
+      card,
+      /metric\.state === "LOADING"/,
+    );
+
+    assert.match(
+      card,
+      /metric\.state === "READY"/,
+    );
+
+    assert.match(
+      card,
+      /metric\.state === "UNAVAILABLE"/,
+    );
+
+    assert.doesNotMatch(
+      card,
+      /value:\s*number \| null/,
+    );
+
+    assert.match(
+      card,
+      /:\s*"\\u2014"/,
+      "Non-ready KPI values must render an em dash",
+    );
+
+    assert.doesNotMatch(
+      card,
+      /:\s*"\?"/,
+      "Non-ready KPI values must never render a question mark",
+    );
+
+    assert.doesNotMatch(
+      card,
+      /value === null \? "Unavailable" : "Live"/,
+    );
+  });
+
   it("never uses System Logs as the Error Reports review module", () => {
     const source = read(
       "src/components/superadmin/PendingActions.tsx",
