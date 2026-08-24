@@ -429,6 +429,168 @@ describe("SuperAdmin Dashboard operational signal UI wiring", () => {
     );
   });
 
+  it("actor changes invalidate SuperAdmin detail selections and evidence", () => {
+    const portal = read(
+      "src/components/SuperadminPortal.tsx",
+    );
+
+    const effectFor = (functionName: string) => {
+      const functionMarker =
+        `async function ${functionName}()`;
+
+      const functionIndex =
+        portal.indexOf(functionMarker);
+
+      assert.notEqual(
+        functionIndex,
+        -1,
+        `Expected ${functionName} effect`,
+      );
+
+      const effectStart =
+        portal.lastIndexOf(
+          "  useEffect(() => {",
+          functionIndex,
+        );
+
+      const effectTail =
+        portal.slice(functionIndex);
+
+      const dependencyMatch =
+        effectTail.match(
+          /\n  \}, \[[^\n]*\]\);/,
+        );
+
+      assert.notEqual(
+        effectStart,
+        -1,
+        `Expected useEffect start for ${functionName}`,
+      );
+
+      assert.ok(
+        dependencyMatch &&
+          dependencyMatch.index !== undefined,
+        `Expected useEffect dependency end for ${functionName}`,
+      );
+
+      const effectEnd =
+        functionIndex +
+        dependencyMatch.index +
+        dependencyMatch[0].length;
+
+      return portal.slice(
+        effectStart,
+        effectEnd,
+      );
+    };
+
+    const inventoryMarker =
+      "const inventoryState =\n      createSuperAdminRelationshipInventoryLifecycleState();";
+
+    const inventoryMarkerIndex =
+      portal.indexOf(inventoryMarker);
+
+    assert.notEqual(
+      inventoryMarkerIndex,
+      -1,
+      "Expected relationship inventory actor effect",
+    );
+
+    const inventoryEffectStart =
+      portal.lastIndexOf(
+        "  useEffect(() => {",
+        inventoryMarkerIndex,
+      );
+
+    const inventoryEffectEnd =
+      portal.indexOf(
+        "\n  useEffect(() => {",
+        inventoryMarkerIndex,
+      );
+
+    assert.ok(
+      inventoryEffectEnd > inventoryMarkerIndex,
+      "Expected relationship inventory actor effect end",
+    );
+
+    const actorEffect =
+      portal.slice(
+        inventoryEffectStart,
+        inventoryEffectEnd,
+      );
+
+    assert.match(
+      actorEffect,
+      /setSelectedAcademyForStaff\(null\)/,
+    );
+
+    assert.match(
+      actorEffect,
+      /setStaffMembersList\(\[\]\)/,
+    );
+
+    assert.match(
+      actorEffect,
+      /setStaffLoadState\("idle"\)/,
+    );
+
+    assert.match(
+      actorEffect,
+      /setSelectedUser\(null\)/,
+    );
+
+    assert.match(
+      actorEffect,
+      /setStaffClaimView\(null\)/,
+    );
+
+    assert.match(
+      actorEffect,
+      /setStaffClaimLoadState\("idle"\)/,
+    );
+
+    assert.match(
+      actorEffect,
+      /\}, \[relationshipInventoryActorUid\]\);/,
+    );
+
+    const staffMembers =
+      effectFor("fetchStaffMembers");
+
+    assert.match(
+      staffMembers,
+      /!relationshipInventoryActorUid/,
+    );
+
+    assert.match(
+      staffMembers,
+      /setStaffMembersList\(\[\]\)/,
+    );
+
+    assert.match(
+      staffMembers,
+      /relationshipInventoryActorUid\]\);/,
+    );
+
+    const staffClaims =
+      effectFor("loadStaffClaims");
+
+    assert.match(
+      staffClaims,
+      /!relationshipInventoryActorUid/,
+    );
+
+    assert.match(
+      staffClaims,
+      /setStaffClaimView\(null\)/,
+    );
+
+    assert.match(
+      staffClaims,
+      /relationshipInventoryActorUid\]\);/,
+    );
+  });
+
   it("never uses System Logs as the Error Reports review module", () => {
     const source = read(
       "src/components/superadmin/PendingActions.tsx",
