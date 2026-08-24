@@ -104,6 +104,7 @@ import {
   type AuditLogEntry,
 } from "./superadmin/dashboardModel";
 import { downloadSuperAdminDashboardCsv } from "./superadmin/dashboardExport";
+import { deriveSuperAdminReviewQueue } from "./superadmin/reviewQueueModel";
 
 const CLEAN_AVAILABLE_TABS = [
   "dashboard",
@@ -716,6 +717,11 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
       },
     });
 
+  const reviewQueue =
+    deriveSuperAdminReviewQueue(
+      operationalSignals,
+    );
+
   const alerts =
     deriveDashboardAlerts(operationalSignals);
 
@@ -1133,6 +1139,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
             academyCount={academyCount}
             roleCounts={roleCounts}
             operationalSignals={operationalSignals}
+            reviewQueue={reviewQueue}
             activities={recentActivities}
             activityLoadState={activityLoadState}
             alerts={alerts}
