@@ -1,5 +1,6 @@
 import { Building2, CircleAlert, GraduationCap, ScanFace, SearchCheck, UsersRound, UserRoundCheck } from "lucide-react";
 import SuperAdminKpiCard from "./SuperAdminKpiCard";
+import SuperAdminReviewQueue from "./SuperAdminReviewQueue";
 import PendingActions from "./PendingActions";
 import RecentActivity from "./RecentActivity";
 import SystemAlerts from "./SystemAlerts";
@@ -11,11 +12,13 @@ import type {
   RecentActivityItem,
   SuperAdminTab,
 } from "./dashboardModel";
+import type { SuperAdminReviewQueueItem } from "./reviewQueueModel";
 
 interface SuperAdminOverviewProps {
   academyCount: number | null;
   roleCounts: EffectiveRoleCounts;
   operationalSignals: readonly DashboardOperationalSignal[];
+  reviewQueue: readonly SuperAdminReviewQueueItem[];
   activities: readonly RecentActivityItem[];
   activityLoadState: DashboardLoadState;
   alerts: readonly DashboardAlert[];
@@ -27,6 +30,7 @@ export default function SuperAdminOverview({
   academyCount,
   roleCounts,
   operationalSignals,
+  reviewQueue,
   activities,
   activityLoadState,
   alerts,
@@ -115,6 +119,12 @@ export default function SuperAdminOverview({
           />
         </div>
       </section>
+
+      <SuperAdminReviewQueue
+        reviewQueue={reviewQueue}
+        onNavigate={onNavigate}
+        availableTabs={availableTabs}
+      />
 
       <PendingActions
         operationalSignals={operationalSignals}
