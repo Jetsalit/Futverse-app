@@ -251,6 +251,68 @@ describe("SuperAdmin Dashboard operational signal UI wiring", () => {
     );
   });
 
+  it("Global Search exposes loading and partial source coverage", () => {
+    const portal = read(
+      "src/components/SuperadminPortal.tsx",
+    );
+    const header = read(
+      "src/components/superadmin/SuperAdminHeader.tsx",
+    );
+    const search = read(
+      "src/components/superadmin/SuperAdminSearch.tsx",
+    );
+
+    assert.match(
+      portal,
+      /deriveDashboardSearchCoverage/,
+    );
+
+    assert.match(
+      portal,
+      /searchCoverage=\{searchCoverage\}/,
+    );
+
+    assert.match(
+      header,
+      /searchCoverage:\s*DashboardSearchCoverage/,
+    );
+
+    assert.match(
+      header,
+      /coverage=\{searchCoverage\}/,
+    );
+
+    assert.match(
+      search,
+      /coverage:\s*DashboardSearchCoverage/,
+    );
+
+    assert.match(
+      search,
+      /coverage\.state === "LOADING"/,
+    );
+
+    assert.match(
+      search,
+      /coverage\.state === "PARTIAL"/,
+    );
+
+    assert.match(
+      search,
+      /Search coverage is still loading/,
+    );
+
+    assert.match(
+      search,
+      /Partial search coverage/,
+    );
+
+    assert.match(
+      search,
+      /No results in currently loaded data/,
+    );
+  });
+
   it("never uses System Logs as the Error Reports review module", () => {
     const source = read(
       "src/components/superadmin/PendingActions.tsx",

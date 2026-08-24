@@ -1,15 +1,20 @@
 import { useEffect, useState } from "react";
 import { Building2, Search, ShieldCheck, UserRound, X } from "lucide-react";
-import type { DashboardSearchResult } from "./dashboardModel";
+import type {
+  DashboardSearchCoverage,
+  DashboardSearchResult,
+} from "./dashboardModel";
 
 interface SuperAdminSearchProps {
   results: readonly DashboardSearchResult[];
+  coverage: DashboardSearchCoverage;
   onQueryChange: (query: string) => void;
   onSelect: (result: DashboardSearchResult) => void;
 }
 
 export default function SuperAdminSearch({
   results,
+  coverage,
   onQueryChange,
   onSelect,
 }: SuperAdminSearchProps) {
@@ -51,7 +56,11 @@ export default function SuperAdminSearch({
         <div className="absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
           {results.length === 0 ? (
             <div className="px-4 py-5 text-center text-sm text-slate-500">
-              No results in currently loaded data.
+              {coverage.state === "LOADING"
+                ? "Search coverage is still loading."
+                : coverage.state === "PARTIAL"
+                  ? "Partial search coverage. No matches in available data."
+                  : "No results in currently loaded data."}
             </div>
           ) : (
             <div className="max-h-80 overflow-y-auto p-2">
@@ -85,7 +94,11 @@ export default function SuperAdminSearch({
             </div>
           )}
           <div className="border-t border-slate-100 bg-slate-50 px-4 py-2 text-[11px] text-slate-500">
-            Searches loaded users, academies, and profile claims only.
+            {coverage.state === "LOADING"
+              ? "Search coverage is still loading. Results may be incomplete."
+              : coverage.state === "PARTIAL"
+                ? "Partial search coverage. Results include available sources only."
+                : "Searches loaded users, academies, and profile claims only."}
           </div>
         </div>
       )}

@@ -92,6 +92,7 @@ import type {
 import { SuperAdminNonStaffWorkAsLauncher } from "./superadmin/SuperAdminNonStaffWorkAsLauncher";
 import {
   deriveEffectiveRoleCounts,
+  deriveDashboardSearchCoverage,
   searchDashboardData,
   resolveDashboardSearchSelection,
   deriveDashboardAlerts,
@@ -725,6 +726,13 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const alerts =
     deriveDashboardAlerts(operationalSignals);
 
+  const searchCoverage =
+    deriveDashboardSearchCoverage({
+      users: userLoadState,
+      academies: academyLoadState,
+      profileClaims: profileClaimsLoadState,
+    });
+
   const searchResults = searchDashboardData({
     query: headerSearchQuery,
     users,
@@ -1054,6 +1062,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
         onExportReport={handleExportReport}
         dashboardActionsDisabled={userLoadState !== "loaded"}
         searchResults={searchResults}
+        searchCoverage={searchCoverage}
         onSearchQueryChange={setHeaderSearchQuery}
         onSearchSelect={handleSearchSelect}
       />

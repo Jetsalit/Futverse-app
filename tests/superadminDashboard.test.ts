@@ -7,6 +7,7 @@ import {
   deriveDashboardOperationalSignals,
   deriveEffectiveRoleCounts,
   deriveDashboardMetric,
+  deriveDashboardSearchCoverage,
   parseAuditLog,
   searchDashboardData,
 } from "../src/components/superadmin/dashboardModel.js";
@@ -116,6 +117,54 @@ describe("SuperAdmin Dashboard model", () => {
       parents: 1,
       scouts: 1,
     });
+  });
+
+  it("derives truthful dashboard search coverage", () => {
+    assert.deepEqual(
+      deriveDashboardSearchCoverage({
+        users: "loaded",
+        academies: "loaded",
+        profileClaims: "loaded",
+      }),
+      {
+        state: "READY",
+        loadingSources: [],
+        unavailableSources: [],
+      },
+    );
+
+    assert.deepEqual(
+      deriveDashboardSearchCoverage({
+        users: "loading",
+        academies: "loaded",
+        profileClaims: "idle",
+      }),
+      {
+        state: "LOADING",
+        loadingSources: [
+          "users",
+          "profile-claims",
+        ],
+        unavailableSources: [],
+      },
+    );
+
+    assert.deepEqual(
+      deriveDashboardSearchCoverage({
+        users: "loaded",
+        academies: "unavailable",
+        profileClaims: "loading",
+      }),
+      {
+        state: "PARTIAL",
+        loadingSources: [
+          "profile-claims",
+        ],
+        unavailableSources: [
+          "academies",
+        ],
+      },
+    );
   });
 
   it("searches only the supplied in-memory datasets", () => {
