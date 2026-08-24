@@ -6,6 +6,8 @@ import {
   deriveDashboardAlerts,
   deriveDashboardOperationalSignals,
   deriveEffectiveRoleCounts,
+  deriveDashboardMetric,
+  deriveDashboardSearchCoverage,
   parseAuditLog,
   searchDashboardData,
 } from "../src/components/superadmin/dashboardModel.js";
@@ -20,6 +22,85 @@ function user(overrides: Partial<User>): User {
 }
 
 describe("SuperAdmin Dashboard model", () => {
+  it("keeps dashboard metric loading unavailable and ready states distinct", () => {
+    assert.deepEqual(
+      deriveDashboardMetric({
+        loadState: "idle",
+        value: 0,
+      }),
+      {
+        state: "LOADING",
+        value: null,
+      },
+    );
+
+    assert.deepEqual(
+      deriveDashboardMetric({
+        loadState: "loading",
+        value: 0,
+      }),
+      {
+        state: "LOADING",
+        value: null,
+      },
+    );
+
+    assert.deepEqual(
+      deriveDashboardMetric({
+        loadState: "unavailable",
+        value: 0,
+      }),
+      {
+        state: "UNAVAILABLE",
+        value: null,
+      },
+    );
+
+    assert.deepEqual(
+      deriveDashboardMetric({
+        loadState: "loaded",
+        value: 0,
+      }),
+      {
+        state: "READY",
+        value: 0,
+      },
+    );
+
+    assert.deepEqual(
+      deriveDashboardMetric({
+        loadState: "loaded",
+        value: 7,
+      }),
+      {
+        state: "READY",
+        value: 7,
+      },
+    );
+
+    assert.deepEqual(
+      deriveDashboardMetric({
+        loadState: "loaded",
+        value: null,
+      }),
+      {
+        state: "UNAVAILABLE",
+        value: null,
+      },
+    );
+
+    assert.deepEqual(
+      deriveDashboardMetric({
+        loadState: "loaded",
+        value: -1,
+      }),
+      {
+        state: "UNAVAILABLE",
+        value: null,
+      },
+    );
+  });
+
   it("counts only effective roles and never requested roles", () => {
     const counts = deriveEffectiveRoleCounts([
       user({ id: "coach", role: "COACH" }),
@@ -36,6 +117,54 @@ describe("SuperAdmin Dashboard model", () => {
       parents: 1,
       scouts: 1,
     });
+  });
+
+  it("derives truthful dashboard search coverage", () => {
+    assert.deepEqual(
+      deriveDashboardSearchCoverage({
+        users: "loaded",
+        academies: "loaded",
+        profileClaims: "loaded",
+      }),
+      {
+        state: "READY",
+        loadingSources: [],
+        unavailableSources: [],
+      },
+    );
+
+    assert.deepEqual(
+      deriveDashboardSearchCoverage({
+        users: "loading",
+        academies: "loaded",
+        profileClaims: "idle",
+      }),
+      {
+        state: "LOADING",
+        loadingSources: [
+          "users",
+          "profile-claims",
+        ],
+        unavailableSources: [],
+      },
+    );
+
+    assert.deepEqual(
+      deriveDashboardSearchCoverage({
+        users: "loaded",
+        academies: "unavailable",
+        profileClaims: "loading",
+      }),
+      {
+        state: "PARTIAL",
+        loadingSources: [
+          "profile-claims",
+        ],
+        unavailableSources: [
+          "academies",
+        ],
+      },
+    );
   });
 
   it("searches only the supplied in-memory datasets", () => {

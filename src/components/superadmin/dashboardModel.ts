@@ -13,6 +13,80 @@ export type SuperAdminTab =
   | "bootstrap_legacy";
 
 export type DashboardLoadState = "idle" | "loading" | "loaded" | "unavailable";
+
+export type DashboardMetric =
+  | {
+      state: "LOADING";
+      value: null;
+    }
+  | {
+      state: "READY";
+      value: number;
+    }
+  | {
+      state: "UNAVAILABLE";
+      value: null;
+    };
+
+export type DashboardSearchSourceId =
+  | "users"
+  | "academies"
+  | "profile-claims";
+
+export type DashboardSearchCoverage = {
+  state: "READY" | "LOADING" | "PARTIAL";
+  loadingSources: DashboardSearchSourceId[];
+  unavailableSources: DashboardSearchSourceId[];
+};
+
+export function deriveDashboardSearchCoverage(input: {
+  users: DashboardLoadState;
+  academies: DashboardLoadState;
+  profileClaims: DashboardLoadState;
+}): DashboardSearchCoverage {
+  const sources: readonly [
+    DashboardSearchSourceId,
+    DashboardLoadState,
+  ][] = [
+    ["users", input.users],
+    ["academies", input.academies],
+    ["profile-claims", input.profileClaims],
+  ];
+
+  const loadingSources = sources
+    .filter(
+      ([, state]) =>
+        state === "idle" || state === "loading",
+    )
+    .map(([source]) => source);
+
+  const unavailableSources = sources
+    .filter(([, state]) => state === "unavailable")
+    .map(([source]) => source);
+
+  if (unavailableSources.length > 0) {
+    return {
+      state: "PARTIAL",
+      loadingSources,
+      unavailableSources,
+    };
+  }
+
+  if (loadingSources.length > 0) {
+    return {
+      state: "LOADING",
+      loadingSources,
+      unavailableSources: [],
+    };
+  }
+
+  return {
+    state: "READY",
+    loadingSources: [],
+    unavailableSources: [],
+  };
+}
+
 export type DashboardOperationalSignalState =
   | "LOADING"
   | "PENDING"
@@ -134,6 +208,46 @@ const DASHBOARD_ROLES: ReadonlySet<UserRole> = new Set([
   "PARENT",
   "SCOUT",
 ]);
+
+export function deriveDashboardMetric(input: {
+  loadState: DashboardLoadState;
+  value: number | null;
+}): DashboardMetric {
+  if (
+    input.loadState === "idle" ||
+    input.loadState === "loading"
+  ) {
+    return {
+      state: "LOADING",
+      value: null,
+    };
+  }
+
+  if (input.loadState === "unavailable") {
+    return {
+      state: "UNAVAILABLE",
+      value: null,
+    };
+  }
+
+  const hasValidValue =
+    typeof input.value === "number" &&
+    Number.isFinite(input.value) &&
+    Number.isInteger(input.value) &&
+    input.value >= 0;
+
+  if (!hasValidValue) {
+    return {
+      state: "UNAVAILABLE",
+      value: null,
+    };
+  }
+
+  return {
+    state: "READY",
+    value: input.value,
+  };
+}
 
 export function deriveEffectiveRoleCounts(users: readonly User[]): EffectiveRoleCounts {
   const counts: EffectiveRoleCounts = {

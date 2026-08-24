@@ -92,6 +92,7 @@ import type {
 import { SuperAdminNonStaffWorkAsLauncher } from "./superadmin/SuperAdminNonStaffWorkAsLauncher";
 import {
   deriveEffectiveRoleCounts,
+  deriveDashboardSearchCoverage,
   searchDashboardData,
   resolveDashboardSearchSelection,
   deriveDashboardAlerts,
@@ -265,6 +266,14 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
       actorUid: relationshipInventoryActorUid,
       inventoryState,
     });
+
+    setSelectedAcademyForStaff(null);
+    setStaffMembersList([]);
+    setStaffLoadState("idle");
+
+    setSelectedUser(null);
+    setStaffClaimView(null);
+    setStaffClaimLoadState("idle");
 
     relationshipInventoryOwnerRef.current = null;
     relationshipInventoryOwnerActorUidRef.current = null;
@@ -446,6 +455,16 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     let cancelled = false;
+
+    if (!relationshipInventoryActorUid) {
+      setAcademyCount(null);
+      setAcademiesList([]);
+      setAcademyLoadState("idle");
+      return;
+    }
+
+    setAcademyCount(null);
+    setAcademiesList([]);
     async function fetchAcademies() {
       setAcademyLoadState("loading");
       try {
@@ -482,9 +501,15 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [relationshipInventoryActorUid]);
 
   useEffect(() => {
+    if (!relationshipInventoryActorUid) {
+      setStaffMembersList([]);
+      setStaffLoadState("idle");
+      return;
+    }
+
     if (!selectedAcademyForStaff) {
       setStaffMembersList([]);
       setStaffLoadState("idle");
@@ -529,10 +554,18 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, [selectedAcademyForStaff, users]);
+  }, [selectedAcademyForStaff, users, relationshipInventoryActorUid]);
 
   useEffect(() => {
     let cancelled = false;
+
+    if (!relationshipInventoryActorUid) {
+      setActivityLogs([]);
+      setActivityLoadState("idle");
+      return;
+    }
+
+    setActivityLogs([]);
     async function fetchRecentActivity() {
       setActivityLoadState("loading");
       try {
@@ -560,10 +593,18 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [relationshipInventoryActorUid]);
 
   useEffect(() => {
     let cancelled = false;
+
+    if (!relationshipInventoryActorUid) {
+      setLogsList([]);
+      setLogsLoadState("idle");
+      return;
+    }
+
+    setLogsList([]);
     async function fetchSystemLogs() {
       setLogsLoadState("loading");
       try {
@@ -591,10 +632,18 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [relationshipInventoryActorUid]);
 
   useEffect(() => {
     let cancelled = false;
+
+    if (!relationshipInventoryActorUid) {
+      setProfileClaimsList([]);
+      setProfileClaimsLoadState("idle");
+      return;
+    }
+
+    setProfileClaimsList([]);
     async function fetchProfileClaims() {
       setProfileClaimsLoadState("loading");
       try {
@@ -636,7 +685,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [relationshipInventoryActorUid]);
 
   useEffect(() => {
     if (
@@ -725,6 +774,13 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const alerts =
     deriveDashboardAlerts(operationalSignals);
 
+  const searchCoverage =
+    deriveDashboardSearchCoverage({
+      users: userLoadState,
+      academies: academyLoadState,
+      profileClaims: profileClaimsLoadState,
+    });
+
   const searchResults = searchDashboardData({
     query: headerSearchQuery,
     users,
@@ -774,6 +830,11 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const actorUid = authUser?.uid || authUser?.id;
   useEffect(() => {
     setStaffClaimView(null);
+
+    if (!relationshipInventoryActorUid) {
+      setStaffClaimLoadState("idle");
+      return;
+    }
 
     if (!selectedUser) {
       setStaffClaimLoadState("idle");
@@ -830,7 +891,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, [selectedUser?.id, selectedUser?.requestedRole]);
+  }, [selectedUser?.id, selectedUser?.requestedRole, relationshipInventoryActorUid]);
 
   const administrativeTarget = (user: User) => ({
     targetUid: user.id || "",
@@ -1054,6 +1115,7 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
         onExportReport={handleExportReport}
         dashboardActionsDisabled={userLoadState !== "loaded"}
         searchResults={searchResults}
+        searchCoverage={searchCoverage}
         onSearchQueryChange={setHeaderSearchQuery}
         onSearchSelect={handleSearchSelect}
       />
@@ -1137,7 +1199,9 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
         {activeTab === "dashboard" && (
           <SuperAdminOverview
             academyCount={academyCount}
+            academyLoadState={academyLoadState}
             roleCounts={roleCounts}
+            userLoadState={userLoadState}
             operationalSignals={operationalSignals}
             reviewQueue={reviewQueue}
             activities={recentActivities}

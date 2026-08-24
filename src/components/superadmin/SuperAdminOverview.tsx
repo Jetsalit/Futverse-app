@@ -13,10 +13,13 @@ import type {
   SuperAdminTab,
 } from "./dashboardModel";
 import type { SuperAdminReviewQueueItem } from "./reviewQueueModel";
+import { deriveDashboardMetric } from "./dashboardModel";
 
 interface SuperAdminOverviewProps {
   academyCount: number | null;
+  academyLoadState: DashboardLoadState;
   roleCounts: EffectiveRoleCounts;
+  userLoadState: DashboardLoadState;
   operationalSignals: readonly DashboardOperationalSignal[];
   reviewQueue: readonly SuperAdminReviewQueueItem[];
   activities: readonly RecentActivityItem[];
@@ -28,7 +31,9 @@ interface SuperAdminOverviewProps {
 
 export default function SuperAdminOverview({
   academyCount,
+  academyLoadState,
   roleCounts,
+  userLoadState,
   operationalSignals,
   reviewQueue,
   activities,
@@ -51,6 +56,43 @@ export default function SuperAdminOverview({
       ? userApprovalSignal.count
       : null;
 
+  const pendingUsersMetric =
+    deriveDashboardMetric({
+      loadState: userLoadState,
+      value: pendingUsersValue,
+    });
+
+  const academyMetric =
+    deriveDashboardMetric({
+      loadState: academyLoadState,
+      value: academyCount,
+    });
+
+  const roleMetrics = {
+    coaches: deriveDashboardMetric({
+      loadState: userLoadState,
+      value: roleCounts.coaches,
+    }),
+    playerAccounts: deriveDashboardMetric({
+      loadState: userLoadState,
+      value: roleCounts.playerAccounts,
+    }),
+    parents: deriveDashboardMetric({
+      loadState: userLoadState,
+      value: roleCounts.parents,
+    }),
+    scouts: deriveDashboardMetric({
+      loadState: userLoadState,
+      value: roleCounts.scouts,
+    }),
+  };
+
+  const openIssuesMetric =
+    deriveDashboardMetric({
+      loadState: "unavailable",
+      value: null,
+    });
+
   return (
     <div className="space-y-6">
       <section aria-labelledby="platform-overview-title">
@@ -70,49 +112,49 @@ export default function SuperAdminOverview({
         <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
           <SuperAdminKpiCard
             label="Pending Users"
-            value={pendingUsersValue}
+            metric={pendingUsersMetric}
             detail="Authoritative approval queue"
             icon={UserRoundCheck}
             tone="rose"
           />
           <SuperAdminKpiCard
             label="Academies"
-            value={academyCount}
+            metric={academyMetric}
             detail="Excludes system workspace"
             icon={Building2}
             tone="emerald"
           />
           <SuperAdminKpiCard
             label="Coaches"
-            value={roleCounts.coaches}
+            metric={roleMetrics.coaches}
             detail="Authoritative user.role only"
             icon={GraduationCap}
             tone="blue"
           />
           <SuperAdminKpiCard
             label="Player Accounts"
-            value={roleCounts.playerAccounts}
+            metric={roleMetrics.playerAccounts}
             detail="Authoritative user.role only"
             icon={ScanFace}
             tone="indigo"
           />
           <SuperAdminKpiCard
             label="Parents"
-            value={roleCounts.parents}
+            metric={roleMetrics.parents}
             detail="Authoritative user.role only"
             icon={UsersRound}
             tone="violet"
           />
           <SuperAdminKpiCard
             label="Scouts"
-            value={roleCounts.scouts}
+            metric={roleMetrics.scouts}
             detail="Authoritative user.role only"
             icon={SearchCheck}
             tone="amber"
           />
           <SuperAdminKpiCard
             label="Open Issues"
-            value={null}
+            metric={openIssuesMetric}
             detail="Unavailable"
             icon={CircleAlert}
             tone="slate"

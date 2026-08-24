@@ -1,6 +1,10 @@
 import { ArrowLeft, CheckCircle2, FileDown, ShieldCheck, UserCog, Megaphone } from "lucide-react";
 import SuperAdminSearch from "./SuperAdminSearch";
-import type { DashboardSearchResult, SuperAdminTab } from "./dashboardModel";
+import type {
+  DashboardSearchCoverage,
+  DashboardSearchResult,
+  SuperAdminTab,
+} from "./dashboardModel";
 
 interface SuperAdminHeaderProps {
   onBack: () => void;
@@ -9,6 +13,7 @@ interface SuperAdminHeaderProps {
   onExportReport: () => void;
   dashboardActionsDisabled: boolean;
   searchResults: readonly DashboardSearchResult[];
+  searchCoverage: DashboardSearchCoverage;
   onSearchQueryChange: (query: string) => void;
   onSearchSelect: (result: DashboardSearchResult) => void;
 }
@@ -20,6 +25,7 @@ export default function SuperAdminHeader({
   onExportReport,
   dashboardActionsDisabled,
   searchResults,
+  searchCoverage,
   onSearchQueryChange,
   onSearchSelect,
 }: SuperAdminHeaderProps) {
@@ -89,6 +95,7 @@ export default function SuperAdminHeader({
       <div className="mt-5">
         <SuperAdminSearch
           results={searchResults}
+          coverage={searchCoverage}
           onQueryChange={onSearchQueryChange}
           onSelect={onSearchSelect}
         />
