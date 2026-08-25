@@ -1,5 +1,6 @@
 import {
   Calendar,
+  Trophy,
   Users,
   Shield,
   Star,
@@ -46,6 +47,15 @@ const SECTIONS: DashboardSection[] = [
         icon: Calendar,
         color: "bg-indigo-500 text-indigo-50",
         route: "periodization",
+        allowedRoles: ["ADMIN", "COACH", "SUPERADMIN"],
+      },
+      {
+        id: "matches",
+        titleKey: "dashboard_item_matches_title",
+        descKey: "dashboard_item_matches_desc",
+        icon: Trophy,
+        color: "bg-slate-900 text-slate-50",
+        route: "matches",
         allowedRoles: ["ADMIN", "COACH", "SUPERADMIN"],
       },
       {

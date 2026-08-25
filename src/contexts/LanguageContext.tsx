@@ -15,6 +15,7 @@ export const translations: Translations = {
   sidebar_scout: { en: "Scouting Portal", th: "ระบบแมวมอง" },
   sidebar_drills: { en: "Drill Library", th: "คลังแบบฝึกซ้อม" },
   sidebar_periodization: { en: "Periodization", th: "การวางแผนระยะยาว" },
+  sidebar_matches: { en: "Matches", th: "การแข่งขัน" },
 
   // Dashboard Menu Items
   dash_quick_op: { en: "Quick Operations", th: "เมนูด่วน" },
@@ -64,6 +65,14 @@ export const translations: Translations = {
   dashboard_item_period_desc: {
     en: "Training plans (Microcycle)",
     th: "แผนการฝึกซ้อม (Microcycle)",
+  },
+  dashboard_item_matches_title: {
+    en: "Matches",
+    th: "การแข่งขัน",
+  },
+  dashboard_item_matches_desc: {
+    en: "Fixtures, scheduling & Match lifecycle",
+    th: "โปรแกรมแข่งขัน ตารางแข่ง และสถานะแมตช์",
   },
   dashboard_item_youth_title: {
     en: "Youth Academy Roster",
@@ -118,6 +127,99 @@ export const translations: Translations = {
   dashboard_item_scout_desc: {
     en: "Talent identification",
     th: "ค้นหานักเตะดาวรุ่ง",
+  },
+  // Match Workspace
+  match_workspace_title: { en: "Match Workspace", th: "ศูนย์จัดการการแข่งขัน" },
+  match_workspace_desc: {
+    en: "Create fixtures, maintain Match details and control the official lifecycle",
+    th: "สร้างโปรแกรมแข่ง จัดการรายละเอียด และควบคุมสถานะแมตช์อย่างเป็นระบบ",
+  },
+  match_back_dashboard: { en: "Back to Dashboard", th: "กลับหน้าหลัก" },
+  match_back: { en: "Go Back", th: "ย้อนกลับ" },
+  match_create: { en: "New Match", th: "สร้างแมตช์" },
+  match_create_title: { en: "Create Match", th: "สร้างการแข่งขัน" },
+  match_create_desc: {
+    en: "Every new Match starts as a Draft. Complete scheduling details before moving it to Scheduled.",
+    th: "การแข่งขันใหม่จะเริ่มเป็นแบบร่าง กรุณากรอกข้อมูลให้ครบก่อนเปลี่ยนเป็นสถานะกำหนดแข่ง",
+  },
+  match_create_draft: { en: "Create Draft", th: "สร้างแบบร่าง" },
+  match_refresh: { en: "Refresh", th: "รีเฟรช" },
+  match_loading: { en: "Loading authoritative Match records...", th: "กำลังโหลดข้อมูลการแข่งขัน..." },
+  match_fixture_list: { en: "Match Register", th: "รายการการแข่งขัน" },
+  match_records: { en: "records", th: "รายการ" },
+  match_filter_all: { en: "All statuses", th: "ทุกสถานะ" },
+  match_filter_empty_title: { en: "No Matches in this filter", th: "ไม่มีการแข่งขันในสถานะนี้" },
+  match_filter_empty_desc: { en: "Choose another status to view available Matches.", th: "เลือกสถานะอื่นเพื่อดูการแข่งขันที่มีอยู่" },
+  match_empty_title: { en: "No Matches yet", th: "ยังไม่มีการแข่งขัน" },
+  match_empty_desc: { en: "Create the first Draft Match for this Academy workspace.", th: "สร้างการแข่งขันแบบร่างรายการแรกสำหรับอคาเดมีนี้" },
+  match_no_academy_title: { en: "Academy workspace required", th: "ต้องเลือกอคาเดมีก่อน" },
+  match_no_academy_desc: {
+    en: "Match data cannot be accessed without an authoritative Academy workspace.",
+    th: "ไม่สามารถเข้าถึงข้อมูลการแข่งขันได้หากยังไม่มีอคาเดมีที่ได้รับสิทธิ์อย่างถูกต้อง",
+  },
+  match_read_error_title: { en: "Matches unavailable", th: "ไม่สามารถโหลดการแข่งขันได้" },
+  match_read_error_desc: {
+    en: "Authoritative Match records could not be loaded. No local or fallback data has been substituted.",
+    th: "ไม่สามารถโหลดข้อมูลการแข่งขันจากแหล่งข้อมูลหลักได้ ระบบไม่ได้ใช้ข้อมูลสำรองที่ไม่ผ่านการยืนยัน",
+  },
+  match_retry: { en: "Retry", th: "ลองอีกครั้ง" },
+  match_mutation_failed: {
+    en: "The Match change was not saved. Refresh the workspace and try again.",
+    th: "ไม่สามารถบันทึกการเปลี่ยนแปลงได้ กรุณารีเฟรชและลองอีกครั้ง",
+  },
+  match_validation_title: { en: "Match information needs attention", th: "กรุณาตรวจสอบข้อมูลการแข่งขัน" },
+  match_field_squad: { en: "Squad", th: "ทีม / รุ่น" },
+  match_field_competition: { en: "Competition", th: "รายการแข่งขัน" },
+  match_field_opponent: { en: "Opponent", th: "คู่แข่งขัน" },
+  match_field_kickoff: { en: "Kickoff", th: "วันและเวลาแข่งขัน" },
+  match_field_venue: { en: "Venue", th: "สถานที่แข่งขัน" },
+  match_optional: { en: "Optional while Draft", th: "เว้นว่างได้ขณะเป็นแบบร่าง" },
+  match_no_opponent: { en: "Opponent not set", th: "ยังไม่ได้ระบุคู่แข่งขัน" },
+  match_no_kickoff: { en: "Kickoff not set", th: "ยังไม่ได้กำหนดเวลาแข่ง" },
+  match_not_set: { en: "Not set", th: "ยังไม่ได้กำหนด" },
+  match_venue_home: { en: "Home", th: "เหย้า" },
+  match_venue_away: { en: "Away", th: "เยือน" },
+  match_venue_neutral: { en: "Neutral", th: "สนามกลาง" },
+  match_status_draft: { en: "Draft", th: "แบบร่าง" },
+  match_status_scheduled: { en: "Scheduled", th: "กำหนดแข่ง" },
+  match_status_in_progress: { en: "In Progress", th: "กำลังแข่งขัน" },
+  match_status_completed: { en: "Completed", th: "แข่งขันเสร็จแล้ว" },
+  match_status_cancelled: { en: "Cancelled", th: "ยกเลิก" },
+  match_edit: { en: "Edit", th: "แก้ไข" },
+  match_edit_title: { en: "Edit Match Details", th: "แก้ไขรายละเอียดการแข่งขัน" },
+  match_save: { en: "Save Changes", th: "บันทึกการแก้ไข" },
+  match_discard: { en: "Discard", th: "ยกเลิกการแก้ไข" },
+  match_lifecycle_actions: { en: "Match Lifecycle", th: "จัดการสถานะแมตช์" },
+  match_action_schedule: { en: "Schedule Match", th: "ยืนยันกำหนดแข่ง" },
+  match_action_start: { en: "Start Match", th: "เริ่มการแข่งขัน" },
+  match_action_complete: { en: "Complete Match", th: "จบการแข่งขัน" },
+  match_action_cancel: { en: "Cancel Match", th: "ยกเลิกการแข่งขัน" },
+  match_cancel_confirm: {
+    en: "Cancel this Match? A cancelled Match becomes immutable historical evidence.",
+    th: "ยืนยันยกเลิกการแข่งขันนี้หรือไม่ เมื่อยกเลิกแล้วข้อมูลแมตช์จะถูกล็อกเป็นประวัติถาวร",
+  },
+  match_terminal_note: {
+    en: "This Match is terminal historical evidence and can no longer be edited.",
+    th: "การแข่งขันนี้เป็นหลักฐานประวัติที่สิ้นสุดแล้วและไม่สามารถแก้ไขได้อีก",
+  },
+  match_created: { en: "Created", th: "สร้างเมื่อ" },
+  match_updated: { en: "Updated", th: "แก้ไขล่าสุด" },
+  match_created_by: { en: "Created by", th: "สร้างโดย" },
+  match_updated_by: { en: "Updated by", th: "แก้ไขโดย" },
+
+  // Post-Match placeholder
+  post_match_title: { en: "Post-Match Entry", th: "ข้อมูลหลังการแข่งขัน" },
+  post_match_desc: {
+    en: "Statistics, player ratings and coach awards",
+    th: "สถิติ คะแนนผู้เล่น และรางวัลจากโค้ช",
+  },
+  post_match_unavailable_title: {
+    en: "Post-Match statistics are not active yet",
+    th: "ระบบสถิติหลังการแข่งขันยังไม่เปิดใช้งาน",
+  },
+  post_match_unavailable_desc: {
+    en: "Authoritative Match records are now available in Matches. Statistics, player ratings and coach awards remain unavailable in this phase.",
+    th: "ข้อมูลการแข่งขันหลักมีอยู่แล้วในเมนูการแข่งขัน แต่สถิติ คะแนนผู้เล่น และรางวัลจากโค้ชยังไม่เปิดใช้งานในระยะนี้",
   },
 };
 
