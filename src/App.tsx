@@ -36,6 +36,7 @@ import NotificationDrawer from "./components/NotificationDrawer";
 import { useLanguage } from "./contexts/LanguageContext";
 import PostMatchStatsEntry from "./components/PostMatchStatsEntry";
 import StartingXIBuilder from "./components/StartingXIBuilder";
+import MatchWorkspace from "./components/match/MatchWorkspace";
 import { useAuth } from "./contexts/AuthContext";
 import { useAcademy, type AcademyAccessState } from "./contexts/AcademyContext";
 import {
@@ -132,7 +133,7 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const { isOnline } = useNetworkStatus();
-  const { language, setLanguage } = useLanguage();
+  const { language, setLanguage, t } = useLanguage();
   const {
     hasPermission,
     currentUser,
@@ -388,6 +389,21 @@ export default function App() {
       return <AccessDenied onBack={() => navigateTo("dashboard")} />;
     }
 
+    if (
+      (
+        currentPage === "matches" ||
+        currentPage === "/coach/match-evaluation"
+      ) &&
+      !canAccessTenantCapability(
+        effectivePresentationRole,
+        ["ADMIN", "COACH", "SUPERADMIN"],
+        isSupportActive,
+        hasPermission,
+      )
+    ) {
+      return <AccessDenied onBack={() => navigateTo("dashboard")} />;
+    }
+
     switch (currentPage) {
       case "dashboard":
         return currentUser?.role === "PLAYER" ? (
@@ -429,6 +445,14 @@ export default function App() {
           <WeeklyPeriodization
             onBack={() => navigateTo("dashboard")}
             onNavigate={navigateTo}
+          />
+        );
+      case "matches":
+      case "/coach/match-evaluation":
+        return (
+          <MatchWorkspace
+            key={academyId || "no-academy"}
+            onBack={() => navigateTo("dashboard")}
           />
         );
       case "starting_xi":
@@ -494,8 +518,6 @@ export default function App() {
         return (
           <PostMatchStatsEntry onBack={() => navigateTo("periodization")} />
         );
-      case "/coach/match-evaluation":
-        return <PostMatchStatsEntry onBack={() => navigateTo("dashboard")} />;
       case "/player/peer-voting":
         return <PlayerDashboard onNavigate={navigateTo} />;
       case "/report":
@@ -528,8 +550,8 @@ export default function App() {
       ],
     },
     {
-      id: "/coach/match-evaluation",
-      label: "Match Evaluation",
+      id: "matches",
+      label: t("sidebar_matches"),
       icon: Award,
       roles: ["SUPERADMIN", "ADMIN", "COACH"],
     },
@@ -753,13 +775,13 @@ export default function App() {
                 onClick={() => setLanguage("th")}
                 className={`text-[10px] font-bold px-2 py-1 rounded transition-colors ${language === "th" ? "bg-white shadow-sm text-indigo-600" : "text-slate-500 hover:text-slate-700"}`}
               >
-                🇹🇭 TH
+                ๐น๐ญ TH
               </button>
               <button
                 onClick={() => setLanguage("en")}
                 className={`text-[10px] font-bold px-2 py-1 rounded transition-colors ${language === "en" ? "bg-white shadow-sm text-indigo-600" : "text-slate-500 hover:text-slate-700"}`}
               >
-                🇬🇧 EN
+                ๐ฌ๐ง EN
               </button>
             </div>
 
@@ -793,7 +815,7 @@ export default function App() {
               onClick={() => setIsNotificationOpen(true)}
               className="w-8 h-8 flex items-center justify-center bg-slate-100 text-slate-600 rounded-full cursor-pointer hover:bg-slate-200 transition-colors text-sm"
             >
-              🔔
+              ๐””
             </button>
           </div>
         </header>
