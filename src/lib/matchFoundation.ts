@@ -30,8 +30,8 @@ export type MatchVenueType =
 export interface MatchCoreData {
   schemaVersion: typeof MATCH_SCHEMA_VERSION;
   status: MatchStatus;
-  squadLabel: string | null;
-  competitionName: string | null;
+  squadLabel: string;
+  competitionName: string;
   opponentName: string | null;
   kickoffAt: Date | null;
   venueType: MatchVenueType | null;
@@ -48,10 +48,10 @@ export interface MatchCoreData {
 export interface MatchRosterSnapshotData {
   schemaVersion: typeof MATCH_SCHEMA_VERSION;
   futId: string | null;
-  firstName: string | null;
-  lastName: string | null;
-  position: string | null;
-  jerseyNumber: number | null;
+  firstName: string;
+  lastName: string;
+  position: string;
+  jerseyNumber: number;
 }
 
 export interface MatchValidationResult {
@@ -78,10 +78,14 @@ const MATCH_ROSTER_KEYS = [
   "jerseyNumber",
 ] as const;
 
-const MATCH_TEXT_MAX_LENGTH = 160;
-const PLAYER_NAME_MAX_LENGTH = 120;
-const PLAYER_POSITION_MAX_LENGTH = 64;
-const FUTID_MAX_LENGTH = 128;
+const SQUAD_LABEL_MAX_LENGTH = 80;
+const COMPETITION_NAME_MAX_LENGTH = 120;
+const OPPONENT_NAME_MAX_LENGTH = 120;
+const PLAYER_FIRST_NAME_MAX_LENGTH = 80;
+const PLAYER_LAST_NAME_MAX_LENGTH = 80;
+const PLAYER_POSITION_MAX_LENGTH = 32;
+const FUTID_MAX_LENGTH = 64;
+const JERSEY_NUMBER_MAX = 99;
 
 const MATCH_STATUS_TRANSITIONS:
   Readonly<Record<MatchStatus, readonly MatchStatus[]>> = {
@@ -132,6 +136,32 @@ function isNullableTrimmedText(
   );
 }
 
+function isRequiredTrimmedText(
+  value: unknown,
+  maxLength: number,
+): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= maxLength &&
+    value.trim() === value
+  );
+}
+
+function isOptionalEmptyTrimmedText(
+  value: unknown,
+  maxLength: number,
+): value is string {
+  return (
+    typeof value === "string" &&
+    value.length <= maxLength &&
+    (
+      value.length === 0 ||
+      value.trim() === value
+    )
+  );
+}
+
 function isValidKickoff(
   value: unknown,
 ): value is Date | null {
@@ -146,15 +176,12 @@ function isValidKickoff(
 
 function isValidJerseyNumber(
   value: unknown,
-): value is number | null {
+): value is number {
   return (
-    value === null ||
-    (
-      typeof value === "number" &&
-      Number.isInteger(value) &&
-      value >= 0 &&
-      value <= 999
-    )
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= JERSEY_NUMBER_MAX
   );
 }
 
@@ -262,18 +289,18 @@ export function validateMatchCoreData(
   }
 
   if (
-    !isNullableTrimmedText(
+    !isRequiredTrimmedText(
       value.squadLabel,
-      MATCH_TEXT_MAX_LENGTH,
+      SQUAD_LABEL_MAX_LENGTH,
     )
   ) {
     errors.push("Invalid squad label.");
   }
 
   if (
-    !isNullableTrimmedText(
+    !isRequiredTrimmedText(
       value.competitionName,
-      MATCH_TEXT_MAX_LENGTH,
+      COMPETITION_NAME_MAX_LENGTH,
     )
   ) {
     errors.push("Invalid competition name.");
@@ -282,7 +309,7 @@ export function validateMatchCoreData(
   if (
     !isNullableTrimmedText(
       value.opponentName,
-      MATCH_TEXT_MAX_LENGTH,
+      OPPONENT_NAME_MAX_LENGTH,
     )
   ) {
     errors.push("Invalid opponent name.");
@@ -319,6 +346,12 @@ export function validateMatchCoreData(
     if (!isValidKickoff(value.kickoffAt) || value.kickoffAt === null) {
       errors.push(
         "Scheduled or active Match requires a kickoff time.",
+      );
+    }
+
+    if (!isMatchVenueType(value.venueType)) {
+      errors.push(
+        "Scheduled or active Match requires a venue type.",
       );
     }
   }
@@ -375,25 +408,25 @@ export function validateMatchRosterSnapshotData(
   }
 
   if (
-    !isNullableTrimmedText(
+    !isRequiredTrimmedText(
       value.firstName,
-      PLAYER_NAME_MAX_LENGTH,
+      PLAYER_FIRST_NAME_MAX_LENGTH,
     )
   ) {
     errors.push("Invalid first-name snapshot.");
   }
 
   if (
-    !isNullableTrimmedText(
+    !isOptionalEmptyTrimmedText(
       value.lastName,
-      PLAYER_NAME_MAX_LENGTH,
+      PLAYER_LAST_NAME_MAX_LENGTH,
     )
   ) {
     errors.push("Invalid last-name snapshot.");
   }
 
   if (
-    !isNullableTrimmedText(
+    !isRequiredTrimmedText(
       value.position,
       PLAYER_POSITION_MAX_LENGTH,
     )

@@ -19,8 +19,8 @@ function draftMatch(): MatchCoreData {
   return {
     schemaVersion: MATCH_SCHEMA_VERSION,
     status: "DRAFT",
-    squadLabel: null,
-    competitionName: null,
+    squadLabel: "U15",
+    competitionName: "League",
     opponentName: null,
     kickoffAt: null,
     venueType: null,
@@ -370,4 +370,124 @@ test("21. validators never rewrite their source objects", () => {
 
   assert.equal(JSON.stringify(match), matchBefore);
   assert.equal(JSON.stringify(roster), rosterBefore);
+});
+
+
+test("22. Match text bounds match Firestore persistence contract", () => {
+  const validBoundary = validateMatchCoreData({
+    ...draftMatch(),
+    squadLabel: "S".repeat(80),
+    competitionName: "C".repeat(120),
+    opponentName: "O".repeat(120),
+  });
+
+  const squadTooLong = validateMatchCoreData({
+    ...draftMatch(),
+    squadLabel: "S".repeat(81),
+  });
+
+  const competitionTooLong = validateMatchCoreData({
+    ...draftMatch(),
+    competitionName: "C".repeat(121),
+  });
+
+  const opponentTooLong = validateMatchCoreData({
+    ...draftMatch(),
+    opponentName: "O".repeat(121),
+  });
+
+  assert.equal(validBoundary.valid, true);
+  assert.equal(squadTooLong.valid, false);
+  assert.equal(competitionTooLong.valid, false);
+  assert.equal(opponentTooLong.valid, false);
+});
+
+test("23. scheduled and active Match requires venue identity", () => {
+  for (
+    const status of [
+      "SCHEDULED",
+      "IN_PROGRESS",
+      "COMPLETED",
+    ] as const
+  ) {
+    const result = validateMatchCoreData({
+      ...scheduledMatch(),
+      status,
+      venueType: null,
+    });
+
+    assert.equal(result.valid, false);
+    assert.ok(
+      result.errors.includes(
+        "Scheduled or active Match requires a venue type.",
+      ),
+    );
+  }
+});
+
+test("24. roster required fields and bounds match Firestore Rules", () => {
+  const invalidCases = [
+    {
+      ...rosterSnapshot(),
+      futId: "F".repeat(65),
+    },
+    {
+      ...rosterSnapshot(),
+      firstName: "F".repeat(81),
+    },
+    {
+      ...rosterSnapshot(),
+      lastName: "L".repeat(81),
+    },
+    {
+      ...rosterSnapshot(),
+      position: "P".repeat(33),
+    },
+    {
+      ...rosterSnapshot(),
+      jerseyNumber: 100,
+    },
+    {
+      ...rosterSnapshot(),
+      firstName: null,
+    },
+    {
+      ...rosterSnapshot(),
+      lastName: null,
+    },
+    {
+      ...rosterSnapshot(),
+      position: null,
+    },
+    {
+      ...rosterSnapshot(),
+      jerseyNumber: null,
+    },
+  ];
+
+  for (const snapshot of invalidCases) {
+    const result = validateMatchRosterSnapshotData(
+      "player-1",
+      snapshot,
+    );
+
+    assert.equal(result.valid, false);
+  }
+});
+
+test("25. roster exact persistence boundaries remain valid", () => {
+  const result = validateMatchRosterSnapshotData(
+    "player-1",
+    {
+      ...rosterSnapshot(),
+      futId: "F".repeat(64),
+      firstName: "F".repeat(80),
+      lastName: "",
+      position: "P".repeat(32),
+      jerseyNumber: 99,
+    },
+  );
+
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.errors, []);
 });
