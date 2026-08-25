@@ -515,7 +515,17 @@ test("16. ACTIVE COACH can use approved football write paths", async () => {
     name: "Player 1",
   }));
   await assertSucceeds(setDoc(doc(db, "academies", ACADEMY_A, "matches", "match-1"), {
-    opponent: "Academy B",
+    schemaVersion: 1,
+    status: "DRAFT",
+    squadLabel: "U15",
+    competitionName: "League",
+    opponentName: null,
+    kickoffAt: null,
+    venueType: null,
+    createdAt: serverTimestamp(),
+    createdBy: COACH_A,
+    updatedAt: serverTimestamp(),
+    updatedBy: COACH_A,
   }));
 });
 

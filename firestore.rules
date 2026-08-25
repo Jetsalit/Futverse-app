@@ -103,6 +103,278 @@ service cloud.firestore {
       return isSuperAdmin()
         || hasAcademyRole(academyId, ['ADMIN', 'COACH']);
     }
+    function validMatchText(value, maxSize) {
+      return value is string
+        && value.size() > 0
+        && value.size() <= maxSize
+        && !value.matches('^\\s.*')
+        && !value.matches('.*\\s$');
+    }
+
+    function validOptionalMatchText(value, maxSize) {
+      return value == null
+        || validMatchText(value, maxSize);
+    }
+
+    function validOptionalEmptyMatchText(value, maxSize) {
+      return value is string
+        && value.size() <= maxSize
+        && (
+          value.size() == 0
+          || validMatchText(value, maxSize)
+        );
+    }
+
+    function validMatchScheduling(data) {
+      return (
+          data.status in ['SCHEDULED', 'IN_PROGRESS', 'COMPLETED']
+          && validMatchText(data.opponentName, 120)
+          && data.kickoffAt is timestamp
+          && data.venueType in ['HOME', 'AWAY', 'NEUTRAL']
+        )
+        || (
+          data.status in ['DRAFT', 'CANCELLED']
+          && validOptionalMatchText(data.opponentName, 120)
+          && (
+            data.kickoffAt == null
+            || data.kickoffAt is timestamp
+          )
+          && (
+            data.venueType == null
+            || data.venueType in ['HOME', 'AWAY', 'NEUTRAL']
+          )
+        );
+    }
+
+    function validMatchContractData(data) {
+      return data.keys().hasAll([
+          'schemaVersion',
+          'status',
+          'squadLabel',
+          'competitionName',
+          'opponentName',
+          'kickoffAt',
+          'venueType',
+          'createdAt',
+          'createdBy',
+          'updatedAt',
+          'updatedBy'
+        ])
+        && data.keys().hasOnly([
+          'schemaVersion',
+          'status',
+          'squadLabel',
+          'competitionName',
+          'opponentName',
+          'kickoffAt',
+          'venueType',
+          'createdAt',
+          'createdBy',
+          'updatedAt',
+          'updatedBy'
+        ])
+        && data.schemaVersion == 1
+        && data.status in [
+          'DRAFT',
+          'SCHEDULED',
+          'IN_PROGRESS',
+          'COMPLETED',
+          'CANCELLED'
+        ]
+        && validMatchText(data.squadLabel, 80)
+        && validMatchText(data.competitionName, 120)
+        && validMatchScheduling(data)
+        && data.createdAt is timestamp
+        && exactDocumentId(data.createdBy)
+        && data.updatedAt is timestamp
+        && exactDocumentId(data.updatedBy);
+    }
+
+    function validMatchCreate() {
+      return validMatchContractData(request.resource.data)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid;
+    }
+
+    function validMatchTransition(fromStatus, toStatus) {
+      return (
+          fromStatus == toStatus
+          && fromStatus in [
+            'DRAFT',
+            'SCHEDULED',
+            'IN_PROGRESS'
+          ]
+        )
+        || (
+          fromStatus == 'DRAFT'
+          && toStatus in [
+            'SCHEDULED',
+            'CANCELLED'
+          ]
+        )
+        || (
+          fromStatus == 'SCHEDULED'
+          && toStatus in [
+            'IN_PROGRESS',
+            'CANCELLED'
+          ]
+        )
+        || (
+          fromStatus == 'IN_PROGRESS'
+          && toStatus in [
+            'COMPLETED',
+            'CANCELLED'
+          ]
+        );
+    }
+
+    function validMatchUpdate() {
+      return validMatchContractData(resource.data)
+        && validMatchContractData(request.resource.data)
+        && validMatchTransition(
+          resource.data.status,
+          request.resource.data.status
+        )
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid;
+    }
+
+    function matchRosterIsMutable(academyId, matchId) {
+      let matchPath =
+        /databases/$(database)/documents/academies/$(academyId)/matches/$(matchId);
+      let matchData = get(matchPath).data;
+
+      return exists(matchPath)
+        && matchData.get('schemaVersion', 0) == 1
+        && matchData.get('status', '') in [
+          'DRAFT',
+          'SCHEDULED',
+          'IN_PROGRESS'
+        ];
+    }
+
+    function validStoredFutId(value) {
+      return value == null
+        || validMatchText(value, 64);
+    }
+
+    function academyPlayerFutIdCompatible(
+      academyId,
+      playerId,
+      rosterFutId
+    ) {
+      let playerPath =
+        /databases/$(database)/documents/academies/$(academyId)/players/$(playerId);
+      let playerData = get(playerPath).data;
+      let canonicalFutId =
+        playerData.get('futId', null);
+      let legacyFutId =
+        playerData.get('futID', null);
+
+      return exists(playerPath)
+        && validStoredFutId(canonicalFutId)
+        && validStoredFutId(legacyFutId)
+        && (
+          canonicalFutId == null
+          || legacyFutId == null
+          || canonicalFutId == legacyFutId
+        )
+        && (
+          rosterFutId == null
+          || (
+            canonicalFutId != null
+            && rosterFutId == canonicalFutId
+          )
+          || (
+            canonicalFutId == null
+            && legacyFutId != null
+            && rosterFutId == legacyFutId
+          )
+        );
+    }
+
+    function validMatchRosterData(
+      academyId,
+      playerId,
+      data
+    ) {
+      return data.keys().hasAll([
+          'schemaVersion',
+          'futId',
+          'firstName',
+          'lastName',
+          'position',
+          'jerseyNumber',
+          'createdAt',
+          'createdBy',
+          'updatedAt',
+          'updatedBy'
+        ])
+        && data.keys().hasOnly([
+          'schemaVersion',
+          'futId',
+          'firstName',
+          'lastName',
+          'position',
+          'jerseyNumber',
+          'createdAt',
+          'createdBy',
+          'updatedAt',
+          'updatedBy'
+        ])
+        && data.schemaVersion == 1
+        && validStoredFutId(data.futId)
+        && validMatchText(data.firstName, 80)
+        && validOptionalEmptyMatchText(data.lastName, 80)
+        && validMatchText(data.position, 32)
+        && data.jerseyNumber is int
+        && data.jerseyNumber >= 0
+        && data.jerseyNumber <= 99
+        && data.createdAt is timestamp
+        && exactDocumentId(data.createdBy)
+        && data.updatedAt is timestamp
+        && exactDocumentId(data.updatedBy)
+        && academyPlayerFutIdCompatible(
+          academyId,
+          playerId,
+          data.futId
+        );
+    }
+
+    function validMatchRosterCreate(
+      academyId,
+      playerId
+    ) {
+      return validMatchRosterData(
+          academyId,
+          playerId,
+          request.resource.data
+        )
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid;
+    }
+
+    function validMatchRosterUpdate(
+      academyId,
+      playerId
+    ) {
+      return resource.data.get('schemaVersion', 0) == 1
+        && validMatchRosterData(
+          academyId,
+          playerId,
+          request.resource.data
+        )
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid;
+    }
 
     function validNonStaffAssociationData(
       association,
@@ -732,9 +1004,41 @@ service cloud.firestore {
         allow create, update, delete: if false;
       }
 
-      match /matches/{document=**} {
+      match /matches/{matchId} {
         allow read: if tenantMemberCanRead(academyId);
-        allow write: if tenantFootballCanWrite(academyId);
+
+        allow create: if tenantFootballCanWrite(academyId)
+          && validMatchCreate();
+
+        allow update: if tenantFootballCanWrite(academyId)
+          && validMatchUpdate();
+
+        allow delete: if false;
+
+        match /roster/{playerId} {
+          allow read: if tenantMemberCanRead(academyId);
+
+          allow create: if tenantFootballCanWrite(academyId)
+            && matchRosterIsMutable(academyId, matchId)
+            && validMatchRosterCreate(
+              academyId,
+              playerId
+            );
+
+          allow update: if tenantFootballCanWrite(academyId)
+            && matchRosterIsMutable(academyId, matchId)
+            && validMatchRosterUpdate(
+              academyId,
+              playerId
+            );
+
+          allow delete: if tenantFootballCanWrite(academyId)
+            && matchRosterIsMutable(academyId, matchId);
+        }
+
+        match /{document=**} {
+          allow read, write: if false;
+        }
       }
     }
 
