@@ -775,13 +775,13 @@ export default function App() {
                 onClick={() => setLanguage("th")}
                 className={`text-[10px] font-bold px-2 py-1 rounded transition-colors ${language === "th" ? "bg-white shadow-sm text-indigo-600" : "text-slate-500 hover:text-slate-700"}`}
               >
-                ๐น๐ญ TH
+                🇹🇭 TH
               </button>
               <button
                 onClick={() => setLanguage("en")}
                 className={`text-[10px] font-bold px-2 py-1 rounded transition-colors ${language === "en" ? "bg-white shadow-sm text-indigo-600" : "text-slate-500 hover:text-slate-700"}`}
               >
-                ๐ฌ๐ง EN
+                🇬🇧 EN
               </button>
             </div>
 
@@ -815,7 +815,7 @@ export default function App() {
               onClick={() => setIsNotificationOpen(true)}
               className="w-8 h-8 flex items-center justify-center bg-slate-100 text-slate-600 rounded-full cursor-pointer hover:bg-slate-200 transition-colors text-sm"
             >
-              ๐””
+              🔔
             </button>
           </div>
         </header>
