@@ -4,6 +4,7 @@ import {
   doc,
   getDocFromServer,
   getDocsFromServer,
+  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -20,6 +21,7 @@ import {
   validateMatchRosterSnapshotData,
   type MatchCoreData,
   type MatchRosterSnapshotData,
+  type MatchStatus,
 } from "../matchFoundation";
 
 import { auth, db } from "../firebase";
@@ -77,7 +79,15 @@ export interface CreateAcademyMatchInput {
 export interface UpdateAcademyMatchInput {
   academyId: string;
   matchId: string;
+  expectedData: MatchCoreData;
   data: MatchCoreData;
+}
+
+export interface TransitionAcademyMatchStatusInput {
+  academyId: string;
+  matchId: string;
+  expectedData: MatchCoreData;
+  targetStatus: MatchStatus;
 }
 
 export interface MatchRosterMutationInput {
@@ -124,6 +134,15 @@ export interface MatchRepositoryDependencies {
     academyId: string,
     matchId: string,
     data: Record<string, unknown>,
+  ): Promise<void>;
+
+  runMatchTransaction(
+    academyId: string,
+    matchId: string,
+    buildPatch: (
+      snapshot: MatchRepositoryDocumentSnapshotLike,
+      timestamp: unknown,
+    ) => Record<string, unknown>,
   ): Promise<void>;
 
   getPlayer(
@@ -237,6 +256,42 @@ function createFirestoreDependencies(
           matchId,
         ),
         data,
+      );
+    },
+
+    async runMatchTransaction(
+      academyId,
+      matchId,
+      buildPatch,
+    ) {
+      const matchRef =
+        doc(
+          firestore,
+          "academies",
+          academyId,
+          "matches",
+          matchId,
+        );
+
+      await runTransaction(
+        firestore,
+        async (transaction) => {
+          const snapshot =
+            await transaction.get(
+              matchRef,
+            );
+
+          const patch =
+            buildPatch(
+              snapshot,
+              serverTimestamp(),
+            );
+
+          transaction.update(
+            matchRef,
+            patch,
+          );
+        },
       );
     },
 
@@ -442,6 +497,47 @@ function copyMatchCoreData(
         : new Date(data.kickoffAt.getTime()),
     venueType: data.venueType,
   };
+}
+
+function matchCoreDataFromRecord(
+  match: AcademyMatchRecord,
+): MatchCoreData {
+  return {
+    schemaVersion: match.schemaVersion,
+    status: match.status,
+    squadLabel: match.squadLabel,
+    competitionName: match.competitionName,
+    opponentName: match.opponentName,
+    kickoffAt:
+      match.kickoffAt === null
+        ? null
+        : new Date(
+            match.kickoffAt.getTime(),
+          ),
+    venueType: match.venueType,
+  };
+}
+
+function matchCoreDataEquals(
+  left: MatchCoreData,
+  right: MatchCoreData,
+): boolean {
+  const kickoffMatches =
+    left.kickoffAt === null
+      ? right.kickoffAt === null
+      : right.kickoffAt !== null
+        && left.kickoffAt.getTime() ===
+          right.kickoffAt.getTime();
+
+  return (
+    left.schemaVersion === right.schemaVersion
+    && left.status === right.status
+    && left.squadLabel === right.squadLabel
+    && left.competitionName === right.competitionName
+    && left.opponentName === right.opponentName
+    && kickoffMatches
+    && left.venueType === right.venueType
+  );
 }
 
 function copyRosterData(
@@ -956,50 +1052,180 @@ export async function updateAcademyMatch(
       dependencies,
     );
 
+  const safeExpectedData =
+    copyMatchCoreData(
+      input.expectedData,
+    );
+
   const safeData =
     copyMatchCoreData(
       input.data,
     );
 
-  const storedMatch =
-    await requireExistingMatch(
-      academyId,
-      matchId,
+  if (
+    safeExpectedData.status !==
+    safeData.status
+  ) {
+    throw new Error(
+      "Match lifecycle transitions require transitionAcademyMatchStatus().",
+    );
+  }
+
+  await dependencies.runMatchTransaction(
+    academyId,
+    matchId,
+    (snapshot, timestamp) => {
+      if (!snapshot.exists()) {
+        throw new Error(
+          "Match does not exist.",
+        );
+      }
+
+      const storedMatch =
+        mapStoredMatchSnapshot(
+          snapshot,
+        );
+
+      if (
+        isTerminalMatchStatus(
+          storedMatch.status,
+        )
+      ) {
+        throw new Error(
+          "Terminal Match evidence cannot be updated.",
+        );
+      }
+
+      const storedCore =
+        matchCoreDataFromRecord(
+          storedMatch,
+        );
+
+      if (
+        !matchCoreDataEquals(
+          storedCore,
+          safeExpectedData,
+        )
+      ) {
+        throw new Error(
+          "Match changed since it was loaded. Refresh the workspace and try again.",
+        );
+      }
+
+      return {
+        ...safeData,
+        updatedAt: timestamp,
+        updatedBy: actorUid,
+      };
+    },
+  );
+}
+
+export async function transitionAcademyMatchStatus(
+  input: TransitionAcademyMatchStatusInput,
+  dependencies:
+    MatchRepositoryDependencies =
+      FIRESTORE_DEPENDENCIES,
+): Promise<void> {
+  const academyId =
+    requireExactDocumentId(
+      input.academyId,
+      "Academy ID",
+    );
+
+  const matchId =
+    requireExactDocumentId(
+      input.matchId,
+      "Match ID",
+    );
+
+  const actorUid =
+    requireAuthenticatedUid(
       dependencies,
     );
 
+  const safeExpectedData =
+    copyMatchCoreData(
+      input.expectedData,
+    );
+
+  const targetStatus =
+    input.targetStatus;
+
   if (
-    isTerminalMatchStatus(
-      storedMatch.status,
+    !canTransitionMatchStatus(
+      safeExpectedData.status,
+      targetStatus,
     )
   ) {
     throw new Error(
-      "Terminal Match evidence cannot be updated.",
+      `Invalid Match lifecycle transition: ${safeExpectedData.status} -> ${targetStatus}.`,
     );
   }
 
-  if (
-    storedMatch.status !== safeData.status
-    && !canTransitionMatchStatus(
-      storedMatch.status,
-      safeData.status,
-    )
-  ) {
-    throw new Error(
-      `Invalid Match lifecycle transition: ${storedMatch.status} -> ${safeData.status}.`,
-    );
-  }
-
-  const timestamp =
-    dependencies.timestamp();
-
-  await dependencies.updateMatch(
+  await dependencies.runMatchTransaction(
     academyId,
     matchId,
-    {
-      ...safeData,
-      updatedAt: timestamp,
-      updatedBy: actorUid,
+    (snapshot, timestamp) => {
+      if (!snapshot.exists()) {
+        throw new Error(
+          "Match does not exist.",
+        );
+      }
+
+      const storedMatch =
+        mapStoredMatchSnapshot(
+          snapshot,
+        );
+
+      if (
+        isTerminalMatchStatus(
+          storedMatch.status,
+        )
+      ) {
+        throw new Error(
+          "Terminal Match evidence cannot be updated.",
+        );
+      }
+
+      const storedCore =
+        matchCoreDataFromRecord(
+          storedMatch,
+        );
+
+      if (
+        !matchCoreDataEquals(
+          storedCore,
+          safeExpectedData,
+        )
+      ) {
+        throw new Error(
+          "Match changed since it was loaded. Refresh the workspace and try again.",
+        );
+      }
+
+      if (
+        !canTransitionMatchStatus(
+          storedMatch.status,
+          targetStatus,
+        )
+      ) {
+        throw new Error(
+          `Invalid Match lifecycle transition: ${storedMatch.status} -> ${targetStatus}.`,
+        );
+      }
+
+      const targetData =
+        copyMatchCoreData({
+          ...storedCore,
+          status: targetStatus,
+        });
+
+      return {
+        status: targetData.status,
+        updatedAt: timestamp,
+        updatedBy: actorUid,
+      };
     },
   );
 }

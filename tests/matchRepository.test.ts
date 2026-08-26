@@ -8,6 +8,7 @@ import {
   readAcademyMatch,
   readAcademyMatchRoster,
   removeAcademyMatchRosterPlayer,
+  transitionAcademyMatchStatus,
   updateAcademyMatch,
   updateAcademyMatchRosterPlayer,
   type MatchRepositoryDependencies,
@@ -88,6 +89,15 @@ function scheduledMatch(
         "2026-09-01T10:00:00.000Z",
       ),
     venueType: "HOME",
+  };
+}
+
+function readyDraft(): MatchCoreData {
+  return {
+    ...scheduledMatch(
+      "SCHEDULED",
+    ),
+    status: "DRAFT",
   };
 }
 
@@ -175,6 +185,12 @@ function dependencies(
     async setMatch() {},
 
     async updateMatch() {},
+
+    async runMatchTransaction() {
+      throw new Error(
+        "runMatchTransaction not configured for this test.",
+      );
+    },
 
     async getPlayer(
       _academyId,
@@ -483,32 +499,38 @@ test(
 );
 
 test(
-  "7. same-status nonterminal Match correction is permitted",
+  "7. same-status nonterminal Match correction is atomic",
   async () => {
     let patch:
       Record<string, unknown>
       | null = null;
 
+    const expected =
+      draftMatch();
+
+    const corrected = {
+      ...expected,
+      competitionName:
+        "Corrected League",
+    };
+
     const deps =
       dependencies({
-        async getMatch(
+        async runMatchTransaction(
           _academyId,
           matchId,
+          buildPatch,
         ) {
-          return documentSnapshot(
-            matchId,
-            storedMatch(
-              "DRAFT",
-            ),
-          );
-        },
-
-        async updateMatch(
-          _academyId,
-          _matchId,
-          data,
-        ) {
-          patch = data;
+          patch =
+            buildPatch(
+              documentSnapshot(
+                matchId,
+                storedMatch(
+                  "DRAFT",
+                ),
+              ),
+              SERVER_TIMESTAMP,
+            );
         },
       });
 
@@ -518,11 +540,10 @@ test(
           "academy-1",
         matchId:
           "match-1",
-        data: {
-          ...draftMatch(),
-          competitionName:
-            "Corrected League",
-        },
+        expectedData:
+          expected,
+        data:
+          corrected,
       },
       deps,
     );
@@ -562,71 +583,43 @@ test(
 );
 
 test(
-  "8. valid lifecycle transition is permitted",
+  "7A. stale same-status correction cannot overwrite newer Match core data",
   async () => {
-    let updates = 0;
+    let writes = 0;
+
+    const expected =
+      scheduledMatch(
+        "SCHEDULED",
+      );
+
+    const corrected = {
+      ...expected,
+      competitionName:
+        "Corrected League",
+    };
 
     const deps =
       dependencies({
-        async getMatch(
+        async runMatchTransaction(
           _academyId,
           matchId,
+          buildPatch,
         ) {
-          return documentSnapshot(
-            matchId,
-            storedMatch(
-              "DRAFT",
+          buildPatch(
+            documentSnapshot(
+              matchId,
+              {
+                ...storedMatch(
+                  "SCHEDULED",
+                ),
+                opponentName:
+                  "Academy C",
+              },
             ),
+            SERVER_TIMESTAMP,
           );
-        },
 
-        async updateMatch() {
-          updates += 1;
-        },
-      });
-
-    await updateAcademyMatch(
-      {
-        academyId:
-          "academy-1",
-        matchId:
-          "match-1",
-        data:
-          scheduledMatch(
-            "SCHEDULED",
-          ),
-      },
-      deps,
-    );
-
-    assert.equal(
-      updates,
-      1,
-    );
-  },
-);
-
-test(
-  "9. lifecycle skip fails closed",
-  async () => {
-    let updates = 0;
-
-    const deps =
-      dependencies({
-        async getMatch(
-          _academyId,
-          matchId,
-        ) {
-          return documentSnapshot(
-            matchId,
-            storedMatch(
-              "DRAFT",
-            ),
-          );
-        },
-
-        async updateMatch() {
-          updates += 1;
+          writes += 1;
         },
       });
 
@@ -638,10 +631,350 @@ test(
               "academy-1",
             matchId:
               "match-1",
+            expectedData:
+              expected,
+            data:
+              corrected,
+          },
+          deps,
+        ),
+      /Match changed since it was loaded/,
+    );
+
+    assert.equal(
+      writes,
+      0,
+    );
+  },
+);
+
+test(
+  "8. atomic lifecycle transition preserves authoritative core and writes status only",
+  async () => {
+    let patch:
+      Record<string, unknown>
+      | null = null;
+
+    const expected =
+      readyDraft();
+
+    const deps =
+      dependencies({
+        async runMatchTransaction(
+          _academyId,
+          matchId,
+          buildPatch,
+        ) {
+          patch =
+            buildPatch(
+              documentSnapshot(
+                matchId,
+                {
+                  ...storedMatch(
+                    "DRAFT",
+                  ),
+                  ...expected,
+                },
+              ),
+              SERVER_TIMESTAMP,
+            );
+        },
+      });
+
+    await transitionAcademyMatchStatus(
+      {
+        academyId:
+          "academy-1",
+        matchId:
+          "match-1",
+        expectedData:
+          expected,
+        targetStatus:
+          "SCHEDULED",
+      },
+      deps,
+    );
+
+    assert.deepEqual(
+      patch,
+      {
+        status: "SCHEDULED",
+        updatedAt:
+          SERVER_TIMESTAMP,
+        updatedBy:
+          "coach-1",
+      },
+    );
+  },
+);
+
+test(
+  "8A. stale DRAFT cannot cancel an authoritative SCHEDULED Match",
+  async () => {
+    let writes = 0;
+
+    const deps =
+      dependencies({
+        async runMatchTransaction(
+          _academyId,
+          matchId,
+          buildPatch,
+        ) {
+          buildPatch(
+            documentSnapshot(
+              matchId,
+              storedMatch(
+                "SCHEDULED",
+              ),
+            ),
+            SERVER_TIMESTAMP,
+          );
+
+          writes += 1;
+        },
+      });
+
+    await assert.rejects(
+      () =>
+        transitionAcademyMatchStatus(
+          {
+            academyId:
+              "academy-1",
+            matchId:
+              "match-1",
+            expectedData:
+              draftMatch(),
+            targetStatus:
+              "CANCELLED",
+          },
+          deps,
+        ),
+      /Match changed since it was loaded/,
+    );
+
+    assert.equal(
+      writes,
+      0,
+    );
+  },
+);
+
+test(
+  "8B. stale SCHEDULED metadata cannot be frozen into CANCELLED evidence",
+  async () => {
+    let writes = 0;
+
+    const expected =
+      scheduledMatch(
+        "SCHEDULED",
+      );
+
+    const deps =
+      dependencies({
+        async runMatchTransaction(
+          _academyId,
+          matchId,
+          buildPatch,
+        ) {
+          buildPatch(
+            documentSnapshot(
+              matchId,
+              {
+                ...storedMatch(
+                  "SCHEDULED",
+                ),
+                opponentName:
+                  "Academy C",
+              },
+            ),
+            SERVER_TIMESTAMP,
+          );
+
+          writes += 1;
+        },
+      });
+
+    await assert.rejects(
+      () =>
+        transitionAcademyMatchStatus(
+          {
+            academyId:
+              "academy-1",
+            matchId:
+              "match-1",
+            expectedData:
+              expected,
+            targetStatus:
+              "CANCELLED",
+          },
+          deps,
+        ),
+      /Match changed since it was loaded/,
+    );
+
+    assert.equal(
+      writes,
+      0,
+    );
+  },
+);
+
+test(
+  "8C. transaction retry fails closed when Match changes after initial snapshot",
+  async () => {
+    let firstPatch:
+      Record<string, unknown>
+      | null = null;
+
+    let committedWrites = 0;
+
+    const expected =
+      scheduledMatch(
+        "SCHEDULED",
+      );
+
+    const deps =
+      dependencies({
+        async runMatchTransaction(
+          _academyId,
+          matchId,
+          buildPatch,
+        ) {
+          firstPatch =
+            buildPatch(
+              documentSnapshot(
+                matchId,
+                {
+                  ...storedMatch(
+                    "SCHEDULED",
+                  ),
+                  ...expected,
+                },
+              ),
+              SERVER_TIMESTAMP,
+            );
+
+          buildPatch(
+            documentSnapshot(
+              matchId,
+              {
+                ...storedMatch(
+                  "SCHEDULED",
+                ),
+                ...expected,
+                opponentName:
+                  "Academy C",
+              },
+            ),
+            SERVER_TIMESTAMP,
+          );
+
+          committedWrites += 1;
+        },
+      });
+
+    await assert.rejects(
+      () =>
+        transitionAcademyMatchStatus(
+          {
+            academyId:
+              "academy-1",
+            matchId:
+              "match-1",
+            expectedData:
+              expected,
+            targetStatus:
+              "CANCELLED",
+          },
+          deps,
+        ),
+      /Match changed since it was loaded/,
+    );
+
+    assert.deepEqual(
+      firstPatch,
+      {
+        status: "CANCELLED",
+        updatedAt:
+          SERVER_TIMESTAMP,
+        updatedBy:
+          "coach-1",
+      },
+    );
+
+    assert.equal(
+      committedWrites,
+      0,
+    );
+  },
+);
+
+test(
+  "8D. full-payload update API rejects lifecycle transitions",
+  async () => {
+    let transactionCalls = 0;
+
+    const expected =
+      readyDraft();
+
+    const deps =
+      dependencies({
+        async runMatchTransaction() {
+          transactionCalls += 1;
+        },
+      });
+
+    await assert.rejects(
+      () =>
+        updateAcademyMatch(
+          {
+            academyId:
+              "academy-1",
+            matchId:
+              "match-1",
+            expectedData:
+              expected,
             data:
               scheduledMatch(
-                "COMPLETED",
+                "SCHEDULED",
               ),
+          },
+          deps,
+        ),
+      /transitionAcademyMatchStatus/,
+    );
+
+    assert.equal(
+      transactionCalls,
+      0,
+    );
+  },
+);
+
+test(
+  "9. lifecycle skip fails closed",
+  async () => {
+    let writes = 0;
+
+    const deps =
+      dependencies({
+        async runMatchTransaction() {
+          writes += 1;
+        },
+      });
+
+    await assert.rejects(
+      () =>
+        transitionAcademyMatchStatus(
+          {
+            academyId:
+              "academy-1",
+            matchId:
+              "match-1",
+            expectedData:
+              draftMatch(),
+            targetStatus:
+              "COMPLETED",
           },
           deps,
         ),
@@ -649,7 +982,7 @@ test(
     );
 
     assert.equal(
-      updates,
+      writes,
       0,
     );
   },
@@ -658,24 +991,31 @@ test(
 test(
   "10. terminal Match cannot receive same-status correction",
   async () => {
-    let updates = 0;
+    let writes = 0;
+
+    const expected =
+      scheduledMatch(
+        "COMPLETED",
+      );
 
     const deps =
       dependencies({
-        async getMatch(
+        async runMatchTransaction(
           _academyId,
           matchId,
+          buildPatch,
         ) {
-          return documentSnapshot(
-            matchId,
-            storedMatch(
-              "COMPLETED",
+          buildPatch(
+            documentSnapshot(
+              matchId,
+              storedMatch(
+                "COMPLETED",
+              ),
             ),
+            SERVER_TIMESTAMP,
           );
-        },
 
-        async updateMatch() {
-          updates += 1;
+          writes += 1;
         },
       });
 
@@ -687,10 +1027,10 @@ test(
               "academy-1",
             matchId:
               "match-1",
+            expectedData:
+              expected,
             data:
-              scheduledMatch(
-                "COMPLETED",
-              ),
+              expected,
           },
           deps,
         ),
@@ -698,7 +1038,7 @@ test(
     );
 
     assert.equal(
-      updates,
+      writes,
       0,
     );
   },
