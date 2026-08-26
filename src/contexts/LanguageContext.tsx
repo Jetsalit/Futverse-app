@@ -168,10 +168,50 @@ export const translations: Translations = {
     th: "ไม่สามารถบันทึกการเปลี่ยนแปลงได้ กรุณารีเฟรชและลองอีกครั้ง",
   },
   match_validation_title: { en: "Match information needs attention", th: "กรุณาตรวจสอบข้อมูลการแข่งขัน" },
+  match_validation_generic: {
+    en: "Match information is invalid. Refresh the workspace and try again.",
+    th: "ข้อมูลการแข่งขันไม่ถูกต้อง กรุณารีเฟรชและลองอีกครั้ง",
+  },
+  match_validation_squad: {
+    en: "Please enter a valid squad or age group.",
+    th: "กรุณาระบุทีม / รุ่นให้ถูกต้อง",
+  },
+  match_validation_competition: {
+    en: "Please enter a valid competition name.",
+    th: "กรุณาระบุชื่อรายการแข่งขันให้ถูกต้อง",
+  },
+  match_validation_opponent: {
+    en: "Please enter a valid opponent name.",
+    th: "กรุณาระบุชื่อคู่แข่งขันให้ถูกต้อง",
+  },
+  match_validation_kickoff: {
+    en: "Please enter a valid kickoff date and time.",
+    th: "กรุณาระบุวันและเวลาแข่งขันให้ถูกต้อง",
+  },
+  match_validation_venue: {
+    en: "Please select a valid venue type.",
+    th: "กรุณาเลือกประเภทสนามแข่งขันให้ถูกต้อง",
+  },
+  match_validation_opponent_required: {
+    en: "An opponent is required before this Match can be scheduled or played.",
+    th: "ต้องระบุคู่แข่งขันก่อนกำหนดแข่งหรือเริ่มการแข่งขัน",
+  },
+  match_validation_kickoff_required: {
+    en: "A kickoff date and time are required before this Match can be scheduled or played.",
+    th: "ต้องระบุวันและเวลาแข่งขันก่อนกำหนดแข่งหรือเริ่มการแข่งขัน",
+  },
+  match_validation_venue_required: {
+    en: "A venue type is required before this Match can be scheduled or played.",
+    th: "ต้องระบุประเภทสนามก่อนกำหนดแข่งหรือเริ่มการแข่งขัน",
+  },
   match_field_squad: { en: "Squad", th: "ทีม / รุ่น" },
   match_field_competition: { en: "Competition", th: "รายการแข่งขัน" },
   match_field_opponent: { en: "Opponent", th: "คู่แข่งขัน" },
   match_field_kickoff: { en: "Kickoff", th: "วันและเวลาแข่งขัน" },
+  match_kickoff_timezone_hint: {
+    en: "Times are entered and shown in Thailand time (Asia/Bangkok).",
+    th: "กรอกและแสดงเวลาเป็นเวลาประเทศไทย (Asia/Bangkok)",
+  },
   match_field_venue: { en: "Venue", th: "สถานที่แข่งขัน" },
   match_optional: { en: "Optional while Draft", th: "เว้นว่างได้ขณะเป็นแบบร่าง" },
   match_no_opponent: { en: "Opponent not set", th: "ยังไม่ได้ระบุคู่แข่งขัน" },
@@ -197,6 +237,10 @@ export const translations: Translations = {
   match_cancel_confirm: {
     en: "Cancel this Match? A cancelled Match becomes immutable historical evidence.",
     th: "ยืนยันยกเลิกการแข่งขันนี้หรือไม่ เมื่อยกเลิกแล้วข้อมูลแมตช์จะถูกล็อกเป็นประวัติถาวร",
+  },
+  match_complete_confirm: {
+    en: "Complete this Match? A completed Match becomes immutable historical evidence and can no longer be edited.",
+    th: "ยืนยันจบการแข่งขันนี้หรือไม่ เมื่อจบการแข่งขันแล้วข้อมูลแมตช์จะถูกล็อกเป็นประวัติถาวรและไม่สามารถแก้ไขได้อีก",
   },
   match_terminal_note: {
     en: "This Match is terminal historical evidence and can no longer be edited.",

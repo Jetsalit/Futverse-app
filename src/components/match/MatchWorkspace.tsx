@@ -76,6 +76,40 @@ function venueTranslationKey(
   return `match_venue_${venue.toLowerCase()}`;
 }
 
+const MATCH_VALIDATION_TRANSLATION_KEYS:
+  Readonly<Record<string, string>> = {
+    "Invalid squad label.":
+      "match_validation_squad",
+    "Invalid competition name.":
+      "match_validation_competition",
+    "Invalid opponent name.":
+      "match_validation_opponent",
+    "Invalid kickoff time.":
+      "match_validation_kickoff",
+    "Invalid venue type.":
+      "match_validation_venue",
+    "Scheduled or active Match requires an opponent.":
+      "match_validation_opponent_required",
+    "Scheduled or active Match requires a kickoff time.":
+      "match_validation_kickoff_required",
+    "Scheduled or active Match requires a venue type.":
+      "match_validation_venue_required",
+  };
+
+function translateMatchValidationError(
+  error: string,
+  t: (key: string) => string,
+): string {
+  const translationKey =
+    MATCH_VALIDATION_TRANSLATION_KEYS[
+      error
+    ];
+
+  return translationKey
+    ? t(translationKey)
+    : t("match_validation_generic");
+}
+
 function statusTone(
   status: MatchStatus,
 ): string {
@@ -181,7 +215,12 @@ function MatchFormFields({
 
           <ul className="mt-2 list-disc space-y-1 pl-5 text-xs font-medium text-rose-700">
             {errors.map((error) => (
-              <li key={error}>{error}</li>
+              <li key={error}>
+                {translateMatchValidationError(
+                  error,
+                  t,
+                )}
+              </li>
             ))}
           </ul>
         </div>
@@ -261,6 +300,12 @@ function MatchFormFields({
             }
             className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
           />
+
+          <p className="text-[11px] font-semibold leading-5 text-slate-400">
+            {t(
+              "match_kickoff_timezone_hint",
+            )}
+          </p>
         </label>
 
         <label className="space-y-2 md:col-span-2">
@@ -673,13 +718,19 @@ export default function MatchWorkspace({
         return;
       }
 
-      if (
+      const confirmationKey =
         action.targetStatus ===
         "CANCELLED"
-      ) {
+          ? "match_cancel_confirm"
+          : action.targetStatus ===
+              "COMPLETED"
+            ? "match_complete_confirm"
+            : null;
+
+      if (confirmationKey) {
         const confirmed =
           window.confirm(
-            t("match_cancel_confirm"),
+            t(confirmationKey),
           );
 
         if (!confirmed) return;
