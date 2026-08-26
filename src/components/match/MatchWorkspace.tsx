@@ -203,6 +203,7 @@ function MatchFormFields({
 
   return (
     <form
+      noValidate
       onSubmit={onSubmit}
       className="space-y-5"
     >
