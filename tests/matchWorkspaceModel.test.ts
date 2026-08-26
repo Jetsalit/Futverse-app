@@ -144,6 +144,11 @@ test("5. Complete scheduling form produces canonical SCHEDULED core data", () =>
   assert.equal(result.data.opponentName, "Academy B");
   assert.equal(result.data.venueType, "HOME");
   assert.ok(result.data.kickoffAt instanceof Date);
+
+  assert.equal(
+    result.data.kickoffAt?.toISOString(),
+    "2026-09-01T10:30:00.000Z",
+  );
 });
 
 test("6. Lifecycle actions expose only frozen transitions", () => {
@@ -242,16 +247,11 @@ test("8. Filtering and operational sorting preserve Match identity", () => {
   assert.equal(matches.length, 5);
 });
 
-test("9. Record conversion preserves domain fields and local form time", () => {
-  const kickoff = new Date(
-    2026,
-    8,
-    1,
-    17,
-    30,
-    0,
-    0,
-  );
+test("9. Record conversion renders the Match instant in explicit Bangkok wall-clock time", () => {
+  const kickoff =
+    new Date(
+      "2026-09-01T10:30:00.000Z",
+    );
 
   const match = record(
     "scheduled",
@@ -286,5 +286,75 @@ test("9. Record conversion preserves domain fields and local form time", () => {
   assert.notEqual(
     completed.data.kickoffAt,
     match.kickoffAt,
+  );
+});
+test("10. Bangkok wall-clock conversion preserves the local date across a UTC year boundary", () => {
+  const result = buildMatchCoreData(
+    {
+      squadLabel: "U15",
+      competitionName: "League",
+      opponentName: "Academy B",
+      kickoffAt: "2026-01-01T00:30",
+      venueType: "HOME",
+    },
+    "SCHEDULED",
+  );
+
+  assert.equal(result.valid, true);
+
+  assert.equal(
+    result.data.kickoffAt?.toISOString(),
+    "2025-12-31T17:30:00.000Z",
+  );
+
+  assert.equal(
+    toDateTimeLocalValue(
+      new Date(
+        "2025-12-31T17:30:00.000Z",
+      ),
+    ),
+    "2026-01-01T00:30",
+  );
+});
+
+test("11. impossible datetime-local calendar values fail closed instead of normalizing", () => {
+  const result = buildMatchCoreData(
+    {
+      squadLabel: "U15",
+      competitionName: "League",
+      opponentName: "Academy B",
+      kickoffAt: "2026-02-30T17:30",
+      venueType: "HOME",
+    },
+    "SCHEDULED",
+  );
+
+  assert.equal(result.valid, false);
+
+  assert.ok(
+    result.errors.includes(
+      "Invalid kickoff time.",
+    ),
+  );
+});
+
+test("12. datetime-local input rejects instant/offset syntax and remains a strict wall-clock value", () => {
+  const result = buildMatchCoreData(
+    {
+      squadLabel: "U15",
+      competitionName: "League",
+      opponentName: "Academy B",
+      kickoffAt: "2026-09-01T17:30Z",
+      venueType: "HOME",
+    },
+    "SCHEDULED",
+  );
+
+  assert.equal(result.valid, false);
+
+  assert.ok(
+    result.errors.includes(
+      "Invalid kickoff time.",
+    ),
   );
 });

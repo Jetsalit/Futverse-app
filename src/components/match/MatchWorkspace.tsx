@@ -40,6 +40,7 @@ import type {
 
 import {
   MATCH_STATUS_FILTERS,
+  MATCH_WORKSPACE_TIME_ZONE,
   buildMatchCoreData,
   buildMatchCoreDataFromRecord,
   createEmptyMatchForm,
@@ -111,6 +112,8 @@ function formatMatchDate(
     {
       dateStyle: "medium",
       timeStyle: "short",
+      timeZone:
+        MATCH_WORKSPACE_TIME_ZONE,
     },
   ).format(value);
 }
