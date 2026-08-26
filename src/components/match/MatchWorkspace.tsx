@@ -29,6 +29,7 @@ import { useLanguage } from "../../contexts/LanguageContext";
 import {
   createAcademyMatch,
   listAcademyMatches,
+  transitionAcademyMatchStatus,
   updateAcademyMatch,
   type AcademyMatchRecord,
 } from "../../lib/firestore/matchRepository";
@@ -694,6 +695,10 @@ export default function MatchWorkspace({
       await updateAcademyMatch({
         academyId,
         matchId: selectedMatch.id,
+        expectedData:
+          buildMatchCoreDataFromRecord(
+            selectedMatch,
+          ).data,
         data: built.data,
       });
 
@@ -781,10 +786,15 @@ export default function MatchWorkspace({
       setMutationFailed(false);
 
       try {
-        await updateAcademyMatch({
+        await transitionAcademyMatchStatus({
           academyId,
           matchId: selectedMatch.id,
-          data: built.data,
+          expectedData:
+            buildMatchCoreDataFromRecord(
+              selectedMatch,
+            ).data,
+          targetStatus:
+            action.targetStatus,
         });
 
         requestReload(

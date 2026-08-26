@@ -329,3 +329,28 @@ Phase 2A.4 is acceptable only when:
 - legacy Match Evaluation navigation resolves to the canonical Match Workspace
 - StartingXIBuilder remains byte-identical
 - no commit, push, merge, or deploy occurs before explicit gate approval
+
+## 21. P1 concurrency controlled exception
+
+Codex re-review of Phase 2A.4 identified a P1 stale lifecycle payload race.
+The original eight-file UI freeze therefore receives one narrow architecture
+exception to fix the data-integrity defect at the repository boundary.
+
+This exception permits controlled changes only to:
+
+- src/lib/firestore/matchRepository.ts
+- tests/matchRepository.test.ts
+- src/components/match/MatchWorkspace.tsx
+- this freeze document
+
+The concurrency fix must:
+
+- use an atomic Firestore transaction for Match core corrections and lifecycle transitions
+- compare the authoritative Match core with the core state the user acted on
+- fail closed if status or core scheduling/identity metadata changed
+- write only status, updatedAt and updatedBy for a lifecycle transition
+- keep updateAcademyMatch limited to atomic same-status corrections
+- preserve the existing schema and Firestore Rules contract
+
+The exception must not modify firestore.rules, matchFoundation.ts, roster
+operations, StartingXIBuilder, Membership, FUTID, or production data.
