@@ -21,6 +21,7 @@ import {
 } from "../lib/firestore/canonicalDocument";
 import { useSuperAdminSupport } from "../contexts/SuperAdminSupportContext";
 import { canAccessTenantCapability } from "../lib/superAdminSupportModel";
+import { calendarDateInTimeZone } from "../lib/dateTimeFoundation";
 
 export default function ProPlayerManager({
   onBack,
@@ -295,6 +296,12 @@ function AddProPlayerModal({
   onClose: () => void;
   onSave: (p: Partial<Omit<ProPlayer, "id">>) => void;
 }) {
+  const localToday =
+    calendarDateInTimeZone(
+      new Date(),
+      "Asia/Bangkok",
+    ) ?? undefined;
+
   const [formData, setFormData] = useState<Partial<Omit<ProPlayer, "id">>>(
     () => initialData
       ? withoutCanonicalDocumentId(initialData)
@@ -387,7 +394,7 @@ function AddProPlayerModal({
                 </label>
                 <input
                   type="date"
-                  max={new Date().toISOString().split("T")[0]}
+                  max={localToday}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-500"
                   value={formData.dob}
                   onChange={(e) =>
