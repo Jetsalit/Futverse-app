@@ -8,6 +8,10 @@ import {
 } from "lucide-react";
 import { ProPlayer } from "../types/ProPlayer";
 import {
+  calculateAgeFromDateOnly,
+  calendarDateInTimeZone,
+} from "../lib/dateTimeFoundation";
+import {
   Radar,
   RadarChart,
   PolarGrid,
@@ -184,8 +188,13 @@ export default function ProPlayerCV({
                       Age / Born
                     </span>
                     <span className="text-sm font-bold text-slate-800">
-                      {new Date().getFullYear() -
-                        new Date(player.dob).getFullYear()}{" "}
+                      {calculateAgeFromDateOnly(
+                        player.dob,
+                        calendarDateInTimeZone(
+                          new Date(),
+                          "Asia/Bangkok",
+                        ) ?? "",
+                      ) ?? "-"}{" "}
                       yrs ({player.dob})
                     </span>
                   </div>

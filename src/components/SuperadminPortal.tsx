@@ -27,6 +27,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { subscribeToUsers } from "../lib/firestore/users";
+import { isSameCalendarDateInTimeZone } from "../lib/dateTimeFoundation";
 import {
   firestoreSuperAdminDashboardSignalReadOps,
   loadPendingProfileClaimCount,
@@ -107,6 +108,40 @@ import {
 import { downloadSuperAdminDashboardCsv } from "./superadmin/dashboardExport";
 import { deriveSuperAdminReviewQueue } from "./superadmin/reviewQueueModel";
 
+function approvedAtInstantFromCompatibilityValue(
+  value: unknown,
+): Date | null {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value === "string") {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "toDate" in value &&
+    typeof (value as { toDate?: unknown }).toDate === "function"
+  ) {
+    try {
+      const date =
+        (value as { toDate: () => unknown }).toDate();
+
+      if (!(date instanceof Date)) {
+        return null;
+      }
+
+      return Number.isNaN(date.getTime()) ? null : date;
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
 const CLEAN_AVAILABLE_TABS = [
   "dashboard",
   "approvals",
@@ -736,13 +771,27 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   }
 
   const pendingUsers = users.filter((u) => isPendingAccountStatus(u.status));
-  const today = new Date().toDateString();
-  const approvedToday = users.filter(
-    (u) =>
-      (u.status === "ACTIVE" || u.status === "Active") &&
-      u.approvedAt &&
-      new Date(u.approvedAt).toDateString() === today,
-  ).length;
+  const approvalCalendarReference = new Date();
+  const approvedToday = users.filter((u) => {
+    if (
+      (u.status !== "ACTIVE" && u.status !== "Active") ||
+      !u.approvedAt
+    ) {
+      return false;
+    }
+
+    const approvedAt =
+      approvedAtInstantFromCompatibilityValue(u.approvedAt);
+
+    return (
+      approvedAt !== null &&
+      isSameCalendarDateInTimeZone(
+        approvedAt,
+        approvalCalendarReference,
+        "Asia/Bangkok",
+      )
+    );
+  }).length;
   const rejectedCount = users.filter((u) => u.status === "REJECTED").length;
 
   const roleCounts = deriveEffectiveRoleCounts(users);

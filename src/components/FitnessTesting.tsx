@@ -23,6 +23,10 @@ import {
   Users,
 } from "lucide-react";
 import { db } from "../lib/firebase";
+import {
+  calculateAgeFromDateOnly,
+  calendarDateInTimeZone,
+} from "../lib/dateTimeFoundation";
 import { collection, onSnapshot, query, orderBy, doc, deleteDoc, deleteField, addDoc, updateDoc } from "firebase/firestore";
 import { EmptyState } from "./common/EmptyState";
 import { useAcademy } from "../contexts/AcademyContext";
@@ -341,11 +345,10 @@ export default function FitnessTesting({
     return () => unsubscribe();
   }, [academyId]);
 
-  const calculateAge = (dob: string) => {
-    if (!dob) return 0;
-    const diff_ms = Date.now() - new Date(dob).getTime();
-    const age_dt = new Date(diff_ms);
-    return Math.abs(age_dt.getUTCFullYear() - 1970);
+  const calculateAge = (dob: string): number | null => {
+    const today =
+      calendarDateInTimeZone(new Date(), "Asia/Bangkok") ?? "";
+    return calculateAgeFromDateOnly(dob, today);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -407,9 +410,19 @@ export default function FitnessTesting({
     }
 
     try {
+      const derivedAge = calculateAge(formData.dob);
+
+      if (derivedAge === null) {
+        console.error(
+          "FitnessTesting: invalid date of birth; refusing to save player.",
+        );
+        alert("Invalid date of birth. Please enter a valid birth date.");
+        return;
+      }
+
       const playerData: any = {
         ...formData,
-        age: calculateAge(formData.dob),
+        age: derivedAge,
         avatar: formData.avatarUrl,
       };
       delete playerData.avatarUrl;
