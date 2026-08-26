@@ -541,6 +541,8 @@ export default function MatchWorkspace({
   const requestReload = (
     preferredId: string | null,
   ) => {
+    setLoading(true);
+
     preferredSelectionRef.current =
       preferredId;
 
@@ -560,6 +562,14 @@ export default function MatchWorkspace({
   };
 
   const openCreate = () => {
+    if (
+      loading ||
+      !academyId ||
+      workspaceNavigationLocked
+    ) {
+      return;
+    }
+
     setMode("create");
     setForm(createEmptyMatchForm());
     setFormErrors([]);
@@ -902,6 +912,7 @@ export default function MatchWorkspace({
           <button
             type="button"
             disabled={
+              loading ||
               !academyId ||
               workspaceNavigationLocked
             }
