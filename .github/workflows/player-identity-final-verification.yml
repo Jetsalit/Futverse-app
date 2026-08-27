@@ -1,0 +1,375 @@
+name: Player Identity Final Verification
+
+on:
+  push:
+    branches:
+      - verify/player-identity-final-ci
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: player-identity-final-verification-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Independent executable verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      BASE_COMMIT: 218bb557f3ff9794ba93614a1fd6bee344a20d81
+      EXPECTED_RULES_SHA256: D3B348456536154FFE9128BA8E2D8348EA41CF404F62E1E1009AD6EFEF36DBEF
+
+    steps:
+      - name: Checkout verification commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Verify branch and frozen source snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "GITHUB_REF_NAME=$GITHUB_REF_NAME"
+          echo "GITHUB_SHA=$GITHUB_SHA"
+          echo "BASE_COMMIT=$BASE_COMMIT"
+
+          if [ "$GITHUB_REF_NAME" != "verify/player-identity-final-ci" ]; then
+            echo "STOP: unexpected verification branch."
+            exit 1
+          fi
+
+          parent="$(git rev-parse HEAD^)"
+
+          echo "PARENT=$parent"
+
+          if [ "$parent" != "$BASE_COMMIT" ]; then
+            echo "STOP: verification commit is not directly based on frozen main."
+            exit 1
+          fi
+
+          commit_count="$(git rev-list --count "$BASE_COMMIT..HEAD")"
+
+          echo "COMMITS_ABOVE_BASE=$commit_count"
+
+          if [ "$commit_count" != "1" ]; then
+            echo "STOP: expected exactly one verification commit above frozen main."
+            exit 1
+          fi
+
+          changed_files="$(git diff --name-only "$BASE_COMMIT" HEAD)"
+
+          echo "=== CHANGED FILES ABOVE BASE ==="
+          printf '%s\n' "$changed_files"
+
+          if [ "$changed_files" != ".github/workflows/player-identity-final-verification.yml" ]; then
+            echo "STOP: verification branch contains changes outside the workflow file."
+            exit 1
+          fi
+
+          if [ -n "$(git status --porcelain=v1 --untracked-files=all)" ]; then
+            echo "STOP: checkout working tree is not clean."
+            git status --short --untracked-files=all
+            exit 1
+          fi
+
+          git diff --check
+
+          echo "FROZEN_SOURCE_SNAPSHOT=PASS"
+
+      - name: Verify Firestore Rules baseline hash
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          actual="$(
+            sha256sum firestore.rules |
+            awk '{print toupper($1)}'
+          )"
+
+          echo "EXPECTED_RULES_SHA256=$EXPECTED_RULES_SHA256"
+          echo "ACTUAL_RULES_SHA256=$actual"
+
+          if [ "$actual" != "$EXPECTED_RULES_SHA256" ]; then
+            echo "STOP: firestore.rules hash mismatch."
+            exit 1
+          fi
+
+          echo "RULES_BASELINE_HASH=PASS"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Setup Java for Firestore Emulator
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install exact locked dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          npm ci
+
+          if [ -n "$(git status --porcelain=v1 --untracked-files=all)" ]; then
+            echo "STOP: npm ci changed tracked repository state."
+            git status --short --untracked-files=all
+            exit 1
+          fi
+
+          echo "NPM_CI=PASS"
+
+      - name: Player Identity Foundation — 20 tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          log="$RUNNER_TEMP/player-identity-foundation.tap"
+
+          node \
+            --import tsx \
+            --test \
+            --test-reporter=tap \
+            tests/playerIdentityFoundation.test.ts |
+            tee "$log"
+
+          grep -Eq '^# tests 20$' "$log"
+          grep -Eq '^# pass 20$' "$log"
+          grep -Eq '^# fail 0$' "$log"
+
+          echo "PLAYER_IDENTITY_FOUNDATION_20_OF_20=PASS"
+
+      - name: Player Identity Repository — 10 tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          log="$RUNNER_TEMP/player-identity-repository.tap"
+
+          node \
+            --import tsx \
+            --test \
+            --test-reporter=tap \
+            tests/playerIdentityRepository.test.ts |
+            tee "$log"
+
+          grep -Eq '^# tests 10$' "$log"
+          grep -Eq '^# pass 10$' "$log"
+          grep -Eq '^# fail 0$' "$log"
+
+          echo "PLAYER_IDENTITY_REPOSITORY_10_OF_10=PASS"
+
+      - name: Player Identity Firestore Rules — 37 tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          log="$RUNNER_TEMP/player-identity-rules.tap"
+
+          ./node_modules/.bin/firebase \
+            emulators:exec \
+            --project demo-futverse-player-identity \
+            --only firestore \
+            "node --import tsx --test --test-reporter=tap tests/firestore.player-identity.rules.test.ts" |
+            tee "$log"
+
+          grep -Eq '^# tests 37$' "$log"
+          grep -Eq '^# pass 37$' "$log"
+          grep -Eq '^# fail 0$' "$log"
+
+          echo "PLAYER_IDENTITY_RULES_37_OF_37=PASS"
+
+      - name: Match Firestore Rules — 36 tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          log="$RUNNER_TEMP/match-rules.tap"
+
+          ./node_modules/.bin/firebase \
+            emulators:exec \
+            --project demo-futverse-match-regression \
+            --only firestore \
+            "node --import tsx --test --test-reporter=tap tests/firestore.match-foundation.rules.test.ts" |
+            tee "$log"
+
+          grep -Eq '^# tests 36$' "$log"
+          grep -Eq '^# pass 36$' "$log"
+          grep -Eq '^# fail 0$' "$log"
+
+          echo "MATCH_RULES_36_OF_36=PASS"
+
+      - name: Match Pure Contract — 25 tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          log="$RUNNER_TEMP/match-pure.tap"
+
+          node \
+            --import tsx \
+            --test \
+            --test-reporter=tap \
+            tests/matchFoundation.test.ts |
+            tee "$log"
+
+          grep -Eq '^# tests 25$' "$log"
+          grep -Eq '^# pass 25$' "$log"
+          grep -Eq '^# fail 0$' "$log"
+
+          echo "MATCH_PURE_25_OF_25=PASS"
+
+      - name: Membership Firestore Rules — 43 tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          log="$RUNNER_TEMP/membership-rules.tap"
+
+          ./node_modules/.bin/firebase \
+            emulators:exec \
+            --project demo-futverse-membership-regression \
+            --only firestore \
+            "node --import tsx --test --test-reporter=tap tests/firestore.membership.rules.test.ts" |
+            tee "$log"
+
+          grep -Eq '^# tests 43$' "$log"
+          grep -Eq '^# pass 43$' "$log"
+          grep -Eq '^# fail 0$' "$log"
+
+          echo "MEMBERSHIP_RULES_43_OF_43=PASS"
+
+      - name: Nonstaff Player Firestore Rules — 20 tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          log="$RUNNER_TEMP/nonstaff-rules.tap"
+
+          ./node_modules/.bin/firebase \
+            emulators:exec \
+            --project demo-futverse-nonstaff-regression \
+            --only firestore \
+            "node --import tsx --test --test-reporter=tap tests/firestore.nonstaff-player.rules.test.ts" |
+            tee "$log"
+
+          grep -Eq '^# tests 20$' "$log"
+          grep -Eq '^# pass 20$' "$log"
+          grep -Eq '^# fail 0$' "$log"
+
+          echo "NONSTAFF_RULES_20_OF_20=PASS"
+
+      - name: Nonstaff Player Pure Contract — 8 tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          log="$RUNNER_TEMP/nonstaff-pure.tap"
+
+          node \
+            --import tsx \
+            --test \
+            --test-reporter=tap \
+            tests/nonStaffPlayerAccess.test.ts |
+            tee "$log"
+
+          grep -Eq '^# tests 8$' "$log"
+          grep -Eq '^# pass 8$' "$log"
+          grep -Eq '^# fail 0$' "$log"
+
+          echo "NONSTAFF_PURE_8_OF_8=PASS"
+
+      - name: Legacy Root Player Firestore Rules — 16 tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          log="$RUNNER_TEMP/legacy-root-player.tap"
+
+          ./node_modules/.bin/firebase \
+            emulators:exec \
+            --project demo-futverse-legacy-player-regression \
+            --only firestore \
+            "node --import tsx --test --test-reporter=tap tests/firestore.legacy-root-player.rules.test.ts" |
+            tee "$log"
+
+          grep -Eq '^# tests 16$' "$log"
+          grep -Eq '^# pass 16$' "$log"
+          grep -Eq '^# fail 0$' "$log"
+
+          echo "LEGACY_ROOT_PLAYER_16_OF_16=PASS"
+
+      - name: TypeScript noEmit
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ./node_modules/.bin/tsc --noEmit
+
+          echo "TYPESCRIPT_NOEMIT=PASS"
+
+      - name: Production build
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          npm run build
+
+          echo "PRODUCTION_BUILD=PASS"
+
+      - name: Final preservation and consolidated verdict
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          actual="$(
+            sha256sum firestore.rules |
+            awk '{print toupper($1)}'
+          )"
+
+          echo "RULES_SHA256_FINAL=$actual"
+
+          if [ "$actual" != "$EXPECTED_RULES_SHA256" ]; then
+            echo "STOP: firestore.rules changed."
+            exit 1
+          fi
+
+          if [ -n "$(git status --porcelain=v1 --untracked-files=all)" ]; then
+            echo "STOP: repository changed during CI verification."
+            git status --short --untracked-files=all
+            exit 1
+          fi
+
+          git diff --check
+
+          echo ""
+          echo "=============================================="
+          echo "GITHUB_INDEPENDENT_EXECUTABLE_VERIFICATION=PASS"
+          echo "PLAYER_IDENTITY_FOUNDATION=20/20"
+          echo "PLAYER_IDENTITY_REPOSITORY=10/10"
+          echo "PLAYER_IDENTITY_RULES=37/37"
+          echo "MATCH_RULES=36/36"
+          echo "MATCH_PURE=25/25"
+          echo "MEMBERSHIP_RULES=43/43"
+          echo "NONSTAFF_RULES=20/20"
+          echo "NONSTAFF_PURE=8/8"
+          echo "LEGACY_ROOT_PLAYER=16/16"
+          echo "EXECUTABLE_TESTS_TOTAL=215"
+          echo "EXECUTABLE_TESTS_FAILED=0"
+          echo "TYPESCRIPT_NOEMIT=PASS"
+          echo "PRODUCTION_BUILD=PASS"
+          echo "RULES_BYTE_PRESERVATION=PASS"
+          echo "PRODUCTION_FIRESTORE_ACCESS=NO"
+          echo "PRODUCTION_FIRESTORE_WRITE=NO"
+          echo "DEPLOY=NO"
+          echo "=============================================="
