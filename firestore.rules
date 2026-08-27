@@ -45,6 +45,106 @@ service cloud.firestore {
         && value.matches('^[^/]+$');
     }
 
+    function validIssuedFutIdV1(value) {
+      return value is string
+        && value.size() > 0
+        && value.size() <= 64
+        && value.matches('^FUT-[A-Z0-9]+(-[A-Z0-9]+)*$');
+    }
+
+    function validPlayerIdentityKeyV1(value) {
+      return exactDocumentId(value)
+        && !value.matches('^\\s.*')
+        && !value.matches('.*\\s$');
+    }
+
+    function validPlayerIdentityCreateData(playerKey) {
+      let data = request.resource.data;
+      let futId = data.get('futId', '');
+      let registryPath =
+        /databases/$(database)/documents/futIdRegistry/$(futId);
+
+      return isSuperAdmin()
+        && validPlayerIdentityKeyV1(playerKey)
+        && data.keys().hasAll([
+          'schemaVersion',
+          'futId',
+          'source',
+          'createdAt',
+          'createdBy'
+        ])
+        && data.keys().hasOnly([
+          'schemaVersion',
+          'futId',
+          'source',
+          'createdAt',
+          'createdBy'
+        ])
+        && data.schemaVersion == 1
+        && validIssuedFutIdV1(futId)
+        && data.source in [
+          'SUPERADMIN_ISSUANCE',
+          'LEGACY_MIGRATION'
+        ]
+        && data.createdAt is timestamp
+        && data.createdAt == request.time
+        && data.createdBy == request.auth.uid
+
+        // The counterpart must not have existed before this atomic write.
+        && !exists(registryPath)
+
+        // It must exist after the same atomic write.
+        && existsAfter(registryPath)
+
+        // Both sides must describe the same lifelong identity.
+        && getAfter(registryPath).data.get('schemaVersion', 0) == 1
+        && getAfter(registryPath).data.get('futId', '') == futId
+        && getAfter(registryPath).data.get('playerKey', '') == playerKey
+        && getAfter(registryPath).data.get('createdBy', '')
+          == request.auth.uid;
+    }
+
+    function validFutIdRegistryCreateData(futId) {
+      let data = request.resource.data;
+      let playerKey = data.get('playerKey', '');
+      let identityPath =
+        /databases/$(database)/documents/playerIdentities/$(playerKey);
+
+      return isSuperAdmin()
+        && validIssuedFutIdV1(futId)
+        && data.keys().hasAll([
+          'schemaVersion',
+          'futId',
+          'playerKey',
+          'createdAt',
+          'createdBy'
+        ])
+        && data.keys().hasOnly([
+          'schemaVersion',
+          'futId',
+          'playerKey',
+          'createdAt',
+          'createdBy'
+        ])
+        && data.schemaVersion == 1
+        && data.futId == futId
+        && validPlayerIdentityKeyV1(playerKey)
+        && data.createdAt is timestamp
+        && data.createdAt == request.time
+        && data.createdBy == request.auth.uid
+
+        // The identity must also be new in this atomic write.
+        && !exists(identityPath)
+
+        // It must exist after the same atomic write.
+        && existsAfter(identityPath)
+
+        // Registry and identity must mutually agree.
+        && getAfter(identityPath).data.get('schemaVersion', 0) == 1
+        && getAfter(identityPath).data.get('futId', '') == futId
+        && getAfter(identityPath).data.get('createdBy', '')
+          == request.auth.uid;
+    }
     function hasNoStoredDocumentId() {
       return !request.resource.data.keys().hasAny(['id']);
     }
@@ -1081,6 +1181,19 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Lifelong Player Identity Foundation V1.
+    //
+    // Identity and FUTID registry records are created only as one atomic pair.
+    // Neither document may be updated or deleted in V1.
+    match /playerIdentities/{playerKey} {
+      allow create: if validPlayerIdentityCreateData(playerKey);
+      allow read, update, delete: if false;
+    }
+
+    match /futIdRegistry/{futId} {
+      allow create: if validFutIdRegistryCreateData(futId);
+      allow read, update, delete: if false;
+    }
     match /drills/{drillId} {
       allow read: if isSignedIn();
 
