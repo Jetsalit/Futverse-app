@@ -7,10 +7,10 @@ import {
   Award,
 } from "lucide-react";
 import { ProPlayer } from "../types/ProPlayer";
+import { calendarDateInTimeZone } from "../lib/dateTimeFoundation";
 import {
-  calculateAgeFromDateOnly,
-  calendarDateInTimeZone,
-} from "../lib/dateTimeFoundation";
+  toProPlayerProfileReadModel,
+} from "../lib/playerProfileReadModel";
 import {
   Radar,
   RadarChart,
@@ -29,6 +29,14 @@ export default function ProPlayerCV({
   onBack: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<"profile" | "idp">("profile");
+
+  const profile = toProPlayerProfileReadModel(
+    player,
+    calendarDateInTimeZone(
+      new Date(),
+      "Asia/Bangkok",
+    ) ?? "",
+  );
 
   const radarData = [
     {
@@ -93,14 +101,14 @@ export default function ProPlayerCV({
           {/* Player Info */}
           <div className="flex-1 text-left z-10 pb-8 md:pb-0 w-full">
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 backdrop-blur-md rounded-full border border-white/20 text-white text-xs font-bold uppercase tracking-widest mb-4">
-              <span>{player.nationality}</span>
+              <span>{profile.nationality}</span>
               <span className="w-1 h-1 bg-white/50 rounded-full"></span>
-              <span className="text-indigo-300">{player.league}</span>
+              <span className="text-indigo-300">{profile.league}</span>
             </div>
             <h1 className="text-5xl md:text-7xl font-black text-white tracking-tighter uppercase leading-none drop-shadow-lg mb-2">
-              {player.name.split(" ")[0]} <br />
+              {profile.displayName.split(" ")[0]} <br />
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-emerald-400">
-                {player.name.split(" ").slice(1).join(" ")}
+                {profile.displayName.split(" ").slice(1).join(" ")}
               </span>
             </h1>
 
@@ -109,14 +117,14 @@ export default function ProPlayerCV({
                 <div className="text-[10px] uppercase tracking-widest font-bold opacity-60">
                   Position
                 </div>
-                <div className="text-xl font-bold">{player.position}</div>
+                <div className="text-xl font-bold">{profile.position}</div>
               </div>
               <div className="text-white/80 border-l border-white/20 pl-6">
                 <div className="text-[10px] uppercase tracking-widest font-bold opacity-60">
                   Current Club
                 </div>
                 <div className="text-xl font-bold flex items-center gap-2">
-                  {player.currentClub}
+                  {profile.currentClub}
                 </div>
               </div>
               {player.marketValue && (
@@ -137,7 +145,7 @@ export default function ProPlayerCV({
             {player.actionShotUrl && (
               <img
                 src={player.actionShotUrl}
-                alt={player.name}
+                alt={profile.displayName}
                 className="h-full object-contain object-bottom drop-shadow-[0_20px_50px_rgba(0,0,0,0.5)]"
                 style={{
                   maskImage:
@@ -188,14 +196,8 @@ export default function ProPlayerCV({
                       Age / Born
                     </span>
                     <span className="text-sm font-bold text-slate-800">
-                      {calculateAgeFromDateOnly(
-                        player.dob,
-                        calendarDateInTimeZone(
-                          new Date(),
-                          "Asia/Bangkok",
-                        ) ?? "",
-                      ) ?? "-"}{" "}
-                      yrs ({player.dob})
+                      {profile.age ?? "-"}{" "}
+                      yrs ({profile.dateOfBirth})
                     </span>
                   </div>
                   <div className="flex justify-between items-center py-2 border-b border-slate-100">
@@ -203,7 +205,7 @@ export default function ProPlayerCV({
                       Height / Weight
                     </span>
                     <span className="text-sm font-bold text-slate-800">
-                      {player.height} cm / {player.weight} kg
+                      {profile.height} cm / {profile.weight} kg
                     </span>
                   </div>
                   <div className="flex justify-between items-center py-2 border-b border-slate-100">
@@ -211,7 +213,7 @@ export default function ProPlayerCV({
                       Preferred Foot
                     </span>
                     <span className="text-sm font-bold text-slate-800">
-                      {player.preferredFoot}
+                      {profile.preferredFoot}
                     </span>
                   </div>
                   <div className="flex justify-between items-center py-2">
