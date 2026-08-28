@@ -6,6 +6,12 @@ import {
   UserCircle,
 } from "lucide-react";
 
+import {
+  calendarDateInTimeZone,
+} from "../lib/dateTimeFoundation";
+import {
+  toAcademyPlayerProfileReadModel,
+} from "../lib/playerProfileReadModel";
 import { useAcademy } from "../contexts/AcademyContext";
 import {
   readAcademyPlayerEvaluations,
@@ -26,9 +32,42 @@ interface YouthPlayerCVProps {
     position?: string;
     age?: number;
     ageGroup?: string;
-    avatar?: string;
+    dob?: string;
+    avatar?: string | null;
   };
   onBack: () => void;
+}
+
+function profileSourceFromYouthPlayer(
+  player: YouthPlayerCVProps["player"],
+) {
+  return {
+    id: player.id,
+    firstName:
+      typeof player.firstName === "string"
+        ? player.firstName
+        : "",
+    lastName:
+      typeof player.lastName === "string"
+        ? player.lastName
+        : "",
+    position:
+      typeof player.position === "string"
+        ? player.position
+        : "",
+    ageGroup:
+      typeof player.ageGroup === "string"
+        ? player.ageGroup
+        : "",
+    dob:
+      typeof player.dob === "string"
+        ? player.dob
+        : "",
+    avatar:
+      typeof player.avatar === "string"
+        ? player.avatar
+        : undefined,
+  };
 }
 
 function numericScoreEntries(
@@ -59,6 +98,15 @@ export default function YouthPlayerCV({
     academyId,
     getAcademyCollection,
   } = useAcademy();
+
+  const profile =
+    toAcademyPlayerProfileReadModel(
+      profileSourceFromYouthPlayer(player),
+      calendarDateInTimeZone(
+        new Date(),
+        "Asia/Bangkok",
+      ) ?? "",
+    );
 
   const [evaluations, setEvaluations] = useState<
     LegacyPlayerEvaluationRecord[]
@@ -148,10 +196,10 @@ export default function YouthPlayerCV({
 
       <div className="flex flex-col items-center gap-6 rounded-3xl bg-slate-900 p-8 text-center text-white sm:flex-row sm:text-left">
         <div className="flex h-32 w-32 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-slate-700 bg-slate-800">
-          {player.avatar ? (
+          {profile.avatarUrl ? (
             <img
-              src={player.avatar}
-              alt={`${player.firstName || ""} ${player.lastName || ""}`.trim()}
+              src={profile.avatarUrl}
+              alt={profile.displayName}
               className="h-full w-full object-cover"
             />
           ) : (
@@ -164,21 +212,19 @@ export default function YouthPlayerCV({
 
         <div>
           <h1 className="text-3xl font-black">
-            {[player.firstName, player.lastName]
-              .filter(Boolean)
-              .join(" ") || "Player"}
+            {profile.displayName || "Player"}
           </h1>
 
           <p className="mt-2 text-sm font-bold uppercase tracking-widest text-slate-300">
-            {[player.position, player.ageGroup]
+            {[profile.position, profile.ageGroup]
               .filter(Boolean)
               .join(" · ") ||
               "Profile details unavailable"}
           </p>
 
-          {typeof player.age === "number" && (
+          {profile.age !== null && (
             <p className="mt-1 text-sm text-slate-400">
-              Age {player.age}
+              Age {profile.age}
             </p>
           )}
         </div>
