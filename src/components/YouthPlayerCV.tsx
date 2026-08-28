@@ -27,15 +27,47 @@ import {
 interface YouthPlayerCVProps {
   player: {
     id: string;
-    firstName: string;
-    lastName: string;
-    position: string;
+    firstName?: string;
+    lastName?: string;
+    position?: string;
     age?: number;
-    ageGroup: string;
-    dob: string;
-    avatar?: string;
+    ageGroup?: string;
+    dob?: string;
+    avatar?: string | null;
   };
   onBack: () => void;
+}
+
+function profileSourceFromYouthPlayer(
+  player: YouthPlayerCVProps["player"],
+) {
+  return {
+    id: player.id,
+    firstName:
+      typeof player.firstName === "string"
+        ? player.firstName
+        : "",
+    lastName:
+      typeof player.lastName === "string"
+        ? player.lastName
+        : "",
+    position:
+      typeof player.position === "string"
+        ? player.position
+        : "",
+    ageGroup:
+      typeof player.ageGroup === "string"
+        ? player.ageGroup
+        : "",
+    dob:
+      typeof player.dob === "string"
+        ? player.dob
+        : "",
+    avatar:
+      typeof player.avatar === "string"
+        ? player.avatar
+        : undefined,
+  };
 }
 
 function numericScoreEntries(
@@ -69,7 +101,7 @@ export default function YouthPlayerCV({
 
   const profile =
     toAcademyPlayerProfileReadModel(
-      player,
+      profileSourceFromYouthPlayer(player),
       calendarDateInTimeZone(
         new Date(),
         "Asia/Bangkok",

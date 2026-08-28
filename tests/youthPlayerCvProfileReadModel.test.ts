@@ -26,7 +26,7 @@ test(
 
     assert.match(
       cvSource,
-      /const\s+profile\s*=\s*toAcademyPlayerProfileReadModel\s*\(\s*player\s*,[\s\S]*?calendarDateInTimeZone\s*\(\s*new Date\s*\(\s*\)\s*,\s*"Asia\/Bangkok"\s*,?\s*\)\s*\?\?\s*""\s*,?\s*\)/,
+      /const\s+profile\s*=\s*toAcademyPlayerProfileReadModel\s*\(\s*profileSourceFromYouthPlayer\s*\(\s*player\s*\)\s*,[\s\S]*?calendarDateInTimeZone\s*\(\s*new Date\s*\(\s*\)\s*,\s*"Asia\/Bangkok"\s*,?\s*\)\s*\?\?\s*""\s*,?\s*\)/,
     );
   },
 );
@@ -49,16 +49,44 @@ test(
 );
 
 test(
-  "3. YouthPlayerCV no longer bypasses the read model for Profile core",
+  "3. YouthPlayerCV normalizes legacy partial player records before the shared adapter",
   () => {
-    assert.doesNotMatch(
+    const optionalLegacyFields = [
+      /firstName\?:\s*string;/,
+      /lastName\?:\s*string;/,
+      /position\?:\s*string;/,
+      /ageGroup\?:\s*string;/,
+      /dob\?:\s*string;/,
+      /avatar\?:\s*string\s*\|\s*null;/,
+    ];
+
+    for (const pattern of optionalLegacyFields) {
+      assert.match(cvSource, pattern);
+    }
+
+    assert.match(
       cvSource,
-      /player\.(?:firstName|lastName|position|ageGroup|age|avatar|dob)\b/,
+      /function\s+profileSourceFromYouthPlayer[\s\S]*?firstName:[\s\S]*?typeof\s+player\.firstName\s*===\s*"string"[\s\S]*?:\s*""/,
     );
 
     assert.match(
       cvSource,
-      /\bdob:\s*string;/,
+      /lastName:[\s\S]*?typeof\s+player\.lastName\s*===\s*"string"[\s\S]*?:\s*""/,
+    );
+
+    assert.match(
+      cvSource,
+      /position:[\s\S]*?typeof\s+player\.position\s*===\s*"string"[\s\S]*?:\s*""/,
+    );
+
+    assert.match(
+      cvSource,
+      /ageGroup:[\s\S]*?typeof\s+player\.ageGroup\s*===\s*"string"[\s\S]*?:\s*""/,
+    );
+
+    assert.match(
+      cvSource,
+      /dob:[\s\S]*?typeof\s+player\.dob\s*===\s*"string"[\s\S]*?:\s*""/,
     );
   },
 );
