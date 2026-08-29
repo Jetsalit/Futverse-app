@@ -97,3 +97,28 @@ test("6. ProPlayerCV remains free of persistence and identity authority", () => 
     /playerIdentity|\bfutId\b|\bFUTID\b|\bplayerKey\b/,
   );
 });
+
+test(
+  "7. ProPlayerCV integrates the shared Position Map through the Profile read model",
+  () => {
+    assert.match(
+      cvSource,
+      /import PlayerPositionMap from "\.\/player-profile\/PlayerPositionMap";/,
+    );
+
+    assert.match(
+      cvSource,
+      /<PlayerPositionMap[\s\S]*?source="PRO"[\s\S]*?position=\{profile\.position\}[\s\S]*?secondaryPosition=\{profile\.secondaryPosition\}[\s\S]*?\/>/,
+    );
+
+    assert.doesNotMatch(
+      cvSource,
+      /<PlayerPositionMap[\s\S]*?position=\{player\.position\}/,
+    );
+
+    assert.doesNotMatch(
+      cvSource,
+      /player\.secondaryPosition/,
+    );
+  },
+);

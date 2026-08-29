@@ -137,3 +137,23 @@ test(
     );
   },
 );
+
+test(
+  "7. YouthPlayerCV integrates the shared Position Map from Academy Profile presentation data",
+  () => {
+    assert.match(
+      cvSource,
+      /import PlayerPositionMap from "\.\/player-profile\/PlayerPositionMap";/,
+    );
+
+    assert.match(
+      cvSource,
+      /<PlayerPositionMap[\s\S]*?source="ACADEMY"[\s\S]*?position=\{profile\.position\}[\s\S]*?\/>/,
+    );
+
+    assert.doesNotMatch(
+      cvSource,
+      /<PlayerPositionMap[\s\S]*?secondaryPosition=/,
+    );
+  },
+);

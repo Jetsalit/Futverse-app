@@ -12,6 +12,7 @@ import {
 import {
   toAcademyPlayerProfileReadModel,
 } from "../lib/playerProfileReadModel";
+import PlayerPositionMap from "./player-profile/PlayerPositionMap";
 import { useAcademy } from "../contexts/AcademyContext";
 import {
   readAcademyPlayerEvaluations,
@@ -230,6 +231,10 @@ export default function YouthPlayerCV({
         </div>
       </div>
 
+      <PlayerPositionMap
+        source="ACADEMY"
+        position={profile.position}
+      />
       {loadingEvaluations ? (
         <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
           <LoaderCircle

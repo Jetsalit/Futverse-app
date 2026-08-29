@@ -20,6 +20,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import IDPProfile from "./IDPProfile";
+import PlayerPositionMap from "./player-profile/PlayerPositionMap";
 
 export default function ProPlayerCV({
   player,
@@ -227,6 +228,11 @@ export default function ProPlayerCV({
                 </div>
               </div>
 
+              <PlayerPositionMap
+                source="PRO"
+                position={profile.position}
+                secondaryPosition={profile.secondaryPosition}
+              />
               {/* Contact Card */}
               {(player.phoneNumber || player.lineId || player.facebook) && (
                 <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">

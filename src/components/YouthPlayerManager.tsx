@@ -31,6 +31,16 @@ import {
 import { useAcademy } from "../contexts/AcademyContext";
 import { EmptyState } from "./common/EmptyState";
 import { mapCanonicalSnapshot } from "../lib/firestore/canonicalDocument";
+import {
+  MAX_ADDITIONAL_POSITIONS,
+  PLAYER_POSITION_CODES,
+  POSITION_ADDITIONAL_STORAGE_FIELD,
+  inspectStoredPosition,
+  isPlayerPositionCode,
+  resolveAdditionalPositionsForRead,
+  validatePositionSelection,
+  type PositionSelectionError,
+} from "../lib/playerPositionSelection";
 
 interface Player {
   id: string;
@@ -42,6 +52,64 @@ interface Player {
   age: number;
   fitness_status: string;
   avatar: string;
+  additionalPositions?: unknown;
+}
+
+const POSITION_LABELS: Record<
+  (typeof PLAYER_POSITION_CODES)[number],
+  string
+> = {
+  GK: "Goalkeeper",
+  LB: "Left Back",
+  LWB: "Left Wing-Back",
+  CB: "Centre Back",
+  RB: "Right Back",
+  RWB: "Right Wing-Back",
+  DM: "Defensive Midfielder",
+  LM: "Left Midfielder",
+  CM: "Central Midfielder",
+  RM: "Right Midfielder",
+  AM: "Attacking Midfielder",
+  LW: "Left Winger",
+  RW: "Right Winger",
+  CF: "Centre Forward",
+  ST: "Striker",
+};
+
+const emptyAdditionalPositions = (): string[] =>
+  Array.from(
+    { length: MAX_ADDITIONAL_POSITIONS },
+    () => "",
+  );
+
+function positionValidationMessage(
+  errors: readonly PositionSelectionError[],
+): string {
+  if (errors.includes("PRIMARY_REQUIRED")) {
+    return "Select a primary position.";
+  }
+
+  if (errors.includes("PRIMARY_NOT_SELECTABLE")) {
+    return "Primary position must be a supported canonical position.";
+  }
+
+  if (errors.includes("TOO_MANY_ADDITIONAL")) {
+    return `Choose no more than ${MAX_ADDITIONAL_POSITIONS} additional positions.`;
+  }
+
+  if (errors.includes("ADDITIONAL_NOT_SELECTABLE")) {
+    return "Every additional position must be a supported canonical position.";
+  }
+
+  if (errors.includes("PRIMARY_DUPLICATED_IN_ADDITIONAL")) {
+    return "Primary position cannot also be an additional position.";
+  }
+
+  if (errors.includes("DUPLICATE_ADDITIONAL")) {
+    return "Additional positions must be distinct.";
+  }
+
+  return "Review the selected positions before saving.";
 }
 
 export default function YouthPlayerManager({
@@ -61,6 +129,22 @@ export default function YouthPlayerManager({
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
   const [playerToDelete, setPlayerToDelete] = useState<string | null>(null);
   const [reportPlayer, setReportPlayer] = useState<any>(null);
+  const [primaryPositionReviewRequired, setPrimaryPositionReviewRequired] =
+    useState(false);
+  const [primaryPositionReviewValue, setPrimaryPositionReviewValue] =
+    useState<string | null>(null);
+  const [
+    additionalPositionsReviewRequired,
+    setAdditionalPositionsReviewRequired,
+  ] = useState(false);
+  const [positionValidationError, setPositionValidationError] =
+    useState<string | null>(null);
+  const [
+    additionalPositionsFieldPresentAtEdit,
+    setAdditionalPositionsFieldPresentAtEdit,
+  ] = useState(false);
+  const [additionalPositionsTouched, setAdditionalPositionsTouched] =
+    useState(false);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -69,6 +153,7 @@ export default function YouthPlayerManager({
     dob: "",
     fitness_status: "",
     position: "",
+    additionalPositions: emptyAdditionalPositions(),
     ageGroup: settings.squads[0] || "",
     avatarUrl: "",
   });
@@ -115,7 +200,34 @@ export default function YouthPlayerManager({
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
   ) => {
     const { name, value } = e.target;
+
+    if (name === "position") {
+      setPrimaryPositionReviewRequired(false);
+      setPrimaryPositionReviewValue(null);
+      setPositionValidationError(null);
+    }
+
     setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleAdditionalPositionChange = (
+    index: number,
+    value: string,
+  ) => {
+    setFormData((prev) => {
+      const additionalPositions =
+        [...prev.additionalPositions];
+
+      additionalPositions[index] = value;
+
+      return {
+        ...prev,
+        additionalPositions,
+      };
+    });
+
+    setAdditionalPositionsTouched(true);
+    setPositionValidationError(null);
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -134,12 +246,19 @@ export default function YouthPlayerManager({
 
   const openAddModal = () => {
     setEditingPlayerId(null);
+    setPrimaryPositionReviewRequired(false);
+    setPrimaryPositionReviewValue(null);
+    setAdditionalPositionsReviewRequired(false);
+    setAdditionalPositionsFieldPresentAtEdit(false);
+    setAdditionalPositionsTouched(false);
+    setPositionValidationError(null);
     setFormData({
       firstName: "",
       lastName: "",
       dob: "",
       fitness_status: "",
       position: "",
+      additionalPositions: emptyAdditionalPositions(),
       ageGroup: settings.squads[0] || "",
       avatarUrl: "",
     });
@@ -147,12 +266,90 @@ export default function YouthPlayerManager({
   };
 
   const handleEditClick = (player: Player) => {
+    const primaryReview =
+      inspectStoredPosition(player.position);
+
+    const primaryCanonical =
+      isPlayerPositionCode(primaryReview.originalText)
+        ? primaryReview.originalText
+        : null;
+
+    const hasStoredAdditionalPositions =
+      Object.prototype.hasOwnProperty.call(
+        player,
+        POSITION_ADDITIONAL_STORAGE_FIELD,
+      );
+
+    const rawStoredAdditionalPositions =
+      hasStoredAdditionalPositions
+        ? player.additionalPositions
+        : undefined;
+
+    const resolvedAdditionalPositions =
+      resolveAdditionalPositionsForRead(player);
+
+    const canonicalAdditionalPositions =
+      resolvedAdditionalPositions.filter(
+        isPlayerPositionCode,
+      );
+
+    let additionalPositionsRequireReview = false;
+
+    if (hasStoredAdditionalPositions) {
+      if (!Array.isArray(rawStoredAdditionalPositions)) {
+        additionalPositionsRequireReview = true;
+      } else {
+        additionalPositionsRequireReview =
+          rawStoredAdditionalPositions.length !==
+            canonicalAdditionalPositions.length ||
+          canonicalAdditionalPositions.length >
+            MAX_ADDITIONAL_POSITIONS ||
+          new Set(canonicalAdditionalPositions).size !==
+            canonicalAdditionalPositions.length ||
+          (
+            primaryCanonical !== null &&
+            canonicalAdditionalPositions.includes(
+              primaryCanonical,
+            )
+          );
+      }
+    }
+
+    const editableAdditionalPositions =
+      [
+        ...canonicalAdditionalPositions.slice(
+          0,
+          MAX_ADDITIONAL_POSITIONS,
+        ),
+        ...emptyAdditionalPositions(),
+      ].slice(0, MAX_ADDITIONAL_POSITIONS);
+
+    setPrimaryPositionReviewRequired(
+      !primaryReview.selectable,
+    );
+    setPrimaryPositionReviewValue(
+      primaryReview.selectable
+        ? null
+        : primaryReview.originalText || null,
+    );
+    setAdditionalPositionsReviewRequired(
+      additionalPositionsRequireReview,
+    );
+    setAdditionalPositionsFieldPresentAtEdit(
+      hasStoredAdditionalPositions,
+    );
+    setAdditionalPositionsTouched(false);
+    setPositionValidationError(null);
+
     setFormData({
       firstName: player.firstName,
       lastName: player.lastName,
       dob: player.dob,
       fitness_status: player.fitness_status || "",
-      position: player.position,
+      position: primaryReview.selectable
+        ? primaryReview.originalText
+        : "",
+      additionalPositions: editableAdditionalPositions,
       ageGroup: player.ageGroup,
       avatarUrl: player.avatar,
     });
@@ -163,12 +360,19 @@ export default function YouthPlayerManager({
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingPlayerId(null);
+    setPrimaryPositionReviewRequired(false);
+    setPrimaryPositionReviewValue(null);
+    setAdditionalPositionsReviewRequired(false);
+    setAdditionalPositionsFieldPresentAtEdit(false);
+    setAdditionalPositionsTouched(false);
+    setPositionValidationError(null);
     setFormData({
       firstName: "",
       lastName: "",
       dob: "",
       fitness_status: "",
       position: "",
+      additionalPositions: emptyAdditionalPositions(),
       ageGroup: settings.squads[0] || "",
       avatarUrl: "",
     });
@@ -182,6 +386,49 @@ export default function YouthPlayerManager({
       alert("Missing academy context. Please try again once the academy is available.");
       return;
     }
+
+    const additionalPositions =
+      formData.additionalPositions.filter(
+        (position) => position.length > 0,
+      );
+
+    const shouldWriteAdditionalPositions =
+      !editingPlayerId ||
+      additionalPositionsFieldPresentAtEdit ||
+      additionalPositionsTouched;
+
+    if (primaryPositionReviewRequired) {
+      setPositionValidationError(
+        primaryPositionReviewValue
+          ? `Stored primary position "${primaryPositionReviewValue}" must be explicitly replaced with a canonical position.`
+          : "Stored primary position must be explicitly reviewed and replaced with a canonical position.",
+      );
+      return;
+    }
+
+    if (additionalPositionsReviewRequired) {
+      setPositionValidationError(
+        "Stored additional positions require explicit review before this record can be saved.",
+      );
+      return;
+    }
+
+    const positionValidation =
+      validatePositionSelection({
+        primary: formData.position,
+        additional: additionalPositions,
+      });
+
+    if (!positionValidation.valid) {
+      setPositionValidationError(
+        positionValidationMessage(
+          positionValidation.errors,
+        ),
+      );
+      return;
+    }
+
+    setPositionValidationError(null);
 
     try {
       const derivedAge = calculateAge(formData.dob);
@@ -199,6 +446,9 @@ export default function YouthPlayerManager({
           firstName: formData.firstName,
           lastName: formData.lastName,
           position: formData.position,
+          ...(shouldWriteAdditionalPositions
+            ? { additionalPositions }
+            : {}),
           ageGroup: formData.ageGroup,
           dob: formData.dob,
           age: derivedAge,
@@ -211,6 +461,7 @@ export default function YouthPlayerManager({
           firstName: formData.firstName,
           lastName: formData.lastName,
           position: formData.position,
+          additionalPositions,
           ageGroup: formData.ageGroup,
           dob: formData.dob,
           age: derivedAge,
@@ -598,20 +849,27 @@ export default function YouthPlayerManager({
                         onChange={handleInputChange}
                         className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-slate-700 font-medium"
                       >
-                        <option value="" disabled>Select position</option>
-                        <option value="GK">GK - Goalkeeper</option>
-                        <option value="CB">CB - Center Back</option>
-                        <option value="LB">LB - Left Back</option>
-                        <option value="RB">RB - Right Back</option>
-                        <option value="CM">CM - Center Mid</option>
-                        <option value="Winger">Winger</option>
-                        <option value="Striker">Striker</option>
+                        <option value="" disabled>Select primary position</option>
+                        {PLAYER_POSITION_CODES.map((position) => (
+                          <option key={position} value={position}>
+                            {position} - {POSITION_LABELS[position]}
+                          </option>
+                        ))}
                       </select>
                       <ChevronDown
                         className="absolute right-3 text-slate-400 pointer-events-none"
                         size={18}
                       />
                     </div>
+                    {primaryPositionReviewRequired && (
+                      <p className="mt-2 text-xs font-medium text-amber-700">
+                        Stored primary position
+                        {primaryPositionReviewValue
+                          ? ` "${primaryPositionReviewValue}"`
+                          : ""}
+                        {" "}requires explicit review. Select the intended canonical position before saving.
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">
@@ -638,6 +896,102 @@ export default function YouthPlayerManager({
                       />
                     </div>
                   </div>
+                </div>
+
+                <div>
+                  <div className="flex items-end justify-between gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                        Additional Positions
+                      </label>
+                      <p className="mt-1 text-xs text-slate-400">
+                        Optional. Choose up to {MAX_ADDITIONAL_POSITIONS} distinct positions.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                    {Array.from(
+                      { length: MAX_ADDITIONAL_POSITIONS },
+                      (_, index) => {
+                        const currentValue =
+                          formData.additionalPositions[index] || "";
+
+                        return (
+                          <div
+                            key={`additional-position-${index}`}
+                            className="relative flex items-center"
+                          >
+                            <select
+                              value={currentValue}
+                              onChange={(event) =>
+                                handleAdditionalPositionChange(
+                                  index,
+                                  event.target.value,
+                                )
+                              }
+                              className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl pl-3 pr-9 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-slate-700 font-medium"
+                            >
+                              <option value="">None</option>
+                              {PLAYER_POSITION_CODES.map((position) => {
+                                const selectedElsewhere =
+                                  formData.additionalPositions.some(
+                                    (selected, selectedIndex) =>
+                                      selectedIndex !== index &&
+                                      selected === position,
+                                  );
+
+                                const blocked =
+                                  position === formData.position ||
+                                  selectedElsewhere;
+
+                                return (
+                                  <option
+                                    key={position}
+                                    value={position}
+                                    disabled={blocked}
+                                  >
+                                    {position} - {POSITION_LABELS[position]}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                            <ChevronDown
+                              className="absolute right-3 text-slate-400 pointer-events-none"
+                              size={16}
+                            />
+                          </div>
+                        );
+                      },
+                    )}
+                  </div>
+
+                  {additionalPositionsReviewRequired && (
+                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                      <p className="text-xs font-medium text-amber-800">
+                        Stored additional positions contain legacy, malformed, duplicate, or incompatible values. Review the intended canonical positions before saving.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAdditionalPositionsReviewRequired(false);
+                          setPositionValidationError(null);
+                        }}
+                        className="mt-2 text-xs font-bold text-amber-800 underline underline-offset-2"
+                      >
+                        Confirm reviewed additional positions
+                      </button>
+                    </div>
+                  )}
+
+                  {positionValidationError && (
+                    <p
+                      role="alert"
+                      className="mt-3 text-xs font-semibold text-rose-600"
+                    >
+                      {positionValidationError}
+                    </p>
+                  )}
                 </div>
               </div>
 
