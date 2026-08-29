@@ -82,6 +82,45 @@ const emptyAdditionalPositions = (): string[] =>
     () => "",
   );
 
+function storedAdditionalPositionReviewDisplayValues(
+  value: unknown,
+): string[] {
+  const describeNonStringValue = (
+    storedValue: unknown,
+  ): string => {
+    if (storedValue === null) {
+      return "[null]";
+    }
+
+    if (
+      typeof storedValue === "number" ||
+      typeof storedValue === "boolean"
+    ) {
+      return `[${typeof storedValue}: ${String(storedValue)}]`;
+    }
+
+    if (typeof storedValue === "undefined") {
+      return "[undefined]";
+    }
+
+    return `[non-text ${typeof storedValue}]`;
+  };
+
+  if (Array.isArray(value)) {
+    return value.map((storedValue) =>
+      typeof storedValue === "string"
+        ? storedValue
+        : describeNonStringValue(storedValue),
+    );
+  }
+
+  if (typeof value === "string") {
+    return [value];
+  }
+
+  return [describeNonStringValue(value)];
+}
+
 function positionValidationMessage(
   errors: readonly PositionSelectionError[],
 ): string {
@@ -290,6 +329,13 @@ export default function YouthPlayerManager({
         ? player.additionalPositions
         : undefined;
 
+    const storedAdditionalPositionReviewValues =
+      hasStoredAdditionalPositions
+        ? storedAdditionalPositionReviewDisplayValues(
+            rawStoredAdditionalPositions,
+          )
+        : [];
+
     const resolvedAdditionalPositions =
       resolveAdditionalPositionsForRead(player);
 
@@ -342,7 +388,7 @@ export default function YouthPlayerManager({
     );
     setAdditionalPositionsReviewValues(
       additionalPositionsRequireReview
-        ? resolvedAdditionalPositions
+        ? storedAdditionalPositionReviewValues
         : [],
     );
     setAdditionalPositionsFieldPresentAtEdit(

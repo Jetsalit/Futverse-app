@@ -138,7 +138,28 @@ test(
       /additionalPositionsReviewValues\.map/,
     );
 
+    assert.ok(
+      managerSource.includes(
+        "storedAdditionalPositionReviewDisplayValues",
+      ),
+    );
+
     assert.match(
+      managerSource,
+      /typeof value === "string"[\s\S]*?return \[value\]/,
+    );
+
+    assert.match(
+      managerSource,
+      /const storedAdditionalPositionReviewValues =[\s\S]*?storedAdditionalPositionReviewDisplayValues\([\s\S]*?rawStoredAdditionalPositions/,
+    );
+
+    assert.match(
+      managerSource,
+      /setAdditionalPositionsReviewValues\([\s\S]*?additionalPositionsRequireReview[\s\S]*?\? storedAdditionalPositionReviewValues[\s\S]*?: \[\]/,
+    );
+
+    assert.doesNotMatch(
       managerSource,
       /setAdditionalPositionsReviewValues\([\s\S]*?additionalPositionsRequireReview[\s\S]*?\? resolvedAdditionalPositions[\s\S]*?: \[\]/,
     );
