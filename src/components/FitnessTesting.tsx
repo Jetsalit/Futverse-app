@@ -31,6 +31,13 @@ import { collection, onSnapshot, query, orderBy, doc, deleteDoc, deleteField, ad
 import { EmptyState } from "./common/EmptyState";
 import { useAcademy } from "../contexts/AcademyContext";
 import { mapCanonicalSnapshot } from "../lib/firestore/canonicalDocument";
+import {
+  PLAYER_POSITION_CODES,
+  POSITION_ADDITIONAL_STORAGE_FIELD,
+  inspectStoredPosition,
+  isPlayerPositionCode,
+  validatePositionSelection,
+} from "../lib/playerPositionSelection";
 import { Plus, Edit2, Trash2, X, Upload, Calendar, ChevronDown, Filter } from "lucide-react";
 
 interface Player {
@@ -299,6 +306,8 @@ export default function FitnessTesting({
   // CRUD state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
+  const [storedPositionBeforeEdit, setStoredPositionBeforeEdit] =
+    useState<string | null>(null);
   const [playerToDelete, setPlayerToDelete] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     firstName: "",
@@ -369,6 +378,7 @@ export default function FitnessTesting({
 
   const openAddModal = () => {
     setEditingPlayerId(null);
+    setStoredPositionBeforeEdit(null);
     setFormData({
       firstName: "",
       lastName: "",
@@ -382,15 +392,27 @@ export default function FitnessTesting({
   };
 
   const handleEditClick = (player: Player) => {
+    const positionReview =
+      inspectStoredPosition(player.position);
+
     setFormData({
       firstName: player.firstName,
       lastName: player.lastName,
       dob: player.dob,
       fitness_status: player.fitness_status || "",
-      position: player.position,
+      position: isPlayerPositionCode(player.position)
+        ? player.position
+        : "",
       ageGroup: player.ageGroup,
       avatarUrl: player.avatar || "",
     });
+
+    setStoredPositionBeforeEdit(
+      positionReview.requiresConfirmation
+        ? positionReview.originalText
+        : null,
+    );
+
     setEditingPlayerId(player.id);
     setIsModalOpen(true);
   };
@@ -398,6 +420,7 @@ export default function FitnessTesting({
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingPlayerId(null);
+    setStoredPositionBeforeEdit(null);
   };
 
   const handleSavePlayer = async (e: React.FormEvent) => {
@@ -420,12 +443,47 @@ export default function FitnessTesting({
         return;
       }
 
+      const preservingStoredPosition =
+        editingPlayerId !== null &&
+        storedPositionBeforeEdit !== null &&
+        formData.position === "";
+
+      const positionValidation =
+        validatePositionSelection({
+          primary: formData.position,
+          additional: [],
+        });
+
+      if (
+        !preservingStoredPosition &&
+        !positionValidation.valid
+      ) {
+        console.error(
+          "FitnessTesting: invalid canonical position; refusing to save player.",
+          positionValidation.errors,
+        );
+        alert(
+          "Please select a valid canonical player position before saving.",
+        );
+        return;
+      }
+
       const playerData: any = {
         ...formData,
         age: derivedAge,
         avatar: formData.avatarUrl,
       };
       delete playerData.avatarUrl;
+
+      if (preservingStoredPosition) {
+        delete playerData.position;
+      }
+
+      if (!editingPlayerId) {
+        playerData[
+          POSITION_ADDITIONAL_STORAGE_FIELD
+        ] = [];
+      }
 
       if (editingPlayerId) {
         await updateDoc(doc(db, "academies", academyId, "players", editingPlayerId), {
@@ -466,6 +524,10 @@ export default function FitnessTesting({
   };
 
   const filteredPlayers = players.filter((p) => !p.hideFromFitness && (filterAge === "All" || p.ageGroup === filterAge));
+
+  const storedPositionReviewRequired =
+    editingPlayerId !== null &&
+    storedPositionBeforeEdit !== null;
 
   // State from main wrapper for reports functionality and passing to grid
   const [testData, setTestData] = useState<
@@ -782,18 +844,30 @@ export default function FitnessTesting({
                   <div>
                     <label className="block text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Position</label>
                     <div className="relative">
-                      <select required name="position" value={formData.position} onChange={handleInputChange} className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all">
-                        <option value="" disabled>Select position</option>
-                        <option value="GK">GK</option>
-                        <option value="CB">CB</option>
-                        <option value="LB">LB</option>
-                        <option value="RB">RB</option>
-                        <option value="CM">CM</option>
-                        <option value="Winger">Winger</option>
-                        <option value="Striker">Striker</option>
+                      <select required={!storedPositionReviewRequired} name="position" value={formData.position} onChange={handleInputChange} className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all">
+                        <option value="" disabled={!storedPositionReviewRequired}>
+                          {storedPositionReviewRequired
+                            ? "Keep stored position unchanged"
+                            : "Select position"}
+                        </option>
+                        {PLAYER_POSITION_CODES.map((position) => (
+                          <option key={position} value={position}>
+                            {position}
+                          </option>
+                        ))}
                       </select>
                       <ChevronDown className="absolute right-3 text-slate-400 pointer-events-none top-1/2 -translate-y-1/2" size={18} />
                     </div>
+                    {storedPositionReviewRequired && (
+                      <p className="mt-2 text-[11px] leading-relaxed text-amber-700">
+                        Stored position under review:{" "}
+                        <span className="font-bold">
+                          {storedPositionBeforeEdit || "[empty]"}
+                        </span>
+                        . Leave unselected to preserve the stored value,
+                        or choose a canonical position to update it.
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Age Group</label>
