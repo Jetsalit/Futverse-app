@@ -121,6 +121,28 @@ test(
       /additionalPositionsReviewRequired/,
     );
 
+    assert.ok(
+      managerSource.includes(
+        "additionalPositionsReviewValues",
+      ),
+    );
+
+    assert.ok(
+      managerSource.includes(
+        "Stored values under review:",
+      ),
+    );
+
+    assert.match(
+      managerSource,
+      /additionalPositionsReviewValues\.map/,
+    );
+
+    assert.match(
+      managerSource,
+      /setAdditionalPositionsReviewValues\([\s\S]*?additionalPositionsRequireReview[\s\S]*?\? resolvedAdditionalPositions[\s\S]*?: \[\]/,
+    );
+
     assert.match(
       managerSource,
       /Confirm reviewed additional positions/,

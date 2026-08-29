@@ -145,6 +145,10 @@ export default function YouthPlayerManager({
   ] = useState(false);
   const [additionalPositionsTouched, setAdditionalPositionsTouched] =
     useState(false);
+  const [
+    additionalPositionsReviewValues,
+    setAdditionalPositionsReviewValues,
+  ] = useState<string[]>([]);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -251,6 +255,7 @@ export default function YouthPlayerManager({
     setAdditionalPositionsReviewRequired(false);
     setAdditionalPositionsFieldPresentAtEdit(false);
     setAdditionalPositionsTouched(false);
+    setAdditionalPositionsReviewValues([]);
     setPositionValidationError(null);
     setFormData({
       firstName: "",
@@ -335,6 +340,11 @@ export default function YouthPlayerManager({
     setAdditionalPositionsReviewRequired(
       additionalPositionsRequireReview,
     );
+    setAdditionalPositionsReviewValues(
+      additionalPositionsRequireReview
+        ? resolvedAdditionalPositions
+        : [],
+    );
     setAdditionalPositionsFieldPresentAtEdit(
       hasStoredAdditionalPositions,
     );
@@ -365,6 +375,7 @@ export default function YouthPlayerManager({
     setAdditionalPositionsReviewRequired(false);
     setAdditionalPositionsFieldPresentAtEdit(false);
     setAdditionalPositionsTouched(false);
+    setAdditionalPositionsReviewValues([]);
     setPositionValidationError(null);
     setFormData({
       firstName: "",
@@ -971,6 +982,31 @@ export default function YouthPlayerManager({
                       <p className="text-xs font-medium text-amber-800">
                         Stored additional positions contain legacy, malformed, duplicate, or incompatible values. Review the intended canonical positions before saving.
                       </p>
+
+                      {additionalPositionsReviewValues.length > 0 ? (
+                        <div className="mt-2">
+                          <p className="text-[11px] font-bold text-amber-900">
+                            Stored values under review:
+                          </p>
+                          <div className="mt-1 flex flex-wrap gap-1.5">
+                            {additionalPositionsReviewValues.map(
+                              (value, index) => (
+                                <span
+                                  key={`${index}-${value}`}
+                                  className="max-w-full break-all rounded-lg border border-amber-200 bg-white/70 px-2 py-1 text-[11px] font-semibold text-amber-900"
+                                >
+                                  {value}
+                                </span>
+                              ),
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-[11px] font-semibold text-amber-900">
+                          The stored field contains no readable string position values.
+                        </p>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => {
