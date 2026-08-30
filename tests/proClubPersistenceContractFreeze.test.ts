@@ -7,7 +7,6 @@ const read = (path: string) => readFileSync(path, "utf8");
 const contract = read("docs/PRO_CLUB_PERSISTENCE_CONTRACT_V1_FREEZE.md");
 const foundation = read("docs/PRO_CLUB_AUTHORITY_FOUNDATION_V1_FREEZE.md");
 const model = read("src/lib/proClubModel.ts");
-const rules = read("firestore.rules");
 
 test("Pro Club Persistence Contract Freeze V1", async (t) => {
   await t.test("freezes exact canonical paths", () => {
@@ -66,9 +65,16 @@ test("Pro Club Persistence Contract Freeze V1", async (t) => {
     assert.match(contract, /audited transition evidence/);
   });
 
-  await t.test("keeps Pro Club Firestore Rules disconnected", () => {
-    assert.equal(rules.includes("proClubs"), false);
+  await t.test("keeps Firestore Rules in their dedicated later slice", () => {
+    assert.match(
+      contract,
+      /No authoritative Pro Club Rules are connected in this contract slice\./,
+    );
     assert.match(contract, /This contract does not change `firestore\.rules`\./);
+    assert.match(
+      contract,
+      /dedicated\s+Pro Club Rules slice and emulator security tests/,
+    );
   });
 
   await t.test("keeps integration boundaries outside scope", () => {
