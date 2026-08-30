@@ -1,6 +1,18 @@
 export type ProClubLevel = "T1" | "T2" | "T3";
 export type ProClubStatus = "ACTIVE" | "INACTIVE";
 
+/**
+ * Tenant authorization granted by a canonical Pro Club membership.
+ * This is intentionally separate from a football staff assignment.
+ */
+export type ProClubAuthorizationRole = "OWNER" | "ADMIN" | "MEMBER";
+
+export type ProClubMembershipStatus =
+  | "ACTIVE"
+  | "INACTIVE"
+  | "LEFT"
+  | "REVOKED";
+
 export type ProClubStaffRole =
   | "HEAD_COACH"
   | "ASSISTANT_COACH"
@@ -12,6 +24,7 @@ export type ProClubStaffRole =
 
 export type ProClubStaffStatus = "ACTIVE" | "INACTIVE" | "LEFT";
 
+/** Stored at proClubs/{clubId}; the document path is the club identity. */
 export interface ProClub {
   name: string;
   shortName?: string;
@@ -23,9 +36,14 @@ export interface ProClub {
   updatedAt?: string;
 }
 
+/** Stored at proClubs/{clubId}/members/{uid}; neither identity is payload data. */
+export interface ProClubMembership {
+  authorizationRole: ProClubAuthorizationRole;
+  status: ProClubMembershipStatus;
+}
+
+/** Stored at proClubs/{clubId}/staff/{uid}; neither identity is payload data. */
 export interface ProClubStaffAssignment {
-  userId: string;
-  clubId: string;
   staffRole: ProClubStaffRole;
   status: ProClubStaffStatus;
 }
