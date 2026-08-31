@@ -1231,6 +1231,40 @@ service cloud.firestore {
       }
     }
 
+    // Pro Club Firestore Rules V1.
+    //
+    // Relationship evidence is intentionally distinct from tenant authority.
+    // Exact own membership/staff documents remain readable so the application
+    // adapter can classify MISSING, INVALID_DATA, and lifecycle status.
+    // Presence of staff data alone never grants access to the club document.
+    // V1 exposes no collection listing and no client mutation path.
+    match /proClubs/{clubId} {
+      allow get: if isSignedIn()
+        && exists(
+          /databases/$(database)/documents/proClubs/$(clubId)/members/$(request.auth.uid)
+        );
+
+      allow list, create, update, delete: if false;
+
+      match /members/{uid} {
+        allow get: if isSignedIn()
+          && request.auth.uid == uid;
+
+        allow list, create, update, delete: if false;
+      }
+
+      match /staff/{uid} {
+        allow get: if isSignedIn()
+          && request.auth.uid == uid;
+
+        allow list, create, update, delete: if false;
+      }
+
+      match /{document=**} {
+        allow read, write: if false;
+      }
+    }
+
     match /proPlayers/{proPlayerId} {
       allow read: if isSignedIn();
       allow create, update: if isAdmin() && hasNoStoredDocumentId();
