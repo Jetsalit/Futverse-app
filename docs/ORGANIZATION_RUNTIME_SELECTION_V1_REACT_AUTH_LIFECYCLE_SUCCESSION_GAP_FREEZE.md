@@ -89,6 +89,23 @@ Equivalent approved succession:
 
 No other assertion in that file is approved for modification.
 
+The succession-gap Contract test is a permanent transition guard and must
+remain valid after the authorized provider succession occurs.
+
+Its live-state rule is exact:
+
+- before `OrganizationRuntimeProvider` is mounted in `src/main.tsx`, both
+  historical provider-absence guards must remain present
+- after `OrganizationRuntimeProvider` is mounted in `src/main.tsx`, both
+  superseded provider-absence guards must be retired
+- a partial state where provider integration exists while either historical
+  provider-absence guard remains is forbidden
+
+The succession-gap Contract test itself must not require a later modification
+merely because the authorized succession was completed.
+
+`PARTIAL SUCCESSION != AUTHORIZED SUCCESSION`
+
 ## 5. Expanded implementation candidate scope
 
 With this addendum, the approved React Auth Lifecycle implementation candidate

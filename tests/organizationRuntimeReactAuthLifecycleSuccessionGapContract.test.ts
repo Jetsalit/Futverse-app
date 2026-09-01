@@ -25,8 +25,25 @@ const proClubContractTest = read(
   "tests/organizationRuntimeProClubAuthorityBridgeContract.test.ts",
 );
 
+const mainSource = read("src/main.tsx");
+
 const providerAbsencePattern =
   /assert\.doesNotMatch\(\s*mainSource,\s*\/OrganizationRuntimeProvider\|OrganizationProvider\/,\s*\);/g;
+
+const assertProviderSuccessionState = (
+  providerMounted: boolean,
+  selectionCount: number,
+  proClubCount: number,
+) => {
+  if (providerMounted) {
+    assert.equal(selectionCount, 0);
+    assert.equal(proClubCount, 0);
+    return;
+  }
+
+  assert.equal(selectionCount, 1);
+  assert.equal(proClubCount, 1);
+};
 
 test(
   "React Auth Lifecycle Contract Succession Gap Freeze",
@@ -43,16 +60,50 @@ test(
       );
     });
 
-    await t.test("baseline contains exactly two historical provider guards", () => {
+    await t.test("provider guards follow the authorized succession state", () => {
       const selectionCount =
         selectionContractTest.match(providerAbsencePattern)?.length ?? 0;
 
       const proClubCount =
         proClubContractTest.match(providerAbsencePattern)?.length ?? 0;
 
-      assert.equal(selectionCount, 1);
-      assert.equal(proClubCount, 1);
-      assert.equal(selectionCount + proClubCount, 2);
+      const providerMounted =
+        /<OrganizationRuntimeProvider\b[^>]*>/.test(mainSource);
+
+      assertProviderSuccessionState(
+        providerMounted,
+        selectionCount,
+        proClubCount,
+      );
+
+      assert.equal(
+        selectionCount + proClubCount,
+        providerMounted ? 0 : 2,
+      );
+    });
+
+    await t.test("succession state guard rejects partial migration", () => {
+      assert.doesNotThrow(() =>
+        assertProviderSuccessionState(false, 1, 1),
+      );
+
+      assert.doesNotThrow(() =>
+        assertProviderSuccessionState(true, 0, 0),
+      );
+
+      for (const [selectionCount, proClubCount] of [
+        [0, 1],
+        [1, 0],
+        [1, 1],
+      ] as const) {
+        assert.throws(() =>
+          assertProviderSuccessionState(
+            true,
+            selectionCount,
+            proClubCount,
+          ),
+        );
+      }
     });
 
     await t.test("newer React contract already authorizes Selection succession", () => {
