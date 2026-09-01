@@ -377,8 +377,43 @@ implementation candidate modify exactly:
 - add `src/contexts/OrganizationRuntimeContext.tsx`
 - modify `src/main.tsx`
 - add `tests/organizationRuntimeReactAuthLifecycle.test.ts`
+- update `tests/organizationRuntimeSelectionContract.test.ts` only to retire
+  the superseded phase-specific provider-absence guard once
+  `OrganizationRuntimeProvider` is introduced; all unrelated legacy Contract
+  assertions must remain preserved
 
 No other production source file is approved by this contract.
+
+### Phase-specific Contract guard succession
+
+The original Organization Runtime Selection V1 Contract Freeze correctly
+required that no shared React provider existed during that earlier Contract
+Freeze phase.
+
+That historical absence boundary must not become a permanent architecture ban
+after a later separately reviewed contract explicitly approves
+`OrganizationRuntimeProvider`.
+
+The React Auth Lifecycle Contract test must remain forward-compatible with its
+own approved implementation and must not permanently assert that
+`src/main.tsx` lacks `OrganizationRuntimeProvider`.
+
+When the later implementation introduces the approved provider, it may update
+only the superseded provider-absence assertion in:
+
+`tests/organizationRuntimeSelectionContract.test.ts`
+
+for compatibility with the newer approved phase.
+
+The historical Contract document remains unchanged.
+
+All unrelated security, authority, persistence, Academy, Pro Club, Match, and
+scope assertions in the legacy Contract test must remain preserved.
+
+No other existing legacy Contract test is approved for modification by this
+implementation slice.
+
+`PHASE-SPECIFIC ABSENCE GUARD != PERMANENT ARCHITECTURE BAN`
 
 In particular, the implementation must not modify:
 
@@ -413,7 +448,13 @@ The later implementation must prove at minimum:
     authority;
 18. lifecycle provider invokes only `createOrganizationRuntime` and
     `bindOrganizationRuntimeUid`, with no selection, resolution, apply, or
-    Pro Club authority bridge API.
+    Pro Club authority bridge API;
+19. the React Auth Lifecycle Contract test remains compatible after the
+    approved provider is introduced and does not permanently assert provider
+    absence;
+20. the legacy `organizationRuntimeSelectionContract.test.ts` compatibility
+    update is limited to the superseded phase-specific provider-absence guard,
+    while all unrelated legacy Contract assertions remain GREEN.
 
 ## 19. Contract Freeze exact scope
 

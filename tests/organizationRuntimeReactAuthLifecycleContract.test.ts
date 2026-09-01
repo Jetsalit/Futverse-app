@@ -192,9 +192,37 @@ test(
         );
       }
 
-      assert.doesNotMatch(
+      assert.match(
         mainSource,
-        /OrganizationRuntimeProvider/,
+        /<AuthProvider>/,
+      );
+
+      assert.match(
+        mainSource,
+        /<SuperAdminSupportProvider>/,
+      );
+
+      assert.match(
+        mainSource,
+        /<AcademyProvider>/,
+      );
+
+      assert.ok(
+        contract.includes(
+          "`tests/organizationRuntimeSelectionContract.test.ts`",
+        ),
+      );
+
+      assert.ok(
+        contract.includes(
+          "phase-specific provider-absence guard",
+        ),
+      );
+
+      assert.ok(
+        contract.includes(
+          "`PHASE-SPECIFIC ABSENCE GUARD != PERMANENT ARCHITECTURE BAN`",
+        ),
       );
     });
 
