@@ -222,9 +222,9 @@ test("Organization Runtime Selection V1 Contract Freeze", async (t) => {
 
   await t.test("preserves provider tree and Match boundary", () => {
     assert.match(mainSource, /<AcademyProvider>/);
-    assert.doesNotMatch(
+    assert.match(
       mainSource,
-      /OrganizationRuntimeProvider|OrganizationProvider/,
+      /<OrganizationRuntimeProvider>/,
     );
     assert.match(
       contract,
