@@ -1,19 +1,31 @@
 import {
+  useCallback,
   createContext,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { useAuth } from "./AuthContext";
 import {
+  applyOrganizationResolution,
+  beginOrganizationResolution,
   bindOrganizationRuntimeUid,
   createOrganizationRuntime,
+  getOrganizationResolutionRequest,
+  selectOrganization,
   type OrganizationRuntimeState,
 } from "../lib/organizationRuntimeSelection";
+import {
+  resolveProClubRuntimeAuthority,
+  type ProClubRuntimeAuthorityBridgeResult,
+} from "../lib/organizationRuntimeProClubAuthorityBridge";
 
 interface OrganizationRuntimeContextValue {
   readonly runtimeState: OrganizationRuntimeState;
+  readonly selectProClub: (organizationId: string) => void;
 }
 
 const OrganizationRuntimeContext =
@@ -26,13 +38,58 @@ function RuntimeActorOwner({
   actorUid: string | null;
   children: ReactNode;
 }) {
-  const [runtimeState] = useState<OrganizationRuntimeState>(() =>
+  const [runtimeState, setRuntimeState] = useState<OrganizationRuntimeState>(() =>
     bindOrganizationRuntimeUid(createOrganizationRuntime(), actorUid),
   );
+  const authorityRequests = useRef(
+    new WeakMap<object, Promise<ProClubRuntimeAuthorityBridgeResult>>(),
+  );
+
+  const selectProClub = useCallback((organizationId: string) => {
+    setRuntimeState((current) => {
+      const selected = selectOrganization(
+        current,
+        "PRO_CLUB",
+        organizationId,
+      );
+
+      return beginOrganizationResolution(selected);
+    });
+  }, []);
+
+  useEffect(() => {
+    const request = getOrganizationResolutionRequest(runtimeState);
+    if (request === null || request.organizationType !== "PRO_CLUB") return;
+
+    let authorityRequest = authorityRequests.current.get(request);
+    if (authorityRequest === undefined) {
+      authorityRequest = resolveProClubRuntimeAuthority(request);
+      authorityRequests.current.set(request, authorityRequest);
+    }
+
+    let mounted = true;
+
+    void authorityRequest
+      .then((bridgeResult) => {
+        if (!mounted || bridgeResult.runtimeResult === null) return;
+
+        setRuntimeState((current) =>
+          applyOrganizationResolution(current, bridgeResult.runtimeResult),
+        );
+      })
+      .catch(() => {
+        // The bridge is expected to map read failures to a canonical ERROR
+        // result. An unexpected rejection remains fail-closed in RESOLVING.
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [runtimeState]);
 
   const value = useMemo<OrganizationRuntimeContextValue>(
-    () => ({ runtimeState }),
-    [runtimeState],
+    () => ({ runtimeState, selectProClub }),
+    [runtimeState, selectProClub],
   );
 
   return (
