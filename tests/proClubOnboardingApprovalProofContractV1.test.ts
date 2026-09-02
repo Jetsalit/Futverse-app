@@ -91,16 +91,27 @@ test("Pro Club Onboarding Approval Proof Contract V1", async (t) => {
     assert.ok(contract.includes("must remain unchanged"));
   });
 
-  await t.test("preserves current Rules until Slice 2B", () => {
+  await t.test("recognizes Slice 2B approval-proof enforcement", () => {
     const start = firestoreRules.indexOf("match /proClubs/{clubId}");
     const end = firestoreRules.indexOf("match /proPlayers/{proPlayerId}", start);
+    assert.ok(start >= 0 && end > start);
     const rules = firestoreRules.slice(start, end);
-    assert.match(rules, /match \/members\/\{uid\}[\s\S]*allow list, create, update, delete: if false;/);
-    assert.match(rules, /match \/staff\/\{uid\}[\s\S]*allow list, create, update, delete: if false;/);
-    assert.doesNotMatch(rules, /onboardingApprovals/);
-  });
 
-  await t.test("preserves Academy boundaries", () => {
+    assert.match(
+      rules,
+      /match \/onboardingApprovals\/\{uid\}[\s\S]*allow create: if validProClubApprovalProofCreateV1\(clubId, uid\);/,
+    );
+    assert.match(
+      rules,
+      /match \/members\/\{uid\}[\s\S]*allow create: if validProClubMembershipCreateV1\(clubId, uid\);/,
+    );
+    assert.match(
+      rules,
+      /match \/staff\/\{uid\}[\s\S]*allow create: if validProClubStaffCreateV1\(clubId, uid\);/,
+    );
+    assert.match(firestoreRules, /function freshProClubApprovalProofForUidV1\(/);
+    assert.match(firestoreRules, /function validProClubApprovalProofCreateV1\(/);
+  });  await t.test("preserves Academy boundaries", () => {
     for (const item of [
       "Academy invite or claim paths",
       "Academy Membership schemas",
