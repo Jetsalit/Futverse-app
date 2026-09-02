@@ -1,0 +1,467 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+const read = (path: string) =>
+  readFileSync(path, "utf8").replace(/\r\n?/g, "\n");
+
+const contract = read(
+  "docs/PRO_CLUB_STAFF_ONBOARDING_V1_CONTRACT_FREEZE.md",
+);
+const normalizedContract = contract.replace(/\s+/g, " ");
+const loginSource = read("src/components/Login.tsx");
+const registrationSource = read("src/lib/firestore/registration.ts");
+const accountRolePolicy = read("src/lib/accountRolePolicy.ts");
+const appSource = read("src/App.tsx");
+const authSource = read("src/contexts/AuthContext.tsx");
+const academyAccessModel = read("src/contexts/academyAccessModel.ts");
+const joinAcademySource = read("src/components/JoinAcademy.tsx");
+const membershipTypes = read("src/types/Membership.ts");
+const proClubTypes = read("src/types/ProClub.ts");
+const proClubAdapter = read(
+  "src/lib/firestore/proClubOrganizationAdapter.ts",
+);
+const runtimeContext = read(
+  "src/contexts/OrganizationRuntimeContext.tsx",
+);
+const firestoreRules = read("firestore.rules");
+
+function proClubRulesBlock(): string {
+  const start = firestoreRules.indexOf("match /proClubs/{clubId}");
+  const end = firestoreRules.indexOf("match /proPlayers/{proPlayerId}", start);
+  assert.ok(start >= 0, "Pro Club Rules block is missing");
+  assert.ok(end > start, "Pro Club Rules block boundary is missing");
+  return firestoreRules.slice(start, end);
+}
+
+test("Pro Club Staff Onboarding V1 Contract Freeze", async (t) => {
+  await t.test("freezes exact baseline branch scope and source boundaries", () => {
+    assert.ok(contract.includes("9ca605de968914c1bac3edc9ced53cebd607c2fb"));
+    assert.ok(contract.includes("feat/pro-club-staff-onboarding-v1-contract"));
+    assert.ok(contract.includes("https://github.com/Jetsalit/Futverse-app.git"));
+
+    for (const path of [
+      "src/App.tsx",
+      "src/contexts/AuthContext.tsx",
+      "src/contexts/academyAccessModel.ts",
+      "src/components/JoinAcademy.tsx",
+      "src/lib/accountRolePolicy.ts",
+      "src/types/Membership.ts",
+      "src/types/ProClub.ts",
+      "src/lib/firestore/proClubOrganizationAdapter.ts",
+      "firestore.rules",
+    ]) {
+      assert.ok(contract.includes(`\`${path}\``), `missing frozen path: ${path}`);
+    }
+
+    assert.ok(contract.includes("may add exactly"));
+    assert.ok(contract.includes("must not modify production source"));
+  });
+
+  await t.test("freezes all four architecture invariants", () => {
+    for (const invariant of [
+      "`REGISTRATION INTENT != ACCOUNT AUTHORITY`",
+      "`ACCOUNT ROLE != TENANT AUTHORITY`",
+      "`MEMBERSHIP AUTHORITY != FOOTBALL STAFF ROLE`",
+      "`SELECTION != AUTHORITY`",
+    ]) {
+      assert.ok(contract.includes(invariant), `missing invariant: ${invariant}`);
+    }
+  });
+
+  await t.test("proves COACH is registration Membership intent only", () => {
+    assert.match(
+      accountRolePolicy,
+      /\{ value: "COACH", label: "Coach", authority: "MEMBERSHIP" \}/,
+    );
+    assert.match(loginSource, /REGISTRATION_INTENT_OPTIONS\.map/);
+    assert.match(loginSource, /newData\.requestedRole = requestedRole/);
+    assert.match(loginSource, /\brequestedRole,\s*country:/s);
+    assert.ok(contract.includes("Selecting `COACH` during registration does not grant tenant authority"));
+  });
+
+  await t.test("proves non-player registration starts generic and inactive", () => {
+    const defaultLifecycle =
+      /let assignedRole = "USER";\s*let status = "Inactive";\s*if \(requestedRole === "PLAYER"\) \{\s*assignedRole = "PLAYER";\s*status = "Active";/s;
+    assert.match(loginSource, defaultLifecycle);
+    assert.ok(contract.includes("Non-`PLAYER` registration starts as a generic `USER`"));
+    assert.ok(normalizedContract.includes("pending/inactive account state"));
+  });
+
+  await t.test("proves public registration creates no tenant relationship", () => {
+    assert.match(
+      registrationSource,
+      /batch\.set\(doc\(db, "users", user\.uid\), canonicalUserData\)/,
+    );
+    assert.match(
+      registrationSource,
+      /batch\.set\(doc\(db, "logs", registrationLogId\(user\.uid\)\)/,
+    );
+    assert.doesNotMatch(loginSource, /doc\(db,\s*"proClubs"|collection\(db,\s*"proClubs"/);
+    assert.doesNotMatch(registrationSource, /"proClubs"|"academies"|"members"|"staff"/);
+    assert.ok(contract.includes("must not create an Academy Membership"));
+    assert.match(
+      normalizedContract,
+      /Public registration creates only the canonical user and its registration audit log\.[^]*must not create[^.]*a Pro Club/,
+    );
+  });
+
+  await t.test("preserves Academy-specific onboarding", () => {
+    assert.match(joinAcademySource, /doc\(db, "profile_claims", claimId\)/);
+    assert.match(joinAcademySource, /doc\(db, "academy_invites", normalizedInviteCode\)/);
+    assert.match(joinAcademySource, /type: "ACADEMY_JOIN"/);
+    assert.match(joinAcademySource, /activateApprovedMembership/);
+    assert.doesNotMatch(joinAcademySource, /proClubs|selectProClub/);
+    assert.match(appSource, /return <JoinAcademy \/>/);
+    assert.match(academyAccessModel, /resolveExactMembershipSnapshot/);
+    assert.match(membershipTypes, /type: "ACADEMY_JOIN" \| "COACH_JOIN"/);
+    assert.ok(contract.includes("Academy `profile_claims`"));
+    assert.ok(contract.includes("Academy Match authority"));
+  });
+
+  await t.test("separates Pro Club Membership authority and football staff roles", () => {
+    assert.match(
+      proClubTypes,
+      /export type ProClubAuthorizationRole = "OWNER" \| "ADMIN" \| "MEMBER"/,
+    );
+    assert.match(
+      proClubTypes,
+      /export interface ProClubMembership \{\s*authorizationRole: ProClubAuthorizationRole;\s*status: ProClubMembershipStatus;\s*\}/s,
+    );
+    assert.match(
+      proClubTypes,
+      /export interface ProClubStaffAssignment \{\s*staffRole: ProClubStaffRole;\s*status: ProClubStaffStatus;\s*\}/s,
+    );
+    for (const role of [
+      "HEAD_COACH",
+      "ASSISTANT_COACH",
+      "FITNESS_COACH",
+      "ANALYST",
+      "PHYSIO",
+      "TEAM_MANAGER",
+      "STAFF",
+    ]) {
+      assert.ok(proClubTypes.includes(`"${role}"`), `missing staff role: ${role}`);
+    }
+    assert.ok(contract.includes("`STAFF DOCUMENT ALONE != TENANT AUTHORITY`"));
+    assert.ok(contract.includes("`staffRole != authorizationRole`"));
+  });
+
+  await t.test("keeps adapter Membership authority separate from staff presentation", () => {
+    assert.match(proClubAdapter, /membershipAuthorizationRole: ProClubAuthorizationRole/);
+    assert.match(proClubAdapter, /hasMembershipAuthority: boolean/);
+    assert.match(proClubAdapter, /staffRole: ProClubStaffRole \| null/);
+    assert.match(
+      proClubAdapter,
+      /membershipAuthorizationRole:\s*snapshot\.membership\.authorizationRole/s,
+    );
+    assert.match(
+      proClubAdapter,
+      /hasMembershipAuthority:\s*snapshot\.hasMembershipAuthority/s,
+    );
+    assert.match(proClubAdapter, /staffRole:\s*snapshot\.staffRole/s);
+  });
+
+  await t.test("proves exact own-document gets and closes every broad operation", () => {
+    const rules = proClubRulesBlock();
+    const allowStatements = [
+      ...rules.matchAll(/allow\s+([^:]+):\s*if\s+([^;]+);/g),
+    ].map((match) => ({
+      operations: match[1].split(",").map((operation) => operation.trim()),
+      condition: match[2].trim(),
+    }));
+    const closedOperations = new Set([
+      "list",
+      "create",
+      "update",
+      "delete",
+      "write",
+    ]);
+    const closedStatements = allowStatements.filter(({ operations }) =>
+      operations.some((operation) => closedOperations.has(operation)),
+    );
+    assert.equal(closedStatements.length, 4);
+    for (const statement of closedStatements) {
+      assert.equal(
+        statement.condition,
+        "false",
+        `non-fail-closed operations: ${statement.operations.join(",")}`,
+      );
+    }
+
+    const exactGetStatements = allowStatements.filter(({ operations }) =>
+      operations.includes("get"),
+    );
+    assert.equal(exactGetStatements.length, 3);
+    assert.ok(
+      exactGetStatements.some(({ condition }) =>
+        condition.includes(
+          "/proClubs/$(clubId)/members/$(request.auth.uid)",
+        ),
+      ),
+      "club get must require the authenticated actor's Membership document",
+    );
+    assert.equal(
+      exactGetStatements.filter(({ condition }) =>
+        condition.includes("request.auth.uid == uid"),
+      ).length,
+      2,
+      "member and staff gets must bind the exact authenticated UID",
+    );
+    assert.ok(normalizedContract.includes("no client create, update, or delete path"));
+    assert.ok(contract.includes("dedicated Rules and Data Contract is required"));
+  });
+
+  await t.test("freezes public signup privilege and organization-creation ceilings", () => {
+    for (const role of [
+      "OWNER",
+      "ADMIN",
+      "MEMBER",
+      "HEAD_COACH",
+      "ASSISTANT_COACH",
+      "FITNESS_COACH",
+      "ANALYST",
+      "PHYSIO",
+      "TEAM_MANAGER",
+      "STAFF",
+    ]) {
+      assert.ok(contract.includes(`\`${role}\``), `missing forbidden role: ${role}`);
+    }
+    assert.ok(contract.includes("`PUBLIC REGISTRATION != ORGANIZATION CREATION`"));
+    assert.ok(contract.includes("select an arbitrary club and become authorized"));
+    assert.ok(contract.includes("self-approve"));
+  });
+
+  await t.test("freezes reviewed invite claim and canonical join flow", () => {
+    for (const step of [
+      "`Account registration`",
+      "`Pro Club join/invite intent`",
+      "`approved canonical Membership`",
+      "`Organization Runtime selection`",
+      "canonical authority resolution",
+    ]) {
+      assert.ok(contract.includes(step), `missing join step: ${step}`);
+    }
+    for (const safety of [
+      "exact UID and exact Pro Club identity",
+      "deterministic, replay-safe claim identity",
+      "active, non-revoked invitation",
+      "no self-approval",
+      "immutable claimant identity",
+      "duplicate-safe behavior",
+      "auditable created, approved, and rejected actors and timestamps",
+      "fail-closed handling for malformed or missing evidence",
+    ]) {
+      assert.ok(contract.includes(safety), `missing claim safety: ${safety}`);
+    }
+    assert.ok(contract.includes("does not name a new collection"));
+    assert.ok(contract.includes("must not be copied and renamed"));
+  });
+
+  await t.test("freezes account role activation and privilege separation", () => {
+    assert.ok(contract.includes("Global `users.role` is not a Pro Club authorization source"));
+    assert.ok(contract.includes("`ACTIVE ACCOUNT != ACTIVE PRO CLUB MEMBERSHIP`"));
+    assert.ok(contract.includes("`ACTIVE PRO CLUB MEMBERSHIP != FOOTBALL STAFF ROLE`"));
+    assert.ok(contract.includes("authorizes no `OWNER` or `ADMIN`"));
+    assert.ok(contract.includes("`HEAD_COACH != tenant admin`"));
+    assert.ok(contract.includes("`staffRole != membershipAuthorizationRole`"));
+  });
+
+  await t.test("freezes Pro Club account lifecycle compatibility ownership", () => {
+    assert.ok(contract.includes("`ACCOUNT ACTIVATION != TENANT AUTHORIZATION`"));
+    for (const boundary of [
+      "must not create Membership authority",
+      "must not fabricate `AUTHORIZED`",
+      "must not use `users.role` as Pro Club authorization proof",
+      "must not use `activeAcademyId`",
+      "must not require an Academy Membership",
+      "must not route a Pro Club Coach through `JoinAcademy`",
+      "must not create or persist `activeProClubId` as authority",
+      "must remain subordinate to canonical",
+      "must preserve exact `actualUser.uid` actor ownership",
+    ]) {
+      assert.ok(normalizedContract.includes(boundary), `missing activation boundary: ${boundary}`);
+    }
+    assert.ok(
+      normalizedContract.includes(
+        "Successful Pro Club Membership approval cannot use global account role or account status as tenant authority",
+      ),
+    );
+    assert.ok(
+      normalizedContract.includes(
+        "current generic `USER` and inactive account lifecycle compatibility must receive explicit review before real Pro Club workspace entry",
+      ),
+    );
+  });
+
+  await t.test("freezes existing Organization Runtime authority chain", () => {
+    assert.match(runtimeContext, /const \{ actualUser \} = useAuth\(\)/);
+    assert.match(runtimeContext, /const actorUid = actualUser\?\.uid \?\? null/);
+    assert.doesNotMatch(runtimeContext, /currentUser\?*\.uid|currentUser\.uid/);
+    assert.match(runtimeContext, /selectProClub/);
+    assert.match(runtimeContext, /getOrganizationResolutionRequest\(runtimeState\)/);
+    assert.match(runtimeContext, /resolveProClubRuntimeAuthority\(request\)/);
+    assert.match(
+      runtimeContext,
+      /setRuntimeState\(\(current\) =>\s*applyOrganizationResolution\(current, bridgeResult\.runtimeResult\)/s,
+    );
+    assert.ok(contract.includes("trusted runtime request"));
+    assert.ok(contract.includes("stale-generation protection"));
+    assert.ok(contract.includes("must not create an `AUTHORIZED` state"));
+  });
+
+  await t.test("preserves authenticated actor and SuperAdmin presentation boundaries", () => {
+    assert.match(authSource, /const currentUser = supportPresentedUser \?\? actualUser/);
+    assert.match(authSource, /actualUser\.role !== "SUPERADMIN"/);
+    assert.ok(contract.includes("`PRESENTED USER != AUTHENTICATED ACTOR`"));
+    assert.ok(contract.includes("Work As Staff"));
+    assert.ok(contract.includes("support target to become the authenticated actor"));
+    assert.ok(contract.includes("dedicated audited contract"));
+  });
+
+  await t.test("freezes Rules default-deny and future mutation proof", () => {
+    for (const boundary of [
+      "unauthenticated access is denied",
+      "arbitrary club mutation is denied",
+      "self-Membership grant is denied",
+      "self-`OWNER`/`ADMIN` escalation is denied",
+      "staff-only authority is denied",
+      "forged claims are denied",
+      "mismatched UID and mismatched club are denied",
+      "replay and duplicate behavior is safe",
+      "identity fields are immutable",
+      "only an approved transition can mutate authority",
+      "reviewer authority is exact",
+      "Academy Rules remain unchanged",
+      "production default deny remains intact",
+    ]) {
+      assert.ok(contract.includes(boundary), `missing Rules proof: ${boundary}`);
+    }
+  });
+
+  await t.test("freezes no-discovery and no-persistence boundaries", () => {
+    for (const forbidden of [
+      "listing or searching all Pro Clubs",
+      "account-wide organization enumeration",
+      "client-side membership scanning",
+      "collection-group discovery",
+      "guessing club IDs",
+      "`localStorage`",
+      "`sessionStorage`",
+      "cookies",
+      "`IndexedDB`",
+      "URL state",
+      "`activeProClubId`",
+      "`activeOrganizationId`",
+      "client authority cache",
+    ]) {
+      assert.ok(contract.includes(forbidden), `missing closed boundary: ${forbidden}`);
+    }
+  });
+
+  await t.test("freezes six separately reviewed implementation slices", () => {
+    for (const slice of [
+      "Pro Club Staff Onboarding Contract Freeze",
+      "Pro Club Invite / Claim / Membership Rules & Data Contract",
+      "Pro Club Onboarding Service Implementation",
+      "Registration Organization Intent / Routing Contract",
+      "Organization-aware Onboarding UI",
+      "Pro Club Workspace Entry",
+    ]) {
+      assert.ok(contract.includes(`**${slice}**`), `missing slice: ${slice}`);
+    }
+    assert.ok(contract.includes("Each slice requires separate tests, review, commit, and pull request"));
+    assert.ok(
+      normalizedContract.includes(
+        "Registration Organization Intent / Routing Contract** — safely distinguish Academy and Pro Club intent without authority in account metadata. This slice owns reviewed Pro Club account/application lifecycle compatibility",
+      ),
+    );
+    assert.ok(
+      normalizedContract.includes(
+        "must be split into a separate dedicated reviewed slice before UI or workspace work",
+      ),
+    );
+  });
+
+  await t.test("freezes the complete future user journey", () => {
+    for (const step of [
+      "`Coach creates FutVerse account`",
+      "supplies reviewed invite evidence",
+      "approved canonical Membership exists",
+      "optional reviewed staff assignment exists",
+      "Organization Runtime returns `AUTHORIZED`",
+      "Coach enters Pro Club workspace",
+      "operational capability derives from reviewed Membership plus staff",
+    ]) {
+      assert.ok(contract.includes(step), `missing journey step: ${step}`);
+    }
+    assert.ok(contract.includes("No step may skip canonical Membership authority"));
+  });
+
+  await t.test("keeps implementation UI mutation routing and deployment out of scope", () => {
+    for (const item of [
+      "Login UI changes",
+      "`JoinAcademy` changes",
+      "Join Pro Club UI",
+      "organization selector",
+      "Pro Club dashboard wiring",
+      "Firestore Rules changes",
+      "invite, claim, Membership, or staff writes",
+      "user activation or global role changes",
+      "navigation or route changes",
+      "persistence",
+      "deployment",
+    ]) {
+      assert.ok(contract.includes(item), `missing out-of-scope item: ${item}`);
+    }
+  });
+
+  await t.test("freezes all required future regression scenarios", () => {
+    const scenarios = [
+      "signup intent cannot authorize",
+      "invite intent cannot authorize",
+      "missing Membership cannot authorize",
+      "inactive Membership cannot authorize",
+      "active Membership can reach runtime authority",
+      "staff without Membership cannot authorize",
+      "`HEAD_COACH` cannot self-elevate",
+      "`MEMBER` cannot become `ADMIN` through public onboarding",
+      "`OWNER` cannot be self-granted",
+      "exact UID mismatch fails",
+      "exact club mismatch fails",
+      "malformed invite fails closed",
+      "revoked invite fails",
+      "duplicate or replayed claim is safe",
+      "claimant cannot self-approve",
+      "unauthorized reviewer cannot approve",
+      "approved Membership identity is exact",
+      "staff assignment does not create authority",
+      "authenticated actor remains `actualUser.uid`",
+      "support-presented identity cannot authorize",
+      "Academy onboarding remains unchanged",
+      "Academy Rules remain unchanged",
+      "Pro Club current read adapter remains unchanged",
+      "no club-wide discovery exists",
+      "no persistence shortcut exists",
+      "no global-role bypass exists",
+      "no direct signup Membership write exists",
+      "no direct signup staff write exists",
+      "stale runtime selection cannot authorize the wrong club",
+      "production default-deny boundary remains intact",
+      "account activation alone cannot authorize Pro Club",
+      "Pro Club Coach onboarding cannot require Academy Membership or",
+      "changing global `users.role` cannot substitute for canonical Pro Club",
+    ];
+    assert.equal(scenarios.length, 33);
+    for (const scenario of scenarios) {
+      assert.ok(contract.includes(scenario), `missing scenario: ${scenario}`);
+    }
+  });
+
+  await t.test("requires independent Team 2 review before commit", () => {
+    assert.ok(normalizedContract.includes("independent Team 2 architecture and security review"));
+    assert.ok(contract.includes("Team 1 must not approve its own work"));
+    assert.ok(contract.includes("No implementation"));
+    assert.ok(contract.includes("deployment is authorized"));
+  });
+});
