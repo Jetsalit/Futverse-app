@@ -162,18 +162,28 @@ test("Pro Club Invite / Claim / Membership Rules & Data Contract V1", async (t) 
     assert.ok(contract.includes("No Membership or Staff document may be created by a rejection transaction"));
   });
 
-  await t.test("preserves current Pro Club Rules as read-only baseline", () => {
+  await t.test("recognizes reviewed Slice 2B successor Rules", () => {
     const start = firestoreRules.indexOf("match /proClubs/{clubId}");
     const end = firestoreRules.indexOf("match /proPlayers/{proPlayerId}", start);
     assert.ok(start >= 0 && end > start);
     const rules = firestoreRules.slice(start, end);
-    assert.match(rules, /allow list, create, update, delete: if false;/);
-    assert.match(rules, /match \/members\/\{uid\}[\s\S]*allow list, create, update, delete: if false;/);
-    assert.match(rules, /match \/staff\/\{uid\}[\s\S]*allow list, create, update, delete: if false;/);
-    assert.match(contract, /does \*\*not\*\* modify `firestore\.rules`/);
-  });
 
-  await t.test("preserves existing runtime authority chain", () => {
+    assert.match(firestoreRules, /match \/proClubInvites\/\{inviteCode\}/);
+    assert.match(
+      rules,
+      /match \/members\/\{uid\}[\s\S]*allow create: if validProClubMembershipCreateV1\(clubId, uid\);/,
+    );
+    assert.match(
+      rules,
+      /match \/staff\/\{uid\}[\s\S]*allow create: if validProClubStaffCreateV1\(clubId, uid\);/,
+    );
+    assert.match(rules, /match \/onboardingClaims\/\{claimId\}/);
+    assert.match(rules, /match \/onboardingApprovals\/\{uid\}/);
+    assert.match(firestoreRules, /function validProClubApprovalProofCreateV1\(/);
+
+    // Historical Slice 2A remains immutable about its own docs/tests-only scope.
+    assert.match(contract, /does \*\*not\*\* modify `firestore\.rules`/);
+  });  await t.test("preserves existing runtime authority chain", () => {
     assert.match(readAdapter, /getProClubMembership/);
     assert.match(readAdapter, /getProClubStaffAssignment/);
     assert.match(readAdapter, /hasActiveProClubMembershipAuthority/);

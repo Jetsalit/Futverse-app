@@ -1231,13 +1231,1100 @@ service cloud.firestore {
       }
     }
 
-    // Pro Club Firestore Rules V1.
+    // Pro Club onboarding write helpers โ€” Slice 2B.
     //
-    // Relationship evidence is intentionally distinct from tenant authority.
-    // Exact own membership/staff documents remain readable so the application
-    // adapter can classify MISSING, INVALID_DATA, and lifecycle status.
-    // Presence of staff data alone never grants access to the club document.
-    // V1 exposes no collection listing and no client mutation path.
+    // Runtime authority remains the canonical active Membership document.
+    // Invite, claim, and approval-proof records are onboarding evidence only.
+    function validProClubInviteCodeV1(inviteCode) {
+      return inviteCode is string
+        && inviteCode.size() >= 31
+        && inviteCode.size() <= 55
+        && inviteCode.matches('^FUT-PC-[A-Z0-9]+$');
+    }
+
+    function validProClubStaffRoleV1(role) {
+      return role in [
+        'HEAD_COACH',
+        'ASSISTANT_COACH',
+        'FITNESS_COACH',
+        'ANALYST',
+        'PHYSIO',
+        'TEAM_MANAGER',
+        'STAFF'
+      ];
+    }
+
+    function validProClubDocumentForAuthorityV1(data) {
+      return data.keys().hasAll(['name', 'level', 'status'])
+        && data.keys().hasOnly([
+          'name',
+          'shortName',
+          'level',
+          'status',
+          'country',
+          'logoUrl',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.name is string
+        && data.name.size() > 0
+        && data.level in ['T1', 'T2', 'T3']
+        && data.status in ['ACTIVE', 'INACTIVE'];
+    }
+
+    function validProClubMembershipDataV1(data) {
+      return data.keys().hasAll(['authorizationRole', 'status'])
+        && data.keys().hasOnly(['authorizationRole', 'status'])
+        && data.authorizationRole in ['OWNER', 'ADMIN', 'MEMBER']
+        && data.status in ['ACTIVE', 'INACTIVE', 'LEFT', 'REVOKED'];
+    }
+
+    function validProClubStaffDataV1(data) {
+      return data.keys().hasAll(['staffRole', 'status'])
+        && data.keys().hasOnly(['staffRole', 'status'])
+        && validProClubStaffRoleV1(data.staffRole)
+        && data.status in ['ACTIVE', 'INACTIVE', 'LEFT'];
+    }
+
+    function isActiveProClubReviewerV1(clubId) {
+      return isSignedIn()
+        && exactDocumentId(clubId)
+        && proClubReviewerDocumentsExistV1(clubId)
+        && proClubReviewerDocumentsAreActiveV1(clubId);
+    }
+
+    function proClubReviewerDocumentsExistV1(clubId) {
+      return exists(
+          /databases/$(database)/documents/proClubs/$(clubId)
+        )
+        && exists(
+          /databases/$(database)/documents/proClubs/$(clubId)/members/$(request.auth.uid)
+        );
+    }
+
+    function proClubReviewerDocumentsAreActiveV1(clubId) {
+      let club = get(
+        /databases/$(database)/documents/proClubs/$(clubId)
+      ).data;
+      let reviewer = get(
+        /databases/$(database)/documents/proClubs/$(clubId)/members/$(request.auth.uid)
+      ).data;
+
+      return club.keys().hasOnly([
+          'name',
+          'shortName',
+          'level',
+          'status',
+          'country',
+          'logoUrl',
+          'createdAt',
+          'updatedAt'
+        ])
+        && club.get('name', '') is string
+        && club.get('name', '').size() > 0
+        && club.get('level', '') in ['T1', 'T2', 'T3']
+        && club.get('status', '') == 'ACTIVE'
+        && reviewer.keys().hasOnly([
+          'authorizationRole',
+          'status'
+        ])
+        && reviewer.get('status', '') == 'ACTIVE'
+        && reviewer.get('authorizationRole', '')
+          in ['OWNER', 'ADMIN'];
+    }
+    function validProClubInviteCoreV1(data, inviteCode) {
+      return data.get('schemaVersion', 0) == 1
+        && data.get('inviteCode', '') == inviteCode
+        && validProClubInviteCodeV1(inviteCode)
+        && exactDocumentId(data.get('clubId', ''))
+        && exactDocumentId(data.get('targetUid', ''))
+        && data.get('membershipAuthorizationRole', '') == 'MEMBER'
+        && validProClubStaffRoleV1(data.get('staffRole', ''))
+        && data.get('createdAt', null) is timestamp
+        && exactDocumentId(data.get('createdBy', ''))
+        && data.get('expiresAt', null) is timestamp
+        && data.get('updatedAt', null) is timestamp
+        && exactDocumentId(data.get('updatedBy', ''));
+    }
+
+    function validProClubActiveInviteDataV1(data, inviteCode) {
+      return data.keys().hasAll([
+          'schemaVersion',
+          'inviteCode',
+          'clubId',
+          'targetUid',
+          'membershipAuthorizationRole',
+          'staffRole',
+          'createdAt',
+          'createdBy',
+          'expiresAt',
+          'status',
+          'updatedAt',
+          'updatedBy'
+        ])
+        && data.keys().hasOnly([
+          'schemaVersion',
+          'inviteCode',
+          'clubId',
+          'targetUid',
+          'membershipAuthorizationRole',
+          'staffRole',
+          'createdAt',
+          'createdBy',
+          'expiresAt',
+          'status',
+          'updatedAt',
+          'updatedBy'
+        ])
+        && validProClubInviteCoreV1(data, inviteCode)
+        && data.status == 'ACTIVE';
+    }
+
+    function validProClubConsumedInviteDataV1(data, inviteCode) {
+      return data.keys().hasAll([
+          'schemaVersion',
+          'inviteCode',
+          'clubId',
+          'targetUid',
+          'membershipAuthorizationRole',
+          'staffRole',
+          'createdAt',
+          'createdBy',
+          'expiresAt',
+          'status',
+          'updatedAt',
+          'updatedBy',
+          'consumedAt',
+          'consumedBy',
+          'claimId'
+        ])
+        && data.keys().hasOnly([
+          'schemaVersion',
+          'inviteCode',
+          'clubId',
+          'targetUid',
+          'membershipAuthorizationRole',
+          'staffRole',
+          'createdAt',
+          'createdBy',
+          'expiresAt',
+          'status',
+          'updatedAt',
+          'updatedBy',
+          'consumedAt',
+          'consumedBy',
+          'claimId'
+        ])
+        && validProClubInviteCoreV1(data, inviteCode)
+        && data.status == 'CONSUMED'
+        && data.consumedAt is timestamp
+        && exactDocumentId(data.consumedBy)
+        && exactDocumentId(data.claimId);
+    }
+
+    function validProClubRevokedInviteDataV1(data, inviteCode) {
+      return data.keys().hasAll([
+          'schemaVersion',
+          'inviteCode',
+          'clubId',
+          'targetUid',
+          'membershipAuthorizationRole',
+          'staffRole',
+          'createdAt',
+          'createdBy',
+          'expiresAt',
+          'status',
+          'updatedAt',
+          'updatedBy',
+          'revokedAt',
+          'revokedBy'
+        ])
+        && data.keys().hasOnly([
+          'schemaVersion',
+          'inviteCode',
+          'clubId',
+          'targetUid',
+          'membershipAuthorizationRole',
+          'staffRole',
+          'createdAt',
+          'createdBy',
+          'expiresAt',
+          'status',
+          'updatedAt',
+          'updatedBy',
+          'revokedAt',
+          'revokedBy'
+        ])
+        && validProClubInviteCoreV1(data, inviteCode)
+        && data.status == 'REVOKED'
+        && data.revokedAt is timestamp
+        && exactDocumentId(data.revokedBy);
+    }
+
+    function proClubInviteIdentityUnchangedV1() {
+      return request.resource.data.get('schemaVersion', 0)
+          == resource.data.get('schemaVersion', 0)
+        && request.resource.data.get('inviteCode', '')
+          == resource.data.get('inviteCode', '')
+        && request.resource.data.get('clubId', '')
+          == resource.data.get('clubId', '')
+        && request.resource.data.get('targetUid', '')
+          == resource.data.get('targetUid', '')
+        && request.resource.data.get('membershipAuthorizationRole', '')
+          == resource.data.get('membershipAuthorizationRole', '')
+        && request.resource.data.get('staffRole', '')
+          == resource.data.get('staffRole', '')
+        && request.resource.data.get('createdAt', null)
+          == resource.data.get('createdAt', null)
+        && request.resource.data.get('createdBy', '')
+          == resource.data.get('createdBy', '')
+        && request.resource.data.get('expiresAt', null)
+          == resource.data.get('expiresAt', null);
+    }
+
+    function validProClubInviteCreateV1(inviteCode) {
+      let data = request.resource.data;
+      let clubId = data.get('clubId', '');
+      let targetUid = data.get('targetUid', '');
+
+      return isSignedIn()
+        && exactDocumentId(clubId)
+        && exactDocumentId(targetUid)
+        && validProClubInviteCodeV1(inviteCode)
+        && data.get('inviteCode', '') == inviteCode
+        && isActiveProClubReviewerV1(clubId)
+        && userExists(targetUid)
+        && data.keys().hasOnly([
+          'schemaVersion',
+          'inviteCode',
+          'clubId',
+          'targetUid',
+          'membershipAuthorizationRole',
+          'staffRole',
+          'createdAt',
+          'createdBy',
+          'expiresAt',
+          'status',
+          'updatedAt',
+          'updatedBy'
+        ])
+        && data.get('schemaVersion', 0) == 1
+        && data.get('membershipAuthorizationRole', '') == 'MEMBER'
+        && validProClubStaffRoleV1(data.get('staffRole', ''))
+        && data.get('status', '') == 'ACTIVE'
+        && data.get('createdAt', null) is timestamp
+        && data.get('createdAt', null) == request.time
+        && data.get('createdBy', '') == request.auth.uid
+        && data.get('updatedAt', null) is timestamp
+        && data.get('updatedAt', null) == request.time
+        && data.get('updatedBy', '') == request.auth.uid
+        && data.get('expiresAt', null) is timestamp
+        && data.get('expiresAt', null) > request.time
+        && data.get('expiresAt', null)
+          <= request.time + duration.value(7, 'd')
+        && !exists(
+          /databases/$(database)/documents/proClubs/$(clubId)/members/$(targetUid)
+        )
+        && !exists(
+          /databases/$(database)/documents/proClubs/$(clubId)/staff/$(targetUid)
+        )
+        && !exists(
+          /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(targetUid)
+        )
+        && !exists(
+          /databases/$(database)/documents/proClubs/$(clubId)/onboardingClaims/$(targetUid + '_PRO_CLUB_' + inviteCode)
+        );
+    }
+    function validProClubPendingClaimDataV1(data, clubId, claimId) {
+      return data.keys().hasAll([
+          'schemaVersion',
+          'type',
+          'userId',
+          'clubId',
+          'inviteCode',
+          'membershipAuthorizationRole',
+          'staffRole',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'schemaVersion',
+          'type',
+          'userId',
+          'clubId',
+          'inviteCode',
+          'membershipAuthorizationRole',
+          'staffRole',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.schemaVersion == 1
+        && data.type == 'PRO_CLUB_STAFF_JOIN'
+        && exactDocumentId(data.userId)
+        && data.clubId == clubId
+        && validProClubInviteCodeV1(data.inviteCode)
+        && data.membershipAuthorizationRole == 'MEMBER'
+        && validProClubStaffRoleV1(data.staffRole)
+        && data.status == 'PENDING'
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && claimId == data.userId + '_PRO_CLUB_' + data.inviteCode;
+    }
+
+    function validProClubApprovedClaimDataV1(data, clubId, claimId) {
+      return data.keys().hasAll([
+          'schemaVersion',
+          'type',
+          'userId',
+          'clubId',
+          'inviteCode',
+          'membershipAuthorizationRole',
+          'staffRole',
+          'status',
+          'createdAt',
+          'updatedAt',
+          'approvedAt',
+          'approvedBy'
+        ])
+        && data.keys().hasOnly([
+          'schemaVersion',
+          'type',
+          'userId',
+          'clubId',
+          'inviteCode',
+          'membershipAuthorizationRole',
+          'staffRole',
+          'status',
+          'createdAt',
+          'updatedAt',
+          'approvedAt',
+          'approvedBy'
+        ])
+        && data.schemaVersion == 1
+        && data.type == 'PRO_CLUB_STAFF_JOIN'
+        && exactDocumentId(data.userId)
+        && data.clubId == clubId
+        && validProClubInviteCodeV1(data.inviteCode)
+        && data.membershipAuthorizationRole == 'MEMBER'
+        && validProClubStaffRoleV1(data.staffRole)
+        && data.status == 'APPROVED'
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && data.approvedAt is timestamp
+        && exactDocumentId(data.approvedBy)
+        && claimId == data.userId + '_PRO_CLUB_' + data.inviteCode;
+    }
+
+    function validProClubRejectedClaimDataV1(data, clubId, claimId) {
+      return data.keys().hasAll([
+          'schemaVersion',
+          'type',
+          'userId',
+          'clubId',
+          'inviteCode',
+          'membershipAuthorizationRole',
+          'staffRole',
+          'status',
+          'createdAt',
+          'updatedAt',
+          'rejectedAt',
+          'rejectedBy'
+        ])
+        && data.keys().hasOnly([
+          'schemaVersion',
+          'type',
+          'userId',
+          'clubId',
+          'inviteCode',
+          'membershipAuthorizationRole',
+          'staffRole',
+          'status',
+          'createdAt',
+          'updatedAt',
+          'rejectedAt',
+          'rejectedBy'
+        ])
+        && data.schemaVersion == 1
+        && data.type == 'PRO_CLUB_STAFF_JOIN'
+        && exactDocumentId(data.userId)
+        && data.clubId == clubId
+        && validProClubInviteCodeV1(data.inviteCode)
+        && data.membershipAuthorizationRole == 'MEMBER'
+        && validProClubStaffRoleV1(data.staffRole)
+        && data.status == 'REJECTED'
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && data.rejectedAt is timestamp
+        && exactDocumentId(data.rejectedBy)
+        && claimId == data.userId + '_PRO_CLUB_' + data.inviteCode;
+    }
+
+    function proClubClaimIdentityUnchangedV1() {
+      return request.resource.data.get('schemaVersion', 0)
+          == resource.data.get('schemaVersion', 0)
+        && request.resource.data.get('type', '')
+          == resource.data.get('type', '')
+        && request.resource.data.get('userId', '')
+          == resource.data.get('userId', '')
+        && request.resource.data.get('clubId', '')
+          == resource.data.get('clubId', '')
+        && request.resource.data.get('inviteCode', '')
+          == resource.data.get('inviteCode', '')
+        && request.resource.data.get('membershipAuthorizationRole', '')
+          == resource.data.get('membershipAuthorizationRole', '')
+        && request.resource.data.get('staffRole', '')
+          == resource.data.get('staffRole', '')
+        && request.resource.data.get('createdAt', null)
+          == resource.data.get('createdAt', null);
+    }
+
+    function validProClubApprovalProofDataV1(data, clubId, uid) {
+      return data.keys().hasAll([
+          'schemaVersion',
+          'userId',
+          'clubId',
+          'claimId',
+          'inviteCode',
+          'membershipAuthorizationRole',
+          'staffRole',
+          'status',
+          'approvedAt',
+          'approvedBy'
+        ])
+        && data.keys().hasOnly([
+          'schemaVersion',
+          'userId',
+          'clubId',
+          'claimId',
+          'inviteCode',
+          'membershipAuthorizationRole',
+          'staffRole',
+          'status',
+          'approvedAt',
+          'approvedBy'
+        ])
+        && data.schemaVersion == 1
+        && data.userId == uid
+        && data.clubId == clubId
+        && exactDocumentId(data.claimId)
+        && validProClubInviteCodeV1(data.inviteCode)
+        && data.membershipAuthorizationRole == 'MEMBER'
+        && validProClubStaffRoleV1(data.staffRole)
+        && data.status == 'APPROVED'
+        && data.approvedAt is timestamp
+        && exactDocumentId(data.approvedBy)
+        && data.claimId == uid + '_PRO_CLUB_' + data.inviteCode;
+    }
+
+    function freshProClubApprovalProofForUidV1(clubId, uid) {
+      let proofPath =
+        /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(uid);
+
+      return isSignedIn()
+        && !exists(proofPath)
+        && existsAfter(proofPath)
+        && freshProClubApprovalProofAfterV1(clubId, uid);
+    }
+
+    function freshProClubApprovalProofAfterV1(clubId, uid) {
+      let proof = getAfter(
+        /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(uid)
+      ).data;
+
+      return proof.get('schemaVersion', 0) == 1
+        && proof.get('userId', '') == uid
+        && proof.get('clubId', '') == clubId
+        && proof.get('membershipAuthorizationRole', '') == 'MEMBER'
+        && proof.get('status', '') == 'APPROVED'
+        && proof.get('approvedAt', null) == request.time
+        && proof.get('approvedBy', '') == request.auth.uid;
+    }
+    function validProClubClaimCreateV1(clubId, claimId) {
+      let data = request.resource.data;
+      let uid = data.get('userId', '');
+      let inviteCode = data.get('inviteCode', '');
+
+      return isSignedIn()
+        && uid == request.auth.uid
+        && exactDocumentId(clubId)
+        && exactDocumentId(uid)
+        && validProClubInviteCodeV1(inviteCode)
+        && claimId == uid + '_PRO_CLUB_' + inviteCode
+        && data.keys().hasOnly([
+          'schemaVersion',
+          'type',
+          'userId',
+          'clubId',
+          'inviteCode',
+          'membershipAuthorizationRole',
+          'staffRole',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.get('schemaVersion', 0) == 1
+        && data.get('type', '') == 'PRO_CLUB_STAFF_JOIN'
+        && data.get('clubId', '') == clubId
+        && data.get('membershipAuthorizationRole', '') == 'MEMBER'
+        && validProClubStaffRoleV1(data.get('staffRole', ''))
+        && data.get('status', '') == 'PENDING'
+        && data.get('createdAt', null) is timestamp
+        && data.get('createdAt', null) == request.time
+        && data.get('updatedAt', null) is timestamp
+        && data.get('updatedAt', null) == request.time
+        && exists(
+          /databases/$(database)/documents/proClubInvites/$(inviteCode)
+        )
+        && validProClubClaimInviteEvidenceV1(
+          inviteCode,
+          clubId,
+          uid,
+          data.get('staffRole', '')
+        )
+        && !exists(
+          /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)
+        )
+        && !exists(
+          /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)
+        )
+        && !exists(
+          /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(uid)
+        );
+    }
+
+    function validProClubClaimInviteEvidenceV1(
+      inviteCode,
+      clubId,
+      uid,
+      staffRole
+    ) {
+      let invite = get(
+        /databases/$(database)/documents/proClubInvites/$(inviteCode)
+      ).data;
+
+      return invite.keys().hasOnly([
+          'schemaVersion',
+          'inviteCode',
+          'clubId',
+          'targetUid',
+          'membershipAuthorizationRole',
+          'staffRole',
+          'createdAt',
+          'createdBy',
+          'expiresAt',
+          'status',
+          'updatedAt',
+          'updatedBy'
+        ])
+        && invite.get('schemaVersion', 0) == 1
+        && invite.get('inviteCode', '') == inviteCode
+        && invite.get('clubId', '') == clubId
+        && invite.get('targetUid', '') == uid
+        && invite.get('membershipAuthorizationRole', '') == 'MEMBER'
+        && invite.get('staffRole', '') == staffRole
+        && invite.get('status', '') == 'ACTIVE'
+        && invite.get('expiresAt', null) is timestamp
+        && invite.get('expiresAt', null) > request.time;
+    }
+    function validProClubClaimApprovalV1(clubId, claimId) {
+      let data = request.resource.data;
+      let uid = resource.data.get('userId', '');
+      let inviteCode = resource.data.get('inviteCode', '');
+
+      return isSignedIn()
+        && resource.data.keys().hasOnly([
+          'schemaVersion',
+          'type',
+          'userId',
+          'clubId',
+          'inviteCode',
+          'membershipAuthorizationRole',
+          'staffRole',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && resource.data.get('schemaVersion', 0) == 1
+        && resource.data.get('type', '') == 'PRO_CLUB_STAFF_JOIN'
+        && resource.data.get('clubId', '') == clubId
+        && exactDocumentId(uid)
+        && validProClubInviteCodeV1(inviteCode)
+        && claimId == uid + '_PRO_CLUB_' + inviteCode
+        && resource.data.get('membershipAuthorizationRole', '') == 'MEMBER'
+        && validProClubStaffRoleV1(resource.data.get('staffRole', ''))
+        && resource.data.get('status', '') == 'PENDING'
+        && data.get('status', '') == 'APPROVED'
+        && data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'approvedAt',
+          'approvedBy',
+          'updatedAt'
+        ])
+        && data.get('approvedAt', null) == request.time
+        && data.get('approvedBy', '') == request.auth.uid
+        && data.get('updatedAt', null) == request.time
+        && freshProClubApprovalProofForUidV1(clubId, uid)
+        && validProClubClaimApprovalProofAfterV1(
+          clubId,
+          uid,
+          claimId,
+          inviteCode,
+          resource.data.get('staffRole', '')
+        );
+    }
+
+    function validProClubClaimApprovalProofAfterV1(
+      clubId,
+      uid,
+      claimId,
+      inviteCode,
+      staffRole
+    ) {
+      let proofPath =
+        /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(uid);
+
+      return existsAfter(proofPath)
+        && getAfter(proofPath).data.get('claimId', '') == claimId
+        && getAfter(proofPath).data.get('inviteCode', '') == inviteCode
+        && getAfter(proofPath).data.get('staffRole', '') == staffRole;
+    }
+    function validProClubClaimRejectionV1(clubId, claimId) {
+      let data = request.resource.data;
+      let uid = resource.data.get('userId', '');
+      let inviteCode = resource.data.get('inviteCode', '');
+
+      return isSignedIn()
+        && resource.data.keys().hasOnly([
+          'schemaVersion',
+          'type',
+          'userId',
+          'clubId',
+          'inviteCode',
+          'membershipAuthorizationRole',
+          'staffRole',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && resource.data.get('schemaVersion', 0) == 1
+        && resource.data.get('type', '') == 'PRO_CLUB_STAFF_JOIN'
+        && resource.data.get('clubId', '') == clubId
+        && exactDocumentId(uid)
+        && validProClubInviteCodeV1(inviteCode)
+        && claimId == uid + '_PRO_CLUB_' + inviteCode
+        && resource.data.get('membershipAuthorizationRole', '') == 'MEMBER'
+        && validProClubStaffRoleV1(resource.data.get('staffRole', ''))
+        && resource.data.get('status', '') == 'PENDING'
+        && data.get('status', '') == 'REJECTED'
+        && data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'rejectedAt',
+          'rejectedBy',
+          'updatedAt'
+        ])
+        && data.get('rejectedAt', null) == request.time
+        && data.get('rejectedBy', '') == request.auth.uid
+        && data.get('updatedAt', null) == request.time
+        && existsAfter(
+          /databases/$(database)/documents/proClubInvites/$(inviteCode)
+        )
+        && validProClubRejectedInviteAfterV1(
+          inviteCode,
+          clubId,
+          uid,
+          resource.data.get('staffRole', '')
+        )
+        && !existsAfter(
+          /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)
+        )
+        && !existsAfter(
+          /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)
+        )
+        && !existsAfter(
+          /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(uid)
+        );
+    }
+
+    function validProClubRejectedInviteAfterV1(
+      inviteCode,
+      clubId,
+      uid,
+      staffRole
+    ) {
+      let invite = getAfter(
+        /databases/$(database)/documents/proClubInvites/$(inviteCode)
+      ).data;
+
+      return invite.get('status', '') == 'REVOKED'
+        && invite.get('inviteCode', '') == inviteCode
+        && invite.get('clubId', '') == clubId
+        && invite.get('targetUid', '') == uid
+        && invite.get('membershipAuthorizationRole', '') == 'MEMBER'
+        && invite.get('staffRole', '') == staffRole
+        && invite.get('revokedAt', null) == request.time
+        && invite.get('revokedBy', '') == request.auth.uid
+        && invite.get('updatedAt', null) == request.time
+        && invite.get('updatedBy', '') == request.auth.uid;
+    }
+    function validProClubApprovalProofCreateV1(clubId, uid) {
+      let proof = request.resource.data;
+      let inviteCode = proof.get('inviteCode', '');
+      let claimId = proof.get('claimId', '');
+
+      return isSignedIn()
+        && exactDocumentId(clubId)
+        && exactDocumentId(uid)
+        && validProClubInviteCodeV1(inviteCode)
+        && claimId == uid + '_PRO_CLUB_' + inviteCode
+        && proof.keys().hasOnly([
+          'schemaVersion',
+          'userId',
+          'clubId',
+          'claimId',
+          'inviteCode',
+          'membershipAuthorizationRole',
+          'staffRole',
+          'status',
+          'approvedAt',
+          'approvedBy'
+        ])
+        && proof.get('schemaVersion', 0) == 1
+        && proof.get('userId', '') == uid
+        && proof.get('clubId', '') == clubId
+        && proof.get('membershipAuthorizationRole', '') == 'MEMBER'
+        && validProClubStaffRoleV1(proof.get('staffRole', ''))
+        && proof.get('status', '') == 'APPROVED'
+        && proof.get('approvedAt', null) == request.time
+        && proof.get('approvedBy', '') == request.auth.uid
+        && isActiveProClubReviewerV1(clubId)
+        && validProClubApprovalEvidenceAfterV1(
+          clubId,
+          uid,
+          claimId,
+          inviteCode,
+          proof.get('staffRole', '')
+        );
+    }
+
+    function validProClubApprovalEvidenceAfterV1(
+      clubId,
+      uid,
+      claimId,
+      inviteCode,
+      staffRole
+    ) {
+      let claimPath =
+        /databases/$(database)/documents/proClubs/$(clubId)/onboardingClaims/$(claimId);
+      let invitePath =
+        /databases/$(database)/documents/proClubInvites/$(inviteCode);
+      let membershipPath =
+        /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid);
+      let staffPath =
+        /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid);
+
+      return existsAfter(claimPath)
+        && existsAfter(invitePath)
+        && existsAfter(membershipPath)
+        && existsAfter(staffPath)
+        && validProClubApprovalDocumentsAfterV1(
+          clubId,
+          uid,
+          claimId,
+          inviteCode,
+          staffRole
+        );
+    }
+
+    function validProClubApprovalDocumentsAfterV1(
+      clubId,
+      uid,
+      claimId,
+      inviteCode,
+      staffRole
+    ) {
+      let claim = getAfter(
+        /databases/$(database)/documents/proClubs/$(clubId)/onboardingClaims/$(claimId)
+      ).data;
+      let invite = getAfter(
+        /databases/$(database)/documents/proClubInvites/$(inviteCode)
+      ).data;
+      let membership = getAfter(
+        /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)
+      ).data;
+      let staff = getAfter(
+        /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)
+      ).data;
+
+      return claim.get('status', '') == 'APPROVED'
+        && claim.get('userId', '') == uid
+        && claim.get('clubId', '') == clubId
+        && claim.get('inviteCode', '') == inviteCode
+        && claim.get('membershipAuthorizationRole', '') == 'MEMBER'
+        && claim.get('staffRole', '') == staffRole
+        && claim.get('approvedAt', null) == request.time
+        && claim.get('approvedBy', '') == request.auth.uid
+        && claim.get('updatedAt', null) == request.time
+        && invite.get('status', '') == 'CONSUMED'
+        && invite.get('inviteCode', '') == inviteCode
+        && invite.get('clubId', '') == clubId
+        && invite.get('targetUid', '') == uid
+        && invite.get('membershipAuthorizationRole', '') == 'MEMBER'
+        && invite.get('staffRole', '') == staffRole
+        && invite.get('claimId', '') == claimId
+        && invite.get('consumedAt', null) == request.time
+        && invite.get('consumedBy', '') == request.auth.uid
+        && invite.get('updatedAt', null) == request.time
+        && invite.get('updatedBy', '') == request.auth.uid
+        && membership.keys().hasOnly([
+          'authorizationRole',
+          'status'
+        ])
+        && membership.get('authorizationRole', '') == 'MEMBER'
+        && membership.get('status', '') == 'ACTIVE'
+        && staff.keys().hasOnly([
+          'staffRole',
+          'status'
+        ])
+        && staff.get('staffRole', '') == staffRole
+        && staff.get('status', '') == 'ACTIVE';
+    }
+    function validProClubMembershipCreateV1(clubId, uid) {
+      return isSignedIn()
+        && request.resource.data.keys().hasOnly([
+          'authorizationRole',
+          'status'
+        ])
+        && request.resource.data.get('authorizationRole', '') == 'MEMBER'
+        && request.resource.data.get('status', '') == 'ACTIVE'
+        && freshProClubApprovalProofForUidV1(clubId, uid);
+    }
+    function validProClubStaffCreateV1(clubId, uid) {
+      return isSignedIn()
+        && request.resource.data.keys().hasOnly([
+          'staffRole',
+          'status'
+        ])
+        && validProClubStaffRoleV1(
+          request.resource.data.get('staffRole', '')
+        )
+        && request.resource.data.get('status', '') == 'ACTIVE'
+        && freshProClubApprovalProofForUidV1(clubId, uid)
+        && validProClubStaffProofAfterV1(
+          clubId,
+          uid,
+          request.resource.data.get('staffRole', '')
+        );
+    }
+
+    function validProClubStaffProofAfterV1(
+      clubId,
+      uid,
+      staffRole
+    ) {
+      let proofPath =
+        /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(uid);
+
+      return existsAfter(proofPath)
+        && getAfter(proofPath).data.get('staffRole', '') == staffRole;
+    }
+    function validProClubInviteConsumptionV1(inviteCode) {
+      let data = request.resource.data;
+      let clubId = resource.data.get('clubId', '');
+      let uid = resource.data.get('targetUid', '');
+      let claimId = data.get('claimId', '');
+
+      return isSignedIn()
+        && resource.data.keys().hasOnly([
+          'schemaVersion',
+          'inviteCode',
+          'clubId',
+          'targetUid',
+          'membershipAuthorizationRole',
+          'staffRole',
+          'createdAt',
+          'createdBy',
+          'expiresAt',
+          'status',
+          'updatedAt',
+          'updatedBy'
+        ])
+        && resource.data.get('schemaVersion', 0) == 1
+        && resource.data.get('inviteCode', '') == inviteCode
+        && exactDocumentId(clubId)
+        && exactDocumentId(uid)
+        && resource.data.get('membershipAuthorizationRole', '') == 'MEMBER'
+        && validProClubStaffRoleV1(resource.data.get('staffRole', ''))
+        && resource.data.get('status', '') == 'ACTIVE'
+        && resource.data.get('expiresAt', null) is timestamp
+        && resource.data.get('expiresAt', null) > request.time
+        && data.get('status', '') == 'CONSUMED'
+        && data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'consumedAt',
+          'consumedBy',
+          'claimId',
+          'updatedAt',
+          'updatedBy'
+        ])
+        && claimId == uid + '_PRO_CLUB_' + inviteCode
+        && data.get('consumedAt', null) == request.time
+        && data.get('consumedBy', '') == request.auth.uid
+        && data.get('updatedAt', null) == request.time
+        && data.get('updatedBy', '') == request.auth.uid
+        && freshProClubApprovalProofForUidV1(clubId, uid)
+        && validProClubConsumedInviteProofAfterV1(
+          clubId,
+          uid,
+          claimId,
+          inviteCode,
+          resource.data.get('staffRole', '')
+        );
+    }
+
+    function validProClubConsumedInviteProofAfterV1(
+      clubId,
+      uid,
+      claimId,
+      inviteCode,
+      staffRole
+    ) {
+      let proofPath =
+        /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(uid);
+
+      return existsAfter(proofPath)
+        && getAfter(proofPath).data.get('claimId', '') == claimId
+        && getAfter(proofPath).data.get('inviteCode', '') == inviteCode
+        && getAfter(proofPath).data.get('staffRole', '') == staffRole;
+    }
+    function validProClubInviteRevocationV1(inviteCode) {
+      let data = request.resource.data;
+      let clubId = resource.data.get('clubId', '');
+      let uid = resource.data.get('targetUid', '');
+      let claimId = uid + '_PRO_CLUB_' + inviteCode;
+
+      return isSignedIn()
+        && resource.data.keys().hasOnly([
+          'schemaVersion',
+          'inviteCode',
+          'clubId',
+          'targetUid',
+          'membershipAuthorizationRole',
+          'staffRole',
+          'createdAt',
+          'createdBy',
+          'expiresAt',
+          'status',
+          'updatedAt',
+          'updatedBy'
+        ])
+        && resource.data.get('schemaVersion', 0) == 1
+        && resource.data.get('inviteCode', '') == inviteCode
+        && exactDocumentId(clubId)
+        && exactDocumentId(uid)
+        && resource.data.get('membershipAuthorizationRole', '') == 'MEMBER'
+        && validProClubStaffRoleV1(resource.data.get('staffRole', ''))
+        && resource.data.get('status', '') == 'ACTIVE'
+        && data.get('status', '') == 'REVOKED'
+        && data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'revokedAt',
+          'revokedBy',
+          'updatedAt',
+          'updatedBy'
+        ])
+        && data.get('revokedAt', null) == request.time
+        && data.get('revokedBy', '') == request.auth.uid
+        && data.get('updatedAt', null) == request.time
+        && data.get('updatedBy', '') == request.auth.uid
+        && isActiveProClubReviewerV1(clubId)
+        && validProClubRevocationClaimStateV1(
+          clubId,
+          uid,
+          claimId,
+          inviteCode,
+          resource.data.get('staffRole', '')
+        );
+    }
+
+    function validProClubRevocationClaimStateV1(
+      clubId,
+      uid,
+      claimId,
+      inviteCode,
+      staffRole
+    ) {
+      let claimPath =
+        /databases/$(database)/documents/proClubs/$(clubId)/onboardingClaims/$(claimId);
+
+      return !exists(claimPath)
+        || (
+          existsAfter(claimPath)
+          && validProClubRejectedClaimAfterV1(
+            clubId,
+            uid,
+            claimId,
+            inviteCode,
+            staffRole
+          )
+        );
+    }
+
+    function validProClubRejectedClaimAfterV1(
+      clubId,
+      uid,
+      claimId,
+      inviteCode,
+      staffRole
+    ) {
+      let claim = getAfter(
+        /databases/$(database)/documents/proClubs/$(clubId)/onboardingClaims/$(claimId)
+      ).data;
+
+      return claim.get('status', '') == 'REJECTED'
+        && claim.get('userId', '') == uid
+        && claim.get('clubId', '') == clubId
+        && claim.get('inviteCode', '') == inviteCode
+        && claim.get('membershipAuthorizationRole', '') == 'MEMBER'
+        && claim.get('staffRole', '') == staffRole
+        && claim.get('rejectedAt', null) == request.time
+        && claim.get('rejectedBy', '') == request.auth.uid
+        && claim.get('updatedAt', null) == request.time;
+    }
+    match /proClubInvites/{inviteCode} {
+      allow get: if isSignedIn()
+        && (
+          (
+            validProClubActiveInviteDataV1(resource.data, inviteCode)
+            && resource.data.targetUid == request.auth.uid
+            && resource.data.expiresAt > request.time
+          )
+          || isActiveProClubReviewerV1(
+            resource.data.get('clubId', '')
+          )
+        );
+      allow list: if false;
+      allow create: if validProClubInviteCreateV1(inviteCode);
+      allow update: if resource != null
+        && (
+          (
+            request.resource.data.get('status', '') == 'CONSUMED'
+            && validProClubInviteConsumptionV1(inviteCode)
+          )
+          || (
+            request.resource.data.get('status', '') == 'REVOKED'
+            && validProClubInviteRevocationV1(inviteCode)
+          )
+        );
+      allow delete: if false;
+    }
+
+    // Pro Club Firestore Rules V1 + Onboarding Slice 2B.
+    //
+    // Relationship evidence remains distinct from tenant authority. Exact own
+    // Membership/Staff reads are preserved for runtime classification. Client
+    // writes are opened only for the reviewed invite/claim approval lifecycle.
     match /proClubs/{clubId} {
       allow get: if isSignedIn()
         && exists(
@@ -1249,15 +2336,50 @@ service cloud.firestore {
       match /members/{uid} {
         allow get: if isSignedIn()
           && request.auth.uid == uid;
-
-        allow list, create, update, delete: if false;
+        allow list: if false;
+        allow create: if validProClubMembershipCreateV1(clubId, uid);
+        allow update, delete: if false;
       }
 
       match /staff/{uid} {
         allow get: if isSignedIn()
           && request.auth.uid == uid;
+        allow list: if false;
+        allow create: if validProClubStaffCreateV1(clubId, uid);
+        allow update, delete: if false;
+      }
 
-        allow list, create, update, delete: if false;
+      match /onboardingClaims/{claimId} {
+        allow get: if isSignedIn()
+          && (
+            resource.data.get('userId', '') == request.auth.uid
+            || isActiveProClubReviewerV1(clubId)
+          );
+        allow list: if false;
+        allow create: if validProClubClaimCreateV1(clubId, claimId);
+        allow update: if resource != null
+          && (
+            (
+              request.resource.data.get('status', '') == 'APPROVED'
+              && validProClubClaimApprovalV1(clubId, claimId)
+            )
+            || (
+              request.resource.data.get('status', '') == 'REJECTED'
+              && validProClubClaimRejectionV1(clubId, claimId)
+            )
+          );
+        allow delete: if false;
+      }
+
+      match /onboardingApprovals/{uid} {
+        allow get: if isSignedIn()
+          && (
+            request.auth.uid == uid
+            || isActiveProClubReviewerV1(clubId)
+          );
+        allow list: if false;
+        allow create: if validProClubApprovalProofCreateV1(clubId, uid);
+        allow update, delete: if false;
       }
 
       match /{document=**} {
