@@ -170,7 +170,7 @@ test("Pro Club Invite / Claim / Membership Rules & Data Contract V1", async (t) 
     assert.match(rules, /allow list, create, update, delete: if false;/);
     assert.match(rules, /match \/members\/\{uid\}[\s\S]*allow list, create, update, delete: if false;/);
     assert.match(rules, /match \/staff\/\{uid\}[\s\S]*allow list, create, update, delete: if false;/);
-    assert.ok(contract.includes("does not modify `firestore.rules`"));
+    assert.match(contract, /does \*\*not\*\* modify `firestore\.rules`/);
   });
 
   await t.test("preserves existing runtime authority chain", () => {
