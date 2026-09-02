@@ -303,9 +303,9 @@ test(
         /<AcademyProvider>/,
       );
 
-      assert.doesNotMatch(
+      assert.match(
         mainSource,
-        /OrganizationRuntimeProvider|OrganizationProvider/,
+        /<OrganizationRuntimeProvider>/,
       );
 
       assert.ok(

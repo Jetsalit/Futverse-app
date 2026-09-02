@@ -4,6 +4,7 @@ import SupportAwareRoot from "./SupportAwareRoot.tsx";
 import "./index.css";
 import { LanguageProvider } from "./contexts/LanguageContext";
 import { AuthProvider } from "./contexts/AuthContext";
+import { OrganizationRuntimeProvider } from "./contexts/OrganizationRuntimeContext";
 import { SuperAdminSupportProvider } from "./contexts/SuperAdminSupportContext";
 import { SuperAdminNonStaffSupportProvider } from "./contexts/SuperAdminNonStaffSupportContext";
 import { SupportPresentedUserBridge } from "./contexts/SupportPresentedUserBridge";
@@ -30,17 +31,19 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary>
       <AuthProvider>
-        <SuperAdminSupportProvider>
-          <SuperAdminNonStaffSupportProvider>
-            <SupportPresentedUserBridge>
-              <AcademyProvider>
-                <LanguageProvider>
-                  <SupportAwareRoot />
-                </LanguageProvider>
-              </AcademyProvider>
-            </SupportPresentedUserBridge>
-          </SuperAdminNonStaffSupportProvider>
-        </SuperAdminSupportProvider>
+        <OrganizationRuntimeProvider>
+          <SuperAdminSupportProvider>
+            <SuperAdminNonStaffSupportProvider>
+              <SupportPresentedUserBridge>
+                <AcademyProvider>
+                  <LanguageProvider>
+                    <SupportAwareRoot />
+                  </LanguageProvider>
+                </AcademyProvider>
+              </SupportPresentedUserBridge>
+            </SuperAdminNonStaffSupportProvider>
+          </SuperAdminSupportProvider>
+        </OrganizationRuntimeProvider>
       </AuthProvider>
     </ErrorBoundary>
   </StrictMode>,
