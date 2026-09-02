@@ -2,6 +2,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import {
+  applyOrganizationResolution,
+  beginOrganizationResolution,
+  bindOrganizationRuntimeUid,
+  createOrganizationResolutionResult,
+  createOrganizationRuntime,
+  getOrganizationResolutionRequest,
+  isOrganizationRuntimeAuthorized,
+  selectOrganization,
+} from "../src/lib/organizationRuntimeSelection.ts";
+
 const read = (path: string) =>
   readFileSync(path, "utf8").replace(/\r\n?/g, "\n");
 
@@ -43,6 +54,116 @@ const assertProviderSuccessionState = (
 
   assert.equal(selectionCount, 1);
   assert.equal(proClubCount, 1);
+};
+
+type LifecycleValue = "UNSELECTED" | "AUTHORIZED";
+
+interface LifecycleSnapshot {
+  readonly actorUid: string | null;
+  readonly value: LifecycleValue;
+}
+
+interface CapturedLifecycle {
+  readonly token: number;
+  publish(value: LifecycleValue): boolean;
+  cleanup(): void;
+}
+
+const createAuthLifecycleOracle = (enforceSuccessionGuard = true) => {
+  let currentToken = 0;
+  let currentActorUid: string | null = null;
+  let currentLifecycle: CapturedLifecycle | null = null;
+  let snapshot: LifecycleSnapshot = Object.freeze({
+    actorUid: null,
+    value: "UNSELECTED",
+  });
+
+  const transition = (nextActorUid: string | null): CapturedLifecycle => {
+    if (
+      currentLifecycle !== null &&
+      currentActorUid === nextActorUid
+    ) {
+      return currentLifecycle;
+    }
+
+    currentToken += 1;
+    currentActorUid = nextActorUid;
+    snapshot = Object.freeze({
+      actorUid: nextActorUid,
+      value: "UNSELECTED",
+    });
+
+    const token = currentToken;
+    let active = true;
+
+    const lifecycle: CapturedLifecycle = Object.freeze({
+      token,
+      publish(value) {
+        if (
+          enforceSuccessionGuard &&
+          (
+            !active ||
+            nextActorUid === null ||
+            token !== currentToken ||
+            nextActorUid !== currentActorUid
+          )
+        ) {
+          return false;
+        }
+
+        snapshot = Object.freeze({ actorUid: nextActorUid, value });
+        return true;
+      },
+      cleanup() {
+        active = false;
+
+        if (token !== currentToken) return;
+
+        currentToken += 1;
+        currentActorUid = null;
+        currentLifecycle = null;
+        snapshot = Object.freeze({
+          actorUid: null,
+          value: "UNSELECTED",
+        });
+      },
+    });
+
+    currentLifecycle = lifecycle;
+    return lifecycle;
+  };
+
+  return {
+    read: (): LifecycleSnapshot => snapshot,
+    transition,
+  };
+};
+
+const runDelayedPredecessorScenario = (
+  enforceSuccessionGuard: boolean,
+) => {
+  const oracle = createAuthLifecycleOracle(enforceSuccessionGuard);
+  const predecessor = oracle.transition("uid-a");
+
+  assert.equal(predecessor.publish("AUTHORIZED"), true);
+
+  const successor = oracle.transition("uid-b");
+  const failClosedBeforeSuccessorPublish = oracle.read();
+
+  assert.deepEqual(failClosedBeforeSuccessorPublish, {
+    actorUid: "uid-b",
+    value: "UNSELECTED",
+  });
+  assert.equal(successor.publish("AUTHORIZED"), true);
+
+  const predecessorAccepted = predecessor.publish("AUTHORIZED");
+
+  return {
+    oracle,
+    predecessor,
+    predecessorAccepted,
+    successor,
+  };
 };
 
 test(
@@ -104,6 +225,154 @@ test(
           ),
         );
       }
+    });
+
+    await t.test("delayed predecessor callback cannot overwrite its successor", () => {
+      const {
+        oracle,
+        predecessor,
+        predecessorAccepted,
+        successor,
+      } = runDelayedPredecessorScenario(true);
+
+      assert.equal(predecessorAccepted, false);
+      assert.deepEqual(oracle.read(), {
+        actorUid: "uid-b",
+        value: "AUTHORIZED",
+      });
+
+      predecessor.cleanup();
+
+      assert.deepEqual(oracle.read(), {
+        actorUid: "uid-b",
+        value: "AUTHORIZED",
+      });
+      assert.equal(successor.publish("AUTHORIZED"), true);
+    });
+
+    await t.test("cleanup and sign-out invalidate captured predecessor callbacks", () => {
+      const cleanupOracle = createAuthLifecycleOracle();
+      const cleanedLifecycle = cleanupOracle.transition("uid-a");
+
+      cleanedLifecycle.cleanup();
+
+      assert.equal(cleanedLifecycle.publish("AUTHORIZED"), false);
+      assert.deepEqual(cleanupOracle.read(), {
+        actorUid: null,
+        value: "UNSELECTED",
+      });
+
+      const signOutOracle = createAuthLifecycleOracle();
+      const authenticatedLifecycle = signOutOracle.transition("uid-a");
+
+      assert.equal(authenticatedLifecycle.publish("AUTHORIZED"), true);
+      signOutOracle.transition(null);
+
+      assert.deepEqual(signOutOracle.read(), {
+        actorUid: null,
+        value: "UNSELECTED",
+      });
+      assert.equal(authenticatedLifecycle.publish("AUTHORIZED"), false);
+      assert.deepEqual(signOutOracle.read(), {
+        actorUid: null,
+        value: "UNSELECTED",
+      });
+    });
+
+    await t.test("same UID refresh preserves the active lifecycle and state", () => {
+      const oracle = createAuthLifecycleOracle();
+      const firstLifecycle = oracle.transition("uid-a");
+
+      assert.equal(firstLifecycle.publish("AUTHORIZED"), true);
+
+      const refreshedLifecycle = oracle.transition("uid-a");
+
+      assert.equal(refreshedLifecycle, firstLifecycle);
+      assert.equal(refreshedLifecycle.token, firstLifecycle.token);
+      assert.deepEqual(oracle.read(), {
+        actorUid: "uid-a",
+        value: "AUTHORIZED",
+      });
+    });
+
+    await t.test("guard-disabled negative control exposes stale overwrite", () => {
+      const guarded = runDelayedPredecessorScenario(true);
+      const unguarded = runDelayedPredecessorScenario(false);
+
+      assert.equal(guarded.predecessorAccepted, false);
+      assert.deepEqual(guarded.oracle.read(), {
+        actorUid: "uid-b",
+        value: "AUTHORIZED",
+      });
+
+      assert.equal(unguarded.predecessorAccepted, true);
+      assert.deepEqual(unguarded.oracle.read(), {
+        actorUid: "uid-a",
+        value: "AUTHORIZED",
+      });
+    });
+
+    await t.test("runtime selection rejects an org-A result after org-B succeeds", () => {
+      const bound = bindOrganizationRuntimeUid(
+        createOrganizationRuntime(),
+        "uid-a",
+      );
+      const selectedA = selectOrganization(bound, "PRO_CLUB", "org-a");
+      const resolvingA = beginOrganizationResolution(selectedA);
+      const requestA = getOrganizationResolutionRequest(resolvingA);
+
+      assert.ok(requestA);
+
+      const resultA = createOrganizationResolutionResult(
+        requestA,
+        "AUTHORIZED",
+      );
+      const selectedB = selectOrganization(
+        resolvingA,
+        "PRO_CLUB",
+        "org-b",
+      );
+      const resolvingB = beginOrganizationResolution(selectedB);
+      const requestB = getOrganizationResolutionRequest(resolvingB);
+
+      assert.ok(requestB);
+
+      const resultB = createOrganizationResolutionResult(
+        requestB,
+        "AUTHORIZED",
+      );
+
+      const afterRacingA = applyOrganizationResolution(
+        resolvingB,
+        resultA,
+      );
+
+      assert.equal(afterRacingA, resolvingB);
+      assert.equal(afterRacingA.status, "RESOLVING");
+      assert.equal(afterRacingA.selection?.organizationId, "org-b");
+      assert.equal(isOrganizationRuntimeAuthorized(afterRacingA), false);
+
+      const authorizedB = applyOrganizationResolution(
+        afterRacingA,
+        resultB,
+      );
+
+      assert.equal(isOrganizationRuntimeAuthorized(authorizedB), true);
+      assert.equal(authorizedB.selection?.organizationId, "org-b");
+
+      const afterLateA = applyOrganizationResolution(authorizedB, resultA);
+
+      assert.equal(afterLateA, authorizedB);
+      assert.equal(isOrganizationRuntimeAuthorized(afterLateA), true);
+      assert.equal(afterLateA.selection?.organizationId, "org-b");
+
+      const signedOut = bindOrganizationRuntimeUid(resolvingA, null);
+      const afterSignedOutA = applyOrganizationResolution(signedOut, resultA);
+
+      assert.equal(afterSignedOutA, signedOut);
+      assert.equal(afterSignedOutA.status, "UNSELECTED");
+      assert.equal(afterSignedOutA.uid, null);
+      assert.equal(isOrganizationRuntimeAuthorized(afterSignedOutA), false);
     });
 
     await t.test("newer React contract already authorizes Selection succession", () => {
@@ -197,7 +466,7 @@ test(
       }
     });
 
-    await t.test("addendum itself is exactly a two-file Contract Freeze", () => {
+    await t.test("addendum remains exactly a two-path cumulative Contract Freeze", () => {
       assert.match(
         addendum,
         /ORGANIZATION_RUNTIME_SELECTION_V1_REACT_AUTH_LIFECYCLE_SUCCESSION_GAP_FREEZE\.md/,
@@ -215,7 +484,7 @@ test(
 
       assert.match(
         addendum,
-        /No existing file may change during this remediation\./,
+        /No third path may be added to the cumulative remediation diff\./,
       );
     });
   },

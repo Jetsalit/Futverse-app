@@ -106,6 +106,43 @@ merely because the authorized succession was completed.
 
 `PARTIAL SUCCESSION != AUTHORIZED SUCCESSION`
 
+### 4.1 Behavioral succession acceptance model
+
+The succession-gap Contract test must exercise captured predecessor callbacks
+in deterministic adversarial order. Source text, symbol presence, and timer
+completion alone are not sufficient evidence.
+
+The acceptance model must prove these observable invariants:
+
+- a UID successor starts fail-closed before it publishes any state
+- a predecessor callback published after its successor cannot overwrite the
+  successor state
+- cleanup invalidates callbacks captured by that lifecycle
+- late cleanup from a predecessor cannot clear or invalidate its successor
+- sign-out invalidates authenticated predecessor callbacks and remains
+  fail-closed
+- a refresh of the same authenticated UID preserves the active owner and its
+  state
+- disabling the succession acceptance guard makes the delayed-predecessor
+  scenario fail, proving that the Contract test is sensitive to the forbidden
+  behavior
+
+The self-contained lifecycle oracle is a Contract acceptance model. It freezes
+observable behavior, not a required production mechanism or symbol name. Its
+negative control proves the scenario is non-vacuous; it does not by itself
+prove that any individual production guard is necessary or implemented.
+
+Organization selection succession remains governed by the existing pure
+runtime API. The Contract test must exercise that API to prove that an
+organization-A resolution result cannot overwrite organization-B authority
+after selection changes, and that sign-out rejects the old result.
+
+This selection check does not authorize React selection/resolution APIs,
+organization selection UI, persistence, network work, or authority expansion
+in the current React Auth Lifecycle slice.
+
+`CONTRACT ORACLE != PRODUCTION REACT RUNTIME PROOF`
+
 ## 5. Expanded implementation candidate scope
 
 With this addendum, the approved React Auth Lifecycle implementation candidate
@@ -155,14 +192,17 @@ and never support-presented:
 
 ## 7. Addendum exact scope
 
-This Contract Succession Gap Freeze may add exactly:
+The cumulative Contract Succession Gap remediation may contain exactly these
+two paths:
 
 - `docs/ORGANIZATION_RUNTIME_SELECTION_V1_REACT_AUTH_LIFECYCLE_SUCCESSION_GAP_FREEZE.md`
 - `tests/organizationRuntimeReactAuthLifecycleSuccessionGapContract.test.ts`
 
+Post-review remediation may modify only those same two existing PR paths.
+
 No production source file may change during this remediation.
 
-No existing file may change during this remediation.
+No third path may be added to the cumulative remediation diff.
 
 ## 8. Review gate
 
@@ -176,6 +216,15 @@ Team 2 must independently verify:
 - the Pro Club historical Contract reserved later React/provider integration
 - the new authorization is limited to exactly one additional existing test
 - production source remains unchanged
+- delayed predecessor callbacks cannot overwrite successor, sign-out, or
+  cleanup state in the deterministic behavioral acceptance model
+- late predecessor cleanup cannot invalidate the successor
+- same-UID refresh preserves its lifecycle owner and state
+- the guard-disabled negative control exposes the forbidden stale overwrite
+- the real pure runtime rejects stale selection and signed-out resolution
+  results
+- the behavioral oracle is reported only as Contract evidence, not as proof
+  that the production React provider has been exercised
 - existing Organization Runtime baseline regression remains GREEN
 - TypeScript remains GREEN
 - exact two-file remediation scope is preserved
@@ -190,5 +239,14 @@ implementation may resume.
 
 The paused implementation must not be discarded merely because this contract
 succession omission was discovered.
+
+Before the implementation can claim that the P1 runtime succession gap is
+closed, its implementation test must render or otherwise exercise the real
+provider lifecycle and deterministically verify transition, cleanup, sign-out,
+and same-UID refresh. Where the production provider owns a callback or
+subscription surface, the test must also exercise delayed predecessor
+callbacks. Otherwise it must prove that no predecessor publication surface is
+exposed. Regex, source text, symbol presence, and the Contract oracle alone
+cannot satisfy that runtime proof gate.
 
 `PRESERVE IMPLEMENTATION / REPAIR CONTRACT / THEN RESUME`
