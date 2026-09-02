@@ -84,10 +84,14 @@ test(
       );
     });
 
-    await t.test("UID lifecycle does not rely on an after-render effect", () => {
-      assert.doesNotMatch(
+    await t.test("coordination effect remains inside the keyed runtime owner", () => {
+      assert.match(
         contextSource,
         /\buseEffect\b/,
+      );
+      assert.match(
+        contextSource,
+        /<RuntimeActorOwner key=\{actorKey\} actorUid=\{actorUid\}>/,
       );
     });
 
@@ -98,39 +102,48 @@ test(
       );
     });
 
-    await t.test("provider imports the exact runtime lifecycle allowlist", () => {
-      assert.match(
-        contextSource,
-        /\bbindOrganizationRuntimeUid\b/,
-      );
-      assert.match(
-        contextSource,
-        /\bcreateOrganizationRuntime\b/,
-      );
-    });
-
-    await t.test("provider invokes no selection or resolution API", () => {
-      for (const forbiddenApi of [
-        "clearOrganizationRuntime",
+    await t.test("provider composes the approved runtime lifecycle API succession", () => {
+      for (const requiredApi of [
+        "bindOrganizationRuntimeUid",
+        "createOrganizationRuntime",
         "selectOrganization",
         "beginOrganizationResolution",
         "getOrganizationResolutionRequest",
-        "createOrganizationResolutionResult",
         "applyOrganizationResolution",
-        "isOrganizationRuntimeAuthorized",
       ]) {
-        assert.doesNotMatch(
+        assert.match(
           contextSource,
-          new RegExp(`\\b${forbiddenApi}\\b`),
-          `forbidden runtime API present: ${forbiddenApi}`,
+          new RegExp(`\\b${requiredApi}\\b`),
+          `required runtime API missing: ${requiredApi}`,
         );
       }
-    });
 
-    await t.test("provider does not consume Pro Club authority bridge", () => {
       assert.doesNotMatch(
         contextSource,
-        /organizationRuntimeProClubAuthorityBridge|resolveProClubRuntimeAuthority/,
+        /\bclearOrganizationRuntime\b|\bcreateOrganizationResolutionResult\b|\bisOrganizationRuntimeAuthorized\b/,
+      );
+      assert.match(
+        contextSource,
+        /const selected = selectOrganization\(\s*current,\s*"PRO_CLUB",\s*organizationId,\s*\);\s*return beginOrganizationResolution\(selected\);/s,
+      );
+      assert.match(
+        contextSource,
+        /const request = getOrganizationResolutionRequest\(runtimeState\);/,
+      );
+      assert.match(
+        contextSource,
+        /setRuntimeState\(\(current\) =>\s*applyOrganizationResolution\(current, bridgeResult\.runtimeResult\),\s*\);/s,
+      );
+    });
+
+    await t.test("provider consumes only the reviewed Pro Club authority bridge", () => {
+      assert.match(
+        contextSource,
+        /from "\.\.\/lib\/organizationRuntimeProClubAuthorityBridge"/,
+      );
+      assert.match(
+        contextSource,
+        /resolveProClubRuntimeAuthority\(request\)/,
       );
     });
 
@@ -148,10 +161,14 @@ test(
       );
     });
 
-    await t.test("context surface exposes runtimeState only", () => {
+    await t.test("context surface exposes runtimeState and narrow Pro Club selection only", () => {
       assert.match(
         contextSource,
-        /interface OrganizationRuntimeContextValue\s*\{\s*readonly runtimeState: OrganizationRuntimeState;\s*\}/s,
+        /interface OrganizationRuntimeContextValue\s*\{\s*readonly runtimeState: OrganizationRuntimeState;\s*readonly selectProClub: \(organizationId: string\) => void;\s*\}/s,
+      );
+      assert.doesNotMatch(
+        contextSource,
+        /readonly (?:setRuntimeState|uid|generation|resolutionRequest|resolutionResult|authorizationProof|ops|membershipAuthority)\b/,
       );
     });
 
@@ -284,7 +301,7 @@ test(
     await t.test("implementation introduces no organization-selection UI", () => {
       assert.doesNotMatch(
         contextSource,
-        /selectOrganization|organization picker|organization selector|Pro Club picker/i,
+        /organization picker|organization selector|Pro Club picker|dashboard picker|command center picker/i,
       );
     });
   },
