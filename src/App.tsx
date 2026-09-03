@@ -61,6 +61,8 @@ import { useSuperAdminSupport } from "./contexts/SuperAdminSupportContext";
 import { SuperAdminSupportBar } from "./components/superadmin/SuperAdminSupportBar";
 import { canAccessTenantCapability } from "./lib/superAdminSupportModel";
 import type { Drill } from "./hooks/useDrillDatabase";
+import ProClubPortal from "./components/pro-club/ProClubPortal";
+import { EmptyState } from "./components/common/EmptyState";
 
 function AccessResolutionScreen({
   accessState,
@@ -278,6 +280,30 @@ export default function App() {
 
   if (!currentUser) {
     return <Login />;
+  }
+
+  const canOpenProClub = Boolean(actualUser?.uid && currentUser.uid === actualUser.uid &&
+    isExplicitlyActiveAccountStatus(actualUser.status) &&
+    !isSupportActive && !currentUser.supportPresentation);
+
+  // Canonical account eligibility gates the portal before its membership boundary.
+  // Existing Account/Academy destinations retain their gates below.
+  if (currentPage === "pro_club") {
+    return canOpenProClub
+      ? <ProClubPortal key={actualUser!.uid} onBack={() => navigateTo("dashboard")} onLogout={handleLogout} />
+      : <AccessDenied onBack={() => navigateTo("dashboard")} />;
+  }
+
+  if (canOpenProClub && currentPage === "dashboard" && (
+    isStaffOnboardingRequest(currentUser) || !isExplicitlyActiveAccountStatus(currentUser.status) ||
+    (requiresStaffMembership(currentUser) && !academyLoading && accessState !== "ACTIVE_MEMBERSHIP")
+  )) {
+    return <div className="min-h-screen bg-slate-50 p-4 sm:p-8"><div className="mx-auto max-w-xl">
+      <EmptyState icon={Shield} title="Welcome to FutVerse" description="Have a Pro Club invitation? Start here, or continue to your existing Academy and account onboarding."
+        primaryActionLabel="Join or open a Pro Club" onPrimaryAction={() => navigateTo("pro_club")}
+        secondaryActionLabel="Continue to Academy / account" onSecondaryAction={() => navigateTo("academy_onboarding")} />
+      <button className="mt-5 w-full py-3 text-sm font-bold text-slate-600" onClick={handleLogout}>Sign out</button>
+    </div></div>;
   }
 
   if (isStaffOnboardingRequest(currentUser)) {
@@ -673,6 +699,10 @@ export default function App() {
           </div>
 
           <nav className="space-y-2 mt-8 w-full px-2">
+            {canOpenProClub && <button onClick={() => navigateTo("pro_club")}
+              className="w-full flex items-center gap-3 rounded-xl p-3 text-sm font-bold text-slate-400 hover:bg-slate-800">
+              <Shield size={20} /> Pro Club
+            </button>}
             {shellNavItems.map((item) => {
               if (currentUser && !item.roles.includes(effectivePresentationRole))
                 return null;

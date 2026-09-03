@@ -115,6 +115,7 @@ function storedPendingClaim(
   return {
     schemaVersion: 1, type: "PRO_CLUB_STAFF_JOIN",
     userId: targetUid, clubId, inviteCode: code,
+    claimantIdentity: { displayName: `Claimant ${targetUid}`, email: `${targetUid}@example.test` },
     membershipAuthorizationRole: "MEMBER", staffRole, status: "PENDING",
     createdAt: Timestamp.fromMillis(now - 30_000),
     updatedAt: Timestamp.fromMillis(now - 30_000),
@@ -129,6 +130,7 @@ function pendingClaimCreateData(
   return {
     schemaVersion: 1, type: "PRO_CLUB_STAFF_JOIN",
     userId: targetUid, clubId, inviteCode: code,
+    claimantIdentity: { displayName: `Claimant ${targetUid}`, email: `${targetUid}@example.test` },
     membershipAuthorizationRole: "MEMBER", staffRole, status: "PENDING",
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   };
@@ -149,9 +151,12 @@ async function seedBaseline(): Promise<void> {
     [`proClubs/${CLUB_A}/members/${MEMBER}`, membershipData("MEMBER")],
     [`proClubs/${CLUB_B}/members/${ADMIN_B}`, membershipData("ADMIN")],
     [`proClubs/${CLUB_A}/staff/${STAFF_ONLY}`, staffData("PHYSIO")],
-    [`users/${TARGET}`, { role: "USER", status: "Inactive" }],
-    [`users/${OTHER}`, { role: "USER", status: "Inactive" }],
-    [`users/${PROOF_ONLY}`, { role: "USER", status: "Inactive" }],
+    [`users/${OWNER}`, { role: "USER", status: "Active" }],
+    [`users/${ADMIN}`, { role: "USER", status: "ACTIVE" }],
+    [`users/${ADMIN_B}`, { role: "USER", status: "ACTIVE" }],
+    [`users/${TARGET}`, { name: `Claimant ${TARGET}`, email: `${TARGET}@example.test`, role: "USER", status: "Inactive" }],
+    [`users/${OTHER}`, { name: `Claimant ${OTHER}`, email: `${OTHER}@example.test`, role: "USER", status: "Inactive" }],
+    [`users/${PROOF_ONLY}`, { name: `Claimant ${PROOF_ONLY}`, email: `${PROOF_ONLY}@example.test`, role: "USER", status: "Inactive" }],
     [`users/${GLOBAL_SUPERADMIN}`, { role: "SUPERADMIN", status: "ACTIVE" }],
   ]);
 }
@@ -268,11 +273,12 @@ after(async () => {
   await testEnv.cleanup();
 });
 
-test("1. targeted ACTIVE invite read is target/reviewer only", async () => {
+test("1. V1 ACTIVE invite exact-code read requires authentication", async () => {
   const code = inviteCode("A");
   await seed([[`proClubInvites/${code}`, storedActiveInvite(code)]]);
   await assertFails(getDoc(doc(anonymousDb(), "proClubInvites", code)));
-  await assertFails(getDoc(doc(authedDb(OTHER), "proClubInvites", code)));
+  // Slice 3A-R permits authenticated exact-code lookup; claim writes remain targeted.
+  await assertSucceeds(getDoc(doc(authedDb(OTHER), "proClubInvites", code)));
   await assertSucceeds(getDoc(doc(authedDb(TARGET), "proClubInvites", code)));
   await assertSucceeds(getDoc(doc(authedDb(OWNER), "proClubInvites", code)));
 });
@@ -601,3 +607,66 @@ test("24. onboarding paths do not weaken unrelated nested default deny", async (
     { secret: true },
   ));
 });
+
+// ============================================================================
+// Reviewer Write Authority Account Status Enforcement (P1 Codex Remediation)
+// ============================================================================
+
+for (const role of ["OWNER", "ADMIN"] as const) {
+  const actor = `reviewer-write-${role.toLowerCase()}`;
+
+  test(`25. ${role} with REJECTED canonical account status cannot approve or reject claims`, async () => {
+    await seedInviteAndPending(inviteCode("A"));
+    await seed([
+      [`proClubs/${CLUB_A}/members/${actor}`, membershipData(role)],
+      [`users/${actor}`, { role: "USER", status: "REJECTED" }],
+    ]);
+    await assertFails(approvalBatch(authedDb(actor), actor, inviteCode("A")).commit());
+    await assertFails(rejectionBatch(authedDb(actor), actor, inviteCode("A")).commit());
+  });
+
+  test(`26. ${role} with missing users/{uid} document cannot approve or reject claims`, async () => {
+    await seedInviteAndPending(inviteCode("A"));
+    await seed([
+      [`proClubs/${CLUB_A}/members/${actor}`, membershipData(role)],
+    ]);
+    await assertFails(approvalBatch(authedDb(actor), actor, inviteCode("A")).commit());
+    await assertFails(rejectionBatch(authedDb(actor), actor, inviteCode("A")).commit());
+  });
+
+  test(`27. ${role} with missing or malformed or unsupported status cannot approve or reject claims`, async () => {
+    const invalidStatuses = [undefined, 42, true, null, { bad: true }, "PENDING", "Inactive", "SUSPENDED", "active"];
+    for (const st of invalidStatuses) {
+      await seedInviteAndPending(inviteCode("A"));
+      await seed([
+        [`proClubs/${CLUB_A}/members/${actor}`, membershipData(role)],
+        [`users/${actor}`, { role: "USER", ...(st !== undefined ? { status: st } : {}) }],
+      ]);
+      await assertFails(approvalBatch(authedDb(actor), actor, inviteCode("A")).commit());
+      await assertFails(rejectionBatch(authedDb(actor), actor, inviteCode("A")).commit());
+    }
+  });
+
+  test(`28. ${role} with ACTIVE canonical account status ("Active" and "ACTIVE") can approve and reject`, async () => {
+    // Test approval with "Active"
+    const codeApprove = inviteCode("A");
+    await seedInviteAndPending(codeApprove);
+    await seed([
+      [`proClubs/${CLUB_A}/members/${actor}`, membershipData(role)],
+      [`users/${actor}`, { role: "USER", status: "Active" }],
+    ]);
+    await assertSucceeds(approvalBatch(authedDb(actor), actor, codeApprove).commit());
+
+    await testEnv.clearFirestore();
+    await seedBaseline();
+
+    // Test rejection with "ACTIVE"
+    const codeReject = inviteCode("B");
+    await seedInviteAndPending(codeReject);
+    await seed([
+      [`proClubs/${CLUB_A}/members/${actor}`, membershipData(role)],
+      [`users/${actor}`, { role: "USER", status: "ACTIVE" }],
+    ]);
+    await assertSucceeds(rejectionBatch(authedDb(actor), actor, codeReject).commit());
+  });
+}
