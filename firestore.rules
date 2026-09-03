@@ -2296,9 +2296,11 @@ service cloud.firestore {
       allow get: if isSignedIn()
         && (
           (
+            // Exact-code capability lookup exposes only the closed V1 schema.
+            // Expiry restricts claim/approval writes, not status inspection.
             validProClubActiveInviteDataV1(resource.data, inviteCode)
-            && resource.data.targetUid == request.auth.uid
-            && resource.data.expiresAt > request.time
+            || validProClubRevokedInviteDataV1(resource.data, inviteCode)
+            || validProClubConsumedInviteDataV1(resource.data, inviteCode)
           )
           || isActiveProClubReviewerV1(
             resource.data.get('clubId', '')
@@ -2355,7 +2357,11 @@ service cloud.firestore {
             resource.data.get('userId', '') == request.auth.uid
             || isActiveProClubReviewerV1(clubId)
           );
-        allow list: if false;
+        // Queries must constrain both fields; Rules do not filter results.
+        // Authority comes from this exact tenant path, never users.role.
+        allow list: if isActiveProClubReviewerV1(clubId)
+          && resource.data.clubId == clubId
+          && resource.data.status == 'PENDING';
         allow create: if validProClubClaimCreateV1(clubId, claimId);
         allow update: if resource != null
           && (

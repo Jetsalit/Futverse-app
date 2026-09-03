@@ -268,11 +268,12 @@ after(async () => {
   await testEnv.cleanup();
 });
 
-test("1. targeted ACTIVE invite read is target/reviewer only", async () => {
+test("1. V1 ACTIVE invite exact-code read requires authentication", async () => {
   const code = inviteCode("A");
   await seed([[`proClubInvites/${code}`, storedActiveInvite(code)]]);
   await assertFails(getDoc(doc(anonymousDb(), "proClubInvites", code)));
-  await assertFails(getDoc(doc(authedDb(OTHER), "proClubInvites", code)));
+  // Slice 3A-R permits authenticated exact-code lookup; claim writes remain targeted.
+  await assertSucceeds(getDoc(doc(authedDb(OTHER), "proClubInvites", code)));
   await assertSucceeds(getDoc(doc(authedDb(TARGET), "proClubInvites", code)));
   await assertSucceeds(getDoc(doc(authedDb(OWNER), "proClubInvites", code)));
 });
