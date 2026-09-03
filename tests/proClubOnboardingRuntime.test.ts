@@ -51,6 +51,8 @@ beforeEach(async () => {
     [`proClubs/${CLUB}/members/${ADMIN}`, { authorizationRole: "ADMIN", status: "ACTIVE" }],
     [`proClubs/${CLUB}/members/member`, { authorizationRole: "MEMBER", status: "ACTIVE" }],
     [`proClubs/${OTHER_CLUB}/members/other-owner`, { authorizationRole: "OWNER", status: "ACTIVE" }],
+    [`users/${OWNER}`, { role: "USER", status: "Active" }],
+    [`users/${ADMIN}`, { role: "USER", status: "ACTIVE" }],
     [`users/${TARGET}`, { name: "Coach", email: "coach@example.test", role: "USER", status: "Inactive" }],
     [`proClubInvites/${CODE}`, invite()],
   ]);

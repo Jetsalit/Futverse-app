@@ -27,6 +27,9 @@ beforeEach(async () => {
   await env.clearFirestore();
   await seed([
     [`users/${TARGET}`, { uid: TARGET, name: IDENTITY.displayName, displayName: "Unused alias", email: IDENTITY.email, role: "USER", status: "Active" }],
+    ["users/owner", { role: "USER", status: "Active" }],
+    ["users/admin", { role: "USER", status: "ACTIVE" }],
+    ["users/outsider", { role: "USER", status: "Active" }],
     [`proClubs/${CLUB}`, { name: "Test United", level: "T3", status: "ACTIVE" }],
     [`proClubs/${CLUB}/members/owner`, { authorizationRole: "OWNER", status: "ACTIVE" }],
     [`proClubs/${CLUB}/members/admin`, { authorizationRole: "ADMIN", status: "ACTIVE" }],

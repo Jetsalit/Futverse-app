@@ -1289,17 +1289,8 @@ service cloud.firestore {
     function isActiveProClubReviewerV1(clubId) {
       return isSignedIn()
         && exactDocumentId(clubId)
-        && proClubReviewerDocumentsExistV1(clubId)
+        && currentUserIsActive()
         && proClubReviewerDocumentsAreActiveV1(clubId);
-    }
-
-    function proClubReviewerDocumentsExistV1(clubId) {
-      return exists(
-          /databases/$(database)/documents/proClubs/$(clubId)
-        )
-        && exists(
-          /databases/$(database)/documents/proClubs/$(clubId)/members/$(request.auth.uid)
-        );
     }
 
     function proClubReviewerDocumentsAreActiveV1(clubId) {

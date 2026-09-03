@@ -134,6 +134,10 @@ beforeEach(async () => {
   ];
   for (const [clubId, suffix] of [[CLUB, "a"], [OTHER_CLUB, "b"]]) {
     for (const role of ["OWNER", "ADMIN"]) {
+      entries.push([`users/${role.toLowerCase()}-${suffix}`, {
+        role: "USER",
+        status: suffix === "a" && role === "OWNER" ? "Active" : "ACTIVE",
+      }]);
       entries.push([`proClubs/${clubId}/members/${role.toLowerCase()}-${suffix}`, {
         authorizationRole: role, status: "ACTIVE",
       }]);
@@ -209,6 +213,7 @@ test("queries missing club or PENDING constraints are denied even on an empty co
   await testEnv.clearFirestore();
   await seed([
     [`proClubs/${CLUB}`, { name: "Empty club", level: "T3", status: "ACTIVE" }],
+    ["users/owner-a", { role: "USER", status: "Active" }],
     [`proClubs/${CLUB}/members/owner-a`, { authorizationRole: "OWNER", status: "ACTIVE" }],
   ]);
   const db = client("owner-a");
@@ -318,3 +323,72 @@ test("exact-code knowledge grants no claim write or tenant read authority", asyn
     authorizationRole: "MEMBER", status: "ACTIVE",
   }));
 });
+
+// ============================================================================
+// Reviewer Account Status Enforcement (P1 Codex Remediation)
+// ============================================================================
+
+for (const role of ["OWNER", "ADMIN"] as const) {
+  const actor = `test-${role.toLowerCase()}-reviewer`;
+
+  test(`${role} with REJECTED canonical account status cannot query or get pending claims`, async () => {
+    await seed([
+      [`proClubs/${CLUB}/members/${actor}`, { authorizationRole: role, status: "ACTIVE" }],
+      [`users/${actor}`, { role: "USER", status: "REJECTED" }],
+    ]);
+    await assertFails(getDocs(pendingQuery(client(actor))));
+    await assertFails(getDoc(doc(client(actor), "proClubs", CLUB, "onboardingClaims", CLAIM_ID)));
+  });
+
+  test(`${role} with missing users/{uid} document cannot query or get pending claims`, async () => {
+    await seed([
+      [`proClubs/${CLUB}/members/${actor}`, { authorizationRole: role, status: "ACTIVE" }],
+    ]);
+    await assertFails(getDocs(pendingQuery(client(actor))));
+    await assertFails(getDoc(doc(client(actor), "proClubs", CLUB, "onboardingClaims", CLAIM_ID)));
+  });
+
+  test(`${role} with missing account status field cannot query or get pending claims`, async () => {
+    await seed([
+      [`proClubs/${CLUB}/members/${actor}`, { authorizationRole: role, status: "ACTIVE" }],
+      [`users/${actor}`, { role: "USER" }],
+    ]);
+    await assertFails(getDocs(pendingQuery(client(actor))));
+    await assertFails(getDoc(doc(client(actor), "proClubs", CLUB, "onboardingClaims", CLAIM_ID)));
+  });
+
+  test(`${role} with malformed account status cannot query or get pending claims`, async () => {
+    for (const malformedStatus of [42, true, null, { invalid: true }, ["ACTIVE"]]) {
+      await seed([
+        [`proClubs/${CLUB}/members/${actor}`, { authorizationRole: role, status: "ACTIVE" }],
+        [`users/${actor}`, { role: "USER", status: malformedStatus }],
+      ]);
+      await assertFails(getDocs(pendingQuery(client(actor))));
+      await assertFails(getDoc(doc(client(actor), "proClubs", CLUB, "onboardingClaims", CLAIM_ID)));
+    }
+  });
+
+  test(`${role} with unsupported account status cannot query or get pending claims`, async () => {
+    for (const unsupportedStatus of ["PENDING", "Inactive", "SUSPENDED", "active", "DEACTIVATED", "BANNED"]) {
+      await seed([
+        [`proClubs/${CLUB}/members/${actor}`, { authorizationRole: role, status: "ACTIVE" }],
+        [`users/${actor}`, { role: "USER", status: unsupportedStatus }],
+      ]);
+      await assertFails(getDocs(pendingQuery(client(actor))));
+      await assertFails(getDoc(doc(client(actor), "proClubs", CLUB, "onboardingClaims", CLAIM_ID)));
+    }
+  });
+
+  test(`ACTIVE account status ("Active" and "ACTIVE") allows ${role} to query and get pending claims`, async () => {
+    for (const activeStatus of ["Active", "ACTIVE"] as const) {
+      await seed([
+        [`proClubs/${CLUB}/members/${actor}`, { authorizationRole: role, status: "ACTIVE" }],
+        [`users/${actor}`, { role: "USER", status: activeStatus }],
+      ]);
+      const result = await assertSucceeds(getDocs(pendingQuery(client(actor))));
+      assert.ok(result.docs.length > 0);
+      const claim = await assertSucceeds(getDoc(doc(client(actor), "proClubs", CLUB, "onboardingClaims", CLAIM_ID)));
+      assert.equal(claim.data()?.status, "PENDING");
+    }
+  });
+}
