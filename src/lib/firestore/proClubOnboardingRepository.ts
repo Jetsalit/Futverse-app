@@ -7,6 +7,7 @@ import { isValidDocumentIdentifier } from "../proClubModel";
 import {
   isPermissionDenied, normalizeProClubInviteCode, OnboardingError, parseProClubClaim,
   parseProClubInvite, proClubClaimId, visibleInviteStatus,
+  claimantIdentityFromCanonicalUser, isClaimantIdentity,
   type ProClubInvite, type ProClubJoinClaim,
 } from "../proClubOnboarding";
 import { getProClubMembership, type ProClubReadOps } from "./proClubReadAdapter";
@@ -95,9 +96,15 @@ export function createProClubOnboardingRepository(firestore: Firestore, getActor
     if (status !== "ACTIVE") throw new OnboardingError(status);
     const claimId = proClubClaimId(uid, invite.inviteCode);
     assertActor(uid);
+    // Read only the authenticated actor's canonical account. UI callers never supply identity fields.
+    const userSnapshot = await getDocFromServer(doc(firestore, "users", uid));
+    assertActor(uid);
+    if (!userSnapshot.exists()) throw new OnboardingError("IDENTITY_UNAVAILABLE");
+    const claimantIdentity = claimantIdentityFromCanonicalUser(userSnapshot.data());
     try {
       await setDoc(doc(firestore, "proClubs", invite.clubId, "onboardingClaims", claimId), {
         schemaVersion: 1, type: "PRO_CLUB_STAFF_JOIN", userId: uid, clubId: invite.clubId,
+        claimantIdentity,
         inviteCode: invite.inviteCode, membershipAuthorizationRole: "MEMBER", staffRole: invite.staffRole,
         status: "PENDING", createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
       });
@@ -171,6 +178,7 @@ export function createProClubOnboardingRepository(firestore: Firestore, getActor
     if (!snapshot.exists()) throw new OnboardingError("STALE_REQUEST");
     const claim = parseProClubClaim(snapshot.data(), clubId, claimId);
     if (claim.status !== "PENDING") throw new OnboardingError("STALE_REQUEST");
+    if (!isClaimantIdentity(claim.claimantIdentity)) throw new OnboardingError("IDENTITY_UNAVAILABLE");
     const invite = await readInvite(claim.inviteCode, uid);
     if (invite.clubId !== clubId || invite.targetUid !== claim.userId || invite.staffRole !== claim.staffRole) {
       throw new OnboardingError("INVALID_DATA");

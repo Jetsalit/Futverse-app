@@ -25,6 +25,7 @@ test("mounted Pro Club screens preserve confirmation, errors and canonical runti
   let reviewCalls = 0;
   const resolutionRequests: Array<{ uid: string; organizationId: string }> = [];
   const claim = () => ({ schemaVersion: 1, type: "PRO_CLUB_STAFF_JOIN", userId: "coach", clubId: "club-a",
+    claimantIdentity: { displayName: "Coach", email: "coach@example.test" },
     inviteCode: code, membershipAuthorizationRole: "MEMBER", staffRole: "HEAD_COACH", status: claimStatus ?? "PENDING", createdAt: at, updatedAt: at });
   const invite = () => ({ schemaVersion: 1, inviteCode: code, clubId: "club-a", targetUid: "coach",
     membershipAuthorizationRole: "MEMBER", staffRole: "HEAD_COACH", status: membership ? "CONSUMED" : "ACTIVE",
@@ -99,7 +100,7 @@ test("mounted Pro Club screens preserve confirmation, errors and canonical runti
     });
     await t.test("approval requires confirmation and cancel does not write", async () => {
       membership = false; claimStatus = "PENDING"; decided = false;
-      await mount(<PendingStaffRequests clubId="club-a" uid="owner" />);
+      await mount(<PendingStaffRequests clubId="club-a" clubName="Test United" uid="owner" />);
       await click("Approve"); assert.equal(reviewCalls, 0);
       await click("Cancel"); assert.equal(reviewCalls, 0);
       await click("Approve"); await click("Confirm approval");
@@ -107,7 +108,7 @@ test("mounted Pro Club screens preserve confirmation, errors and canonical runti
     });
     await t.test("rejection requires a second click and refreshes to success", async () => {
       decided = false;
-      await mount(<PendingStaffRequests clubId="club-a" uid="owner" />);
+      await mount(<PendingStaffRequests clubId="club-a" clubName="Test United" uid="owner" />);
       await click("Reject"); assert.equal(reviewCalls, 1);
       assert.match(text(), /new invitation/);
       await click("Confirm rejection"); assert.equal(reviewCalls, 2);
@@ -115,7 +116,7 @@ test("mounted Pro Club screens preserve confirmation, errors and canonical runti
     });
     await t.test("failed decision shows safe error without reporting success", async () => {
       decided = false; fail = true;
-      await mount(<PendingStaffRequests clubId="club-a" uid="owner" />);
+      await mount(<PendingStaffRequests clubId="club-a" clubName="Test United" uid="owner" />);
       await click("Approve"); await click("Confirm approval");
       assert.ok(container.querySelector('[role="alert"]'));
       assert.doesNotMatch(text(), /raw firestore|secret|Request approved/);

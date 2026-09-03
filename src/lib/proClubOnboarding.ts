@@ -4,6 +4,27 @@ import type { ProClubStaffRole } from "../types/ProClub";
 
 export type InviteStatus = "ACTIVE" | "REVOKED" | "CONSUMED";
 export type ClaimStatus = "PENDING" | "APPROVED" | "REJECTED";
+export interface ClaimantIdentity {
+  displayName?: string;
+  email?: string;
+}
+function identityText(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+export function isClaimantIdentity(value: unknown): value is ClaimantIdentity {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const fields = Object.entries(value);
+  return fields.length > 0 && fields.every(([key, text]) =>
+    (key === "displayName" || key === "email") && identityText(text));
+}
+export function claimantIdentityFromCanonicalUser(user: Record<string, unknown>): ClaimantIdentity {
+  const identity = {
+    ...(identityText(user.name) ? { displayName: user.name } : {}),
+    ...(identityText(user.email) ? { email: user.email } : {}),
+  };
+  if (!isClaimantIdentity(identity)) throw new OnboardingError("IDENTITY_UNAVAILABLE");
+  return identity;
+}
 export interface ProClubInvite {
   schemaVersion: 1;
   inviteCode: string;
@@ -27,6 +48,8 @@ export interface ProClubJoinClaim {
   schemaVersion: 1;
   type: "PRO_CLUB_STAFF_JOIN";
   userId: string;
+  // Absent on legacy claims; those remain readable but cannot be decided.
+  claimantIdentity?: ClaimantIdentity;
   clubId: string;
   inviteCode: string;
   membershipAuthorizationRole: "MEMBER";
@@ -42,7 +65,7 @@ export interface ProClubJoinClaim {
 
 export type OnboardingErrorCode = "INVALID_INVITE" | "UNAVAILABLE" | "AUTH_CHANGED" |
   "WRONG_RECIPIENT" | "EXPIRED" | "REVOKED" | "CONSUMED" | "MEMBERSHIP_EXISTS" |
-  "REVIEWER_REQUIRED" | "STALE_REQUEST" | "INVALID_DATA" | "NETWORK";
+  "REVIEWER_REQUIRED" | "STALE_REQUEST" | "INVALID_DATA" | "IDENTITY_UNAVAILABLE" | "NETWORK";
 export class OnboardingError extends Error {
   constructor(readonly code: OnboardingErrorCode) { super(code); }
 }
@@ -59,6 +82,7 @@ export function onboardingErrorMessage(error: unknown): string {
     REVIEWER_REQUIRED: "Only an active club owner or administrator can review staff requests.",
     STALE_REQUEST: "This request has changed. Refresh the requests before trying again.",
     INVALID_DATA: "This invitation or request could not be verified. Please contact your club.",
+    IDENTITY_UNAVAILABLE: "Identity unavailable. We could not verify the claimant’s account identity. Contact your club before continuing.",
     NETWORK: "We could not confirm the result. Check your connection and refresh before trying again.",
   };
   return error instanceof OnboardingError ? messages[error.code] : messages.NETWORK;
@@ -109,7 +133,8 @@ export function parseProClubClaim(value: unknown, clubId: string, claimId: strin
     "staffRole", "status", "createdAt", "updatedAt"];
   const lifecycle = data?.status === "APPROVED" ? ["approvedAt", "approvedBy"] :
     data?.status === "REJECTED" ? ["rejectedAt", "rejectedBy"] : [];
-  if (!data || !exactKeys(data, [...base, ...lifecycle]) || data.schemaVersion !== 1 ||
+  const identityFields = data && Object.hasOwn(data, "claimantIdentity") ? ["claimantIdentity"] : [];
+  if (!data || !exactKeys(data, [...base, ...lifecycle, ...identityFields]) || data.schemaVersion !== 1 ||
       data.type !== "PRO_CLUB_STAFF_JOIN" || data.clubId !== clubId || !isValidDocumentIdentifier(clubId) ||
       !isValidDocumentIdentifier(data.userId) || typeof data.inviteCode !== "string" ||
       proClubClaimId(data.userId as string, data.inviteCode) !== claimId ||
@@ -119,7 +144,8 @@ export function parseProClubClaim(value: unknown, clubId: string, claimId: strin
       !lifecycle.filter((key) => key.endsWith("By")).every((key) => isValidDocumentIdentifier(data[key]))) {
     throw new OnboardingError("INVALID_DATA");
   }
-  return data as unknown as ProClubJoinClaim;
+  // Keep legacy/malformed identities visible as unavailable, never manufacture a fallback.
+  return { ...data, claimantIdentity: isClaimantIdentity(data.claimantIdentity) ? data.claimantIdentity : undefined } as unknown as ProClubJoinClaim;
 }
 export function visibleInviteStatus(invite: ProClubInvite, now = Date.now()): InviteStatus | "EXPIRED" {
   return invite.status === "ACTIVE" && invite.expiresAt.toMillis() <= now ? "EXPIRED" : invite.status;

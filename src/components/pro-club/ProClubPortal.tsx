@@ -29,7 +29,7 @@ function ClubWorkspace({ clubId, uid }: { clubId: string; uid: string }) {
         {authority.staffRole && <span className="rounded-lg bg-white/10 px-3 py-2">{staffRoleLabels[authority.staffRole]}</span>}</div>
       <p className="mt-5 text-sm text-slate-300">Your club membership is active.</p>
     </section>
-    {isProClubReviewer(authority) ? <PendingStaffRequests clubId={clubId} uid={uid} /> :
+    {isProClubReviewer(authority) ? <PendingStaffRequests clubId={clubId} clubName={authority.organizationName} uid={uid} /> :
       <section className="rounded-2xl border border-slate-200 bg-white p-6"><Users className="text-emerald-600" /><h3 className="mt-3 text-lg font-bold">Welcome to your club</h3><p className="mt-2 text-sm text-slate-600">You have joined the club as {authority.staffRole ? staffRoleLabels[authority.staffRole].toLowerCase() : "a member"}.</p></section>}
   </div>;
 }

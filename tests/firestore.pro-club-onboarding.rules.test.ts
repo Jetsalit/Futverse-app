@@ -115,6 +115,7 @@ function storedPendingClaim(
   return {
     schemaVersion: 1, type: "PRO_CLUB_STAFF_JOIN",
     userId: targetUid, clubId, inviteCode: code,
+    claimantIdentity: { displayName: `Claimant ${targetUid}`, email: `${targetUid}@example.test` },
     membershipAuthorizationRole: "MEMBER", staffRole, status: "PENDING",
     createdAt: Timestamp.fromMillis(now - 30_000),
     updatedAt: Timestamp.fromMillis(now - 30_000),
@@ -129,6 +130,7 @@ function pendingClaimCreateData(
   return {
     schemaVersion: 1, type: "PRO_CLUB_STAFF_JOIN",
     userId: targetUid, clubId, inviteCode: code,
+    claimantIdentity: { displayName: `Claimant ${targetUid}`, email: `${targetUid}@example.test` },
     membershipAuthorizationRole: "MEMBER", staffRole, status: "PENDING",
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   };
@@ -149,9 +151,9 @@ async function seedBaseline(): Promise<void> {
     [`proClubs/${CLUB_A}/members/${MEMBER}`, membershipData("MEMBER")],
     [`proClubs/${CLUB_B}/members/${ADMIN_B}`, membershipData("ADMIN")],
     [`proClubs/${CLUB_A}/staff/${STAFF_ONLY}`, staffData("PHYSIO")],
-    [`users/${TARGET}`, { role: "USER", status: "Inactive" }],
-    [`users/${OTHER}`, { role: "USER", status: "Inactive" }],
-    [`users/${PROOF_ONLY}`, { role: "USER", status: "Inactive" }],
+    [`users/${TARGET}`, { name: `Claimant ${TARGET}`, email: `${TARGET}@example.test`, role: "USER", status: "Inactive" }],
+    [`users/${OTHER}`, { name: `Claimant ${OTHER}`, email: `${OTHER}@example.test`, role: "USER", status: "Inactive" }],
+    [`users/${PROOF_ONLY}`, { name: `Claimant ${PROOF_ONLY}`, email: `${PROOF_ONLY}@example.test`, role: "USER", status: "Inactive" }],
     [`users/${GLOBAL_SUPERADMIN}`, { role: "SUPERADMIN", status: "ACTIVE" }],
   ]);
 }

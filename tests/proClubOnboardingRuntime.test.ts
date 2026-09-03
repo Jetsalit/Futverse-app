@@ -51,7 +51,7 @@ beforeEach(async () => {
     [`proClubs/${CLUB}/members/${ADMIN}`, { authorizationRole: "ADMIN", status: "ACTIVE" }],
     [`proClubs/${CLUB}/members/member`, { authorizationRole: "MEMBER", status: "ACTIVE" }],
     [`proClubs/${OTHER_CLUB}/members/other-owner`, { authorizationRole: "OWNER", status: "ACTIVE" }],
-    [`users/${TARGET}`, { name: "Coach", role: "USER", status: "Inactive" }],
+    [`users/${TARGET}`, { name: "Coach", email: "coach@example.test", role: "USER", status: "Inactive" }],
     [`proClubInvites/${CODE}`, invite()],
   ]);
 });
@@ -64,7 +64,7 @@ test("ACTIVE invitation creates exact deterministic PENDING claim and no members
   assert.equal(result.clubId, CLUB);
   assert.equal(result.staffRole, "HEAD_COACH");
   assert.equal(result.membershipAuthorizationRole, "MEMBER");
-  assert.deepEqual(Object.keys(result).sort(), ["schemaVersion", "type", "userId", "clubId", "inviteCode", "membershipAuthorizationRole", "staffRole", "status", "createdAt", "updatedAt"].sort());
+  assert.deepEqual(Object.keys(result).sort(), ["schemaVersion", "type", "userId", "claimantIdentity", "clubId", "inviteCode", "membershipAuthorizationRole", "staffRole", "status", "createdAt", "updatedAt"].sort());
   assert.ok(result.createdAt.toMillis() > Date.now() - 30_000);
   assert.equal(await snapshot(`proClubs/${CLUB}/members/${TARGET}`), null);
 });
