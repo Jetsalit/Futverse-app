@@ -51,6 +51,18 @@ function authedDb(uid: string): Firestore {
 function anonymousDb(): Firestore {
   return testEnv.unauthenticatedContext().firestore() as unknown as Firestore;
 }
+async function assertExplicitSecurityDenial<T>(promise: Promise<T>): Promise<unknown> {
+  const error = await assertFails(promise);
+  const msg = (error as { message?: string } | undefined)?.message ?? String(error);
+  assert.ok(
+    !msg.includes("maximum of 1000 expressions") &&
+    !msg.includes("too many calls") &&
+    !msg.includes("service call limit") &&
+    !msg.includes("evaluation limit"),
+    `Expected explicit security denial, but got engine resource exhaustion: ${msg}`
+  );
+  return error;
+}
 function inviteCode(letter = "A"): string {
   return `FUT-PC-${letter.repeat(24)}`;
 }
@@ -621,8 +633,8 @@ for (const role of ["OWNER", "ADMIN"] as const) {
       [`proClubs/${CLUB_A}/members/${actor}`, membershipData(role)],
       [`users/${actor}`, { role: "USER", status: "REJECTED" }],
     ]);
-    await assertFails(approvalBatch(authedDb(actor), actor, inviteCode("A")).commit());
-    await assertFails(rejectionBatch(authedDb(actor), actor, inviteCode("A")).commit());
+    await assertExplicitSecurityDenial(approvalBatch(authedDb(actor), actor, inviteCode("A")).commit());
+    await assertExplicitSecurityDenial(rejectionBatch(authedDb(actor), actor, inviteCode("A")).commit());
   });
 
   test(`26. ${role} with missing users/{uid} document cannot approve or reject claims`, async () => {
@@ -630,8 +642,8 @@ for (const role of ["OWNER", "ADMIN"] as const) {
     await seed([
       [`proClubs/${CLUB_A}/members/${actor}`, membershipData(role)],
     ]);
-    await assertFails(approvalBatch(authedDb(actor), actor, inviteCode("A")).commit());
-    await assertFails(rejectionBatch(authedDb(actor), actor, inviteCode("A")).commit());
+    await assertExplicitSecurityDenial(approvalBatch(authedDb(actor), actor, inviteCode("A")).commit());
+    await assertExplicitSecurityDenial(rejectionBatch(authedDb(actor), actor, inviteCode("A")).commit());
   });
 
   test(`27. ${role} with missing or malformed or unsupported status cannot approve or reject claims`, async () => {
@@ -642,8 +654,8 @@ for (const role of ["OWNER", "ADMIN"] as const) {
         [`proClubs/${CLUB_A}/members/${actor}`, membershipData(role)],
         [`users/${actor}`, { role: "USER", ...(st !== undefined ? { status: st } : {}) }],
       ]);
-      await assertFails(approvalBatch(authedDb(actor), actor, inviteCode("A")).commit());
-      await assertFails(rejectionBatch(authedDb(actor), actor, inviteCode("A")).commit());
+      await assertExplicitSecurityDenial(approvalBatch(authedDb(actor), actor, inviteCode("A")).commit());
+      await assertExplicitSecurityDenial(rejectionBatch(authedDb(actor), actor, inviteCode("A")).commit());
     }
   });
 
@@ -670,3 +682,17 @@ for (const role of ["OWNER", "ADMIN"] as const) {
     await assertSucceeds(rejectionBatch(authedDb(actor), actor, codeReject).commit());
   });
 }
+
+test("29. approval batch is explicitly denied when claimant already has existing membership", async () => {
+  const code = inviteCode("A");
+  await seedInviteAndPending(code);
+  await seed([[`proClubs/${CLUB_A}/members/${TARGET}`, membershipData("MEMBER")]]);
+  await assertExplicitSecurityDenial(approvalBatch(authedDb(OWNER), OWNER, code).commit());
+});
+
+test("30. approval batch is explicitly denied when claimant already has existing staff", async () => {
+  const code = inviteCode("A");
+  await seedInviteAndPending(code);
+  await seed([[`proClubs/${CLUB_A}/staff/${TARGET}`, staffData("PHYSIO")]]);
+  await assertExplicitSecurityDenial(approvalBatch(authedDb(OWNER), OWNER, code).commit());
+});

@@ -1864,6 +1864,12 @@ service cloud.firestore {
       let inviteCode = resource.data.get('inviteCode', '');
 
       return isSignedIn()
+        && resource.data.get('status', '') == 'PENDING'
+        && data.get('status', '') == 'APPROVED'
+        && exactDocumentId(uid)
+        && validProClubInviteCodeV1(inviteCode)
+        && claimId == uid + '_PRO_CLUB_' + inviteCode
+        && resource.data.get('clubId', '') == clubId
         && validProClubClaimantIdentityV1(resource.data.get('claimantIdentity', null))
         && proClubClaimIdentityUnchangedV1()
         && resource.data.keys().hasOnly([
@@ -1881,14 +1887,8 @@ service cloud.firestore {
         ])
         && resource.data.get('schemaVersion', 0) == 1
         && resource.data.get('type', '') == 'PRO_CLUB_STAFF_JOIN'
-        && resource.data.get('clubId', '') == clubId
-        && exactDocumentId(uid)
-        && validProClubInviteCodeV1(inviteCode)
-        && claimId == uid + '_PRO_CLUB_' + inviteCode
         && resource.data.get('membershipAuthorizationRole', '') == 'MEMBER'
         && validProClubStaffRoleV1(resource.data.get('staffRole', ''))
-        && resource.data.get('status', '') == 'PENDING'
-        && data.get('status', '') == 'APPROVED'
         && data.diff(resource.data).affectedKeys().hasOnly([
           'status',
           'approvedAt',
@@ -1915,13 +1915,13 @@ service cloud.firestore {
       inviteCode,
       staffRole
     ) {
-      let proofPath =
-        /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(uid);
+      let proof = getAfter(
+        /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(uid)
+      ).data;
 
-      return existsAfter(proofPath)
-        && getAfter(proofPath).data.get('claimId', '') == claimId
-        && getAfter(proofPath).data.get('inviteCode', '') == inviteCode
-        && getAfter(proofPath).data.get('staffRole', '') == staffRole;
+      return proof.get('claimId', '') == claimId
+        && proof.get('inviteCode', '') == inviteCode
+        && proof.get('staffRole', '') == staffRole;
     }
     function validProClubClaimRejectionV1(clubId, claimId) {
       let data = request.resource.data;
@@ -2014,6 +2014,7 @@ service cloud.firestore {
         && exactDocumentId(uid)
         && validProClubInviteCodeV1(inviteCode)
         && claimId == uid + '_PRO_CLUB_' + inviteCode
+        && isActiveProClubReviewerV1(clubId)
         && proof.keys().hasOnly([
           'schemaVersion',
           'userId',
@@ -2034,7 +2035,6 @@ service cloud.firestore {
         && proof.get('status', '') == 'APPROVED'
         && proof.get('approvedAt', null) == request.time
         && proof.get('approvedBy', '') == request.auth.uid
-        && isActiveProClubReviewerV1(clubId)
         && validProClubApprovalEvidenceAfterV1(
           clubId,
           uid,
@@ -2060,7 +2060,9 @@ service cloud.firestore {
       let staffPath =
         /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid);
 
-      return existsAfter(claimPath)
+      return !exists(membershipPath)
+        && !exists(staffPath)
+        && existsAfter(claimPath)
         && existsAfter(invitePath)
         && existsAfter(membershipPath)
         && existsAfter(staffPath)
@@ -2113,21 +2115,16 @@ service cloud.firestore {
         && invite.get('consumedBy', '') == request.auth.uid
         && invite.get('updatedAt', null) == request.time
         && invite.get('updatedBy', '') == request.auth.uid
-        && membership.keys().hasOnly([
-          'authorizationRole',
-          'status'
-        ])
         && membership.get('authorizationRole', '') == 'MEMBER'
         && membership.get('status', '') == 'ACTIVE'
-        && staff.keys().hasOnly([
-          'staffRole',
-          'status'
-        ])
         && staff.get('staffRole', '') == staffRole
         && staff.get('status', '') == 'ACTIVE';
     }
     function validProClubMembershipCreateV1(clubId, uid) {
       return isSignedIn()
+        && !exists(
+          /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)
+        )
         && request.resource.data.keys().hasOnly([
           'authorizationRole',
           'status'
@@ -2138,6 +2135,9 @@ service cloud.firestore {
     }
     function validProClubStaffCreateV1(clubId, uid) {
       return isSignedIn()
+        && !exists(
+          /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)
+        )
         && request.resource.data.keys().hasOnly([
           'staffRole',
           'status'
@@ -2159,11 +2159,11 @@ service cloud.firestore {
       uid,
       staffRole
     ) {
-      let proofPath =
-        /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(uid);
+      let proof = getAfter(
+        /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(uid)
+      ).data;
 
-      return existsAfter(proofPath)
-        && getAfter(proofPath).data.get('staffRole', '') == staffRole;
+      return proof.get('staffRole', '') == staffRole;
     }
     function validProClubInviteConsumptionV1(inviteCode) {
       let data = request.resource.data;
@@ -2172,6 +2172,13 @@ service cloud.firestore {
       let claimId = data.get('claimId', '');
 
       return isSignedIn()
+        && resource.data.get('status', '') == 'ACTIVE'
+        && data.get('status', '') == 'CONSUMED'
+        && resource.data.get('expiresAt', null) is timestamp
+        && resource.data.get('expiresAt', null) > request.time
+        && exactDocumentId(clubId)
+        && exactDocumentId(uid)
+        && claimId == uid + '_PRO_CLUB_' + inviteCode
         && resource.data.keys().hasOnly([
           'schemaVersion',
           'inviteCode',
@@ -2188,14 +2195,8 @@ service cloud.firestore {
         ])
         && resource.data.get('schemaVersion', 0) == 1
         && resource.data.get('inviteCode', '') == inviteCode
-        && exactDocumentId(clubId)
-        && exactDocumentId(uid)
         && resource.data.get('membershipAuthorizationRole', '') == 'MEMBER'
         && validProClubStaffRoleV1(resource.data.get('staffRole', ''))
-        && resource.data.get('status', '') == 'ACTIVE'
-        && resource.data.get('expiresAt', null) is timestamp
-        && resource.data.get('expiresAt', null) > request.time
-        && data.get('status', '') == 'CONSUMED'
         && data.diff(resource.data).affectedKeys().hasOnly([
           'status',
           'consumedAt',
@@ -2204,7 +2205,6 @@ service cloud.firestore {
           'updatedAt',
           'updatedBy'
         ])
-        && claimId == uid + '_PRO_CLUB_' + inviteCode
         && data.get('consumedAt', null) == request.time
         && data.get('consumedBy', '') == request.auth.uid
         && data.get('updatedAt', null) == request.time
@@ -2226,13 +2226,13 @@ service cloud.firestore {
       inviteCode,
       staffRole
     ) {
-      let proofPath =
-        /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(uid);
+      let proof = getAfter(
+        /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(uid)
+      ).data;
 
-      return existsAfter(proofPath)
-        && getAfter(proofPath).data.get('claimId', '') == claimId
-        && getAfter(proofPath).data.get('inviteCode', '') == inviteCode
-        && getAfter(proofPath).data.get('staffRole', '') == staffRole;
+      return proof.get('claimId', '') == claimId
+        && proof.get('inviteCode', '') == inviteCode
+        && proof.get('staffRole', '') == staffRole;
     }
     function validProClubInviteRevocationV1(inviteCode) {
       let data = request.resource.data;
@@ -2346,14 +2346,12 @@ service cloud.firestore {
       allow create: if validProClubInviteCreateV1(inviteCode);
       allow update: if resource != null
         && (
-          (
-            request.resource.data.get('status', '') == 'CONSUMED'
-            && validProClubInviteConsumptionV1(inviteCode)
-          )
-          || (
-            request.resource.data.get('status', '') == 'REVOKED'
-            && validProClubInviteRevocationV1(inviteCode)
-          )
+          request.resource.data.get('status', '') == 'CONSUMED'
+            ? validProClubInviteConsumptionV1(inviteCode)
+            : (
+              request.resource.data.get('status', '') == 'REVOKED'
+              && validProClubInviteRevocationV1(inviteCode)
+            )
         );
       allow delete: if false;
     }
@@ -2401,14 +2399,12 @@ service cloud.firestore {
         allow create: if validProClubClaimCreateV1(clubId, claimId);
         allow update: if resource != null
           && (
-            (
-              request.resource.data.get('status', '') == 'APPROVED'
-              && validProClubClaimApprovalV1(clubId, claimId)
-            )
-            || (
-              request.resource.data.get('status', '') == 'REJECTED'
-              && validProClubClaimRejectionV1(clubId, claimId)
-            )
+            request.resource.data.get('status', '') == 'APPROVED'
+              ? validProClubClaimApprovalV1(clubId, claimId)
+              : (
+                request.resource.data.get('status', '') == 'REJECTED'
+                && validProClubClaimRejectionV1(clubId, claimId)
+              )
           );
         allow delete: if false;
       }
