@@ -283,10 +283,11 @@ export default function App() {
   }
 
   const canOpenProClub = Boolean(actualUser?.uid && currentUser.uid === actualUser.uid &&
+    isExplicitlyActiveAccountStatus(actualUser.status) &&
     !isSupportActive && !currentUser.supportPresentation);
 
-  // Pro Club has its own canonical membership boundary. Account/Academy
-  // onboarding gates below remain unchanged for the existing destinations.
+  // Canonical account eligibility gates the portal before its membership boundary.
+  // Existing Account/Academy destinations retain their gates below.
   if (currentPage === "pro_club") {
     return canOpenProClub
       ? <ProClubPortal key={actualUser!.uid} onBack={() => navigateTo("dashboard")} onLogout={handleLogout} />
