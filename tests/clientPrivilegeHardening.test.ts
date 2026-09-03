@@ -134,18 +134,39 @@ test("12 provider does not expose mock login", () => {
 
 test("13 missing user document fails closed without a local User identity", () => {
   assert.doesNotMatch(authSource, /\bdefaultUser\b/);
+  const userDocumentBranch = descendants(
+    authAst,
+    (node): node is ts.IfStatement =>
+      ts.isIfStatement(node) && node.expression.getText(authAst) === "userDoc.exists()",
+  )[0];
+  assert.ok(userDocumentBranch?.elseStatement, "Expected missing user document branch");
   assert.match(
-    authSource,
-    /else\s*\{\s*setActualUser\s*\(\s*null\s*\);\s*setCurrentUser\s*\(\s*null\s*\)/,
+    userDocumentBranch.elseStatement.getText(authAst),
+    /^\{\s*setActualUser\s*\(\s*null\s*\);\s*setSupportPresentedUserState\s*\(\s*null\s*\);\s*\}$/,
+  );
+  // Clearing both sources must also clear the identity exposed as currentUser.
+  assert.match(
+    variableInitializerText(authAst, "currentUser"),
+    /^supportPresentedUser\s*\?\?\s*actualUser$/,
   );
 });
 
-test("14 actualUser/currentUser use the Firebase UID", () => {
+test("14 actualUser uses the Firebase UID and is the default currentUser", () => {
   const fullUser = variableInitializerText(authAst, "fullUser");
   assert.match(fullUser, /id\s*:\s*firebaseUser\.uid/);
   assert.match(fullUser, /uid\s*:\s*firebaseUser\.uid/);
   assert.match(authSource, /setActualUser\s*\(\s*fullUser\s*\)/);
-  assert.match(authSource, /setCurrentUser\s*\(\s*fullUser\s*\)/);
+  assert.match(fullUser, /supportPresentation\s*:\s*undefined/);
+  assert.match(
+    authSource,
+    /\[\s*supportPresentedUser\s*,\s*setSupportPresentedUserState\s*\]\s*=\s*useState<User\s*\|\s*null>\(null\)/,
+  );
+  assert.match(
+    variableInitializerText(authAst, "currentUser"),
+    /^supportPresentedUser\s*\?\?\s*actualUser$/,
+  );
+  assert.ok(providerValueProperties().includes("actualUser"));
+  assert.ok(providerValueProperties().includes("currentUser"));
 });
 
 test("15 AuthContext exposes no caller-provided user-switching API", () => {
@@ -249,7 +270,8 @@ test("32 AuthContext contains no helper equivalent to arbitrary mock login", () 
     if (!ts.isArrowFunction(initializer) && !ts.isFunctionExpression(initializer)) return false;
     const acceptsUser = initializer.parameters.some((parameter) => parameter.type?.getText(authAst) === "User");
     const body = initializer.body.getText(authAst);
-    return acceptsUser && /setActualUser\s*\(/.test(body) && /setCurrentUser\s*\(/.test(body);
+    // Publishing a caller-provided actualUser also changes the derived currentUser.
+    return acceptsUser && /setActualUser\s*\(/.test(body);
   });
   assert.equal(localAuthFabricators.length, 0);
 });
