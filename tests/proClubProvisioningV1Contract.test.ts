@@ -45,7 +45,31 @@ interface ProClubProvisioningRequestInput {
   requestingSuperAdminUid: string;
 }
 
-function normalizeProvisioningRequest(input: ProClubProvisioningRequestInput) {
+export interface NormalizedProClubProvisioningRequestV1 {
+  readonly clubId: string;
+  readonly country: string | null;
+  readonly initialOwnerUid: string;
+  readonly level: "T1" | "T2" | "T3";
+  readonly logoUrl: string | null;
+  readonly name: string;
+  readonly provisioningId: string;
+  readonly requestingSuperAdminUid: string;
+  readonly shortName: string | null;
+}
+
+export interface CanonicalAuditV1 {
+  schemaVersion: 1;
+  provisioningId: string;
+  clubId: string;
+  ownerUid: string;
+  requestingSuperAdminUid: string;
+  requestFingerprint: string;
+  normalizedRequest: NormalizedProClubProvisioningRequestV1;
+  createdAt: string;
+  status: "COMPLETED";
+}
+
+function normalizeProvisioningRequest(input: ProClubProvisioningRequestInput): NormalizedProClubProvisioningRequestV1 {
   const trimOrNull = (v?: string | null) => {
     if (!v) return null;
     const trimmed = v.trim();
@@ -67,15 +91,357 @@ function normalizeProvisioningRequest(input: ProClubProvisioningRequestInput) {
 
 function computeProvisioningRequestFingerprint(input: ProClubProvisioningRequestInput): string {
   const normalized = normalizeProvisioningRequest(input);
-  const canonicalJson = JSON.stringify(normalized);
+  const canonicalJson = JSON.stringify({
+    clubId: normalized.clubId,
+    country: normalized.country,
+    initialOwnerUid: normalized.initialOwnerUid,
+    level: normalized.level,
+    logoUrl: normalized.logoUrl,
+    name: normalized.name,
+    provisioningId: normalized.provisioningId,
+    requestingSuperAdminUid: normalized.requestingSuperAdminUid,
+    shortName: normalized.shortName,
+  });
   const hash = createHash("sha256").update(canonicalJson).digest("hex");
   return `sha256:${hash}`;
+}
+
+function validateOptionalStringField(
+  val: unknown,
+): { valid: false } | { valid: true; value: string | null } {
+  if (val === undefined || val === null) {
+    return { valid: true, value: null };
+  }
+  if (typeof val !== "string") {
+    return { valid: false };
+  }
+  const trimmed = val.trim();
+  return { valid: true, value: trimmed.length > 0 ? trimmed : null };
+}
+
+function validateProvisioningRequestRuntime(
+  rawInput: unknown,
+  tokenUid: string,
+  timestampRepresentation = "2026-09-04T00:00:00.000Z",
+):
+  | {
+      valid: true;
+      normalizedRequest: NormalizedProClubProvisioningRequestV1;
+      clubPayload: Record<string, unknown>;
+      requestFingerprint: string;
+    }
+  | {
+      valid: false;
+      error: "ERROR_INVALID_PROVISIONING_REQUEST";
+      writesCount: 0;
+    } {
+  if (!rawInput || typeof rawInput !== "object" || Array.isArray(rawInput)) {
+    return { valid: false, error: "ERROR_INVALID_PROVISIONING_REQUEST", writesCount: 0 };
+  }
+
+  // Requesting superadmin UID must come strictly from verified token, not client payload
+  if (!isValidDocumentIdentifier(tokenUid)) {
+    return { valid: false, error: "ERROR_INVALID_PROVISIONING_REQUEST", writesCount: 0 };
+  }
+
+  const record = rawInput as Record<string, unknown>;
+
+  if (typeof record.provisioningId !== "string" || !isValidDocumentIdentifier(record.provisioningId)) {
+    return { valid: false, error: "ERROR_INVALID_PROVISIONING_REQUEST", writesCount: 0 };
+  }
+  if (typeof record.clubId !== "string" || !isValidDocumentIdentifier(record.clubId)) {
+    return { valid: false, error: "ERROR_INVALID_PROVISIONING_REQUEST", writesCount: 0 };
+  }
+  if (typeof record.initialOwnerUid !== "string" || !isValidDocumentIdentifier(record.initialOwnerUid)) {
+    return { valid: false, error: "ERROR_INVALID_PROVISIONING_REQUEST", writesCount: 0 };
+  }
+
+  if (typeof record.name !== "string" || record.name.trim().length === 0) {
+    return { valid: false, error: "ERROR_INVALID_PROVISIONING_REQUEST", writesCount: 0 };
+  }
+
+  if (record.level !== "T1" && record.level !== "T2" && record.level !== "T3") {
+    return { valid: false, error: "ERROR_INVALID_PROVISIONING_REQUEST", writesCount: 0 };
+  }
+
+  const shortNameRes = validateOptionalStringField(record.shortName);
+  if (!shortNameRes.valid) {
+    return { valid: false, error: "ERROR_INVALID_PROVISIONING_REQUEST", writesCount: 0 };
+  }
+
+  const countryRes = validateOptionalStringField(record.country);
+  if (!countryRes.valid) {
+    return { valid: false, error: "ERROR_INVALID_PROVISIONING_REQUEST", writesCount: 0 };
+  }
+
+  const logoUrlRes = validateOptionalStringField(record.logoUrl);
+  if (!logoUrlRes.valid) {
+    return { valid: false, error: "ERROR_INVALID_PROVISIONING_REQUEST", writesCount: 0 };
+  }
+
+  const normalizedRequest: NormalizedProClubProvisioningRequestV1 = {
+    clubId: record.clubId.trim(),
+    country: countryRes.value,
+    initialOwnerUid: record.initialOwnerUid.trim(),
+    level: record.level,
+    logoUrl: logoUrlRes.value,
+    name: record.name.trim(),
+    provisioningId: record.provisioningId.trim(),
+    requestingSuperAdminUid: tokenUid.trim(),
+    shortName: shortNameRes.value,
+  };
+
+  const clubPayload: Record<string, unknown> = {
+    name: normalizedRequest.name,
+    level: normalizedRequest.level,
+    status: "ACTIVE",
+    createdAt: timestampRepresentation,
+    updatedAt: timestampRepresentation,
+  };
+  if (normalizedRequest.shortName !== null) {
+    clubPayload.shortName = normalizedRequest.shortName;
+  }
+  if (normalizedRequest.country !== null) {
+    clubPayload.country = normalizedRequest.country;
+  }
+  if (normalizedRequest.logoUrl !== null) {
+    clubPayload.logoUrl = normalizedRequest.logoUrl;
+  }
+
+  // Model contract validation before any transaction write
+  const modelContext = {
+    clubId: normalizedRequest.clubId,
+    documentId: normalizedRequest.clubId,
+  };
+  if (!validateProClub(clubPayload, modelContext)) {
+    return { valid: false, error: "ERROR_INVALID_PROVISIONING_REQUEST", writesCount: 0 };
+  }
+
+  const canonicalJson = JSON.stringify({
+    clubId: normalizedRequest.clubId,
+    country: normalizedRequest.country,
+    initialOwnerUid: normalizedRequest.initialOwnerUid,
+    level: normalizedRequest.level,
+    logoUrl: normalizedRequest.logoUrl,
+    name: normalizedRequest.name,
+    provisioningId: normalizedRequest.provisioningId,
+    requestingSuperAdminUid: normalizedRequest.requestingSuperAdminUid,
+    shortName: normalizedRequest.shortName,
+  });
+  const hash = createHash("sha256").update(canonicalJson).digest("hex");
+  const requestFingerprint = `sha256:${hash}`;
+
+  return {
+    valid: true,
+    normalizedRequest,
+    clubPayload,
+    requestFingerprint,
+  };
+}
+
+const AUDIT_EXACT_ALLOWED_FIELDS = new Set([
+  "schemaVersion",
+  "provisioningId",
+  "clubId",
+  "ownerUid",
+  "requestingSuperAdminUid",
+  "requestFingerprint",
+  "normalizedRequest",
+  "createdAt",
+  "status",
+]);
+
+const NORMALIZED_REQUEST_EXACT_ALLOWED_FIELDS = new Set([
+  "clubId",
+  "country",
+  "initialOwnerUid",
+  "level",
+  "logoUrl",
+  "name",
+  "provisioningId",
+  "requestingSuperAdminUid",
+  "shortName",
+]);
+
+function isValidServerTimestamp(value: unknown): boolean {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return false;
+  }
+  const parsed = Date.parse(value);
+  return !Number.isNaN(parsed);
+}
+
+function validateProvisioningAuditOnReplay(
+  auditDoc: unknown,
+  documentId: string,
+  authenticatedRequesterUid: string,
+):
+  | {
+      valid: true;
+      status: "COMPLETED";
+      proceedToResourceIntegrityChecks: true;
+    }
+  | {
+      valid: false;
+      error: "ERROR_PROVISIONING_INTEGRITY";
+    } {
+  if (!auditDoc || typeof auditDoc !== "object" || Array.isArray(auditDoc)) {
+    return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+  }
+
+  const audit = auditDoc as Record<string, unknown>;
+
+  // Strict whitelist of exact allowed fields only (no extra fields, no missing fields)
+  const auditKeys = Object.keys(audit);
+  if (auditKeys.length !== AUDIT_EXACT_ALLOWED_FIELDS.size) {
+    return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+  }
+  for (const key of auditKeys) {
+    if (!AUDIT_EXACT_ALLOWED_FIELDS.has(key)) {
+      return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+    }
+  }
+
+  // schemaVersion === 1
+  if (audit.schemaVersion !== 1) {
+    return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+  }
+
+  // audit document id === provisioningId && audit.provisioningId === provisioningId
+  if (
+    typeof audit.provisioningId !== "string" ||
+    audit.provisioningId !== documentId ||
+    !isValidDocumentIdentifier(audit.provisioningId)
+  ) {
+    return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+  }
+
+  // audit.status === "COMPLETED"
+  if (audit.status !== "COMPLETED") {
+    return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+  }
+
+  // audit.createdAt must be valid server-authoritative timestamp representation
+  if (!isValidServerTimestamp(audit.createdAt)) {
+    return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+  }
+
+  // audit.clubId exact valid canonical identifier
+  if (typeof audit.clubId !== "string" || !isValidDocumentIdentifier(audit.clubId)) {
+    return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+  }
+
+  // audit.ownerUid exact valid canonical identifier
+  if (typeof audit.ownerUid !== "string" || !isValidDocumentIdentifier(audit.ownerUid)) {
+    return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+  }
+
+  // audit.requestingSuperAdminUid exactly equals authenticated requester uid
+  if (
+    typeof audit.requestingSuperAdminUid !== "string" ||
+    audit.requestingSuperAdminUid !== authenticatedRequesterUid ||
+    !isValidDocumentIdentifier(audit.requestingSuperAdminUid)
+  ) {
+    return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+  }
+
+  // requestFingerprint: exact string, format /^sha256:[a-f0-9]{64}$/
+  if (
+    typeof audit.requestFingerprint !== "string" ||
+    !/^sha256:[a-f0-9]{64}$/.test(audit.requestFingerprint)
+  ) {
+    return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+  }
+
+  // normalizedRequest validation
+  if (
+    !audit.normalizedRequest ||
+    typeof audit.normalizedRequest !== "object" ||
+    Array.isArray(audit.normalizedRequest)
+  ) {
+    return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+  }
+
+  const norm = audit.normalizedRequest as Record<string, unknown>;
+  const normKeys = Object.keys(norm);
+  if (normKeys.length !== NORMALIZED_REQUEST_EXACT_ALLOWED_FIELDS.size) {
+    return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+  }
+  for (const key of normKeys) {
+    if (!NORMALIZED_REQUEST_EXACT_ALLOWED_FIELDS.has(key)) {
+      return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+    }
+  }
+
+  // Exact binding
+  if (norm.provisioningId !== audit.provisioningId) {
+    return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+  }
+  if (norm.clubId !== audit.clubId) {
+    return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+  }
+  if (norm.initialOwnerUid !== audit.ownerUid) {
+    return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+  }
+  if (norm.requestingSuperAdminUid !== audit.requestingSuperAdminUid) {
+    return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+  }
+
+  // Values already normalized
+  if (typeof norm.name !== "string" || norm.name.trim() !== norm.name || norm.name.length === 0) {
+    return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+  }
+  if (norm.level !== "T1" && norm.level !== "T2" && norm.level !== "T3") {
+    return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+  }
+  if (
+    norm.shortName !== null &&
+    (typeof norm.shortName !== "string" || norm.shortName.trim() !== norm.shortName || norm.shortName.length === 0)
+  ) {
+    return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+  }
+  if (
+    norm.country !== null &&
+    (typeof norm.country !== "string" || norm.country.trim() !== norm.country || norm.country.length === 0)
+  ) {
+    return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+  }
+  if (
+    norm.logoUrl !== null &&
+    (typeof norm.logoUrl !== "string" || norm.logoUrl.trim() !== norm.logoUrl || norm.logoUrl.length === 0)
+  ) {
+    return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+  }
+
+  // Recomputed fingerprint over normalizedRequest must match stored requestFingerprint
+  const canonicalNormJson = JSON.stringify({
+    clubId: norm.clubId,
+    country: norm.country,
+    initialOwnerUid: norm.initialOwnerUid,
+    level: norm.level,
+    logoUrl: norm.logoUrl,
+    name: norm.name,
+    provisioningId: norm.provisioningId,
+    requestingSuperAdminUid: norm.requestingSuperAdminUid,
+    shortName: norm.shortName,
+  });
+  const recomputedHash = `sha256:${createHash("sha256").update(canonicalNormJson).digest("hex")}`;
+  if (recomputedHash !== audit.requestFingerprint) {
+    return { valid: false, error: "ERROR_PROVISIONING_INTEGRITY" };
+  }
+
+  return {
+    valid: true,
+    status: "COMPLETED",
+    proceedToResourceIntegrityChecks: true,
+  };
 }
 
 test("Pro Club Provisioning V1 Contract Freeze", async (t) => {
   await t.test("freezes exact baseline, branch scope, and two-file boundary", () => {
     assert.ok(contract.includes("03866126fb98e034a6898b4ff6de99a8210e9f29"));
     assert.ok(contract.includes("0ba128d26b96ea24611a8ad065d1ec6babddf971"));
+    assert.ok(contract.includes("d3ef685e1a051359f0628da0664a249174df3e84"));
     assert.ok(contract.includes("feat/pro-club-provisioning-v1-contract"));
     assert.ok(contract.includes("https://github.com/Jetsalit/Futverse-app.git"));
     assert.ok(contract.includes("docs/PRO_CLUB_PROVISIONING_V1_CONTRACT_FREEZE.md"));
@@ -564,5 +930,347 @@ test("Pro Club Provisioning V1 Contract Freeze", async (t) => {
     assert.ok(contract.includes("Contract Freeze Scope Boundary"));
     assert.ok(contract.includes("This contract slice is documentation and contract tests only"));
     assert.ok(contract.includes("It does NOT authorize production implementation, client write paths, or deployment"));
+  });
+
+  await t.test("Finding 1: complete runtime request validation freezes all untrusted fields", () => {
+    const validTokenUid = "user-superadmin-789";
+    const validBaseInput = {
+      provisioningId: "prov-lampang-001",
+      clubId: "club-lampang",
+      initialOwnerUid: "user-owner-123",
+      name: "Lampang FC",
+      level: "T1" as const,
+      shortName: "LFC",
+      country: "TH",
+      logoUrl: "https://example.com/logo.png",
+    };
+
+    // Valid request succeeds and passes model validation
+    const validRes = validateProvisioningRequestRuntime(validBaseInput, validTokenUid);
+    assert.equal(validRes.valid, true);
+    if (validRes.valid) {
+      assert.equal(validRes.clubPayload.name, "Lampang FC");
+      assert.equal(validRes.clubPayload.level, "T1");
+      assert.equal(validRes.clubPayload.status, "ACTIVE");
+      assert.equal(validRes.clubPayload.shortName, "LFC");
+      assert.equal(validRes.clubPayload.country, "TH");
+      assert.equal(validRes.clubPayload.logoUrl, "https://example.com/logo.png");
+      assert.equal(
+        validateProClub(validRes.clubPayload, {
+          clubId: validRes.normalizedRequest.clubId,
+          documentId: validRes.normalizedRequest.clubId,
+        }),
+        true,
+      );
+    }
+
+    // Number shortName rejected
+    const numShortNameRes = validateProvisioningRequestRuntime(
+      { ...validBaseInput, shortName: 12345 },
+      validTokenUid,
+    );
+    assert.equal(numShortNameRes.valid, false);
+    if (!numShortNameRes.valid) {
+      assert.equal(numShortNameRes.error, "ERROR_INVALID_PROVISIONING_REQUEST");
+      assert.equal(numShortNameRes.writesCount, 0);
+    }
+
+    // Object country rejected
+    const objCountryRes = validateProvisioningRequestRuntime(
+      { ...validBaseInput, country: { code: "TH" } },
+      validTokenUid,
+    );
+    assert.equal(objCountryRes.valid, false);
+    if (!objCountryRes.valid) {
+      assert.equal(objCountryRes.error, "ERROR_INVALID_PROVISIONING_REQUEST");
+      assert.equal(objCountryRes.writesCount, 0);
+    }
+
+    // Array logoUrl rejected
+    const arrLogoRes = validateProvisioningRequestRuntime(
+      { ...validBaseInput, logoUrl: ["https://example.com/logo.png"] },
+      validTokenUid,
+    );
+    assert.equal(arrLogoRes.valid, false);
+    if (!arrLogoRes.valid) {
+      assert.equal(arrLogoRes.error, "ERROR_INVALID_PROVISIONING_REQUEST");
+      assert.equal(arrLogoRes.writesCount, 0);
+    }
+
+    // Boolean optional field rejected
+    const boolShortNameRes = validateProvisioningRequestRuntime(
+      { ...validBaseInput, shortName: true },
+      validTokenUid,
+    );
+    assert.equal(boolShortNameRes.valid, false);
+    if (!boolShortNameRes.valid) {
+      assert.equal(boolShortNameRes.error, "ERROR_INVALID_PROVISIONING_REQUEST");
+      assert.equal(boolShortNameRes.writesCount, 0);
+    }
+
+    const boolCountryRes = validateProvisioningRequestRuntime(
+      { ...validBaseInput, country: false },
+      validTokenUid,
+    );
+    assert.equal(boolCountryRes.valid, false);
+    if (!boolCountryRes.valid) {
+      assert.equal(boolCountryRes.error, "ERROR_INVALID_PROVISIONING_REQUEST");
+      assert.equal(boolCountryRes.writesCount, 0);
+    }
+
+    const boolLogoRes = validateProvisioningRequestRuntime(
+      { ...validBaseInput, logoUrl: true },
+      validTokenUid,
+    );
+    assert.equal(boolLogoRes.valid, false);
+    if (!boolLogoRes.valid) {
+      assert.equal(boolLogoRes.error, "ERROR_INVALID_PROVISIONING_REQUEST");
+      assert.equal(boolLogoRes.writesCount, 0);
+    }
+
+    // Empty normalized name rejected
+    const emptyNameRes = validateProvisioningRequestRuntime(
+      { ...validBaseInput, name: "   " },
+      validTokenUid,
+    );
+    assert.equal(emptyNameRes.valid, false);
+    if (!emptyNameRes.valid) {
+      assert.equal(emptyNameRes.error, "ERROR_INVALID_PROVISIONING_REQUEST");
+      assert.equal(emptyNameRes.writesCount, 0);
+    }
+
+    // Invalid level rejected
+    for (const invalidLevel of ["T0", "T4", "PREMIER", "T1_PLUS", "", null, 1]) {
+      const invalidLevelRes = validateProvisioningRequestRuntime(
+        { ...validBaseInput, level: invalidLevel },
+        validTokenUid,
+      );
+      assert.equal(invalidLevelRes.valid, false);
+      if (!invalidLevelRes.valid) {
+        assert.equal(invalidLevelRes.error, "ERROR_INVALID_PROVISIONING_REQUEST");
+        assert.equal(invalidLevelRes.writesCount, 0);
+      }
+    }
+
+    // Exact normalized club payload passes model validation with null optional fields
+    const nullOptionalRes = validateProvisioningRequestRuntime(
+      { ...validBaseInput, shortName: "   ", country: null, logoUrl: undefined },
+      validTokenUid,
+    );
+    assert.equal(nullOptionalRes.valid, true);
+    if (nullOptionalRes.valid) {
+      assert.equal(nullOptionalRes.normalizedRequest.shortName, null);
+      assert.equal(nullOptionalRes.normalizedRequest.country, null);
+      assert.equal(nullOptionalRes.normalizedRequest.logoUrl, null);
+      assert.equal("shortName" in nullOptionalRes.clubPayload, false);
+      assert.equal("country" in nullOptionalRes.clubPayload, false);
+      assert.equal("logoUrl" in nullOptionalRes.clubPayload, false);
+      assert.equal(
+        validateProClub(nullOptionalRes.clubPayload, {
+          clubId: nullOptionalRes.normalizedRequest.clubId,
+          documentId: nullOptionalRes.normalizedRequest.clubId,
+        }),
+        true,
+      );
+    }
+
+    // Invalid payload performs no authorized provisioning path by contract (ZERO WRITES)
+    const invalidDocIdRes = validateProvisioningRequestRuntime(
+      { ...validBaseInput, clubId: "invalid/slash/id" },
+      validTokenUid,
+    );
+    assert.equal(invalidDocIdRes.valid, false);
+    if (!invalidDocIdRes.valid) {
+      assert.equal(invalidDocIdRes.error, "ERROR_INVALID_PROVISIONING_REQUEST");
+      assert.equal(invalidDocIdRes.writesCount, 0);
+    }
+
+    // Requester UID must strictly come from verified token, not client payload
+    const invalidTokenRes = validateProvisioningRequestRuntime(
+      validBaseInput,
+      "invalid/slash/uid",
+    );
+    assert.equal(invalidTokenRes.valid, false);
+    if (!invalidTokenRes.valid) {
+      assert.equal(invalidTokenRes.error, "ERROR_INVALID_PROVISIONING_REQUEST");
+      assert.equal(invalidTokenRes.writesCount, 0);
+    }
+
+    // Contract text verification
+    assert.ok(contract.includes("Complete Runtime Request Validation"));
+    assert.ok(contract.includes("ERROR_INVALID_PROVISIONING_REQUEST"));
+    assert.ok(contract.includes("ZERO WRITES"));
+  });
+
+  await t.test("Finding 2: complete audit validation on replay enforces canonical shape and integrity", () => {
+    const provId = "prov-lampang-20260904-001";
+    const clubId = "club-lampang";
+    const ownerUid = "user-owner-123";
+    const superAdminUid = "user-superadmin-789";
+
+    const canonicalNormRequest = {
+      clubId,
+      country: "TH",
+      initialOwnerUid: ownerUid,
+      level: "T1" as const,
+      logoUrl: "https://example.com/logo.png",
+      name: "Lampang FC",
+      provisioningId: provId,
+      requestingSuperAdminUid: superAdminUid,
+      shortName: "LFC",
+    };
+    const canonicalFp = `sha256:${createHash("sha256").update(JSON.stringify(canonicalNormRequest)).digest("hex")}`;
+
+    const validAudit = {
+      schemaVersion: 1,
+      provisioningId: provId,
+      clubId,
+      ownerUid,
+      requestingSuperAdminUid: superAdminUid,
+      requestFingerprint: canonicalFp,
+      normalizedRequest: { ...canonicalNormRequest },
+      createdAt: "2026-09-04T00:00:00.000Z",
+      status: "COMPLETED",
+    };
+
+    // Valid exact audit may proceed to canonical resource integrity checks
+    const validRes = validateProvisioningAuditOnReplay(validAudit, provId, superAdminUid);
+    assert.equal(validRes.valid, true);
+    if (validRes.valid) {
+      assert.equal(validRes.status, "COMPLETED");
+      assert.equal(validRes.proceedToResourceIntegrityChecks, true);
+    }
+
+    // Wrong schemaVersion fails
+    const wrongSchemaRes = validateProvisioningAuditOnReplay(
+      { ...validAudit, schemaVersion: 2 },
+      provId,
+      superAdminUid,
+    );
+    assert.equal(wrongSchemaRes.valid, false);
+    if (!wrongSchemaRes.valid) {
+      assert.equal(wrongSchemaRes.error, "ERROR_PROVISIONING_INTEGRITY");
+    }
+
+    // Status PENDING fails (must never return COMPLETED)
+    const pendingStatusRes = validateProvisioningAuditOnReplay(
+      { ...validAudit, status: "PENDING" },
+      provId,
+      superAdminUid,
+    );
+    assert.equal(pendingStatusRes.valid, false);
+    if (!pendingStatusRes.valid) {
+      assert.equal(pendingStatusRes.error, "ERROR_PROVISIONING_INTEGRITY");
+    }
+
+    // Missing createdAt fails
+    const auditWithoutCreatedAt = { ...validAudit };
+    delete (auditWithoutCreatedAt as Record<string, unknown>).createdAt;
+    const missingCreatedAtRes = validateProvisioningAuditOnReplay(
+      auditWithoutCreatedAt,
+      provId,
+      superAdminUid,
+    );
+    assert.equal(missingCreatedAtRes.valid, false);
+    if (!missingCreatedAtRes.valid) {
+      assert.equal(missingCreatedAtRes.error, "ERROR_PROVISIONING_INTEGRITY");
+    }
+
+    // Invalid timestamp fails
+    const invalidTimestampRes = validateProvisioningAuditOnReplay(
+      { ...validAudit, createdAt: "not-a-valid-timestamp" },
+      provId,
+      superAdminUid,
+    );
+    assert.equal(invalidTimestampRes.valid, false);
+    if (!invalidTimestampRes.valid) {
+      assert.equal(invalidTimestampRes.error, "ERROR_PROVISIONING_INTEGRITY");
+    }
+
+    // Extra audit field fails
+    const extraAuditFieldRes = validateProvisioningAuditOnReplay(
+      { ...validAudit, extraField: "unexpected" },
+      provId,
+      superAdminUid,
+    );
+    assert.equal(extraAuditFieldRes.valid, false);
+    if (!extraAuditFieldRes.valid) {
+      assert.equal(extraAuditFieldRes.error, "ERROR_PROVISIONING_INTEGRITY");
+    }
+
+    // Malformed fingerprint fails
+    for (const badFp of [
+      "not-a-sha256",
+      "sha256:xyz",
+      "sha256:9e51527c280bde9ff8199cf21939b510bd0289e2a6769019a87b11646bd6633", // 63 chars
+      "sha256:9e51527c280bde9ff8199cf21939b510bd0289e2a6769019a87b11646bd663321", // 65 chars
+      12345,
+    ]) {
+      const malformedFpRes = validateProvisioningAuditOnReplay(
+        { ...validAudit, requestFingerprint: badFp },
+        provId,
+        superAdminUid,
+      );
+      assert.equal(malformedFpRes.valid, false);
+      if (!malformedFpRes.valid) {
+        assert.equal(malformedFpRes.error, "ERROR_PROVISIONING_INTEGRITY");
+      }
+    }
+
+    // normalizedRequest extra field fails
+    const normExtraFieldRes = validateProvisioningAuditOnReplay(
+      {
+        ...validAudit,
+        normalizedRequest: { ...canonicalNormRequest, unexpectedKey: "forbidden" },
+      },
+      provId,
+      superAdminUid,
+    );
+    assert.equal(normExtraFieldRes.valid, false);
+    if (!normExtraFieldRes.valid) {
+      assert.equal(normExtraFieldRes.error, "ERROR_PROVISIONING_INTEGRITY");
+    }
+
+    // normalizedRequest/fingerprint mismatch fails
+    const fpMismatchRes = validateProvisioningAuditOnReplay(
+      {
+        ...validAudit,
+        normalizedRequest: { ...canonicalNormRequest, name: "Tampered FC" },
+      },
+      provId,
+      superAdminUid,
+    );
+    assert.equal(fpMismatchRes.valid, false);
+    if (!fpMismatchRes.valid) {
+      assert.equal(fpMismatchRes.error, "ERROR_PROVISIONING_INTEGRITY");
+    }
+
+    // Requester mismatch fails
+    const requesterMismatchRes = validateProvisioningAuditOnReplay(
+      validAudit,
+      provId,
+      "user-other-admin-999",
+    );
+    assert.equal(requesterMismatchRes.valid, false);
+    if (!requesterMismatchRes.valid) {
+      assert.equal(requesterMismatchRes.error, "ERROR_PROVISIONING_INTEGRITY");
+    }
+
+    // Owner mismatch fails
+    const ownerMismatchRes = validateProvisioningAuditOnReplay(
+      { ...validAudit, ownerUid: "user-different-owner-456" },
+      provId,
+      superAdminUid,
+    );
+    assert.equal(ownerMismatchRes.valid, false);
+    if (!ownerMismatchRes.valid) {
+      assert.equal(ownerMismatchRes.error, "ERROR_PROVISIONING_INTEGRITY");
+    }
+
+    // Contract text verification
+    assert.ok(contract.includes("Complete Canonical Audit Shape Validation"));
+    assert.ok(contract.includes("audit.schemaVersion === 1"));
+    assert.ok(contract.includes("audit.status === \"COMPLETED\""));
+    assert.ok(contract.includes("ERROR_PROVISIONING_INTEGRITY"));
   });
 });

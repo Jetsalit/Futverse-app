@@ -7,7 +7,7 @@ Status: FROZEN ARCHITECTURAL CONTRACT (DOCUMENTATION AND CONTRACT TESTS ONLY)
 - Workspace: `C:\Users\asus\Documents\Futverse-app`
 - Branch: `feat/pro-club-provisioning-v1-contract`
 - Base Commit / Origin Main: `03866126fb98e034a6898b4ff6de99a8210e9f29`
-- Pre-Review HEAD: `0ba128d26b96ea24611a8ad065d1ec6babddf971`
+- Prior Commits / HEAD: `d3ef685e1a051359f0628da0664a249174df3e84` (earlier: `0ba128d26b96ea24611a8ad065d1ec6babddf971`)
 - Origin: `https://github.com/Jetsalit/Futverse-app.git`
 - Origin/Main: `03866126fb98e034a6898b4ff6de99a8210e9f29`
 - Governing Predecessors:
@@ -238,7 +238,64 @@ export interface ProClubProvisioningRequestV1 {
 }
 ```
 
-### 6.2 Normalized Request & Deterministic Request Fingerprint Schema
+### 6.2 Complete Runtime Request Validation (Before Normalization & Before Transaction)
+
+ALL untrusted provisioning request input fields MUST undergo strict runtime validation BEFORE normalization and BEFORE any Firestore transaction is initiated.
+
+#### Required Runtime Field Validations:
+- **`provisioningId`**:
+  - Must be a `string`.
+  - Must satisfy `isValidDocumentIdentifier(provisioningId) === true`.
+- **`clubId`**:
+  - Must be a `string`.
+  - Must satisfy `isValidDocumentIdentifier(clubId) === true`.
+- **`initialOwnerUid`**:
+  - Must be a `string`.
+  - Must satisfy `isValidDocumentIdentifier(initialOwnerUid) === true`.
+- **`name`**:
+  - Must be a `string`.
+  - Must be non-empty after trimming (`name.trim().length > 0`).
+- **`level`**:
+  - Must strictly equal `"T1" | "T2" | "T3"` (`isProClubLevel(level) === true`).
+- **`shortName`**:
+  - Must be only `string | null | undefined`.
+  - Number, boolean, object, array, or any other type MUST be rejected.
+  - Trim if string; empty string `""` normalizes to `null`.
+- **`country`**:
+  - Must be only `string | null | undefined`.
+  - Number, boolean, object, array, or any other type MUST be rejected.
+  - Trim if string; empty string `""` normalizes to `null`.
+- **`logoUrl`**:
+  - Must be only `string | null | undefined`.
+  - Number, boolean, object, array, or any other type MUST be rejected.
+  - Trim if string; empty string `""` normalizes to `null`.
+- **`requestingSuperAdminUid`**:
+  - Must come ONLY from verified Firebase ID token claims (`decodedToken.uid`), NEVER from the client request payload.
+  - Must satisfy `isValidDocumentIdentifier(requestingSuperAdminUid) === true`.
+
+#### Exact Initial Club Payload Construction:
+After normalization, construct the exact initial `clubPayload`:
+```json
+{
+  "name": "Lampang FC",
+  "shortName": "LFC",
+  "level": "T1",
+  "status": "ACTIVE",
+  "country": "TH",
+  "logoUrl": "https://example.com/logo.png",
+  "createdAt": "2026-09-04T00:00:00.000Z",
+  "updatedAt": "2026-09-04T00:00:00.000Z"
+}
+```
+*(Optional fields `shortName`, `country`, `logoUrl` are included in the stored document payload only if non-null).*
+
+#### Model Contract Validation Before Any Transaction Write:
+- Before any transaction write, require the constructed `clubPayload` to satisfy the canonical Pro Club model contract using `validateProClub(clubPayload, { clubId, documentId: clubId })` or equivalent exact server validator.
+- If request validation fails or model validation fails:
+  - **FAIL CLOSED** immediately with `ERROR_INVALID_PROVISIONING_REQUEST`.
+  - **ZERO WRITES**: No club write, no owner membership write, no audit write. Invalid requests perform no authorized provisioning path by contract.
+
+### 6.3 Normalized Request & Deterministic Request Fingerprint Schema
 
 To guarantee deterministic replay detection, the server derives a canonical normalized request snapshot and a deterministic SHA-256 fingerprint binding all 9 initial provisioning fields:
 
@@ -269,7 +326,7 @@ export interface NormalizedProClubProvisioningRequestV1 {
    - Deterministic SHA-256 hex digest: `"sha256:" + sha256(canonicalJson)`.
    - Both `requestFingerprint` and the immutable `normalizedRequest` snapshot are persisted in `proClubProvisioningAudits/{provisioningId}`.
 
-### 6.3 Target Firestore Paths
+### 6.4 Target Firestore Paths
 
 The single server-side atomic transaction writes exactly three documents:
 
@@ -280,7 +337,7 @@ The single server-side atomic transaction writes exactly three documents:
 3. **Dedicated Immutable Provisioning Audit Document**:
    `proClubProvisioningAudits/{provisioningId}`
 
-### 6.4 Exact Target Document Payloads
+### 6.5 Exact Target Document Payloads
 
 #### 1. Pro Club Document (`proClubs/{clubId}`)
 ```json
@@ -362,15 +419,21 @@ Pre-transaction user read alone is NOT sufficient authorization; both requester 
 ### Phase 1: Pre-Transaction Validation & Normalization (Pre-Flight)
 1. **Firebase ID Token Verification**:
    - Cryptographically verify caller's Firebase ID token (valid signature, non-revoked, not expired).
-   - Extract `requestingSuperAdminUid` from token claims.
-2. **Document Identifier Validation**:
-   - `isValidDocumentIdentifier(clubId) === true`
-   - `isValidDocumentIdentifier(initialOwnerUid) === true`
-   - `isValidDocumentIdentifier(provisioningId) === true`
-   - If any identifier fails -> FAIL CLOSED (`ERROR_INVALID_IDENTIFIER`).
-3. **Request Field Validation & Normalization**:
-   - Validate `name` (non-empty string), `level in ["T1", "T2", "T3"]`.
-   - Apply explicit normalization rules and compute deterministic `requestFingerprint`.
+   - Extract `requestingSuperAdminUid` from token claims (never from client payload).
+   - Assert `isValidDocumentIdentifier(requestingSuperAdminUid) === true`.
+2. **Complete Runtime Request Validation**:
+   - Validate `provisioningId`, `clubId`, `initialOwnerUid` are valid document identifiers via `isValidDocumentIdentifier`.
+   - Validate `name` is string and non-empty after trim (`name.trim().length > 0`).
+   - Validate `level` is exact `"T1" | "T2" | "T3"`.
+   - Validate `shortName`, `country`, `logoUrl` are strictly `string | null | undefined` (reject number, boolean, object, array).
+   - If any validation fails -> FAIL CLOSED (`ERROR_INVALID_PROVISIONING_REQUEST`).
+3. **Request Field Normalization, Payload Construction, and Model Validation**:
+   - Apply explicit normalization rules to derive `NormalizedProClubProvisioningRequestV1`.
+   - Construct initial `clubPayload`.
+   - Validate `validateProClub(clubPayload, { clubId, documentId: clubId }) === true`.
+   - Compute deterministic `requestFingerprint`.
+   - If model validation fails -> FAIL CLOSED (`ERROR_INVALID_PROVISIONING_REQUEST`).
+   - ZERO WRITES performed if request or payload is invalid.
 
 ### Phase 2: Inside the SAME Firestore Transaction (`db.runTransaction`)
 The transaction must perform reads in this strict order to eliminate TOCTOU race conditions:
@@ -398,12 +461,29 @@ The transaction must perform reads in this strict order to eliminate TOCTOU race
 
 ### Branch A: IF AUDIT EXISTS (Replay & Idempotency Verification)
 
-1. **Verify Request Fingerprint & Identity Binding**:
-   - Compare `audit.provisioningId === provisioningId`.
-   - Compare `audit.requestFingerprint === requestFingerprint` (and/or exact match of `audit.normalizedRequest` snapshot).
-   - Also verify `audit.clubId === clubId`, `audit.ownerUid === initialOwnerUid`, `audit.requestingSuperAdminUid === requestingSuperAdminUid`.
-   - If `provisioningId` matches but `requestFingerprint` (or any bound initial field) differs:
-     FAIL CLOSED (`ERROR_PROVISIONING_ID_CONFLICT`).
+Before an existing audit may certify replay success, validate the COMPLETE canonical audit shape:
+
+1. **Complete Canonical Audit Shape Validation (Strict Whitelist)**:
+   - **Exact Allowed Fields ONLY**: `schemaVersion`, `provisioningId`, `clubId`, `ownerUid`, `requestingSuperAdminUid`, `requestFingerprint`, `normalizedRequest`, `createdAt`, `status`. Extra fields are strictly forbidden.
+   - **Schema Version**: `audit.schemaVersion === 1`.
+   - **Document ID & Binding**: Audit document ID === `provisioningId` and `audit.provisioningId === provisioningId`.
+   - **Audit Status**: `audit.status === "COMPLETED"` (status `"PENDING"` or any other status fails closed).
+   - **Server Timestamp**: `audit.createdAt` must be a valid server-authoritative timestamp representation (valid ISO 8601 string or Timestamp). Missing or invalid `createdAt` fails closed.
+   - **Document Identifiers**: `isValidDocumentIdentifier(audit.clubId) === true` and `isValidDocumentIdentifier(audit.ownerUid) === true`.
+   - **Requester Identity Binding**: `audit.requestingSuperAdminUid === requestingSuperAdminUid` (strictly equals authenticated requester UID from verified token). Requester mismatch fails closed.
+   - **Request Fingerprint Format**: `audit.requestFingerprint` is a string matching regex `/^sha256:[a-f0-9]{64}$/`.
+   - **Normalized Request Snapshot Validation**:
+     - Exact 9 allowed fields only: `clubId`, `country`, `initialOwnerUid`, `level`, `logoUrl`, `name`, `provisioningId`, `requestingSuperAdminUid`, `shortName`. Extra fields or missing fields fail closed.
+     - Values already normalized to canonical types (`shortName`, `country`, `logoUrl` are string or null; `level in ["T1", "T2", "T3"]`).
+     - Exact binding to audit keys: `normalizedRequest.provisioningId === provisioningId`, `normalizedRequest.clubId === audit.clubId`, `normalizedRequest.initialOwnerUid === audit.ownerUid`, `normalizedRequest.requestingSuperAdminUid === audit.requestingSuperAdminUid`.
+     - Recomputed fingerprint over `audit.normalizedRequest` MUST match stored `audit.requestFingerprint`.
+   - **Request Fingerprint Match with Caller Request**:
+     - `audit.requestFingerprint === requestFingerprint`.
+     - If `provisioningId` matches but request fingerprint differs (different clubId, ownerUid, name, shortName, level, country, logoUrl, or requester) -> FAIL CLOSED (`ERROR_PROVISIONING_ID_CONFLICT`).
+   - **Malformed Audit Handling**:
+     - Any malformed audit, missing required field, extra field, fingerprint mismatch, or invalid timestamp -> FAIL CLOSED (`ERROR_PROVISIONING_INTEGRITY`).
+     - A malformed audit must NEVER return `COMPLETED`.
+
 2. **Read Canonical Resources Inside Transaction**:
    - Read `proClubs/{clubId}` and `proClubs/{clubId}/members/{initialOwnerUid}`.
    - Execute: `transaction.get(proClubs/{clubId})`
