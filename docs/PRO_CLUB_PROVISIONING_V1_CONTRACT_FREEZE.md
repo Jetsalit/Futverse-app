@@ -5,8 +5,9 @@ Status: FROZEN ARCHITECTURAL CONTRACT (DOCUMENTATION AND CONTRACT TESTS ONLY)
 ## 1. Baseline and Scope
 
 - Workspace: `C:\Users\asus\Documents\Futverse-app`
-- Branch: `main`
-- Base Commit / HEAD: `03866126fb98e034a6898b4ff6de99a8210e9f29`
+- Branch: `feat/pro-club-provisioning-v1-contract`
+- Base Commit / Origin Main: `03866126fb98e034a6898b4ff6de99a8210e9f29`
+- Pre-Review HEAD: `0ba128d26b96ea24611a8ad065d1ec6babddf971`
 - Origin: `https://github.com/Jetsalit/Futverse-app.git`
 - Origin/Main: `03866126fb98e034a6898b4ff6de99a8210e9f29`
 - Governing Predecessors:
@@ -81,21 +82,24 @@ We evaluate two possible architectural approaches for Pro Club Provisioning V1:
 
 | Evaluation Criterion | Option A: Client SuperAdmin + Rules | Option B: Trusted Backend / Service Boundary |
 | :--- | :--- | :--- |
-| **Security** | **POOR**: Opens top-level `proClubs/{clubId}` and `members/{uid}` with `OWNER` role to client write operations from browsers. | **SUPERIOR**: Keeps client `firestore.rules` default-deny (`allow list, create, update, delete: if false;`) for `proClubs/{clubId}`. Zero client write surface. |
-| **Privilege Escalation Risk** | **HIGH**: Relies on browser-presented credentials. If a client user account is compromised or sets `users/{uid}.role = 'SUPERADMIN'`, or via XSS/token theft, the browser client could inject arbitrary OWNER memberships or overwrite clubs. Violates `users.role != tenant authority`. | **MINIMAL**: Untrusted browser sessions cannot write root clubs or grant OWNER. Provisioning is accessible only through authenticated, privileged control-plane service endpoints with server-side authorization. |
-| **Atomicity** | **FRAGILE**: Client batch writes (`writeBatch`) depend on client network stability, browser execution lifecycle, and complex cross-document Rules assertions (`existsAfter`, `getAfter`). Browser interruptions can cause failed transactions without robust server rollback. | **PROVABLE & ROBUST**: Server-side Firestore transactions (`db.runTransaction`) execute atomically in a managed environment with true ACID guarantees, reliable rollback, and immediate consistency. |
-| **Auditability** | **POOR**: Rules cannot capture rich server telemetry (service account, caller IP, request trace, correlation ID) without polluting domain schemas. | **COMPREHENSIVE**: Complete, tamper-proof server-side audit trails stored in dedicated audit log collections outside domain payloads. |
-| **Blast Radius** | **HIGH**: Modifies sensitive root collection rules in `firestore.rules`, creating risk of regression for existing onboarding and read protections. | **ZERO**: `firestore.rules` remains completely untouched. No client rule changes required. |
-| **Credential Exposure** | **HIGH**: Requires elevated permissions or admin tokens accessible to client applications. | **MINIMAL**: Service credentials stay strictly in the trusted server/cloud environment; client holds zero provisioning credentials. |
+| **Security** | **HIGH ATTACK SURFACE**: Requires opening client write rules on root `proClubs/{clubId}` and `members/{uid}` with `OWNER` role to client browser sessions. | **SUPERIOR**: Keeps client `firestore.rules` default-deny (`allow list, create, update, delete: if false;`) for `proClubs/{clubId}`. Zero client write surface. |
+| **Privilege Escalation Risk** | **SIGNIFICANT EXPOSURE**: Does not require Admin SDK in the browser, but relies on client Firebase Auth sessions. A compromised or incorrectly-authorized privileged client session (e.g. session hijack, token compromise, or XSS against an active privileged session) interacting with widened sensitive Rules creates high exposure. If client Rules are widened to allow root club creation and sovereign OWNER bootstrap, any rule bug directly exposes tenant boundaries. | **MINIMAL**: Browser sessions have zero write surface on root clubs or OWNER elevation. Provisioning is accessible only through trusted server-side control-plane endpoints with strict authorization and identity verification. |
+| **Atomicity** | **ATOMIC BUT COMPLEX & CLIENT-DRIVEN**: Firestore client batches (`writeBatch`) and client transactions (`runTransaction`) are atomic (all operations commit or none do; browser or network interruptions do NOT cause partial committed state in Firestore). However, client-driven atomicity requires complex cross-document Rules assertions (`existsAfter`, `getAfter`), exposes lifecycle to client retry behavior, and lacks server-orchestrated control-plane enforcement. | **PROVABLE & ROBUST**: Server-side Firestore transactions (`db.runTransaction`) execute atomically within a trusted authorization boundary with centralized audit/control-plane enforcement, reduced client Rules attack surface, and lower blast radius. |
+| **Auditability** | **WEAK CONTROL-PLANE EVIDENCE**: Client writes cannot produce canonical durable immutable-by-contract provisioning evidence without complex client Rules constraints that could be distorted by a compromised privileged client session. | **CANONICAL DURABLE EVIDENCE**: Produces canonical durable immutable-by-contract provisioning evidence in `proClubProvisioningAudits/{provisioningId}`. Admin SDK bypasses Firestore Rules; audit immutability is governed by the trusted service boundary, IAM/service authorization, and application contract, while client access remains completely closed. |
+| **Blast Radius** | **HIGH**: Modifies sensitive root collection rules in `firestore.rules`, creating risk of regression for existing onboarding, membership, and read protections. | **ZERO**: `firestore.rules` remains completely untouched. No client rule changes required. |
+| **Credential Exposure** | **MIXED BOUNDARY**: Client operates using user Firebase ID tokens against widened Firestore Rules, blurring the distinction between tenant authority and platform control plane. | **STRICT ISOLATION**: Control-plane execution authority is held strictly by trusted backend service credentials in the managed cloud environment governed by IAM. Client holds zero provisioning authority. |
 | **Production Deployment Complexity** | **HIGH**: Intertwines client rule updates with client application releases. | **LOW & ISOLATED**: Provisioning service is an isolated backend function/service that deploys independently without client side-effects. |
 | **Architecture Consistency** | **CONFLICTING**: Contradicts FutVerse principles: `users.role != tenant authority`, `support presentation != authenticated provisioning actor`, and `proClubs/{clubId}` closed to client create. | **FULLY CONSISTENT**: Strictly upholds all FutVerse governing invariants and preserves exact runtime schemas. |
 
-### Contract Decision
+### Contract Decision Rationale
 
 **OPTION B (Trusted Backend / Service Provisioning Boundary) IS SELECTED.**
 
-Option B is chosen because it is the safest and most architecturally sound approach, not the easiest.
-It completely avoids opening client-side Firestore write rules for root tenant creation and OWNER elevation, preserving zero attack surface on the client.
+Option B is selected based on:
+1. **Trusted Authorization Boundary**: All provisioning preconditions, identity verifications, and eligibility requirements are validated authoritatively in a secure server-side environment.
+2. **Reduced Client Rules Attack Surface**: Client `firestore.rules` remains default-deny for `proClubs/{clubId}` creation and `OWNER` role elevation, preventing any client-side exploit vector.
+3. **Centralized Audit and Control-Plane Enforcement**: Dedicated, canonical durable immutable-by-contract provisioning evidence is created synchronously within the control plane, protected from client interference.
+4. **Lower Blast Radius**: Zero modifications to existing client `firestore.rules`, eliminating regression risks for onboarding, invitations, and membership reads.
 
 ---
 
@@ -111,10 +115,11 @@ REQUESTING AUTHORITY != EXECUTION AUTHORITY
 
 The only valid requesting authority for Pro Club Provisioning V1 is an **authenticated, explicitly ACTIVE platform SUPERADMIN**:
 
-1. Verified Firebase authenticated UID (`request.auth.uid` or verified decoded Firebase ID token UID).
-2. Backend re-reads canonical `users/{requestingUid}` directly from Firestore server-side before execution.
+1. **Pre-Transaction Token Verification**: Verified Firebase authenticated UID (`request.auth.uid` or cryptographically verified decoded Firebase ID token UID).
+2. **Inside-Transaction Re-verification**: Inside the SAME Firestore transaction, the server re-reads canonical `users/{requestingSuperAdminUid}` directly from Firestore server-side via `transaction.get(users/{requestingSuperAdminUid})`.
 3. Explicitly ACTIVE account state: `status` must equal `"Active"` or `"ACTIVE"` (matching current canonical account policy).
 4. Canonical privileged role: `role` must strictly equal `"SUPERADMIN"`.
+5. **TOCTOU Elimination**: Pre-transaction user read alone is NOT sufficient authorization. A pre-transaction read is vulnerable to Time-Of-Check to Time-Of-Use (TOCTOU) race conditions if role or active status is revoked before the transaction commits. Both canonical requester (`users/{requestingSuperAdminUid}`) and canonical owner eligibility (`users/{initialOwnerUid}`) must be read and verified inside the SAME Firestore transaction.
 
 **Forbidden for Requesting Authority:**
 - `currentUser` presentation (client-side state is untrusted presentation only).
@@ -124,7 +129,8 @@ The only valid requesting authority for Pro Club Provisioning V1 is an **authent
 - Football staff role (`staffRole`, e.g. `HEAD_COACH`).
 - Requested role (`requestedRole`).
 - Arbitrary caller-supplied UID in request payload.
-- Client-claimed `SUPERADMIN` (must be re-read from canonical `users/{uid}` server-side).
+- Client-claimed `SUPERADMIN` (must be re-read from canonical `users/{uid}` inside the transaction).
+- Pre-transaction user read alone without transactional read.
 - Service caller without authenticated requesting principal.
 
 ### 4.2 Execution Authority (How Provisioning Is Carried Out)
@@ -142,7 +148,7 @@ users.role must never substitute for: proClubs/{clubId}/members/{uid}
 - Platform `SUPERADMIN` status authorizes invoking the provisioning control plane to create a club.
 - Platform `SUPERADMIN` status does **not** grant automatic tenant membership or tenant ownership.
 - After provisioning is complete, tenant ownership authority derives **exclusively** from canonical `proClubs/{clubId}/members/{ownerUid}` where `authorizationRole == "OWNER"` and `status == "ACTIVE"`.
-- Backend must re-read the canonical requesting user server-side immediately before the transaction and fail closed if identity, status, or role does not match.
+- The backend must re-read canonical requesting user document `users/{requestingSuperAdminUid}` and initial owner document `users/{initialOwnerUid}` inside the SAME Firestore transaction via transactional reads, and fail closed if identity, status, or role does not match. Pre-transaction user read alone is NOT sufficient authorization.
 
 ---
 
@@ -199,12 +205,15 @@ The Pro Club Provisioning V1 contract enforces the following strict invariants:
     No identity fields (`id`, `clubId`, `uid`, `userId`) inside payloads.
 20. **Audit Evidence Outside Exact Membership Payload**
     Adding audit fields to `ProClubMembership` would violate `validateProClubMembership` (which checks `hasOnlyFields(candidate, PRO_CLUB_MEMBERSHIP_FIELDS)`). Audit evidence is stored in `proClubProvisioningAudits/{provisioningId}`.
-21. **Server Logs Alone Are Not Canonical Audit Evidence**
-    Application server runtime logs do not satisfy the canonical provisioning contract. Provisioning audit evidence must be persisted as an immutable Firestore document in `proClubProvisioningAudits/{provisioningId}`.
-22. **Replay Safety and Takeover Prevention**
+21. **Canonical Durable Immutable-by-Contract Provisioning Evidence**
+    Application server runtime logs do not satisfy the canonical provisioning contract. Provisioning audit evidence must be persisted as canonical durable immutable-by-contract provisioning evidence in `proClubProvisioningAudits/{provisioningId}`.
+    Because Admin SDK bypasses Firestore Rules, audit immutability relies on the trusted service boundary, IAM/service authorization, and application contract, while client access remains completely closed.
+22. **Replay Safety, Fingerprint Integrity, and Takeover Prevention**
     - Duplicate provisioning requests for the same `clubId` fail closed.
-    - Replay with the same `provisioningId` and different parameters fails closed.
-    - Existing clubs cannot be taken over or overwritten.
+    - Replay with the same `provisioningId` and identical normalized request fingerprint returns idempotent COMPLETED after verifying that canonical resources exist and are active.
+    - Current club profile is NOT required to remain identical forever on replay, because legitimate post-provisioning club edits may occur.
+    - Replay with the same `provisioningId` and different request fingerprint fails closed (`ERROR_PROVISIONING_ID_CONFLICT`).
+    - Existing clubs cannot be taken over or overwritten (`ERROR_CLUB_EXISTS`).
     - Existing owners cannot be replaced or overwritten.
     - Cross-club mutations fail closed.
 23. **Contract Freeze Scope Boundary**
@@ -229,7 +238,38 @@ export interface ProClubProvisioningRequestV1 {
 }
 ```
 
-### 6.2 Target Firestore Paths
+### 6.2 Normalized Request & Deterministic Request Fingerprint Schema
+
+To guarantee deterministic replay detection, the server derives a canonical normalized request snapshot and a deterministic SHA-256 fingerprint binding all 9 initial provisioning fields:
+
+```typescript
+export interface NormalizedProClubProvisioningRequestV1 {
+  readonly clubId: string;
+  readonly country: string | null;
+  readonly initialOwnerUid: string;
+  readonly level: "T1" | "T2" | "T3";
+  readonly logoUrl: string | null;
+  readonly name: string;
+  readonly provisioningId: string;
+  readonly requestingSuperAdminUid: string;
+  readonly shortName: string | null;
+}
+```
+
+#### Explicit Request Normalization Rules:
+1. **String Trimming**: All string fields (`provisioningId`, `clubId`, `initialOwnerUid`, `name`, `shortName`, `level`, `country`, `logoUrl`, `requestingSuperAdminUid`) are trimmed of leading and trailing whitespace (`str.trim()`).
+2. **Optional Nullability**: For optional fields (`shortName`, `country`, `logoUrl`):
+   - If `undefined`, `null`, or empty string `""` after trimming -> normalize strictly to `null`.
+   - If non-empty after trimming -> preserve trimmed string.
+3. **Strict Level**: `level` must strictly equal `"T1" | "T2" | "T3"`.
+4. **Canonical Key Ordering**: In the normalized snapshot and serialized canonical JSON, keys are ordered alphabetically:
+   `clubId`, `country`, `initialOwnerUid`, `level`, `logoUrl`, `name`, `provisioningId`, `requestingSuperAdminUid`, `shortName`.
+5. **Deterministic Fingerprint Calculation**:
+   - Canonical JSON string: `JSON.stringify(normalizedRequest)` with alphabetically sorted keys.
+   - Deterministic SHA-256 hex digest: `"sha256:" + sha256(canonicalJson)`.
+   - Both `requestFingerprint` and the immutable `normalizedRequest` snapshot are persisted in `proClubProvisioningAudits/{provisioningId}`.
+
+### 6.3 Target Firestore Paths
 
 The single server-side atomic transaction writes exactly three documents:
 
@@ -240,7 +280,7 @@ The single server-side atomic transaction writes exactly three documents:
 3. **Dedicated Immutable Provisioning Audit Document**:
    `proClubProvisioningAudits/{provisioningId}`
 
-### 6.3 Exact Target Document Payloads
+### 6.4 Exact Target Document Payloads
 
 #### 1. Pro Club Document (`proClubs/{clubId}`)
 ```json
@@ -277,84 +317,128 @@ The V1 canonical audit collection is strictly `proClubProvisioningAudits/{provis
   "clubId": "club-lampang",
   "ownerUid": "user-owner-123",
   "requestingSuperAdminUid": "user-superadmin-789",
+  "requestFingerprint": "sha256:9e51527c280bde9ff8199cf21939b510bd0289e2a6769019a87b11646bd66332",
+  "normalizedRequest": {
+    "clubId": "club-lampang",
+    "country": "TH",
+    "initialOwnerUid": "user-owner-123",
+    "level": "T1",
+    "logoUrl": "https://example.com/logo.png",
+    "name": "Lampang FC",
+    "provisioningId": "prov-lampang-20260904-001",
+    "requestingSuperAdminUid": "user-superadmin-789",
+    "shortName": "LFC"
+  },
   "createdAt": "2026-09-04T00:00:00.000Z",
   "status": "COMPLETED"
 }
 ```
 
-**Audit Immutability & Security Rules:**
+**Audit Immutability & Security Architecture:**
 - `schemaVersion`: strictly `1`.
 - `provisioningId`: matches the document ID and unique request token.
 - `clubId`: exact canonical club ID.
 - `ownerUid`: exact canonical owner UID.
 - `requestingSuperAdminUid`: exact authenticated active SuperAdmin principal.
+- `requestFingerprint`: deterministic SHA-256 hash binding all 9 initial provisioning fields.
+- `normalizedRequest`: exact immutable normalized request snapshot.
 - `createdAt`: server-authoritative timestamp.
 - `status`: `"COMPLETED"`.
-- Audit documents are **immutable** in V1: no update or delete is permitted.
-- Audit collection is **closed to client access** (`allow read, write: if false;` or omitted from client Rules).
+- The audit record serves as **canonical durable immutable-by-contract provisioning evidence**.
+- **Admin SDK bypasses Firestore Rules**: Admin SDK database operations do not evaluate `firestore.rules`.
+- Audit immutability does not depend on Firestore Rules; instead, it depends strictly on:
+  1. **Trusted Service Boundary**: Provisioning and audit generation are executed exclusively within trusted backend services.
+  2. **IAM / Service Authorization**: Access to backend credentials and the database is governed by least-privilege cloud IAM policies.
+  3. **Application Contract**: Service code strictly enforces a `CREATE_ONLY` policy for `proClubProvisioningAudits/{provisioningId}` (no update or delete endpoints or methods exist).
+  4. **Client Remains Closed**: Client Firestore Rules deny all client read and write operations (`allow read, write: if false;` or omitted from rules).
 
 ---
 
 ## 7. Exact Provisioning Decision Order & Atomic Execution Lifecycle
 
-The server-side provisioning execution must follow this exact decision order within a single Firestore transaction:
+The server-side provisioning execution must follow this exact decision order.
+Pre-transaction user read alone is NOT sufficient authorization; both requester authorization and owner eligibility must be verified inside the SAME Firestore transaction.
 
-### Step 1: Verify Authenticated Requesting Principal
-- Verify caller has valid authenticated Firebase token (`requestingSuperAdminUid`).
-- Re-read canonical `users/{requestingSuperAdminUid}` directly from Firestore server-side.
-- Assert `user.status in ["Active", "ACTIVE"]`.
-- Assert `user.role === "SUPERADMIN"`.
-- If any assertion fails -> FAIL CLOSED (`ERROR_UNAUTHORIZED_REQUESTING_PRINCIPAL`).
+### Phase 1: Pre-Transaction Validation & Normalization (Pre-Flight)
+1. **Firebase ID Token Verification**:
+   - Cryptographically verify caller's Firebase ID token (valid signature, non-revoked, not expired).
+   - Extract `requestingSuperAdminUid` from token claims.
+2. **Document Identifier Validation**:
+   - `isValidDocumentIdentifier(clubId) === true`
+   - `isValidDocumentIdentifier(initialOwnerUid) === true`
+   - `isValidDocumentIdentifier(provisioningId) === true`
+   - If any identifier fails -> FAIL CLOSED (`ERROR_INVALID_IDENTIFIER`).
+3. **Request Field Validation & Normalization**:
+   - Validate `name` (non-empty string), `level in ["T1", "T2", "T3"]`.
+   - Apply explicit normalization rules and compute deterministic `requestFingerprint`.
 
-### Step 2: Validate Document Identifiers
-- `isValidDocumentIdentifier(clubId) === true`
-- `isValidDocumentIdentifier(initialOwnerUid) === true`
-- `isValidDocumentIdentifier(provisioningId) === true`
-- If any identifier fails -> FAIL CLOSED (`ERROR_INVALID_IDENTIFIER`).
+### Phase 2: Inside the SAME Firestore Transaction (`db.runTransaction`)
+The transaction must perform reads in this strict order to eliminate TOCTOU race conditions:
 
-### Step 3: Read Provisioning Audit
-- Read `proClubProvisioningAudits/{provisioningId}`.
+#### Read 1: Transactional Requester Authorization Read
+- Execute: `transaction.get(users/{requestingSuperAdminUid})`
+- Assert document exists.
+- Assert canonical requester status is active: `user.status in ["Active", "ACTIVE"]`.
+- Assert canonical requester role is privileged: `user.role === "SUPERADMIN"`.
+- Canonical requester must still be ACTIVE (`status in ["Active", "ACTIVE"]`) AND `role === "SUPERADMIN"` inside transaction.
+- If missing, inactive, or not SUPERADMIN -> FAIL CLOSED (`ERROR_UNAUTHORIZED_REQUESTING_PRINCIPAL`).
+- Pre-transaction user read alone is NOT sufficient authorization.
 
-### Step 4: IF AUDIT EXISTS (Replay & Integrity Verification):
-- **4.1 Verify Audit Tuple**:
-  - `audit.provisioningId === provisioningId`
-  - `audit.clubId === clubId`
-  - `audit.ownerUid === initialOwnerUid`
-  - `audit.requestingSuperAdminUid === requestingSuperAdminUid`
-  - If tuple does not match -> FAIL CLOSED (`ERROR_PROVISIONING_ID_CONFLICT`).
-- **4.2 Verify Canonical Resources Exist and Match**:
-  - Read `proClubs/{clubId}` and `proClubs/{clubId}/members/{initialOwnerUid}`.
-  - Both documents must exist.
-  - `proClubs/{clubId}` status must be `"ACTIVE"`.
-  - Membership payload must exactly match `{ authorizationRole: "OWNER", status: "ACTIVE" }`.
-  - Club and OWNER evidence must agree with the audit record.
-  - If club is missing, OWNER is missing, or payload mismatches -> FAIL CLOSED (`ERROR_PROVISIONING_INTEGRITY`).
-  - **Audit alone can never prove successful provisioning.**
-- **4.3 Idempotent Return**:
-  - Only when audit, Club, and OWNER all match completely:
-    RETURN existing COMPLETED result idempotently.
-    NO WRITE is performed.
+#### Read 2: Transactional Initial Owner Eligibility Read
+- Execute: `transaction.get(users/{initialOwnerUid})`
+- Assert document exists and has valid non-empty identity.
+- Assert canonical owner status is active: `owner.status in ["Active", "ACTIVE"]`.
+- If missing, inactive, or invalid -> FAIL CLOSED (`ERROR_INVALID_OWNER`).
+- Pre-transaction owner read alone is NOT sufficient authorization.
 
-### Step 5: IF AUDIT DOES NOT EXIST (New Provisioning Verification):
-- **5.1 Verify Target Club Precondition**:
-  - Read `proClubs/{clubId}`.
-  - If `proClubs/{clubId}` exists -> FAIL CLOSED (`ERROR_CLUB_EXISTS`).
-- **5.2 Verify Owner Membership Precondition**:
-  - Read `proClubs/{clubId}/members/{initialOwnerUid}`.
-  - If `proClubs/{clubId}/members/{initialOwnerUid}` exists without a valid matching provisioning audit:
-    FAIL CLOSED (`ERROR_PROVISIONING_INTEGRITY`).
-    (Orphan or pre-existing OWNER membership without valid audit evidence is an integrity violation).
-- **5.3 Verify Canonical Owner User Document**:
-  - Read `users/{initialOwnerUid}`.
-  - User document must exist, have valid non-empty identity, and valid active account state (`status in ["Active", "ACTIVE"]`).
-  - If user document does not exist or is invalid -> FAIL CLOSED (`ERROR_INVALID_OWNER`).
+#### Read 3: Read Provisioning Audit Document
+- Execute: `transaction.get(proClubProvisioningAudits/{provisioningId})`
 
-### Step 6: Atomic 3-Way Multi-Document Write (Same Server Transaction):
-- `transaction.set(proClubs/{clubId}, clubPayload)`
-- `transaction.set(proClubs/{clubId}/members/{initialOwnerUid}, membershipPayload)`
-- `transaction.set(proClubProvisioningAudits/{provisioningId}, auditPayload)`
-- All three documents are committed together in the **SAME SERVER TRANSACTION**.
-- If any write or precondition fails, the entire transaction rolls back with zero state mutation.
+---
+
+### Branch A: IF AUDIT EXISTS (Replay & Idempotency Verification)
+
+1. **Verify Request Fingerprint & Identity Binding**:
+   - Compare `audit.provisioningId === provisioningId`.
+   - Compare `audit.requestFingerprint === requestFingerprint` (and/or exact match of `audit.normalizedRequest` snapshot).
+   - Also verify `audit.clubId === clubId`, `audit.ownerUid === initialOwnerUid`, `audit.requestingSuperAdminUid === requestingSuperAdminUid`.
+   - If `provisioningId` matches but `requestFingerprint` (or any bound initial field) differs:
+     FAIL CLOSED (`ERROR_PROVISIONING_ID_CONFLICT`).
+2. **Read Canonical Resources Inside Transaction**:
+   - Read `proClubs/{clubId}` and `proClubs/{clubId}/members/{initialOwnerUid}`.
+   - Execute: `transaction.get(proClubs/{clubId})`
+   - Execute: `transaction.get(proClubs/{clubId}/members/{initialOwnerUid})`
+3. **Verify Canonical Resources Integrity**:
+   - Both documents must exist.
+   - `proClubs/{clubId}` status must be `"ACTIVE"`.
+   - Membership payload must exactly match `{ authorizationRole: "OWNER", status: "ACTIVE" }`.
+   - Club and OWNER evidence must agree with the audit record.
+   - If club is missing, OWNER is missing, or payload mismatches -> FAIL CLOSED (`ERROR_PROVISIONING_INTEGRITY`).
+   - **Post-Provisioning Club Edits**: Current club profile fields (`name`, `shortName`, `level`, `country`, `logoUrl`) are NOT required to remain identical forever, because legitimate post-provisioning club edits may occur.
+   - **Audit alone can never prove successful provisioning.**
+4. **Idempotent Return**:
+   - Only when audit, Club, and OWNER all match completely:
+     RETURN existing COMPLETED result idempotently.
+     NO WRITE is performed.
+
+---
+
+### Branch B: IF AUDIT DOES NOT EXIST (New Provisioning Verification)
+
+1. **Target Club Precondition Read**:
+   - Execute: `transaction.get(proClubs/{clubId})`
+   - If `proClubs/{clubId}` exists -> FAIL CLOSED (`ERROR_CLUB_EXISTS`).
+2. **Owner Membership Precondition Read**:
+   - Execute: `transaction.get(proClubs/{clubId}/members/{initialOwnerUid})`
+   - If `proClubs/{clubId}/members/{initialOwnerUid}` exists without a valid matching provisioning audit:
+     FAIL CLOSED (`ERROR_PROVISIONING_INTEGRITY`).
+     (Orphan or pre-existing OWNER membership without valid audit evidence is an integrity violation).
+3. **Atomic 3-Way Multi-Document Write (SAME Server Transaction)**:
+   - `transaction.set(proClubs/{clubId}, clubPayload)`
+   - `transaction.set(proClubs/{clubId}/members/{initialOwnerUid}, membershipPayload)`
+   - `transaction.set(proClubProvisioningAudits/{provisioningId}, auditPayload)`
+   - All three documents are committed together in the **SAME SERVER TRANSACTION**.
+   - If any write or precondition fails, the entire transaction rolls back with zero state mutation.
 
 ---
 
@@ -363,11 +447,14 @@ The server-side provisioning execution must follow this exact decision order wit
 - **Exact Decision Ordering**:
   Audit check and replay verification occur before club-exists conflict detection, ensuring exact completed retries return idempotently before triggering conflicts.
 - **Binding Replay Detection**:
-  `provisioningId` binds together `clubId`, `ownerUid`, and `requestingSuperAdminUid`.
+  `provisioningId` and deterministic request fingerprint bind together `clubId`, `ownerUid`, and `requestingSuperAdminUid` along with all initial creation parameters.
 - **Same Request Retry**:
-  A repeated request with identical `provisioningId`, `clubId`, `ownerUid`, and `requestingSuperAdminUid` verifies matching audit evidence and existing canonical resources, returning idempotently without duplicate writes.
+  A repeated request with identical `provisioningId`, `clubId`, `ownerUid`, and `requestingSuperAdminUid` (and matching normalized `requestFingerprint`) verifies matching audit evidence and existing canonical resources, returning idempotently without duplicate writes.
+- **Post-Provisioning Edits Preservation**:
+  Legitimate post-provisioning club profile updates (e.g. updating logo, country, or names) do not invalidate idempotent retries, because replay integrity checks assert club active status and sovereign OWNER membership rather than demanding mutable profile fields remain frozen forever.
 - **Provisioning ID Conflict**:
   Reusing an existing `provisioningId` with altered `clubId`, `ownerUid`, or `requestingSuperAdminUid` fails closed immediately (`ERROR_PROVISIONING_ID_CONFLICT`).
+  Reusing an existing `provisioningId` with a different `requestFingerprint` fails closed immediately (`ERROR_PROVISIONING_ID_CONFLICT`).
 - **Existing Club Takeover Prevention**:
   If `proClubs/{clubId}` exists without matching valid audit evidence, provisioning fails closed (`ERROR_CLUB_EXISTS`). Existing clubs cannot be taken over, overwritten, or re-parented.
 - **Existing Owner Replacement Prevention**:

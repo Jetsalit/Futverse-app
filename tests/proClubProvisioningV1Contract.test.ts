@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
@@ -32,9 +33,50 @@ const loginSource = read("src/components/Login.tsx");
 const registrationSource = read("src/lib/firestore/registration.ts");
 const accountRolePolicy = read("src/lib/accountRolePolicy.ts");
 
+interface ProClubProvisioningRequestInput {
+  provisioningId: string;
+  clubId: string;
+  initialOwnerUid: string;
+  name: string;
+  shortName?: string | null;
+  level: "T1" | "T2" | "T3";
+  country?: string | null;
+  logoUrl?: string | null;
+  requestingSuperAdminUid: string;
+}
+
+function normalizeProvisioningRequest(input: ProClubProvisioningRequestInput) {
+  const trimOrNull = (v?: string | null) => {
+    if (!v) return null;
+    const trimmed = v.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  };
+
+  return {
+    clubId: input.clubId.trim(),
+    country: trimOrNull(input.country),
+    initialOwnerUid: input.initialOwnerUid.trim(),
+    level: input.level,
+    logoUrl: trimOrNull(input.logoUrl),
+    name: input.name.trim(),
+    provisioningId: input.provisioningId.trim(),
+    requestingSuperAdminUid: input.requestingSuperAdminUid.trim(),
+    shortName: trimOrNull(input.shortName),
+  };
+}
+
+function computeProvisioningRequestFingerprint(input: ProClubProvisioningRequestInput): string {
+  const normalized = normalizeProvisioningRequest(input);
+  const canonicalJson = JSON.stringify(normalized);
+  const hash = createHash("sha256").update(canonicalJson).digest("hex");
+  return `sha256:${hash}`;
+}
+
 test("Pro Club Provisioning V1 Contract Freeze", async (t) => {
   await t.test("freezes exact baseline, branch scope, and two-file boundary", () => {
     assert.ok(contract.includes("03866126fb98e034a6898b4ff6de99a8210e9f29"));
+    assert.ok(contract.includes("0ba128d26b96ea24611a8ad065d1ec6babddf971"));
+    assert.ok(contract.includes("feat/pro-club-provisioning-v1-contract"));
     assert.ok(contract.includes("https://github.com/Jetsalit/Futverse-app.git"));
     assert.ok(contract.includes("docs/PRO_CLUB_PROVISIONING_V1_CONTRACT_FREEZE.md"));
     assert.ok(contract.includes("tests/proClubProvisioningV1Contract.test.ts"));
@@ -59,6 +101,31 @@ test("Pro Club Provisioning V1 Contract Freeze", async (t) => {
     ]) {
       assert.ok(contract.includes(criterion), `missing evaluation criterion: ${criterion}`);
     }
+  });
+
+  await t.test("Finding 1: Option A atomicity wording recognizes client atomicity and explains Option B rationale", () => {
+    assert.ok(contract.includes("Firestore client batches (`writeBatch`) and client transactions (`runTransaction`) are atomic"));
+    assert.ok(contract.includes("all operations commit or none do"));
+    assert.ok(contract.includes("browser or network interruptions do NOT cause partial committed state in Firestore"));
+    assert.doesNotMatch(contract, /Browser interruptions can cause failed transactions without robust server rollback/);
+
+    // Option B selection rationale based on:
+    // 1. trusted authorization boundary
+    // 2. reduced client Rules attack surface
+    // 3. centralized audit/control-plane enforcement
+    // 4. lower blast radius
+    assert.ok(contract.includes("Trusted Authorization Boundary"));
+    assert.ok(contract.includes("Reduced Client Rules Attack Surface"));
+    assert.ok(contract.includes("Centralized Audit and Control-Plane Enforcement"));
+    assert.ok(contract.includes("Lower Blast Radius"));
+  });
+
+  await t.test("Finding 2: Option A credential and risk wording avoids inaccurate claims and describes session risk", () => {
+    assert.ok(contract.includes("Does not require Admin SDK in the browser, but relies on client Firebase Auth sessions"));
+    assert.ok(contract.includes("compromised or incorrectly-authorized privileged client session"));
+    assert.ok(contract.includes("widened sensitive Rules"));
+    assert.doesNotMatch(contract, /Requires elevated permissions or admin tokens accessible to client applications/);
+    assert.doesNotMatch(contract, /sets `users\/\{uid\}\.role = 'SUPERADMIN'/);
   });
 
   await t.test("distinguishes requesting authority from execution authority", () => {
@@ -96,14 +163,25 @@ test("Pro Club Provisioning V1 Contract Freeze", async (t) => {
     assert.ok(contract.includes("SuperAdmin support presentation (\"Work As Staff\") is a read-only presentation mechanism"));
   });
 
-  await t.test("exact authenticated ACTIVE SUPERADMIN is required", () => {
+  await t.test("exact authenticated ACTIVE SUPERADMIN is required inside transaction", () => {
     assert.ok(
       contract.includes("Verified Firebase authenticated UID") ||
       contract.includes("verified Firebase authenticated UID"),
     );
-    assert.ok(contract.includes("re-reads canonical `users/{requestingUid}` directly from Firestore server-side"));
+    assert.ok(contract.includes("re-reads canonical `users/{requestingSuperAdminUid}` directly from Firestore server-side"));
     assert.ok(contract.includes("`status` must equal `\"Active\"` or `\"ACTIVE\"`"));
     assert.ok(contract.includes("`role` must strictly equal `\"SUPERADMIN\"`"));
+  });
+
+  await t.test("Finding 3: eliminates TOCTOU ambiguity via transactional reads inside SAME transaction", () => {
+    assert.ok(contract.includes("TOCTOU Elimination"));
+    assert.ok(contract.includes("Pre-transaction user read alone is NOT sufficient authorization"));
+    assert.ok(contract.includes("transaction.get(users/{requestingSuperAdminUid})"));
+    assert.ok(contract.includes("transaction.get(users/{initialOwnerUid})"));
+    assert.ok(contract.includes("Read 1: Transactional Requester Authorization Read"));
+    assert.ok(contract.includes("Read 2: Transactional Initial Owner Eligibility Read"));
+    assert.ok(contract.includes("Read 3: Read Provisioning Audit Document"));
+    assert.ok(contract.includes("Canonical requester must still be ACTIVE (`status in [\"Active\", \"ACTIVE\"]`) AND `role === \"SUPERADMIN\"`"));
   });
 
   await t.test("SUPERADMIN control-plane privilege is not tenant membership authority", () => {
@@ -324,9 +402,14 @@ test("Pro Club Provisioning V1 Contract Freeze", async (t) => {
     assert.ok(contract.includes("`provisioningId`: matches the document ID and unique request token"));
   });
 
-  await t.test("audit is immutable and closed to client access", () => {
-    assert.ok(contract.includes("Audit documents are **immutable** in V1"));
-    assert.ok(contract.includes("Audit collection is **closed to client access**"));
+  await t.test("Finding 5: audit is durable immutable-by-contract evidence and closed to client access", () => {
+    assert.ok(contract.includes("canonical durable immutable-by-contract provisioning evidence"));
+    assert.doesNotMatch(contract, /tamper-proof/i);
+    assert.ok(contract.includes("Admin SDK bypasses Firestore Rules"));
+    assert.ok(contract.includes("Client Remains Closed"));
+    assert.ok(contract.includes("Trusted Service Boundary"));
+    assert.ok(contract.includes("IAM / Service Authorization"));
+    assert.ok(contract.includes("Application Contract"));
   });
 
   await t.test("missing audit means provisioning transaction is invalid", () => {
@@ -335,14 +418,14 @@ test("Pro Club Provisioning V1 Contract Freeze", async (t) => {
   });
 
   await t.test("server logs alone are not canonical provisioning audit evidence", () => {
-    assert.ok(contract.includes("Server Logs Alone Are Not Canonical Audit Evidence"));
-    assert.ok(contract.includes("Provisioning audit evidence must be persisted as an immutable Firestore document in `proClubProvisioningAudits/{provisioningId}`"));
+    assert.ok(contract.includes("Canonical Durable Immutable-by-Contract Provisioning Evidence"));
+    assert.ok(contract.includes("Provisioning audit evidence must be persisted as canonical durable immutable-by-contract provisioning evidence in `proClubProvisioningAudits/{provisioningId}`"));
     assert.doesNotMatch(contract, /or server logs/);
     assert.doesNotMatch(contract, /\(e\.g\.\s*proClubProvisioningAudits/);
   });
 
   await t.test("17. replay/takeover behavior fails closed", () => {
-    assert.ok(contract.includes("Replay Safety, Conflict, and Takeover Prevention"));
+    assert.ok(contract.includes("Replay Safety, Conflict, and Takeover Prevention") || contract.includes("Replay Safety, Fingerprint Integrity, and Takeover Prevention"));
     assert.ok(contract.includes("Binding Replay Detection"));
     assert.ok(contract.includes("Same Request Retry"));
     assert.ok(contract.includes("Provisioning ID Conflict"));
@@ -394,6 +477,87 @@ test("Pro Club Provisioning V1 Contract Freeze", async (t) => {
   await t.test("audit alone can never prove successful provisioning", () => {
     assert.ok(contract.includes("**Audit alone can never prove successful provisioning.**"));
     assert.ok(contract.includes("Only when audit, Club, and OWNER all match completely:"));
+  });
+
+  await t.test("Finding 4: post-provisioning club profile edits do not break idempotent retries", () => {
+    assert.ok(contract.includes("Post-Provisioning Club Edits") || contract.includes("Post-Provisioning Edits Preservation"));
+    assert.ok(contract.includes("Current club profile fields (`name`, `shortName`, `level`, `country`, `logoUrl`) are NOT required to remain identical forever, because legitimate post-provisioning club edits may occur"));
+    assert.ok(contract.includes("assert club active status and sovereign OWNER membership rather than demanding mutable profile fields remain frozen forever"));
+  });
+
+  await t.test("Finding 4: normalized request fingerprint binds all 9 initial fields deterministically", () => {
+    const requiredFields = [
+      "provisioningId",
+      "clubId",
+      "initialOwnerUid",
+      "name",
+      "shortName",
+      "level",
+      "country",
+      "logoUrl",
+      "requestingSuperAdminUid",
+    ];
+    for (const field of requiredFields) {
+      assert.ok(
+        contract.includes(field),
+        `fingerprint schema missing field: ${field}`,
+      );
+    }
+    assert.ok(contract.includes("NormalizedProClubProvisioningRequestV1"));
+    assert.ok(contract.includes("Explicit Request Normalization Rules"));
+    assert.ok(contract.includes("String Trimming"));
+    assert.ok(contract.includes("Optional Nullability"));
+    assert.ok(contract.includes("Strict Level"));
+    assert.ok(contract.includes("Canonical Key Ordering"));
+    assert.ok(contract.includes("Deterministic Fingerprint Calculation"));
+
+    // Verify deterministic fingerprint computation helper function
+    const input1 = {
+      provisioningId: "  prov-lampang-20260904-001  ",
+      clubId: "  club-lampang  ",
+      initialOwnerUid: "  user-owner-123  ",
+      name: "  Lampang FC  ",
+      shortName: "  LFC  ",
+      level: "T1" as const,
+      country: "  TH  ",
+      logoUrl: "  https://example.com/logo.png  ",
+      requestingSuperAdminUid: "  user-superadmin-789  ",
+    };
+    const input2 = {
+      provisioningId: "prov-lampang-20260904-001",
+      clubId: "club-lampang",
+      initialOwnerUid: "user-owner-123",
+      name: "Lampang FC",
+      shortName: "LFC",
+      level: "T1" as const,
+      country: "TH",
+      logoUrl: "https://example.com/logo.png",
+      requestingSuperAdminUid: "user-superadmin-789",
+    };
+    const fp1 = computeProvisioningRequestFingerprint(input1);
+    const fp2 = computeProvisioningRequestFingerprint(input2);
+    assert.equal(fp1, fp2);
+    assert.equal(fp1, "sha256:9e51527c280bde9ff8199cf21939b510bd0289e2a6769019a87b11646bd66332");
+    assert.ok(contract.includes("sha256:9e51527c280bde9ff8199cf21939b510bd0289e2a6769019a87b11646bd66332"));
+
+    // Altered field must produce a different fingerprint
+    const inputAltered = { ...input2, name: "Lampang United" };
+    const fpAltered = computeProvisioningRequestFingerprint(inputAltered);
+    assert.notEqual(fp1, fpAltered);
+
+    // Empty optional fields normalize to null deterministically
+    const inputEmptyOpts = {
+      ...input2,
+      shortName: "   ",
+      country: "",
+      logoUrl: undefined,
+    };
+    const fpEmpty = computeProvisioningRequestFingerprint(inputEmptyOpts);
+    const normalizedEmpty = normalizeProvisioningRequest(inputEmptyOpts);
+    assert.equal(normalizedEmpty.shortName, null);
+    assert.equal(normalizedEmpty.country, null);
+    assert.equal(normalizedEmpty.logoUrl, null);
+    assert.match(fpEmpty, /^sha256:[a-f0-9]{64}$/);
   });
 
   await t.test("18. contract alone does not authorize production implementation", () => {
