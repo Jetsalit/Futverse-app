@@ -32,6 +32,126 @@ const accountOrganizationContext = read(
   "src/components/superadmin/superAdminAccountOrganizationContext.ts",
 );
 
+const CANONICAL_PRO_CLUB_STAFF_ROLES = [
+  "TECHNICAL_DIRECTOR",
+  "MANAGER",
+  "HEAD_COACH",
+  "ASSISTANT_COACH",
+  "GK_COACH",
+  "FITNESS_COACH",
+  "ANALYST",
+  "PHYSIO",
+  "TEAM_MANAGER",
+  "STAFF",
+] as const;
+
+const FORBIDDEN_AUTHORIZATION_ROLES = ["OWNER", "ADMIN", "MEMBER"] as const;
+
+function extractSuccessorStaffRoleAmendmentSection(docContent: string): string {
+  const match = docContent.match(
+    /##\s+(?:\d+\.\s+)?Staff Management V1 successor role-set amendment([\s\S]*?)(?=\r?\n##\s+|$)/i,
+  );
+  assert.ok(match, "Successor role-set amendment section heading not found in document");
+  return match[1];
+}
+
+function extractFunctionalRoleListBlock(sectionText: string): string {
+  const match = sectionText.match(
+    /canonical set of exactly 10 roles:([\s\S]*?)(?=MANAGER and TEAM_MANAGER|This successor amendment does NOT change:|$)/i,
+  );
+  assert.ok(match, "Functional staff-role enumeration block not found in amendment section");
+  return match[1];
+}
+
+function parseSuccessorStaffRoleTokens(roleListBlock: string): string[] {
+  const lines = roleListBlock.split(/\r?\n/);
+  const roles: string[] = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const bulletMatch = trimmed.match(/^-\s*`?([A-Za-z0-9_]+)`?\s*$/);
+    if (bulletMatch) {
+      roles.push(bulletMatch[1]);
+    } else {
+      for (const authRole of FORBIDDEN_AUTHORIZATION_ROLES) {
+        if (new RegExp(`\\b${authRole}\\b`).test(trimmed)) {
+          roles.push(authRole);
+        }
+      }
+    }
+  }
+  return roles;
+}
+
+function assertExactSuccessorStaffRoleSet(
+  actualRoles: readonly string[],
+  context = "successor amendment",
+): void {
+  for (const authRole of FORBIDDEN_AUTHORIZATION_ROLES) {
+    if (actualRoles.includes(authRole)) {
+      throw new Error(
+        `Authorization role ${authRole} must not appear in functional staff role list (${context})`,
+      );
+    }
+  }
+
+  const seen = new Set<string>();
+  const duplicates: string[] = [];
+  for (const role of actualRoles) {
+    if (seen.has(role)) {
+      duplicates.push(role);
+    }
+    seen.add(role);
+  }
+  if (duplicates.length > 0) {
+    throw new Error(
+      `Duplicate role(s) found in ${context}: ${duplicates.join(", ")}`,
+    );
+  }
+
+  const unknownRoles = actualRoles.filter(
+    (role) => !(CANONICAL_PRO_CLUB_STAFF_ROLES as readonly string[]).includes(role),
+  );
+  if (unknownRoles.length > 0) {
+    throw new Error(
+      `Unknown role(s) found in ${context}: ${unknownRoles.join(", ")}`,
+    );
+  }
+
+  const missingRoles = (CANONICAL_PRO_CLUB_STAFF_ROLES as readonly string[]).filter(
+    (role) => !actualRoles.includes(role),
+  );
+  if (missingRoles.length > 0) {
+    throw new Error(
+      `Missing canonical role(s) in ${context}: ${missingRoles.join(", ")}`,
+    );
+  }
+
+  if (actualRoles.length !== CANONICAL_PRO_CLUB_STAFF_ROLES.length) {
+    throw new Error(
+      `Expected exactly ${CANONICAL_PRO_CLUB_STAFF_ROLES.length} roles, got ${actualRoles.length} in ${context}`,
+    );
+  }
+
+  assert.equal(actualRoles.includes("MANAGER"), true);
+  assert.equal(actualRoles.includes("TEAM_MANAGER"), true);
+  assert.notEqual("MANAGER", "TEAM_MANAGER");
+
+  assert.deepEqual(
+    [...actualRoles],
+    [...CANONICAL_PRO_CLUB_STAFF_ROLES],
+    `Role array in ${context} does not match canonical order exactly`,
+  );
+}
+
+function parseAndAssertDocumentSuccessorStaffRoles(docContent: string, docName: string): string[] {
+  const amendmentSection = extractSuccessorStaffRoleAmendmentSection(docContent);
+  const roleListBlock = extractFunctionalRoleListBlock(amendmentSection);
+  const actualRoles = parseSuccessorStaffRoleTokens(roleListBlock);
+  assertExactSuccessorStaffRoleSet(actualRoles, docName);
+  return actualRoles;
+}
+
 test("Pro Club Organization Adapter V1 Contract Freeze", async (t) => {
   await t.test("freezes one exact club/user read boundary", () => {
     assert.match(
@@ -149,15 +269,14 @@ test("Pro Club Organization Adapter V1 Contract Freeze", async (t) => {
   });
 
   await t.test("preserves football staff roles", () => {
-    for (const role of [
-      "HEAD_COACH",
-      "ASSISTANT_COACH",
-      "FITNESS_COACH",
-      "ANALYST",
-      "PHYSIO",
-      "TEAM_MANAGER",
-      "STAFF",
-    ]) {
+    const parsedRoles = parseAndAssertDocumentSuccessorStaffRoles(
+      contract,
+      "docs/PRO_CLUB_ORGANIZATION_ADAPTER_V1_FREEZE.md",
+    );
+    assert.equal(parsedRoles.length, 10);
+    assert.deepEqual([...parsedRoles], [...CANONICAL_PRO_CLUB_STAFF_ROLES]);
+
+    for (const role of CANONICAL_PRO_CLUB_STAFF_ROLES) {
       assert.match(
         proClubTypes,
         new RegExp(`"${role}"`),
@@ -168,6 +287,11 @@ test("Pro Club Organization Adapter V1 Contract Freeze", async (t) => {
         new RegExp(`\\b${role}\\b`),
       );
     }
+    assert.ok(CANONICAL_PRO_CLUB_STAFF_ROLES.includes("TECHNICAL_DIRECTOR"));
+    assert.ok(CANONICAL_PRO_CLUB_STAFF_ROLES.includes("MANAGER"));
+    assert.ok(CANONICAL_PRO_CLUB_STAFF_ROLES.includes("GK_COACH"));
+    assert.ok(CANONICAL_PRO_CLUB_STAFF_ROLES.includes("TEAM_MANAGER"));
+    assert.notEqual("MANAGER", "TEAM_MANAGER");
   });
 
   await t.test("preserves membership lifecycle", () => {
