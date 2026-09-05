@@ -34,6 +34,22 @@ function proClubRulesBlock(): string {
   return firestoreRules.slice(start, end);
 }
 
+function extractMatchBlock(source: string, header: string): string {
+  const index = source.indexOf(header);
+  assert.ok(index >= 0, `Match header not found: ${header}`);
+  const openBrace = source.indexOf("{", index + header.length);
+  assert.ok(openBrace >= index + header.length, `Opening brace not found for ${header}`);
+  let depth = 1;
+  let pos = openBrace + 1;
+  while (pos < source.length && depth > 0) {
+    if (source[pos] === "{") depth++;
+    else if (source[pos] === "}") depth--;
+    pos++;
+  }
+  assert.equal(depth, 0, `Unterminated match block for ${header}`);
+  return source.slice(openBrace + 1, pos - 1);
+}
+
 test("Pro Club Staff Onboarding V1 Contract Freeze", async (t) => {
   await t.test("freezes exact baseline branch scope and source boundaries", () => {
     assert.ok(contract.includes("9ca605de968914c1bac3edc9ced53cebd607c2fb"));
@@ -164,50 +180,125 @@ test("Pro Club Staff Onboarding V1 Contract Freeze", async (t) => {
 
   await t.test("proves exact own-document gets and closes every broad operation", () => {
     const rules = proClubRulesBlock();
-    const allowStatements = [
-      ...rules.matchAll(/allow\s+([^:]+):\s*if\s+([^;]+);/g),
-    ].map((match) => ({
-      operations: match[1].split(",").map((operation) => operation.trim()),
-      condition: match[2].trim(),
-    }));
-    const closedOperations = new Set([
-      "list",
-      "create",
-      "update",
-      "delete",
-      "write",
-    ]);
-    const closedStatements = allowStatements.filter(({ operations }) =>
-      operations.some((operation) => closedOperations.has(operation)),
-    );
-    assert.equal(closedStatements.length, 4);
-    for (const statement of closedStatements) {
-      assert.equal(
-        statement.condition,
-        "false",
-        `non-fail-closed operations: ${statement.operations.join(",")}`,
-      );
-    }
 
-    const exactGetStatements = allowStatements.filter(({ operations }) =>
-      operations.includes("get"),
-    );
-    assert.equal(exactGetStatements.length, 3);
-    assert.ok(
-      exactGetStatements.some(({ condition }) =>
-        condition.includes(
-          "/proClubs/$(clubId)/members/$(request.auth.uid)",
-        ),
-      ),
+    // 1. /proClubs/{clubId} root boundary
+    const rootDirectRules = rules.slice(0, rules.indexOf("match /members/{uid}"));
+    assert.match(
+      rootDirectRules,
+      /allow\s+get:\s*if\s+isSignedIn\(\)\s*&&\s*exists\(\s*\/databases\/\$\(database\)\/documents\/proClubs\/\$\(clubId\)\/members\/\$\(request\.auth\.uid\)\s*\);/,
       "club get must require the authenticated actor's Membership document",
     );
-    assert.equal(
-      exactGetStatements.filter(({ condition }) =>
-        condition.includes("request.auth.uid == uid"),
-      ).length,
-      2,
-      "member and staff gets must bind the exact authenticated UID",
+    assert.match(
+      rootDirectRules,
+      /allow\s+list,\s*create,\s*update,\s*delete:\s*if\s+false;/,
+      "proClubs root must fail-close list, create, update, delete",
     );
+
+    // 2. /members/{uid} boundary
+    const membersBlock = extractMatchBlock(rules, "match /members/{uid}");
+    assert.match(
+      membersBlock,
+      /allow\s+get:\s*if\s+isSignedIn\(\)\s*&&\s*request\.auth\.uid\s*==\s*uid;/,
+      "member get must bind exact authenticated UID",
+    );
+    assert.match(
+      membersBlock,
+      /allow\s+list:\s*if\s+false;/,
+      "members list must be false",
+    );
+    assert.match(
+      membersBlock,
+      /allow\s+create:\s*if\s+validProClubMembershipCreateV1\(clubId,\s*uid\);/,
+      "members create must use validProClubMembershipCreateV1",
+    );
+    assert.match(
+      membersBlock,
+      /allow\s+update,\s*delete:\s*if\s+false;/,
+      "members update/delete must be false",
+    );
+
+    // 3. /staff/{uid} boundary
+    const staffBlock = extractMatchBlock(rules, "match /staff/{uid}");
+    assert.match(
+      staffBlock,
+      /allow\s+get:\s*if\s+isSignedIn\(\)\s*&&\s*request\.auth\.uid\s*==\s*uid;/,
+      "staff get must bind exact authenticated UID",
+    );
+    assert.match(
+      staffBlock,
+      /allow\s+list:\s*if\s+false;/,
+      "staff list must be false",
+    );
+    assert.match(
+      staffBlock,
+      /allow\s+create:\s*if\s+validProClubStaffCreateV1\(clubId,\s*uid\);/,
+      "staff create must use validProClubStaffCreateV1",
+    );
+    assert.match(
+      staffBlock,
+      /allow\s+update,\s*delete:\s*if\s+false;/,
+      "staff update/delete must be false",
+    );
+
+    // 4. /onboardingClaims/{claimId} boundary
+    const claimsBlock = extractMatchBlock(rules, "match /onboardingClaims/{claimId}");
+    assert.match(
+      claimsBlock,
+      /allow\s+get:\s*if\s+isSignedIn\(\)\s*&&\s*\(\s*resource\.data\.get\('userId',\s*''\)\s*==\s*request\.auth\.uid\s*\|\|\s*isActiveProClubReviewerV1\(clubId\)\s*\);/,
+      "claims get must be restricted to own claimant or active reviewer",
+    );
+    assert.match(
+      claimsBlock,
+      /allow\s+list:\s*if\s+isActiveProClubReviewerV1\(clubId\)\s*&&\s*resource\.data\.clubId\s*==\s*clubId\s*&&\s*resource\.data\.status\s*==\s*'PENDING';/,
+      "claims list must be reviewer-controlled and tenant/status constrained",
+    );
+    assert.match(
+      claimsBlock,
+      /allow\s+create:\s*if\s+validProClubClaimCreateV1\(clubId,\s*claimId\);/,
+      "claims create must use validProClubClaimCreateV1",
+    );
+    assert.match(
+      claimsBlock,
+      /allow\s+update:\s*if\s+resource\s*!=\s*null\s*&&\s*\(\s*request\.resource\.data\.get\('status',\s*''\)\s*==\s*'APPROVED'\s*\?\s*validProClubClaimApprovalV1\(clubId,\s*claimId\)\s*:\s*\(\s*request\.resource\.data\.get\('status',\s*''\)\s*==\s*'REJECTED'\s*&&\s*validProClubClaimRejectionV1\(clubId,\s*claimId\)\s*\)\s*\);/,
+      "claims update must bind resource != null to APPROVED and REJECTED validator branches",
+    );
+    assert.match(
+      claimsBlock,
+      /allow\s+delete:\s*if\s+false;/,
+      "claims delete must be false",
+    );
+
+    // 5. /onboardingApprovals/{uid} boundary
+    const approvalsBlock = extractMatchBlock(rules, "match /onboardingApprovals/{uid}");
+    assert.match(
+      approvalsBlock,
+      /allow\s+get:\s*if\s+isSignedIn\(\)\s*&&\s*\(\s*request\.auth\.uid\s*==\s*uid\s*\|\|\s*isActiveProClubReviewerV1\(clubId\)\s*\);/,
+      "approvals get must be restricted to own uid or active reviewer",
+    );
+    assert.match(
+      approvalsBlock,
+      /allow\s+list:\s*if\s+false;/,
+      "approvals list must be false",
+    );
+    assert.match(
+      approvalsBlock,
+      /allow\s+create:\s*if\s+validProClubApprovalProofCreateV1\(clubId,\s*uid\);/,
+      "approvals create must use validProClubApprovalProofCreateV1",
+    );
+    assert.match(
+      approvalsBlock,
+      /allow\s+update,\s*delete:\s*if\s+false;/,
+      "approvals update/delete must be false",
+    );
+
+    // 6. Pro Club catch-all boundary
+    const catchAllBlock = extractMatchBlock(rules, "match /{document=**}");
+    assert.match(
+      catchAllBlock,
+      /allow\s+read,\s*write:\s*if\s+false;/,
+      "proClubs catch-all must fail-close read, write",
+    );
+
     assert.ok(normalizedContract.includes("no client create, update, or delete path"));
     assert.ok(contract.includes("dedicated Rules and Data Contract is required"));
   });
