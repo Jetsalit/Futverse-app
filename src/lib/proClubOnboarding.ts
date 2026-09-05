@@ -1,6 +1,7 @@
-import type { Timestamp } from "firebase/firestore";
+import { Timestamp } from "firebase/firestore";
 import { isProClubStaffRole, isValidDocumentIdentifier } from "./proClubModel";
 import type { ProClubStaffRole } from "../types/ProClub";
+export type { ProClubStaffRole };
 
 export type InviteStatus = "ACTIVE" | "REVOKED" | "CONSUMED";
 export type ClaimStatus = "PENDING" | "APPROVED" | "REJECTED";
@@ -63,9 +64,40 @@ export interface ProClubJoinClaim {
   rejectedBy?: string;
 }
 
+export interface IssueProClubInviteOptions {
+  clubId: string;
+  targetUid: string;
+  staffRole: ProClubStaffRole;
+  expiresAt?: Timestamp;
+}
+
+export const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+export const INVITE_EXPIRATION_SAFETY_OFFSET_MS = 60_000; // 1-minute buffer to guarantee expiresAt <= request.time + 7d
+
+export function defaultInviteExpiration(now = Date.now()): Timestamp {
+  return Timestamp.fromMillis(now + SEVEN_DAYS_MS - INVITE_EXPIRATION_SAFETY_OFFSET_MS);
+}
+
+const INVITE_CODE_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+export function generateProClubInviteCode(): string {
+  const bytes = new Uint8Array(32);
+  if (typeof globalThis.crypto !== "undefined" && typeof globalThis.crypto.getRandomValues === "function") {
+    globalThis.crypto.getRandomValues(bytes);
+  } else {
+    throw new Error("Secure crypto RNG is required to generate Pro Club invite codes");
+  }
+  let payload = "";
+  for (let i = 0; i < bytes.length; i++) {
+    payload += INVITE_CODE_CHARS[bytes[i] % INVITE_CODE_CHARS.length];
+  }
+  return `FUT-PC-${payload}`;
+}
+
 export type OnboardingErrorCode = "INVALID_INVITE" | "UNAVAILABLE" | "AUTH_CHANGED" |
   "WRONG_RECIPIENT" | "EXPIRED" | "REVOKED" | "CONSUMED" | "MEMBERSHIP_EXISTS" |
-  "REVIEWER_REQUIRED" | "STALE_REQUEST" | "INVALID_DATA" | "IDENTITY_UNAVAILABLE" | "NETWORK";
+  "REVIEWER_REQUIRED" | "STALE_REQUEST" | "INVALID_DATA" | "IDENTITY_UNAVAILABLE" |
+  "TARGET_USER_NOT_FOUND" | "NETWORK";
 export class OnboardingError extends Error {
   constructor(readonly code: OnboardingErrorCode) { super(code); }
 }
@@ -78,11 +110,12 @@ export function onboardingErrorMessage(error: unknown): string {
     EXPIRED: "This invitation has expired. Ask your club for a new invitation.",
     REVOKED: "This invitation was revoked. Contact your club for a new invitation.",
     CONSUMED: "This invitation has already been used. Check your request or open your club workspace.",
-    MEMBERSHIP_EXISTS: "You already have a club membership. Open your workspace or contact your club.",
-    REVIEWER_REQUIRED: "Only an active club owner or administrator can review staff requests.",
+    MEMBERSHIP_EXISTS: "This user already has a club membership.",
+    REVIEWER_REQUIRED: "Only an active club owner or administrator can issue or review staff invitations.",
     STALE_REQUEST: "This request has changed. Refresh the requests before trying again.",
     INVALID_DATA: "This invitation or request could not be verified. Please contact your club.",
     IDENTITY_UNAVAILABLE: "Identity unavailable. We could not verify the claimant’s account identity. Contact your club before continuing.",
+    TARGET_USER_NOT_FOUND: "No user account was found for this reference. Make sure the staff member has registered with FutVerse.",
     NETWORK: "We could not confirm the result. Check your connection and refresh before trying again.",
   };
   return error instanceof OnboardingError ? messages[error.code] : messages.NETWORK;

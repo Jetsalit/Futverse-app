@@ -3,12 +3,13 @@ import {
   setDoc, where, writeBatch, type Firestore,
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
-import { isValidDocumentIdentifier } from "../proClubModel";
+import { isProClubStaffRole, isValidDocumentIdentifier } from "../proClubModel";
 import {
   isPermissionDenied, normalizeProClubInviteCode, OnboardingError, parseProClubClaim,
   parseProClubInvite, proClubClaimId, visibleInviteStatus,
   claimantIdentityFromCanonicalUser, isClaimantIdentity,
-  type ProClubInvite, type ProClubJoinClaim,
+  defaultInviteExpiration, generateProClubInviteCode,
+  type IssueProClubInviteOptions, type ProClubInvite, type ProClubJoinClaim,
 } from "../proClubOnboarding";
 import { getProClubMembership, type ProClubReadOps } from "./proClubReadAdapter";
 import { resolveProClubOrganizationAuthority, type ProClubOrganizationAuthority } from "./proClubOrganizationAdapter";
@@ -217,6 +218,72 @@ export function createProClubOnboardingRepository(firestore: Firestore, getActor
     }
     assertActor(uid);
   }
-  return { inspectInvitation, requestMembership, loadWorkspace, loadPending, reviewClaim };
+  async function issueInvitation(options: IssueProClubInviteOptions, uid: string): Promise<ProClubInvite> {
+    assertActor(uid);
+    if (
+      !isValidDocumentIdentifier(options.clubId) ||
+      !isValidDocumentIdentifier(options.targetUid) ||
+      !isProClubStaffRole(options.staffRole)
+    ) {
+      throw new OnboardingError("INVALID_DATA");
+    }
+    if (options.targetUid === uid) {
+      throw new OnboardingError("INVALID_DATA");
+    }
+    // Re-read canonical reviewer authority on every action; UI state never authorizes a write.
+    try {
+      await requireReviewer(options.clubId, uid);
+    } catch (error) {
+      if (error instanceof OnboardingError && error.code === "UNAVAILABLE") {
+        throw new OnboardingError("REVIEWER_REQUIRED");
+      }
+      throw error;
+    }
+    assertActor(uid);
+
+    const inviteCode = generateProClubInviteCode();
+    const expiresAt = options.expiresAt ?? defaultInviteExpiration();
+
+    const nowMillis = Date.now();
+    const expiresMillis = expiresAt.toMillis();
+    if (expiresMillis <= nowMillis || expiresMillis > nowMillis + 7 * 24 * 60 * 60 * 1000) {
+      throw new OnboardingError("INVALID_DATA");
+    }
+
+    const inviteRef = doc(firestore, "proClubInvites", inviteCode);
+    const at = serverTimestamp();
+
+    try {
+      await setDoc(inviteRef, {
+        schemaVersion: 1,
+        inviteCode,
+        clubId: options.clubId,
+        targetUid: options.targetUid,
+        membershipAuthorizationRole: "MEMBER",
+        staffRole: options.staffRole,
+        status: "ACTIVE",
+        createdAt: at,
+        createdBy: uid,
+        updatedAt: at,
+        updatedBy: uid,
+        expiresAt,
+      });
+    } catch (error) {
+      if (isPermissionDenied(error)) {
+        throw new OnboardingError("TARGET_USER_NOT_FOUND");
+      }
+      throw error;
+    }
+
+    assertActor(uid);
+    const snapshot = await getDocFromServer(inviteRef);
+    assertActor(uid);
+    if (!snapshot.exists()) {
+      throw new OnboardingError("NETWORK");
+    }
+
+    return parseProClubInvite(snapshot.data(), inviteCode);
+  }
+  return { inspectInvitation, requestMembership, loadWorkspace, loadPending, reviewClaim, issueInvitation };
 }
 export const proClubOnboardingRepository = createProClubOnboardingRepository(db, () => auth.currentUser?.uid ?? null);
