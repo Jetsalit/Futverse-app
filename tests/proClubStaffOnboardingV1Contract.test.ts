@@ -113,23 +113,24 @@ function stripRulesComments(source: string): string {
 }
 
 function extractMatchBlock(source: string, header: string): string {
-  const index = source.indexOf(header);
+  const sanitized = stripRulesComments(source);
+  const index = sanitized.indexOf(header);
   assert.ok(index >= 0, `Match header not found: ${header}`);
-  const openBrace = source.indexOf("{", index + header.length);
+  const openBrace = sanitized.indexOf("{", index + header.length);
   assert.ok(openBrace >= index + header.length, `Opening brace not found for ${header}`);
   let depth = 1;
   let pos = openBrace + 1;
-  while (pos < source.length && depth > 0) {
-    const c = source[pos];
+  while (pos < sanitized.length && depth > 0) {
+    const c = sanitized[pos];
     if (c === '"' || c === "'") {
       const quote = c;
       pos++;
-      while (pos < source.length) {
-        if (source[pos] === "\\") {
+      while (pos < sanitized.length) {
+        if (sanitized[pos] === "\\") {
           pos += 2;
           continue;
         }
-        if (source[pos] === quote) {
+        if (sanitized[pos] === quote) {
           pos++;
           break;
         }
@@ -142,7 +143,7 @@ function extractMatchBlock(source: string, header: string): string {
     pos++;
   }
   assert.equal(depth, 0, `Unterminated match block for ${header}`);
-  return source.slice(openBrace + 1, pos - 1);
+  return sanitized.slice(openBrace + 1, pos - 1);
 }
 
 interface ParsedAllowStatement {
@@ -843,7 +844,7 @@ test("Pro Club Staff Onboarding V1 Contract Freeze", async (t) => {
       "must fail closed on malformed braces",
     );
 
-    // 10. Regression proof: unaccounted direct root allow between child blocks rejected (Section C)
+    // 10. Regression proof: unaccounted direct root allow between child blocks rejected
     const unaccountedRootAllowSample = `
       match /members/{uid} {
         allow get: if true;
@@ -864,6 +865,180 @@ test("Pro Club Staff Onboarding V1 Contract Freeze", async (t) => {
       /Unexpected allow statement count in unaccounted root allow sample block/,
       "must reject unaccounted direct root allow between child blocks",
     );
+
+    // 11. Regression proof: commented-out match headers are ignored; only real uncommented header is extracted (Section B)
+    const lineCommentedHeaderSample = `
+      // match /proClubs/{clubId} {
+      //   allow write: if true;
+      // }
+      match /proClubs/{clubId} {
+        allow get: if isSignedIn();
+      }
+    `;
+    const extractedFromLineCommentHeader = extractMatchBlock(
+      lineCommentedHeaderSample,
+      "match /proClubs/{clubId}",
+    );
+    assert.ok(
+      extractedFromLineCommentHeader.includes("allow get: if isSignedIn()"),
+      "must extract real block when line-commented fake header precedes it",
+    );
+    assert.ok(
+      !extractedFromLineCommentHeader.includes("allow write: if true;"),
+      "must not extract line-commented fake header block",
+    );
+
+    const blockCommentedHeaderSample = `
+      /* match /proClubs/{clubId} {
+        allow write: if true;
+      } */
+      match /proClubs/{clubId} {
+        allow get: if isSignedIn();
+      }
+    `;
+    const extractedFromBlockCommentHeader = extractMatchBlock(
+      blockCommentedHeaderSample,
+      "match /proClubs/{clubId}",
+    );
+    assert.ok(
+      extractedFromBlockCommentHeader.includes("allow get: if isSignedIn()"),
+      "must extract real block when block-commented fake header precedes it",
+    );
+    assert.ok(
+      !extractedFromBlockCommentHeader.includes("allow write: if true;"),
+      "must not extract block-commented fake header block",
+    );
+
+    const entirelyCommentedHeaderSample = `
+      // match /proClubs/{clubId} { allow write: if true; }
+    `;
+    assert.throws(
+      () => extractMatchBlock(entirelyCommentedHeaderSample, "match /proClubs/{clubId}"),
+      /Match header not found: match \/proClubs\/\{clubId\}/,
+      "must fail closed when match header only exists inside comments",
+    );
+
+    // 12. Regression proof: line-commented closing brace '// }' does not truncate match block,
+    // post-comment unknown sibling is detected and rejected (Section C)
+    const lineCommentBracePoisonedRules = `
+      match /proClubs/{clubId} {
+        match /members/{uid} {
+          allow get: if true;
+        }
+        match /staff/{uid} {
+          allow get: if true;
+        }
+        match /onboardingClaims/{claimId} {
+          allow get: if true;
+        }
+        match /onboardingApprovals/{uid} {
+          allow get: if true;
+        }
+        match /{document=**} {
+          allow read, write: if false;
+        }
+
+        // }
+
+        match /reviewBypass/{docId} {
+          allow write: if true;
+        }
+      }
+    `;
+    const lineCommentExtractedBlock = extractMatchBlock(
+      lineCommentBracePoisonedRules,
+      "match /proClubs/{clubId}",
+    );
+    assert.ok(
+      lineCommentExtractedBlock.includes("match /reviewBypass/{docId}"),
+      "line-commented brace '// }' must not truncate match block before sibling",
+    );
+    assert.throws(
+      () =>
+        assertExactDirectChildMatches(
+          lineCommentExtractedBlock,
+          EXPECTED_PRO_CLUB_DIRECT_CHILD_MATCHES,
+          "line-commented brace sample",
+        ),
+      /Unexpected child match block \[match \/reviewBypass\/\{docId\}\]/,
+      "post-comment unknown sibling /reviewBypass/{docId} must be rejected",
+    );
+
+    // Regression proof: block-commented closing brace '/* } */' does not truncate match block,
+    // post-comment unknown sibling is detected and rejected (Section C)
+    const blockCommentBracePoisonedRules = `
+      match /proClubs/{clubId} {
+        match /members/{uid} {
+          allow get: if true;
+        }
+        match /staff/{uid} {
+          allow get: if true;
+        }
+        match /onboardingClaims/{claimId} {
+          allow get: if true;
+        }
+        match /onboardingApprovals/{uid} {
+          allow get: if true;
+        }
+        match /{document=**} {
+          allow read, write: if false;
+        }
+
+        /* } */
+
+        match /reviewBypass/{docId} {
+          allow write: if true;
+        }
+      }
+    `;
+    const blockCommentExtractedBlock = extractMatchBlock(
+      blockCommentBracePoisonedRules,
+      "match /proClubs/{clubId}",
+    );
+    assert.ok(
+      blockCommentExtractedBlock.includes("match /reviewBypass/{docId}"),
+      "block-commented brace '/* } */' must not truncate match block before sibling",
+    );
+    assert.throws(
+      () =>
+        assertExactDirectChildMatches(
+          blockCommentExtractedBlock,
+          EXPECTED_PRO_CLUB_DIRECT_CHILD_MATCHES,
+          "block-commented brace sample",
+        ),
+      /Unexpected child match block \[match \/reviewBypass\/\{docId\}\]/,
+      "post-comment unknown sibling /reviewBypass/{docId} must be rejected",
+    );
+
+    // 13. Regression proof: strings with comment markers and braces are preserved safely (Section D)
+    const stringBraceCommentRules = `
+      match /proClubs/{clubId} {
+        allow get: if resource.data.tag == "// }" &&
+                      resource.data.note == "/* } */" &&
+                      resource.data.open == "{" &&
+                      resource.data.close == "}";
+        allow list, create, update, delete: if false;
+      }
+    `;
+    const extractedStringBlock = extractMatchBlock(
+      stringBraceCommentRules,
+      "match /proClubs/{clubId}",
+    );
+    assert.ok(extractedStringBlock.includes('"// }"'));
+    assert.ok(extractedStringBlock.includes('"/* } */"'));
+    assert.ok(extractedStringBlock.includes('"{"'));
+    assert.ok(extractedStringBlock.includes('"}"'));
+
+    const parsedStringOps = assertExactLocalAllowOperations(
+      extractedStringBlock,
+      [["get"], ["list", "create", "update", "delete"]],
+      "string brace comment sample",
+    );
+    assert.equal(parsedStringOps.length, 2);
+    assert.ok(parsedStringOps[0].condition.includes('"// }"'));
+    assert.ok(parsedStringOps[0].condition.includes('"/* } */"'));
+    assert.ok(parsedStringOps[0].condition.includes('"{"'));
+    assert.ok(parsedStringOps[0].condition.includes('"}"'));
 
     assert.ok(normalizedContract.includes("no client create, update, or delete path"));
     assert.ok(contract.includes("dedicated Rules and Data Contract is required"));
