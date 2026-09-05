@@ -199,7 +199,7 @@ export default function PendingStaffRequests({ clubId, clubName, uid }: { clubId
           </button>
         </div>
         <p className="text-sm text-emerald-800">
-          Invitation code for <strong>{staffRoleLabels[issuedInvite.staffRole]}</strong> (target account: <span className="font-mono text-xs">{issuedInvite.targetUid}</span>):
+          Invitation code for <strong>{staffRoleLabels[issuedInvite.staffRole]}</strong>:
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <code className="rounded-xl bg-slate-900 px-4 py-2 font-mono text-base font-bold text-emerald-400">
