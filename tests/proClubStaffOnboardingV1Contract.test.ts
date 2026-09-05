@@ -50,6 +50,63 @@ function extractMatchBlock(source: string, header: string): string {
   return source.slice(openBrace + 1, pos - 1);
 }
 
+interface ParsedAllowStatement {
+  operations: string[];
+  canonicalOperations: string;
+  condition: string;
+}
+
+function parseAllowStatements(blockText: string): ParsedAllowStatement[] {
+  const matches = [...blockText.matchAll(/allow\s+([^:]+):\s*if\s+([^;]+);/g)];
+  return matches.map((match) => {
+    const rawOps = match[1].split(",").map((op) => op.trim());
+    const sortedOps = [...rawOps].sort().join(",");
+    return {
+      operations: rawOps,
+      canonicalOperations: sortedOps,
+      condition: match[2].trim(),
+    };
+  });
+}
+
+function assertExactLocalAllowOperations(
+  blockText: string,
+  expectedOperationSets: (string[] | string)[],
+  contextName: string,
+): ParsedAllowStatement[] {
+  const statements = parseAllowStatements(blockText);
+  const actualCanonical = statements.map((s) => s.canonicalOperations);
+  const expectedCanonical = expectedOperationSets.map((ops) => {
+    const list = Array.isArray(ops) ? ops : ops.split(",").map((s) => s.trim());
+    return [...list].sort().join(",");
+  });
+
+  assert.equal(
+    statements.length,
+    expectedCanonical.length,
+    `Unexpected allow statement count in ${contextName}: expected ${expectedCanonical.length}, found ${statements.length} (${actualCanonical.join(" | ")})`,
+  );
+
+  const remainingExpected = [...expectedCanonical];
+  for (const actual of actualCanonical) {
+    const idx = remainingExpected.indexOf(actual);
+    assert.ok(
+      idx >= 0,
+      `Unexpected allow operations [${actual}] in ${contextName}. Expected only: ${expectedCanonical.join(" | ")}`,
+    );
+    remainingExpected.splice(idx, 1);
+  }
+
+  assert.equal(
+    remainingExpected.length,
+    0,
+    `Missing expected allow statements in ${contextName}: ${remainingExpected.join(" | ")}`,
+  );
+
+  return statements;
+}
+
+
 test("Pro Club Staff Onboarding V1 Contract Freeze", async (t) => {
   await t.test("freezes exact baseline branch scope and source boundaries", () => {
     assert.ok(contract.includes("9ca605de968914c1bac3edc9ced53cebd607c2fb"));
@@ -183,6 +240,11 @@ test("Pro Club Staff Onboarding V1 Contract Freeze", async (t) => {
 
     // 1. /proClubs/{clubId} root boundary
     const rootDirectRules = rules.slice(0, rules.indexOf("match /members/{uid}"));
+    assertExactLocalAllowOperations(
+      rootDirectRules,
+      [["get"], ["list", "create", "update", "delete"]],
+      "/proClubs/{clubId} root direct segment",
+    );
     assert.match(
       rootDirectRules,
       /allow\s+get:\s*if\s+isSignedIn\(\)\s*&&\s*exists\(\s*\/databases\/\$\(database\)\/documents\/proClubs\/\$\(clubId\)\/members\/\$\(request\.auth\.uid\)\s*\);/,
@@ -196,6 +258,11 @@ test("Pro Club Staff Onboarding V1 Contract Freeze", async (t) => {
 
     // 2. /members/{uid} boundary
     const membersBlock = extractMatchBlock(rules, "match /members/{uid}");
+    assertExactLocalAllowOperations(
+      membersBlock,
+      [["get"], ["list"], ["create"], ["update", "delete"]],
+      "/members/{uid}",
+    );
     assert.match(
       membersBlock,
       /allow\s+get:\s*if\s+isSignedIn\(\)\s*&&\s*request\.auth\.uid\s*==\s*uid;/,
@@ -219,6 +286,11 @@ test("Pro Club Staff Onboarding V1 Contract Freeze", async (t) => {
 
     // 3. /staff/{uid} boundary
     const staffBlock = extractMatchBlock(rules, "match /staff/{uid}");
+    assertExactLocalAllowOperations(
+      staffBlock,
+      [["get"], ["list"], ["create"], ["update", "delete"]],
+      "/staff/{uid}",
+    );
     assert.match(
       staffBlock,
       /allow\s+get:\s*if\s+isSignedIn\(\)\s*&&\s*request\.auth\.uid\s*==\s*uid;/,
@@ -242,6 +314,11 @@ test("Pro Club Staff Onboarding V1 Contract Freeze", async (t) => {
 
     // 4. /onboardingClaims/{claimId} boundary
     const claimsBlock = extractMatchBlock(rules, "match /onboardingClaims/{claimId}");
+    assertExactLocalAllowOperations(
+      claimsBlock,
+      [["get"], ["list"], ["create"], ["update"], ["delete"]],
+      "/onboardingClaims/{claimId}",
+    );
     assert.match(
       claimsBlock,
       /allow\s+get:\s*if\s+isSignedIn\(\)\s*&&\s*\(\s*resource\.data\.get\('userId',\s*''\)\s*==\s*request\.auth\.uid\s*\|\|\s*isActiveProClubReviewerV1\(clubId\)\s*\);/,
@@ -270,6 +347,11 @@ test("Pro Club Staff Onboarding V1 Contract Freeze", async (t) => {
 
     // 5. /onboardingApprovals/{uid} boundary
     const approvalsBlock = extractMatchBlock(rules, "match /onboardingApprovals/{uid}");
+    assertExactLocalAllowOperations(
+      approvalsBlock,
+      [["get"], ["list"], ["create"], ["update", "delete"]],
+      "/onboardingApprovals/{uid}",
+    );
     assert.match(
       approvalsBlock,
       /allow\s+get:\s*if\s+isSignedIn\(\)\s*&&\s*\(\s*request\.auth\.uid\s*==\s*uid\s*\|\|\s*isActiveProClubReviewerV1\(clubId\)\s*\);/,
@@ -293,10 +375,49 @@ test("Pro Club Staff Onboarding V1 Contract Freeze", async (t) => {
 
     // 6. Pro Club catch-all boundary
     const catchAllBlock = extractMatchBlock(rules, "match /{document=**}");
+    assertExactLocalAllowOperations(
+      catchAllBlock,
+      [["read", "write"]],
+      "Pro Club catch-all",
+    );
     assert.match(
       catchAllBlock,
       /allow\s+read,\s*write:\s*if\s+false;/,
       "proClubs catch-all must fail-close read, write",
+    );
+
+    // 7. Regression proof: local allow-set validator detects unexpected/permissive declarations (Firestore OR-semantics bypass)
+    const poisonedSample = `
+      allow get: if isSignedIn() && request.auth.uid == uid;
+      allow list: if false;
+      allow create: if validProClubStaffCreateV1(clubId, uid);
+      allow update, delete: if false;
+      allow write: if true;
+    `;
+    assert.throws(
+      () =>
+        assertExactLocalAllowOperations(
+          poisonedSample,
+          [["get"], ["list"], ["create"], ["update", "delete"]],
+          "poisoned sample block",
+        ),
+      /Unexpected allow statement count in poisoned sample block/,
+      "must detect and reject extra allow write declaration",
+    );
+
+    const mutatedSample = `
+      allow get: if isSignedIn() && request.auth.uid == uid;
+      allow write: if true;
+    `;
+    assert.throws(
+      () =>
+        assertExactLocalAllowOperations(
+          mutatedSample,
+          [["get"], ["list"]],
+          "mutated sample block",
+        ),
+      /Unexpected allow operations \[write\]/,
+      "must detect and reject unexpected operation sets even if count matches",
     );
 
     assert.ok(normalizedContract.includes("no client create, update, or delete path"));
