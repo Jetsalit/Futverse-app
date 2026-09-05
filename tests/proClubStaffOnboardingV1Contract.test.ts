@@ -34,6 +34,84 @@ function proClubRulesBlock(): string {
   return firestoreRules.slice(start, end);
 }
 
+function stripRulesComments(source: string): string {
+  let result = "";
+  let i = 0;
+  const len = source.length;
+
+  while (i < len) {
+    const char = source[i];
+
+    // Preserve quoted strings (both single and double quotes)
+    if (char === '"' || char === "'") {
+      const quote = char;
+      result += quote;
+      i++;
+      while (i < len) {
+        const c = source[i];
+        result += c;
+        if (c === "\\") {
+          i++;
+          if (i < len) {
+            result += source[i];
+          }
+        } else if (c === quote) {
+          break;
+        }
+        i++;
+      }
+      i++;
+      continue;
+    }
+
+    // Line comments: // ... to end of line
+    if (char === "/" && i + 1 < len && source[i + 1] === "/") {
+      i += 2;
+      while (i < len && source[i] !== "\n" && source[i] !== "\r") {
+        i++;
+      }
+      // Preserve newline to keep statement separation intact
+      if (i < len) {
+        if (source[i] === "\r" && i + 1 < len && source[i + 1] === "\n") {
+          result += "\r\n";
+          i += 2;
+        } else {
+          result += source[i];
+          i++;
+        }
+      }
+      continue;
+    }
+
+    // Block comments: /* ... */
+    if (char === "/" && i + 1 < len && source[i + 1] === "*") {
+      i += 2;
+      let closed = false;
+      while (i + 1 < len) {
+        if (source[i] === "*" && source[i + 1] === "/") {
+          i += 2;
+          closed = true;
+          break;
+        }
+        if (source[i] === "\n") {
+          result += "\n";
+        }
+        i++;
+      }
+      if (!closed) {
+        throw new Error("Unterminated block comment in Rules source");
+      }
+      result += " ";
+      continue;
+    }
+
+    result += char;
+    i++;
+  }
+
+  return result;
+}
+
 function extractMatchBlock(source: string, header: string): string {
   const index = source.indexOf(header);
   assert.ok(index >= 0, `Match header not found: ${header}`);
@@ -42,8 +120,25 @@ function extractMatchBlock(source: string, header: string): string {
   let depth = 1;
   let pos = openBrace + 1;
   while (pos < source.length && depth > 0) {
-    if (source[pos] === "{") depth++;
-    else if (source[pos] === "}") depth--;
+    const c = source[pos];
+    if (c === '"' || c === "'") {
+      const quote = c;
+      pos++;
+      while (pos < source.length) {
+        if (source[pos] === "\\") {
+          pos += 2;
+          continue;
+        }
+        if (source[pos] === quote) {
+          pos++;
+          break;
+        }
+        pos++;
+      }
+      continue;
+    }
+    if (c === "{") depth++;
+    else if (c === "}") depth--;
     pos++;
   }
   assert.equal(depth, 0, `Unterminated match block for ${header}`);
@@ -57,7 +152,8 @@ interface ParsedAllowStatement {
 }
 
 function parseAllowStatements(blockText: string): ParsedAllowStatement[] {
-  const matches = [...blockText.matchAll(/allow\s+([^:]+):\s*if\s+([^;]+);/g)];
+  const sanitized = stripRulesComments(blockText);
+  const matches = [...sanitized.matchAll(/allow\s+([^:]+):\s*if\s+([^;]+);/g)];
   return matches.map((match) => {
     const rawOps = match[1].split(",").map((op) => op.trim());
     const sortedOps = [...rawOps].sort().join(",");
@@ -104,6 +200,191 @@ function assertExactLocalAllowOperations(
   );
 
   return statements;
+}
+
+interface DirectChildMatch {
+  header: string;
+  path: string;
+  body: string;
+}
+
+interface DirectBlockStructure {
+  directRootText: string;
+  directChildren: DirectChildMatch[];
+}
+
+const EXPECTED_PRO_CLUB_DIRECT_CHILD_MATCHES = [
+  "match /members/{uid}",
+  "match /staff/{uid}",
+  "match /onboardingClaims/{claimId}",
+  "match /onboardingApprovals/{uid}",
+  "match /{document=**}",
+];
+
+function extractDirectBlockStructure(blockText: string): DirectBlockStructure {
+  const sanitized = stripRulesComments(blockText);
+  const directChildren: DirectChildMatch[] = [];
+  let directRootText = "";
+  let pos = 0;
+  const len = sanitized.length;
+  const matchRegex = /^match\s+((?:[^{:;\s]|\{[^\s:;(){}]+\})+)\s*\{/;
+
+  while (pos < len) {
+    // Consume leading whitespace at root level
+    if (/\s/.test(sanitized[pos])) {
+      directRootText += sanitized[pos];
+      pos++;
+      continue;
+    }
+
+    const remaining = sanitized.slice(pos);
+
+    if (/^match\b/.test(remaining)) {
+      const matchResult = remaining.match(matchRegex);
+      if (!matchResult) {
+        throw new Error(
+          `Malformed match declaration at position ${pos}: ${remaining.slice(0, 40)}`,
+        );
+      }
+
+      const fullMatch = matchResult[0];
+      const path = matchResult[1].trim();
+      const header = `match ${path}`;
+      const openBracePos = pos + fullMatch.length - 1;
+
+      let childDepth = 1;
+      let childPos = openBracePos + 1;
+
+      while (childPos < len && childDepth > 0) {
+        const c = sanitized[childPos];
+
+        // Handle strings safely inside child blocks
+        if (c === '"' || c === "'") {
+          const quote = c;
+          childPos++;
+          while (childPos < len) {
+            const innerC = sanitized[childPos];
+            if (innerC === "\\") {
+              childPos += 2;
+              continue;
+            }
+            if (innerC === quote) {
+              childPos++;
+              break;
+            }
+            childPos++;
+          }
+          continue;
+        }
+
+        if (c === "{") {
+          childDepth++;
+        } else if (c === "}") {
+          childDepth--;
+        }
+        childPos++;
+      }
+
+      assert.equal(
+        childDepth,
+        0,
+        `Malformed or unterminated child match block for ${header}`,
+      );
+
+      directChildren.push({
+        header,
+        path,
+        body: sanitized.slice(openBracePos + 1, childPos - 1),
+      });
+
+      pos = childPos;
+      continue;
+    }
+
+    const char = sanitized[pos];
+
+    // Handle strings safely in root text
+    if (char === '"' || char === "'") {
+      const quote = char;
+      directRootText += quote;
+      pos++;
+      while (pos < len) {
+        const c = sanitized[pos];
+        directRootText += c;
+        if (c === "\\") {
+          pos++;
+          if (pos < len) {
+            directRootText += sanitized[pos];
+          }
+        } else if (c === quote) {
+          break;
+        }
+        pos++;
+      }
+      pos++;
+      continue;
+    }
+
+    if (char === "{") {
+      throw new Error(
+        `Unexpected unassociated opening brace '{' at position ${pos}`,
+      );
+    }
+    if (char === "}") {
+      throw new Error(
+        `Unexpected unassociated closing brace '}' at position ${pos}`,
+      );
+    }
+
+    directRootText += char;
+    pos++;
+  }
+
+  return { directRootText, directChildren };
+}
+
+function enumerateDirectChildMatches(blockText: string): DirectChildMatch[] {
+  return extractDirectBlockStructure(blockText).directChildren;
+}
+
+function assertExactDirectChildMatches(
+  blockText: string,
+  expectedHeaders: string[],
+  contextName: string,
+): DirectChildMatch[] {
+  const structure = extractDirectBlockStructure(blockText);
+  const children = structure.directChildren;
+  const actualHeaders = children.map((c) => c.header);
+
+  // Check duplicates
+  const seen = new Set<string>();
+  for (const header of actualHeaders) {
+    assert.ok(
+      !seen.has(header),
+      `Duplicate child match block [${header}] found in ${contextName}`,
+    );
+    seen.add(header);
+  }
+
+  // Check unexpected siblings
+  const remainingExpected = [...expectedHeaders];
+  for (const actual of actualHeaders) {
+    const idx = remainingExpected.indexOf(actual);
+    assert.ok(
+      idx >= 0,
+      `Unexpected child match block [${actual}] in ${contextName}. Expected only: [${expectedHeaders.join(", ")}]`,
+    );
+    remainingExpected.splice(idx, 1);
+  }
+
+  // Check missing expected children
+  assert.equal(
+    remainingExpected.length,
+    0,
+    `Missing expected child match blocks in ${contextName}: [${remainingExpected.join(", ")}]`,
+  );
+
+  return children;
 }
 
 
@@ -237,6 +518,23 @@ test("Pro Club Staff Onboarding V1 Contract Freeze", async (t) => {
 
   await t.test("proves exact own-document gets and closes every broad operation", () => {
     const rules = proClubRulesBlock();
+    const proClubBlock = extractMatchBlock(rules, "match /proClubs/{clubId}");
+
+    // Validate complete direct child match set under /proClubs/{clubId}
+    const directChildren = assertExactDirectChildMatches(
+      proClubBlock,
+      EXPECTED_PRO_CLUB_DIRECT_CHILD_MATCHES,
+      "/proClubs/{clubId}",
+    );
+    assert.equal(directChildren.length, 5);
+
+    // Validate complete root-direct allow declarations (no pollution from children, no extra allows)
+    const proClubStructure = extractDirectBlockStructure(proClubBlock);
+    assertExactLocalAllowOperations(
+      proClubStructure.directRootText,
+      [["get"], ["list", "create", "update", "delete"]],
+      "/proClubs/{clubId} direct root allow set",
+    );
 
     // 1. /proClubs/{clubId} root boundary
     const rootDirectRules = rules.slice(0, rules.indexOf("match /members/{uid}"));
@@ -386,7 +684,7 @@ test("Pro Club Staff Onboarding V1 Contract Freeze", async (t) => {
       "proClubs catch-all must fail-close read, write",
     );
 
-    // 7. Regression proof: local allow-set validator detects unexpected/permissive declarations (Firestore OR-semantics bypass)
+    // 7. Regression proofs: local allow-set validator detects unexpected/permissive declarations (Firestore OR-semantics bypass)
     const poisonedSample = `
       allow get: if isSignedIn() && request.auth.uid == uid;
       allow list: if false;
@@ -418,6 +716,153 @@ test("Pro Club Staff Onboarding V1 Contract Freeze", async (t) => {
         ),
       /Unexpected allow operations \[write\]/,
       "must detect and reject unexpected operation sets even if count matches",
+    );
+
+    // 8. Regression proof: comment-hiding allow parser detection (Section A)
+    const lineCommentPoisonedSample = `
+      allow get: if isSignedIn() && request.auth.uid == uid;
+      allow list: if false;
+      allow create: if validProClubStaffCreateV1(clubId, uid);
+      allow update, delete: if false;
+      allow write:
+        // accidental debug grant
+        if true;
+    `;
+    assert.throws(
+      () =>
+        assertExactLocalAllowOperations(
+          lineCommentPoisonedSample,
+          [["get"], ["list"], ["create"], ["update", "delete"]],
+          "line-comment poisoned sample block",
+        ),
+      /Unexpected allow statement count in line-comment poisoned sample block/,
+      "must detect allow declaration hidden by line comment",
+    );
+
+    const blockCommentPoisonedSample = `
+      allow get: if isSignedIn() && request.auth.uid == uid;
+      allow list: if false;
+      allow create: if validProClubStaffCreateV1(clubId, uid);
+      allow update, delete: if false;
+      allow write:
+        /* accidental debug grant */
+        if true;
+    `;
+    assert.throws(
+      () =>
+        assertExactLocalAllowOperations(
+          blockCommentPoisonedSample,
+          [["get"], ["list"], ["create"], ["update", "delete"]],
+          "block-comment poisoned sample block",
+        ),
+      /Unexpected allow statement count in block-comment poisoned sample block/,
+      "must detect allow declaration hidden by block comment",
+    );
+
+    // Regression proof: string literal comment markers are preserved safely
+    const stringCommentSample = `
+      allow get: if resource.data.tag == "// not a comment" && resource.data.note == "/* not a comment */";
+    `;
+    const parsedStringStatements = parseAllowStatements(stringCommentSample);
+    assert.equal(parsedStringStatements.length, 1);
+    assert.equal(parsedStringStatements[0].canonicalOperations, "get");
+    assert.ok(parsedStringStatements[0].condition.includes("// not a comment"));
+    assert.ok(parsedStringStatements[0].condition.includes("/* not a comment */"));
+
+    // 9. Regression proof: unknown sibling match block rejection under /proClubs/{clubId} (Section B)
+    const unknownSiblingSample = `
+      match /members/{uid} {
+        allow get: if true;
+      }
+
+      match /reviewBypass/{docId} {
+        allow write: if true;
+      }
+    `;
+    assert.throws(
+      () =>
+        assertExactDirectChildMatches(
+          unknownSiblingSample,
+          EXPECTED_PRO_CLUB_DIRECT_CHILD_MATCHES,
+          "unknown sibling sample block",
+        ),
+      /Unexpected child match block \[match \/reviewBypass\/\{docId\}\]/,
+      "must detect and reject unexpected sibling match block /reviewBypass/{docId}",
+    );
+
+    // Regression proof: duplicate direct child match block rejection
+    const duplicateChildSample = `
+      match /members/{uid} {
+        allow get: if true;
+      }
+      match /members/{uid} {
+        allow get: if true;
+      }
+    `;
+    assert.throws(
+      () =>
+        assertExactDirectChildMatches(
+          duplicateChildSample,
+          ["match /members/{uid}"],
+          "duplicate child sample block",
+        ),
+      /Duplicate child match block \[match \/members\/\{uid\}\]/,
+      "must reject duplicate child match block",
+    );
+
+    // Regression proof: missing expected direct child match block rejection
+    const missingChildSample = `
+      match /members/{uid} {
+        allow get: if true;
+      }
+    `;
+    assert.throws(
+      () =>
+        assertExactDirectChildMatches(
+          missingChildSample,
+          ["match /members/{uid}", "match /staff/{uid}"],
+          "missing child sample block",
+        ),
+      /Missing expected child match blocks/,
+      "must reject missing expected child match block",
+    );
+
+    // Regression proof: malformed child match block braces fail closed
+    const malformedBraceSample = `
+      match /members/{uid} {
+        allow get: if true;
+    `;
+    assert.throws(
+      () =>
+        assertExactDirectChildMatches(
+          malformedBraceSample,
+          ["match /members/{uid}"],
+          "malformed brace sample block",
+        ),
+      /Malformed or unterminated child match block/,
+      "must fail closed on malformed braces",
+    );
+
+    // 10. Regression proof: unaccounted direct root allow between child blocks rejected (Section C)
+    const unaccountedRootAllowSample = `
+      match /members/{uid} {
+        allow get: if true;
+      }
+      allow write: if true;
+      match /staff/{uid} {
+        allow get: if true;
+      }
+    `;
+    const unaccountedStructure = extractDirectBlockStructure(unaccountedRootAllowSample);
+    assert.throws(
+      () =>
+        assertExactLocalAllowOperations(
+          unaccountedStructure.directRootText,
+          [],
+          "unaccounted root allow sample block",
+        ),
+      /Unexpected allow statement count in unaccounted root allow sample block/,
+      "must reject unaccounted direct root allow between child blocks",
     );
 
     assert.ok(normalizedContract.includes("no client create, update, or delete path"));
