@@ -14,8 +14,11 @@ export type ProClubMembershipStatus =
   | "REVOKED";
 
 export type ProClubStaffRole =
+  | "TECHNICAL_DIRECTOR"
+  | "MANAGER"
   | "HEAD_COACH"
   | "ASSISTANT_COACH"
+  | "GK_COACH"
   | "FITNESS_COACH"
   | "ANALYST"
   | "PHYSIO"

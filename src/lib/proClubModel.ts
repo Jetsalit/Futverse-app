@@ -109,8 +109,11 @@ export function isTerminalProClubMembershipStatus(
 
 export function isProClubStaffRole(value: unknown): value is ProClubStaffRole {
   return (
+    value === "TECHNICAL_DIRECTOR" ||
+    value === "MANAGER" ||
     value === "HEAD_COACH" ||
     value === "ASSISTANT_COACH" ||
+    value === "GK_COACH" ||
     value === "FITNESS_COACH" ||
     value === "ANALYST" ||
     value === "PHYSIO" ||
