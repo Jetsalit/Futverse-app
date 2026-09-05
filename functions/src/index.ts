@@ -1,4 +1,4 @@
-import { onRequest } from "firebase-functions/v2/https";
+import { onCall, onRequest } from "firebase-functions/v2/https";
 import {
   error as logError,
   warn as logWarn,
@@ -43,8 +43,8 @@ export const provisionProClubV1 = onRequest(
     cors: false,
     timeoutSeconds: 30,
     memory: "256MiB",
-    concurrency: 20,
-    maxInstances: 10,
+    concurrency: 10,
+    maxInstances: 5,
   },
   async (req, res) => {
     const service = getService();
@@ -52,5 +52,67 @@ export const provisionProClubV1 = onRequest(
       service,
       logger: safeProvisioningLogger,
     });
+  },
+);
+
+import {
+  createProClubStaffCandidateResolutionService,
+  type ProClubStaffCandidateResolutionService,
+} from "./proClubStaffCandidateResolution/service.ts";
+import {
+  createFirestoreRateLimiter,
+} from "./proClubStaffCandidateResolution/rateLimiter.ts";
+import {
+  executeResolveProClubStaffCandidateCallable,
+  type SafeCallableLogger,
+} from "./proClubStaffCandidateResolution/callableHandler.ts";
+
+const safeResolutionCallableLogger: SafeCallableLogger = {
+  warn(message, meta) {
+    logWarn(message, meta);
+  },
+  error(message, meta) {
+    logError(message, meta);
+  },
+};
+
+let cachedResolutionService: ProClubStaffCandidateResolutionService | null = null;
+
+function getResolutionService(): ProClubStaffCandidateResolutionService {
+  if (!cachedResolutionService) {
+    const adminServices = initializeAdminServices();
+    const rateLimiter = createFirestoreRateLimiter(adminServices.firestore);
+    cachedResolutionService = createProClubStaffCandidateResolutionService({
+      firestore: adminServices.firestore,
+      auth: adminServices.auth,
+      rateLimiter,
+    });
+  }
+  return cachedResolutionService;
+}
+
+export const resolveProClubStaffCandidateV1 = onCall(
+  {
+    region: "asia-southeast1",
+    enforceAppCheck: true,
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    concurrency: 20,
+    maxInstances: 10,
+  },
+  async (request) => {
+    const service = getResolutionService();
+    return await executeResolveProClubStaffCandidateCallable(
+      {
+        auth: request.auth ? { uid: request.auth.uid, token: request.auth.token } : undefined,
+        app: request.app ? { appId: request.app.appId, token: request.app.token, alreadyConsumed: request.app.alreadyConsumed } : undefined,
+        data: request.data,
+      },
+      {
+        service,
+        enforceAppCheck: true,
+        logger: safeResolutionCallableLogger,
+      },
+    );
   },
 );

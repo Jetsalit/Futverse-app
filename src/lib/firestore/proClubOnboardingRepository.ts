@@ -2,7 +2,8 @@ import {
   collection, doc, getDocFromServer, getDocsFromServer, query, serverTimestamp,
   setDoc, where, writeBatch, type Firestore,
 } from "firebase/firestore";
-import { auth, db } from "../firebase";
+import { httpsCallable } from "firebase/functions";
+import { auth, db, functions } from "../firebase";
 import { isProClubStaffRole, isValidDocumentIdentifier } from "../proClubModel";
 import {
   isPermissionDenied, normalizeProClubInviteCode, OnboardingError, parseProClubClaim,
@@ -10,6 +11,7 @@ import {
   claimantIdentityFromCanonicalUser, isClaimantIdentity,
   defaultInviteExpiration, generateProClubInviteCode,
   type IssueProClubInviteOptions, type ProClubInvite, type ProClubJoinClaim,
+  type ResolvedStaffCandidate,
 } from "../proClubOnboarding";
 import { getProClubMembership, type ProClubReadOps } from "./proClubReadAdapter";
 import { resolveProClubOrganizationAuthority, type ProClubOrganizationAuthority } from "./proClubOrganizationAdapter";
@@ -30,9 +32,79 @@ export function isProClubReviewer(authority: ProClubOrganizationAuthority): bool
     (authority.membershipAuthorizationRole === "OWNER" || authority.membershipAuthorizationRole === "ADMIN");
 }
 
+export type ResolveCandidateCallableCaller = (data: {
+  clubId: string;
+  email: string;
+}) => Promise<{ data: unknown }>;
+
+export type ResolveCandidateFn = (
+  clubId: string,
+  email: string,
+  caller?: ResolveCandidateCallableCaller,
+) => Promise<ResolvedStaffCandidate>;
+
+export const defaultCallableCaller: ResolveCandidateCallableCaller = async (data) => {
+  const callable = httpsCallable<typeof data, unknown>(
+    functions,
+    "resolveProClubStaffCandidateV1",
+  );
+  return await callable(data);
+};
+
+export async function defaultResolveCandidateFn(
+  clubId: string,
+  email: string,
+  caller: ResolveCandidateCallableCaller = defaultCallableCaller,
+): Promise<ResolvedStaffCandidate> {
+  let result: { data: unknown };
+  try {
+    result = await caller({ clubId, email });
+  } catch (error: any) {
+    const code = error?.code;
+    if (code === "unauthenticated" || code === "functions/unauthenticated") {
+      throw new OnboardingError("AUTH_CHANGED");
+    }
+    if (code === "permission-denied" || code === "functions/permission-denied") {
+      throw new OnboardingError("REVIEWER_REQUIRED");
+    }
+    if (code === "not-found" || code === "functions/not-found") {
+      throw new OnboardingError("CANDIDATE_NOT_FOUND");
+    }
+    if (code === "resource-exhausted" || code === "functions/resource-exhausted") {
+      throw new OnboardingError("RATE_LIMITED");
+    }
+    if (code === "invalid-argument" || code === "functions/invalid-argument") {
+      throw new OnboardingError("INVALID_DATA");
+    }
+    if (code === "failed-precondition" || code === "functions/failed-precondition") {
+      throw new OnboardingError("UNAVAILABLE");
+    }
+    throw new OnboardingError("NETWORK");
+  }
+
+  const candidate = result?.data as any;
+  if (
+    !candidate ||
+    typeof candidate.targetUid !== "string" ||
+    typeof candidate.email !== "string"
+  ) {
+    throw new OnboardingError("INVALID_DATA");
+  }
+
+  return {
+    targetUid: candidate.targetUid,
+    email: candidate.email,
+    displayName: typeof candidate.displayName === "string" ? candidate.displayName : null,
+  };
+}
+
 // The production instance uses Firebase Auth, never a presented/support user.
 // Dependencies allow the same client SDK implementation to run against the emulator.
-export function createProClubOnboardingRepository(firestore: Firestore, getActorUid: () => string | null) {
+export function createProClubOnboardingRepository(
+  firestore: Firestore,
+  getActorUid: () => string | null,
+  resolveCandidateFn: ResolveCandidateFn = defaultResolveCandidateFn,
+) {
   const inFlightClaims = new Map<string, Promise<ProClubJoinClaim>>();
   function assertActor(expectedUid: string): void {
     if (!isValidDocumentIdentifier(expectedUid) || getActorUid() !== expectedUid) {
@@ -284,6 +356,31 @@ export function createProClubOnboardingRepository(firestore: Firestore, getActor
 
     return parseProClubInvite(snapshot.data(), inviteCode);
   }
-  return { inspectInvitation, requestMembership, loadWorkspace, loadPending, reviewClaim, issueInvitation };
+
+  async function resolveCandidate(clubId: string, email: string, uid: string): Promise<ResolvedStaffCandidate> {
+    assertActor(uid);
+    if (!isValidDocumentIdentifier(clubId)) {
+      throw new OnboardingError("INVALID_DATA");
+    }
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes("@")) {
+      throw new OnboardingError("INVALID_DATA");
+    }
+    // Re-read canonical reviewer authority
+    try {
+      await requireReviewer(clubId, uid);
+    } catch (error) {
+      if (error instanceof OnboardingError && error.code === "UNAVAILABLE") {
+        throw new OnboardingError("REVIEWER_REQUIRED");
+      }
+      throw error;
+    }
+    assertActor(uid);
+    const candidate = await resolveCandidateFn(clubId, cleanEmail);
+    assertActor(uid);
+    return candidate;
+  }
+
+  return { inspectInvitation, requestMembership, loadWorkspace, loadPending, reviewClaim, issueInvitation, resolveCandidate };
 }
 export const proClubOnboardingRepository = createProClubOnboardingRepository(db, () => auth.currentUser?.uid ?? null);
