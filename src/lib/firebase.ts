@@ -25,13 +25,26 @@ if (localOnboarding) {
 // App Check safe parameterized boundary:
 // Requires real reCAPTCHA v3 / Enterprise site key from environment in production.
 // Never invent fake site keys.
-export const isAppCheckConfigured = Boolean(
-  typeof import.meta !== "undefined" && import.meta.env?.VITE_RECAPTCHA_SITE_KEY,
-);
+export function shouldEnableAppCheckDebug(env?: {
+  DEV?: boolean;
+  VITE_APP_CHECK_DEBUG_TOKEN?: string;
+}): boolean {
+  const currentEnv = env ?? (typeof import.meta !== "undefined" ? import.meta.env : undefined);
+  return currentEnv?.DEV === true && Boolean(currentEnv?.VITE_APP_CHECK_DEBUG_TOKEN);
+}
+
+export function isAppCheckSiteKeyConfigured(env?: {
+  VITE_RECAPTCHA_SITE_KEY?: string;
+}): boolean {
+  const currentEnv = env ?? (typeof import.meta !== "undefined" ? import.meta.env : undefined);
+  return Boolean(currentEnv?.VITE_RECAPTCHA_SITE_KEY);
+}
+
+export const isAppCheckConfigured = isAppCheckSiteKeyConfigured();
 
 let appCheckInstance: AppCheck | null = null;
 if (typeof window !== "undefined" && isAppCheckConfigured) {
-  if (import.meta.env?.VITE_APP_CHECK_DEBUG_TOKEN) {
+  if (shouldEnableAppCheckDebug()) {
     (self as unknown as { FIREBASE_APPCHECK_DEBUG_TOKEN?: boolean | string }).FIREBASE_APPCHECK_DEBUG_TOKEN =
       import.meta.env.VITE_APP_CHECK_DEBUG_TOKEN;
   }

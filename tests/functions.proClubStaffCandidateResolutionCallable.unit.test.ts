@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { executeResolveProClubStaffCandidateCallable } from "../functions/src/proClubStaffCandidateResolution/callableHandler.ts";
 import {
   createProClubStaffCandidateResolutionService,
   type MinimalAdminAuthForResolution,
 } from "../functions/src/proClubStaffCandidateResolution/service.ts";
 import type { ProClubStaffResolutionRateLimiter } from "../functions/src/proClubStaffCandidateResolution/rateLimiter.ts";
+import {
+  shouldEnableAppCheckDebug,
+  isAppCheckSiteKeyConfigured,
+} from "../src/lib/firebase.ts";
 
 function createMockService(options: {
   clubStatus?: string;
@@ -295,4 +300,69 @@ test("8. cross-club reviewer remains denied with permission-denied", async () =>
       return true;
     },
   );
+});
+
+test("9. production configuration cannot activate App Check debug mode", () => {
+  // DEV: false with debug token must NOT activate debug mode
+  assert.equal(
+    shouldEnableAppCheckDebug({ DEV: false, VITE_APP_CHECK_DEBUG_TOKEN: "secret-debug-token" }),
+    false,
+  );
+  // DEV undefined with debug token must NOT activate debug mode
+  assert.equal(
+    shouldEnableAppCheckDebug({ DEV: undefined, VITE_APP_CHECK_DEBUG_TOKEN: "secret-debug-token" }),
+    false,
+  );
+  // No debug token in production
+  assert.equal(
+    shouldEnableAppCheckDebug({ DEV: false }),
+    false,
+  );
+});
+
+test("10. development configuration may activate configured debug token", () => {
+  // DEV: true with valid debug token activates debug mode
+  assert.equal(
+    shouldEnableAppCheckDebug({ DEV: true, VITE_APP_CHECK_DEBUG_TOKEN: "dev-debug-token-123" }),
+    true,
+  );
+  // DEV: true with missing or empty debug token does NOT activate debug mode
+  assert.equal(
+    shouldEnableAppCheckDebug({ DEV: true, VITE_APP_CHECK_DEBUG_TOKEN: undefined }),
+    false,
+  );
+  assert.equal(
+    shouldEnableAppCheckDebug({ DEV: true, VITE_APP_CHECK_DEBUG_TOKEN: "" }),
+    false,
+  );
+});
+
+test("11. missing production site key still fails closed", () => {
+  assert.equal(isAppCheckSiteKeyConfigured({ VITE_RECAPTCHA_SITE_KEY: undefined }), false);
+  assert.equal(isAppCheckSiteKeyConfigured({ VITE_RECAPTCHA_SITE_KEY: "" }), false);
+  assert.equal(
+    isAppCheckSiteKeyConfigured({ VITE_RECAPTCHA_SITE_KEY: "6Le-valid-production-key" }),
+    true,
+  );
+});
+
+test("12. provisionProClubV1 resource contract remains concurrency 20 / maxInstances 10", () => {
+  const indexSource = readFileSync("functions/src/index.ts", "utf8");
+  const provisionMatch = indexSource.match(/export\s+const\s+provisionProClubV1\s*=\s*onRequest\(\s*\{([\s\S]*?)\},/);
+  assert.ok(provisionMatch, "provisionProClubV1 definition not found");
+  const configBlock = provisionMatch[1];
+  assert.match(configBlock, /concurrency:\s*20/);
+  assert.match(configBlock, /maxInstances:\s*10/);
+  assert.match(configBlock, /region:\s*"asia-southeast1"/);
+});
+
+test("13. resolver remains onCall + enforceAppCheck true", () => {
+  const indexSource = readFileSync("functions/src/index.ts", "utf8");
+  const resolverMatch = indexSource.match(/export\s+const\s+resolveProClubStaffCandidateV1\s*=\s*onCall\(\s*\{([\s\S]*?)\},/);
+  assert.ok(resolverMatch, "resolveProClubStaffCandidateV1 definition not found");
+  const configBlock = resolverMatch[1];
+  assert.match(configBlock, /region:\s*"asia-southeast1"/);
+  assert.match(configBlock, /enforceAppCheck:\s*true/);
+  assert.match(configBlock, /concurrency:\s*20/);
+  assert.match(configBlock, /maxInstances:\s*10/);
 });

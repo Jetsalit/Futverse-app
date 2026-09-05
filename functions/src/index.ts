@@ -43,8 +43,8 @@ export const provisionProClubV1 = onRequest(
     cors: false,
     timeoutSeconds: 30,
     memory: "256MiB",
-    concurrency: 10,
-    maxInstances: 5,
+    concurrency: 20,
+    maxInstances: 10,
   },
   async (req, res) => {
     const service = getService();
