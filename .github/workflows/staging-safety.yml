@@ -91,6 +91,9 @@ jobs:
           tests/proClubStaffRosterClient.unit.test.ts
           tests/proClubStaffRosterPortalContract.unit.test.ts
 
+      - name: Verify staff management transition contract
+        run: node --import tsx --test tests/proClubStaffManagementTransition.unit.test.ts
+
       - name: Functions TypeScript build
         run: npm --prefix functions run build
 
