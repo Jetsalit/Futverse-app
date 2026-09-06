@@ -28,11 +28,12 @@ function requiredEnvValue(env: FutVerseFirebaseRuntimeEnv, key: keyof FutVerseFi
 }
 
 export function resolveFirebaseRuntimeConfig(
-  env: FutVerseFirebaseRuntimeEnv,
+  env: FutVerseFirebaseRuntimeEnv | undefined,
   productionConfig: FirebaseClientConfig,
 ): FirebaseClientConfig {
+  const runtimeEnvValues = env ?? {};
   // Integration/staging branch is fail-closed by default. Production must be explicit.
-  const runtimeEnv = env.VITE_FUTVERSE_ENV?.trim().toLowerCase() || "staging";
+  const runtimeEnv = runtimeEnvValues.VITE_FUTVERSE_ENV?.trim().toLowerCase() || "staging";
 
   if (runtimeEnv === "production") {
     return productionConfig;
@@ -43,13 +44,13 @@ export function resolveFirebaseRuntimeConfig(
   }
 
   const stagingConfig: FirebaseClientConfig = {
-    projectId: requiredEnvValue(env, "VITE_FIREBASE_PROJECT_ID"),
-    appId: requiredEnvValue(env, "VITE_FIREBASE_APP_ID"),
-    apiKey: requiredEnvValue(env, "VITE_FIREBASE_API_KEY"),
-    authDomain: requiredEnvValue(env, "VITE_FIREBASE_AUTH_DOMAIN"),
-    storageBucket: requiredEnvValue(env, "VITE_FIREBASE_STORAGE_BUCKET"),
-    messagingSenderId: requiredEnvValue(env, "VITE_FIREBASE_MESSAGING_SENDER_ID"),
-    measurementId: env.VITE_FIREBASE_MEASUREMENT_ID?.trim() || "",
+    projectId: requiredEnvValue(runtimeEnvValues, "VITE_FIREBASE_PROJECT_ID"),
+    appId: requiredEnvValue(runtimeEnvValues, "VITE_FIREBASE_APP_ID"),
+    apiKey: requiredEnvValue(runtimeEnvValues, "VITE_FIREBASE_API_KEY"),
+    authDomain: requiredEnvValue(runtimeEnvValues, "VITE_FIREBASE_AUTH_DOMAIN"),
+    storageBucket: requiredEnvValue(runtimeEnvValues, "VITE_FIREBASE_STORAGE_BUCKET"),
+    messagingSenderId: requiredEnvValue(runtimeEnvValues, "VITE_FIREBASE_MESSAGING_SENDER_ID"),
+    measurementId: runtimeEnvValues.VITE_FIREBASE_MEASUREMENT_ID?.trim() || "",
   };
 
   if (stagingConfig.projectId === productionConfig.projectId) {
