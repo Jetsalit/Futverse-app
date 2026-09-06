@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import type { Firestore } from "firebase-admin/firestore";
 import {
@@ -92,5 +93,28 @@ test("6. requester account read failure fails closed with typed error", async ()
   await assert.rejects(
     isCanonicalRequesterAccountActive(firestore, "owner-uid"),
     (error: unknown) => error instanceof RequesterAccountStatusReadError,
+  );
+});
+
+test("7. production callable checks requester account status before resolver dispatch", () => {
+  const indexSource = readFileSync("functions/src/index.ts", "utf8");
+  const resolverStart = indexSource.indexOf(
+    "export const resolveProClubStaffCandidateV1",
+  );
+  assert.ok(resolverStart >= 0, "resolver export not found");
+
+  const resolverSource = indexSource.slice(resolverStart);
+  const accountStatusGate = resolverSource.indexOf(
+    "await isCanonicalRequesterAccountActive(",
+  );
+  const resolverDispatch = resolverSource.indexOf(
+    "return await executeResolveProClubStaffCandidateCallable(",
+  );
+
+  assert.ok(accountStatusGate >= 0, "requester account-status gate not found");
+  assert.ok(resolverDispatch >= 0, "resolver dispatch not found");
+  assert.ok(
+    accountStatusGate < resolverDispatch,
+    "requester account-status gate must run before resolver dispatch",
   );
 });
