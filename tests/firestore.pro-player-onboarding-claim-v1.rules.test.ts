@@ -62,10 +62,7 @@ before(async () => {
     firestore: {
       host,
       port,
-      rules: readFileSync(
-        new URL("./fixtures/firestore.pro-player-claim-v1.rules", import.meta.url),
-        "utf8",
-      ),
+      rules: readFileSync(new URL("../firestore.rules", import.meta.url), "utf8"),
     },
   });
 });

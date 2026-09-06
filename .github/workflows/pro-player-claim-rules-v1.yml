@@ -50,12 +50,25 @@ jobs:
           tests/proPlayerOnboardingClaimV1.unit.test.ts
           tests/proPlayerOnboardingClaimContractV1.unit.test.ts
 
-      - name: Verify isolated claim Rules acceptance target
+      - name: Verify deterministic main-rules integration contract
+        run: node --import tsx --test tests/proPlayerClaimRulesIntegration.unit.test.ts
+
+      - name: Verify root rules integration is applicable exactly once
+        run: node scripts/integrateProPlayerClaimRulesV1.mjs --check
+
+      - name: Rehearse Pro Player claim integration into root Firestore rules
+        run: node scripts/integrateProPlayerClaimRulesV1.mjs
+
+      - name: Verify Pro Player Claim policy against integrated root rules
         run: >-
           npx --no-install firebase emulators:exec
           --project demo-futverse-pro-player-claim-v1
           --only firestore
           "node --import tsx --test tests/firestore.pro-player-onboarding-claim-v1.rules.test.ts"
+
+      - name: Verify rehearsal changed only root Firestore rules
+        run: >-
+          node -e "const {execFileSync}=require('node:child_process'); const changed=execFileSync('git',['diff','--name-only'],{encoding:'utf8'}).trim().split(/\r?\n/).filter(Boolean); if(changed.length!==1||changed[0]!=='firestore.rules'){console.error('PRO_PLAYER_RULES_REHEARSAL_SCOPE=BLOCKED:'+changed.join(','));process.exit(1)} console.log('PRO_PLAYER_RULES_REHEARSAL_SCOPE=PASS:firestore.rules');"
 
       - name: TypeScript gate
         run: npm run lint
