@@ -133,6 +133,9 @@ jobs:
       - name: Verify staff lifecycle Reactivate and history UI
         run: node --import tsx --test tests/proClubStaffLifecycleUi.unit.test.ts
 
+      - name: Rehearse approved staff management lifecycle
+        run: node --import tsx --test tests/proClubStaffManagementLifecycleRehearsal.integration.test.ts
+
       - name: Functions TypeScript build
         run: npm --prefix functions run build
 
