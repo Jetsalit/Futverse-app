@@ -1,0 +1,70 @@
+name: Staging Safety
+
+on:
+  push:
+    branches:
+      - integration/pro-club-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-safety-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  staging-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VITE_FUTVERSE_ENV: staging
+      VITE_FIREBASE_PROJECT_ID: futverse-staging-ci
+      VITE_FIREBASE_APP_ID: staging-ci-app-id
+      VITE_FIREBASE_API_KEY: staging-ci-api-key
+      VITE_FIREBASE_AUTH_DOMAIN: futverse-staging-ci.invalid
+      VITE_FIREBASE_STORAGE_BUCKET: futverse-staging-ci.invalid
+      VITE_FIREBASE_MESSAGING_SENDER_ID: "999999999999"
+    steps:
+      - name: Checkout staging lane
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies deterministically
+        run: npm ci
+
+      - name: Verify staging Firebase isolation contract
+        run: node --import tsx --test tests/firebaseRuntimeConfig.unit.test.ts
+
+      - name: Verify build-time staging isolation gate
+        run: node scripts/verifyStagingIsolation.mjs
+
+      - name: Verify PR60 candidate resolution contracts
+        run: >-
+          node --import tsx --test
+          tests/functions.proClubStaffCandidateResolutionCallable.unit.test.ts
+          tests/proClubStaffCandidateResolutionCore.unit.test.ts
+          tests/proClubStaffCandidateResolutionRateLimiter.unit.test.ts
+          tests/proClubStaffCandidateResolutionService.unit.test.ts
+          tests/proClubStaffCandidateResolutionUi.unit.test.ts
+
+      - name: Verify PR62 staff role contracts
+        run: >-
+          node --import tsx --test
+          tests/proClubStaffManagementModel.unit.test.ts
+          tests/proClubAuthorityContract.test.ts
+          tests/proClubFoundation.test.ts
+          tests/proClubInviteClaimMembershipRulesDataContractV1.test.ts
+          tests/proClubOrganizationAdapterContract.test.ts
+          tests/proClubStaffOnboardingV1Contract.test.ts
+
+      - name: TypeScript gate
+        run: npm run lint
+
+      - name: Production build with synthetic staging config only
+        run: npm run build
