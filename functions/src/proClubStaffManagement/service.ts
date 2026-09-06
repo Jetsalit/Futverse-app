@@ -1,15 +1,13 @@
 import {
   planProClubStaffManagementTransitionV1,
   ProClubStaffManagementTransitionError,
+  type ProClubAuthorizationRole,
+  type ProClubMembershipStatus,
   type ProClubStaffManagementActionV1,
   type ProClubStaffManagementPlanV1,
-} from "../../../src/lib/proClubStaffManagementTransition.ts";
-import type {
-  ProClubAuthorizationRole,
-  ProClubMembershipStatus,
-  ProClubStaffRole,
-  ProClubStaffStatus,
-} from "../../../src/types/ProClub.ts";
+  type ProClubStaffRole,
+  type ProClubStaffStatus,
+} from "./transition.js";
 
 export const STAFF_MANAGEMENT_ERROR_CODES = {
   INVALID_REQUEST: "INVALID_REQUEST",
