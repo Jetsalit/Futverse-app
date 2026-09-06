@@ -70,6 +70,9 @@ jobs:
           tests/proClubOrganizationAdapterContract.test.ts
           tests/proClubStaffOnboardingV1Contract.test.ts
 
+      - name: Verify staff roster read-model contract
+        run: node --import tsx --test tests/proClubStaffRosterModel.unit.test.ts
+
       - name: TypeScript gate
         run: npm run lint
 
