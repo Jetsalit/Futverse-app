@@ -54,6 +54,9 @@ jobs:
       - name: Verify staging Firebase isolation contract
         run: node --import tsx --test tests/firebaseRuntimeConfig.unit.test.ts
 
+      - name: Verify Vercel preview staging boundary
+        run: node --import tsx --test tests/stagingVercelPrebuildGate.unit.test.ts
+
       - name: Verify build-time staging isolation gate
         run: node scripts/verifyStagingIsolation.mjs
 
