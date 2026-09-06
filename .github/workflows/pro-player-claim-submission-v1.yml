@@ -16,7 +16,7 @@ concurrency:
 jobs:
   pro-player-claim-submission-v1:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout staging lane
         uses: actions/checkout@v4
@@ -28,6 +28,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      - name: Setup Java for Firebase Emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
 
       - name: Install app dependencies deterministically
         run: npm ci
@@ -61,6 +67,13 @@ jobs:
 
       - name: Verify claim submission function wiring
         run: node --import tsx --test tests/functions.proPlayerOnboardingClaimSubmissionIndexContract.unit.test.ts
+
+      - name: Verify claim submission real emulator transaction acceptance
+        run: >-
+          npx --no-install firebase emulators:exec
+          --project demo-futverse-pro-player-claim-submission
+          --only firestore
+          "node --import tsx --test tests/functions.proPlayerOnboardingClaimSubmission.emulator.integration.test.ts"
 
       - name: Functions TypeScript build
         run: npm --prefix functions run build
