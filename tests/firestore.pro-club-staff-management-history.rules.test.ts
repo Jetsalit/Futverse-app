@@ -131,4 +131,4 @@ test("rules-disabled trusted test context can seed canonical history without wea
   });
 
   await assertFails(getDoc(doc(client(OWNER), "proClubs", CLUB_ID, "staffManagementHistory", eventId)));
-}
+});
