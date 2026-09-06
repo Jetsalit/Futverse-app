@@ -100,6 +100,18 @@ jobs:
       - name: Verify staff management server service
         run: node --import tsx --test tests/functions.proClubStaffManagementService.unit.test.ts
 
+      - name: Verify staff management rate limiter
+        run: node --import tsx --test tests/functions.proClubStaffManagementRateLimiter.unit.test.ts
+
+      - name: Verify hardened staff management service
+        run: node --import tsx --test tests/functions.proClubStaffManagementRateLimitedService.unit.test.ts
+
+      - name: Verify staff management callable remains closed
+        run: >-
+          node --import tsx --test
+          tests/functions.proClubStaffManagementCallable.unit.test.ts
+          tests/functions.proClubStaffManagementIndexClosed.unit.test.ts
+
       - name: Verify staff management atomic Firestore adapter
         run: node --import tsx --test tests/functions.proClubStaffManagementFirestoreDataSource.unit.test.ts
 
