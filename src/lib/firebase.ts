@@ -4,14 +4,16 @@ import { connectAuthEmulator, getAuth } from "firebase/auth";
 import { connectFirestoreEmulator, getFirestore } from "firebase/firestore";
 import { connectFunctionsEmulator, getFunctions } from "firebase/functions";
 import { initializeAppCheck, ReCaptchaV3Provider, type AppCheck } from "firebase/app-check";
-import firebaseConfig from "../../firebase-applet-config.json";
+import productionFirebaseConfig from "../../firebase-applet-config.json";
+import { resolveFirebaseRuntimeConfig } from "./firebaseRuntimeConfig";
 
 // Explicit local-only verification. Production builds always use the existing config.
 const localOnboarding = import.meta.env?.DEV === true && import.meta.env?.VITE_PRO_CLUB_EMULATORS === "true";
-export const app = initializeApp(localOnboarding ? {
-  projectId: "demo-futverse-onboarding", apiKey: "demo-onboarding-key", authDomain: "localhost",
-} : firebaseConfig);
+const runtimeFirebaseConfig = localOnboarding
+  ? { projectId: "demo-futverse-onboarding", apiKey: "demo-onboarding-key", authDomain: "localhost" }
+  : resolveFirebaseRuntimeConfig(import.meta.env, productionFirebaseConfig);
 
+export const app = initializeApp(runtimeFirebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const functions = getFunctions(app, "asia-southeast1");
