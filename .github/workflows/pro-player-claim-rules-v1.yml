@@ -1,0 +1,61 @@
+name: Pro Player Claim Rules V1
+
+on:
+  push:
+    branches:
+      - integration/pro-club-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pro-player-claim-rules-v1-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pro-player-claim-rules-v1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout staging lane
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java for Firebase Emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install app dependencies deterministically
+        run: npm ci
+
+      - name: Install functions dependencies deterministically
+        run: npm --prefix functions ci
+
+      - name: Verify engineering recovery change record
+        run: npm run verify:change-record
+
+      - name: Verify Pro Player Claim contract regression
+        run: >-
+          node --import tsx --test
+          tests/proPlayerOnboardingClaimV1.unit.test.ts
+          tests/proPlayerOnboardingClaimContractV1.unit.test.ts
+
+      - name: Verify isolated claim Rules acceptance target
+        run: >-
+          npx --no-install firebase emulators:exec
+          --project demo-futverse-pro-player-claim-v1
+          --only firestore
+          "node --import tsx --test tests/firestore.pro-player-onboarding-claim-v1.rules.test.ts"
+
+      - name: TypeScript gate
+        run: npm run lint

@@ -1,0 +1,58 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userExists(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function currentUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function currentUserIsActive() {
+      return isSignedIn()
+        && userExists(request.auth.uid)
+        && currentUserData().get('status', '') in ['Active', 'ACTIVE'];
+    }
+
+    function isSuperAdmin() {
+      return currentUserIsActive()
+        && currentUserData().get('role', '') == 'SUPERADMIN';
+    }
+
+    function isActiveSelfPlayer(uid) {
+      return currentUserIsActive()
+        && request.auth.uid == uid
+        && currentUserData().get('role', '') == 'PLAYER';
+    }
+
+    // Acceptance target for future integration into firestore.rules.
+    // All mutations remain server-authoritative; clients never write claims directly.
+    match /proPlayerOnboardingClaims/{uid} {
+      allow get: if isActiveSelfPlayer(uid) || isSuperAdmin();
+      allow list: if isSuperAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /proPlayerAccountBindings/{uid} {
+      allow get: if isActiveSelfPlayer(uid) || isSuperAdmin();
+      allow list: if isSuperAdmin();
+      allow create, update, delete: if false;
+    }
+
+    // Salary/market preferences do not inherit broad proPlayers read access.
+    // V1 keeps this collection reviewer-only until an explicit authorized-club read contract exists.
+    match /proPlayerPrivateMarketPreferences/{playerKey} {
+      allow read: if isSuperAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
