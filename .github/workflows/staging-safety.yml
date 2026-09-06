@@ -94,6 +94,9 @@ jobs:
       - name: Verify staff management transition contract
         run: node --import tsx --test tests/proClubStaffManagementTransition.unit.test.ts
 
+      - name: Verify staff management transition parity
+        run: node --import tsx --test tests/proClubStaffManagementTransitionParity.unit.test.ts
+
       - name: Verify staff management server service
         run: node --import tsx --test tests/functions.proClubStaffManagementService.unit.test.ts
 
