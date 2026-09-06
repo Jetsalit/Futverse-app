@@ -26,14 +26,30 @@ jobs:
         run: npm ci
       - name: Install functions dependencies
         run: npm --prefix functions ci
+      - name: Verify exact regression files
+        run: |
+          test -f tests/firestore.pro-club-onboarding.rules.test.ts
+          test -f tests/firestore.pro-club-onboarding-read.rules.test.ts
+          test -f tests/firestore.pro-club-claimant-identity.rules.test.ts
+          test -f tests/firestore.pro-club.rules.test.ts
+          test -f tests/proClubOnboardingRuntime.test.ts
+          test -f tests/proClubStaffInvitationRuntime.test.ts
       - name: Focused role model
         run: node --import tsx --test tests/proClubStaffManagementModel.unit.test.ts
       - name: Contract and foundation regression
         run: node --import tsx --test tests/proClubAuthorityContract.test.ts tests/proClubFoundation.test.ts tests/proClubInviteClaimMembershipRulesDataContractV1.test.ts tests/proClubOrganizationAdapterContract.test.ts tests/proClubStaffOnboardingV1Contract.test.ts
-      - name: Firestore staff onboarding runtime emulator
-        run: npx --no-install firebase emulators:exec --project demo-futverse-pro-club-pr62 --only firestore "node --import tsx --test tests/firestore.pro-club-staff-onboarding.rules.test.ts"
-      - name: Firestore invite claim membership runtime emulator
-        run: npx --no-install firebase emulators:exec --project demo-futverse-pro-club-pr62 --only firestore "node --import tsx --test tests/firestore.pro-club-invite-claim-membership.rules.test.ts"
+      - name: Firestore Pro Club onboarding Rules
+        run: npx --no-install firebase emulators:exec --project demo-futverse-pro-club-pr62 --only firestore "node --import tsx --test tests/firestore.pro-club-onboarding.rules.test.ts"
+      - name: Firestore Pro Club onboarding read Rules
+        run: npx --no-install firebase emulators:exec --project demo-futverse-pro-club-pr62 --only firestore "node --import tsx --test tests/firestore.pro-club-onboarding-read.rules.test.ts"
+      - name: Firestore Pro Club claimant identity Rules
+        run: npx --no-install firebase emulators:exec --project demo-futverse-pro-club-pr62 --only firestore "node --import tsx --test tests/firestore.pro-club-claimant-identity.rules.test.ts"
+      - name: Firestore Pro Club base Rules
+        run: npx --no-install firebase emulators:exec --project demo-futverse-pro-club-pr62 --only firestore "node --import tsx --test tests/firestore.pro-club.rules.test.ts"
+      - name: Pro Club onboarding runtime
+        run: node --import tsx --test tests/proClubOnboardingRuntime.test.ts
+      - name: Pro Club staff invitation runtime
+        run: node --import tsx --test tests/proClubStaffInvitationRuntime.test.ts
       - name: TypeScript
         run: npm run lint
       - name: Functions build
