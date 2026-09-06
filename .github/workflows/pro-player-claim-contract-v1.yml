@@ -1,0 +1,54 @@
+name: Pro Player Claim Contract V1
+
+on:
+  push:
+    branches:
+      - integration/pro-club-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pro-player-claim-contract-v1-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pro-player-claim-contract-v1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout staging lane
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install app dependencies deterministically
+        run: npm ci
+
+      - name: Install functions dependencies deterministically
+        run: npm --prefix functions ci
+
+      - name: Verify engineering recovery change record
+        run: npm run verify:change-record
+
+      - name: Verify Pro Player onboarding contract baseline
+        run: node --import tsx --test tests/proPlayerOnboardingV1.unit.test.ts
+
+      - name: Verify self-service claim transition contract
+        run: node --import tsx --test tests/proPlayerOnboardingClaimV1.unit.test.ts
+
+      - name: Verify persistence boundary remains write-free
+        run: node --import tsx --test tests/proPlayerOnboardingClaimContractV1.unit.test.ts
+
+      - name: Verify Player Identity foundation regression
+        run: node --import tsx --test tests/playerIdentityFoundation.test.ts
+
+      - name: TypeScript gate
+        run: npm run lint
