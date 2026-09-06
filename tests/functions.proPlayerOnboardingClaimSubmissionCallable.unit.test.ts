@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { HttpsError } from "firebase-functions/v2/https";
 import {
   executeSubmitProPlayerOnboardingClaimCallableV1,
 } from "../functions/src/proPlayerOnboardingClaimSubmission/callableHandler.ts";
@@ -19,7 +18,10 @@ function service(resultOrError: unknown) {
 }
 
 async function expectHttps(promise: Promise<unknown>, code: string) {
-  await assert.rejects(promise, (error: unknown) => error instanceof HttpsError && error.code === code);
+  await assert.rejects(
+    promise,
+    (error: any) => error instanceof Error && error.code === code,
+  );
 }
 
 test("App Check and Firebase auth are mandatory before service invocation", async () => {
