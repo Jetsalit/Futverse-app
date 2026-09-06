@@ -47,9 +47,9 @@ jobs:
       - name: Firestore Pro Club base Rules
         run: npx --no-install firebase emulators:exec --project demo-futverse-pro-club-pr62 --only firestore "node --import tsx --test tests/firestore.pro-club.rules.test.ts"
       - name: Pro Club onboarding runtime
-        run: node --import tsx --test tests/proClubOnboardingRuntime.test.ts
+        run: npx --no-install firebase emulators:exec --project demo-futverse-pro-club-pr62 --only firestore "node --import tsx --test tests/proClubOnboardingRuntime.test.ts"
       - name: Pro Club staff invitation runtime
-        run: node --import tsx --test tests/proClubStaffInvitationRuntime.test.ts
+        run: npx --no-install firebase emulators:exec --project demo-futverse-pro-club-pr62 --only firestore "node --import tsx --test tests/proClubStaffInvitationRuntime.test.ts"
       - name: TypeScript
         run: npm run lint
       - name: Functions build
