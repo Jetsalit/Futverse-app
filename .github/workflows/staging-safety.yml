@@ -35,8 +35,11 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install dependencies deterministically
+      - name: Install app dependencies deterministically
         run: npm ci
+
+      - name: Install functions dependencies deterministically
+        run: npm --prefix functions ci
 
       - name: Verify staging Firebase isolation contract
         run: node --import tsx --test tests/firebaseRuntimeConfig.unit.test.ts
