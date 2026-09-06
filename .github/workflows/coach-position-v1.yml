@@ -32,6 +32,9 @@ jobs:
       - name: Install app dependencies deterministically
         run: npm ci
 
+      - name: Install functions dependencies deterministically
+        run: npm --prefix functions ci
+
       - name: Verify Coach Position V1 contract
         run: node --import tsx --test tests/proClubCoachPositionV1.unit.test.ts
 
