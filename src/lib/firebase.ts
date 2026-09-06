@@ -5,13 +5,22 @@ import { connectFirestoreEmulator, getFirestore } from "firebase/firestore";
 import { connectFunctionsEmulator, getFunctions } from "firebase/functions";
 import { initializeAppCheck, ReCaptchaV3Provider, type AppCheck } from "firebase/app-check";
 import productionFirebaseConfig from "../../firebase-applet-config.json";
-import { resolveFirebaseRuntimeConfig } from "./firebaseRuntimeConfig";
+import { resolveFirebaseRuntimeConfig, type FutVerseFirebaseRuntimeEnv } from "./firebaseRuntimeConfig";
+
+// Browser builds must use Vite-provided env only. Node-based contract tests may use
+// process.env so CI can supply synthetic staging values without any production secrets.
+const viteRuntimeEnv = import.meta.env as FutVerseFirebaseRuntimeEnv | undefined;
+const nodeTestRuntimeEnv =
+  typeof window === "undefined" && typeof process !== "undefined"
+    ? (process.env as FutVerseFirebaseRuntimeEnv)
+    : undefined;
+const firebaseRuntimeEnv = viteRuntimeEnv ?? nodeTestRuntimeEnv;
 
 // Explicit local-only verification. Production builds always use the existing config.
 const localOnboarding = import.meta.env?.DEV === true && import.meta.env?.VITE_PRO_CLUB_EMULATORS === "true";
 const runtimeFirebaseConfig = localOnboarding
   ? { projectId: "demo-futverse-onboarding", apiKey: "demo-onboarding-key", authDomain: "localhost" }
-  : resolveFirebaseRuntimeConfig(import.meta.env, productionFirebaseConfig);
+  : resolveFirebaseRuntimeConfig(firebaseRuntimeEnv, productionFirebaseConfig);
 
 export const app = initializeApp(runtimeFirebaseConfig);
 export const auth = getAuth(app);
