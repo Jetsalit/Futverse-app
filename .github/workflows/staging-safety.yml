@@ -136,6 +136,13 @@ jobs:
       - name: Rehearse approved staff management lifecycle
         run: node --import tsx --test tests/proClubStaffManagementLifecycleRehearsal.integration.test.ts
 
+      - name: Verify staff management history client denial
+        run: >-
+          npx --no-install firebase emulators:exec
+          --project demo-futverse-pro-club-staff-management-history
+          --only firestore
+          "node --import tsx --test tests/firestore.pro-club-staff-management-history.rules.test.ts"
+
       - name: Functions TypeScript build
         run: npm --prefix functions run build
 
