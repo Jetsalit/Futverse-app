@@ -10,6 +10,7 @@ const baseEnv = {
   FIREBASE_STAGING_FIRESTORE_LOCATION: "asia-southeast1",
   FIREBASE_STAGING_DISPLAY_NAME: "FutVerse Staging CI",
   FIREBASE_STAGING_WEB_APP_NAME: "FutVerse Staging Web CI",
+  VITE_FIREBASE_PROJECT_ID: "futverse-staging-bootstrap-ci",
 };
 
 function run(overrides: Record<string, string | undefined> = {}) {
@@ -44,13 +45,19 @@ test("bootstrap planner emits staging-only external plan without executing mutat
 });
 
 test("bootstrap planner rejects production project id", () => {
-  const result = run({ FIREBASE_STAGING_PROJECT_ID: "futverse-d7872" });
+  const result = run({
+    FIREBASE_STAGING_PROJECT_ID: "futverse-d7872",
+    VITE_FIREBASE_PROJECT_ID: "futverse-d7872",
+  });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /STAGING_PROJECT_ID_FORMAT_INVALID|PRODUCTION_PROJECT_COLLISION/);
 });
 
 test("bootstrap planner rejects non-staging project prefix", () => {
-  const result = run({ FIREBASE_STAGING_PROJECT_ID: "futverse-test-ci" });
+  const result = run({
+    FIREBASE_STAGING_PROJECT_ID: "futverse-test-ci",
+    VITE_FIREBASE_PROJECT_ID: "futverse-test-ci",
+  });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /STAGING_PROJECT_ID_FORMAT_INVALID/);
 });
