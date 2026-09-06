@@ -9,6 +9,7 @@ import { isProClubReviewer, proClubOnboardingRepository as repository } from "..
 import type { ProClubOrganizationAuthority } from "../../lib/firestore/proClubOrganizationAdapter";
 import StaffOnboarding, { buttonClass, inputClass, secondaryClass, StatusBadge } from "./StaffOnboarding";
 import PendingStaffRequests from "./PendingStaffRequests";
+import StaffRoster from "./StaffRoster";
 
 function ClubWorkspace({ clubId, uid }: { clubId: string; uid: string }) {
   const [authority, setAuthority] = useState<ProClubOrganizationAuthority | null>(null);
@@ -29,7 +30,10 @@ function ClubWorkspace({ clubId, uid }: { clubId: string; uid: string }) {
         {authority.staffRole && <span className="rounded-lg bg-white/10 px-3 py-2">{staffRoleLabels[authority.staffRole]}</span>}</div>
       <p className="mt-5 text-sm text-slate-300">Your club membership is active.</p>
     </section>
-    {isProClubReviewer(authority) ? <PendingStaffRequests clubId={clubId} clubName={authority.organizationName} uid={uid} /> :
+    {isProClubReviewer(authority) ? <>
+      <PendingStaffRequests clubId={clubId} clubName={authority.organizationName} uid={uid} />
+      <StaffRoster clubId={clubId} uid={uid} />
+    </> :
       <section className="rounded-2xl border border-slate-200 bg-white p-6"><Users className="text-emerald-600" /><h3 className="mt-3 text-lg font-bold">Welcome to your club</h3><p className="mt-2 text-sm text-slate-600">You have joined the club as {authority.staffRole ? staffRoleLabels[authority.staffRole].toLowerCase() : "a member"}.</p></section>}
   </div>;
 }
@@ -46,7 +50,7 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
   function openClub(clubId: string) {
     if (!isValidDocumentIdentifier(clubId)) { setInputError("Enter the club workspace reference provided by your club."); return; }
     setInputError(""); setTab("workspace"); setClubReference(clubId);
-    selectProClub(clubId); // Also refreshes the same selection through the existing authority bridge.
+    selectProClub(clubId);
   }
   if (!allowed) return <p role="alert">Sign in with your own account to open Pro Club onboarding.</p>;
   return <div className="min-h-screen bg-slate-50 text-slate-900">

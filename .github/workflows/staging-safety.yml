@@ -85,6 +85,12 @@ jobs:
       - name: Verify staff roster function wiring
         run: node --import tsx --test tests/functions.proClubStaffRosterIndexContract.unit.test.ts
 
+      - name: Verify staff roster client integration
+        run: >-
+          node --import tsx --test
+          tests/proClubStaffRosterClient.unit.test.ts
+          tests/proClubStaffRosterPortalContract.unit.test.ts
+
       - name: Functions TypeScript build
         run: npm --prefix functions run build
 
