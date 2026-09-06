@@ -11,12 +11,50 @@ This runbook is for the isolated `integration/pro-club-v1` lane only.
 - The repository `.firebaserc` may remain on the fail-closed sentinel. A real staging project must be supplied explicitly through `FIREBASE_STAGING_PROJECT_ID`.
 - `FIREBASE_STAGING_PROJECT_ID` must equal `VITE_FIREBASE_PROJECT_ID` and must start with `futverse-staging-`.
 - App Check configuration is required before live staging backend deployment.
+- Functions deployment requires the staging project to use the Firebase Blaze plan. Enabling billing is an external account-side decision and is never automated by repository scripts.
+
+## One-time bootstrap planner
+
+Before creating any cloud resource, choose an explicit Firestore location and run the plan-only bootstrap helper:
+
+```powershell
+$env:FIREBASE_STAGING_PROJECT_ID = "futverse-staging-<unique-name>"
+$env:FIREBASE_STAGING_FIRESTORE_LOCATION = "<chosen-supported-location>"
+npm run plan:firebase-staging-bootstrap
+```
+
+The planner must report:
+
+```text
+FIREBASE_STAGING_BOOTSTRAP_PLAN=PASS
+MUTATION_EXECUTED=NO
+PRODUCTION_TARGET_ALLOWED=NO
+FIREBASE_HOSTING_SETUP=NO
+BLAZE_PLAN_REQUIRED_FOR_FUNCTIONS=YES
+NEXT_PHASE=REVIEW_EXTERNAL_SETUP_PLAN_BEFORE_ANY_RESOURCE_CREATION
+```
+
+It only prints the reviewed setup sequence. It does not create a Firebase project, enable billing, create Firestore, register a Web App, enable Authentication, configure App Check or write Vercel settings.
+
+Do not guess the Firestore location. Review supported locations and choose it deliberately before database creation. The planner includes Firestore delete protection in the planned database creation command.
 
 ## One-time external setup
 
-Create a separate Firebase project whose project id starts with `futverse-staging-`. In that project create a Web App and configure the staging-only services required by FutVerse: Authentication, Firestore, Functions and App Check. Use fake/test users and test data only.
+After reviewing the bootstrap plan, create a separate Firebase project whose project id starts with `futverse-staging-`.
 
-Configure the Vercel **Preview** environment for branch `integration/pro-club-v1` with the staging web values from `.env.staging.example`. Do not put these values into the Vercel Production environment.
+The setup sequence is:
+
+1. Confirm the project id is not the production project.
+2. Create the staging Firebase project.
+3. Upgrade the staging project to Blaze and configure appropriate budget alerts before Functions deployment.
+4. Create the default Firestore database in the explicitly selected location with delete protection enabled.
+5. Create a staging Web App and retrieve its Firebase Web SDK configuration.
+6. Enable only the Authentication providers needed for staging test users.
+7. Register the staging Web App with Firebase App Check and configure a staging-only provider/site key.
+8. Configure Vercel **Preview** environment values for branch `integration/pro-club-v1` only.
+9. Use fake/test identities and data only.
+
+Do not add staging values to Vercel Production and do not point any staging variable at production Firebase.
 
 ## Local environment
 
@@ -26,6 +64,7 @@ Required staging values:
 
 - `VITE_FUTVERSE_ENV=staging`
 - `FIREBASE_STAGING_PROJECT_ID`
+- `FIREBASE_STAGING_FIRESTORE_LOCATION` for bootstrap planning only
 - `VITE_FIREBASE_PROJECT_ID`
 - `VITE_FIREBASE_APP_ID`
 - `VITE_FIREBASE_API_KEY`
