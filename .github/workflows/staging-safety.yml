@@ -124,6 +124,15 @@ jobs:
           tests/proClubStaffManagementUiPolicy.unit.test.ts
           tests/proClubStaffRosterPortalContract.unit.test.ts
 
+      - name: Verify staff lifecycle review server contract
+        run: node --import tsx --test tests/functions.proClubStaffLifecycleReviewService.unit.test.ts
+
+      - name: Verify staff lifecycle review client contract
+        run: node --import tsx --test tests/proClubStaffLifecycleReviewClient.unit.test.ts
+
+      - name: Verify staff lifecycle Reactivate and history UI
+        run: node --import tsx --test tests/proClubStaffLifecycleUi.unit.test.ts
+
       - name: Functions TypeScript build
         run: npm --prefix functions run build
 
