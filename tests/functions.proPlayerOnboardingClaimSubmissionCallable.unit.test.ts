@@ -20,7 +20,9 @@ function service(resultOrError: unknown) {
 async function expectHttps(promise: Promise<unknown>, code: string) {
   await assert.rejects(
     promise,
-    (error: any) => error instanceof Error && error.code === code,
+    (error: any) =>
+      error instanceof Error &&
+      (error as Error & { code?: unknown }).code === code,
   );
 }
 
