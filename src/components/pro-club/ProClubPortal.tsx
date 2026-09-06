@@ -32,7 +32,7 @@ function ClubWorkspace({ clubId, uid }: { clubId: string; uid: string }) {
     </section>
     {isProClubReviewer(authority) ? <>
       <PendingStaffRequests clubId={clubId} clubName={authority.organizationName} uid={uid} />
-      <StaffRoster clubId={clubId} uid={uid} />
+      <StaffRoster clubId={clubId} uid={uid} actorRole={authority.membershipAuthorizationRole} />
     </> :
       <section className="rounded-2xl border border-slate-200 bg-white p-6"><Users className="text-emerald-600" /><h3 className="mt-3 text-lg font-bold">Welcome to your club</h3><p className="mt-2 text-sm text-slate-600">You have joined the club as {authority.staffRole ? staffRoleLabels[authority.staffRole].toLowerCase() : "a member"}.</p></section>}
   </div>;
