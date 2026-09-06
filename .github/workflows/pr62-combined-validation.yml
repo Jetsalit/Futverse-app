@@ -14,6 +14,10 @@ jobs:
           fetch-depth: 0
       - name: Checkout exact combined tree
         run: git checkout --detach 98d7c0940020358d1c494f8bc7267c3705fb1d9a
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
       - uses: actions/setup-node@v4
         with:
           node-version: 22
