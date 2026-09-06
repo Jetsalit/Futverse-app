@@ -18,7 +18,7 @@ This standard applies to all work on `integration/pro-club-v1` and is intended t
 Every staging commit must declare these exact Git commit trailers:
 
 ```text
-Checkpoint: <40-char parent SHA>
+Checkpoint: <40-char known-good ancestor SHA>
 Risk: LOW | MEDIUM | HIGH | CRITICAL
 Data-Write: YES | NO
 Schema-Change: YES | NO
@@ -27,7 +27,7 @@ Review: REQUIRED
 Owner-Alert: REQUIRED | NOT_REQUIRED
 ```
 
-`Checkpoint` must equal the commit's exact single parent. This makes the immediately previous commit the Last Safe Checkpoint for that work item.
+`Checkpoint` must be an available ancestor of the commit being tested, but it does not have to be the immediate parent. This is intentional: if one commit fails CI, the corrective commit may continue to reference the earlier verified safe checkpoint.
 
 If `Data-Write=YES` or `Schema-Change=YES`, `Recovery` must be `CODE_AND_DATA`. Otherwise it must be `CODE_ONLY`.
 
@@ -78,6 +78,8 @@ TEAM_ACTION=DEBUG_ROOT_CAUSE_THEN_FIX_OR_ROLLBACK
 OWNER_ACTION_REQUIRED=NO
 SAFE_TO_CONTINUE=NO
 ```
+
+The Owner Alert reads the declared `Checkpoint` trailer rather than guessing from `HEAD^`.
 
 This is a staging incident signal, not a production incident notification. Production monitoring and external notification channels are separate release-infrastructure work.
 

@@ -11,12 +11,16 @@ function fail(reason) {
   process.exit(1);
 }
 
-function git(args) {
+function git(args, { allowFailure = false } = {}) {
   const result = spawnSync("git", args, { encoding: "utf8" });
-  if (result.status !== 0) {
+  if (result.status !== 0 && !allowFailure) {
     fail(`GIT_${args[0].toUpperCase()}_FAILED`);
   }
-  return result.stdout.trim();
+  return { status: result.status ?? 1, stdout: result.stdout.trim() };
+}
+
+function gitText(args) {
+  return git(args).stdout;
 }
 
 function trailer(message, name) {
@@ -28,21 +32,20 @@ function trailer(message, name) {
   return matches[0][1].trim();
 }
 
-const branch = git(["branch", "--show-current"]);
+const branch = gitText(["branch", "--show-current"]);
 if (branch !== STAGING_BRANCH) {
   fail(`WRONG_BRANCH:${branch || "DETACHED"}`);
 }
 
-const parentLine = git(["rev-list", "--parents", "-n", "1", "HEAD"])
+const head = gitText(["rev-parse", "HEAD"]);
+const parentLine = gitText(["rev-list", "--parents", "-n", "1", "HEAD"])
   .split(/\s+/)
   .filter(Boolean);
 if (parentLine.length !== 2) {
   fail("SINGLE_PARENT_COMMIT_REQUIRED");
 }
 
-const [head, parent] = parentLine;
-const message = git(["log", "-1", "--pretty=%B"]);
-
+const message = gitText(["log", "-1", "--pretty=%B"]);
 const checkpoint = trailer(message, "Checkpoint");
 const risk = trailer(message, "Risk").toUpperCase();
 const dataWrite = trailer(message, "Data-Write").toUpperCase();
@@ -54,8 +57,14 @@ const ownerAlert = trailer(message, "Owner-Alert").toUpperCase();
 if (!/^[0-9a-f]{40}$/.test(checkpoint)) {
   fail("CHECKPOINT_SHA_INVALID");
 }
-if (checkpoint !== parent) {
-  fail("CHECKPOINT_MUST_EQUAL_PARENT");
+if (checkpoint === head) {
+  fail("CHECKPOINT_CANNOT_EQUAL_HEAD");
+}
+if (git(["cat-file", "-e", `${checkpoint}^{commit}`], { allowFailure: true }).status !== 0) {
+  fail("CHECKPOINT_COMMIT_NOT_AVAILABLE");
+}
+if (git(["merge-base", "--is-ancestor", checkpoint, head], { allowFailure: true }).status !== 0) {
+  fail("CHECKPOINT_MUST_BE_ANCESTOR");
 }
 if (!RISKS.has(risk)) {
   fail("RISK_INVALID");

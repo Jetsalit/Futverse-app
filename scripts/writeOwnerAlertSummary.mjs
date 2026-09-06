@@ -6,9 +6,16 @@ function git(args) {
   return result.status === 0 ? result.stdout.trim() : "UNKNOWN";
 }
 
+function trailer(message, name) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = message.match(new RegExp(`^${escaped}:\\s*(.+)$`, "mi"));
+  return match?.[1]?.trim() || "UNKNOWN";
+}
+
 const head = git(["rev-parse", "HEAD"]);
-const checkpoint = git(["rev-parse", "HEAD^"]);
 const branch = git(["branch", "--show-current"]);
+const message = git(["log", "-1", "--pretty=%B"]);
+const checkpoint = trailer(message, "Checkpoint");
 
 const lines = [
   "## 🔴 FUTVERSE OWNER ALERT — STAGING",
