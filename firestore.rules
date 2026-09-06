@@ -1244,8 +1244,11 @@ service cloud.firestore {
 
     function validProClubStaffRoleV1(role) {
       return role in [
+        'TECHNICAL_DIRECTOR',
+        'MANAGER',
         'HEAD_COACH',
         'ASSISTANT_COACH',
+        'GK_COACH',
         'FITNESS_COACH',
         'ANALYST',
         'PHYSIO',
