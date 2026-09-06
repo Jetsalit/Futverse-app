@@ -25,8 +25,14 @@ const stagingEnv = {
   VITE_FIREBASE_MESSAGING_SENDER_ID: "123456789",
 };
 
-test("production default preserves the existing production Firebase config", () => {
-  assert.deepEqual(resolveFirebaseRuntimeConfig({}, productionConfig), productionConfig);
+test("integration branch defaults to staging and fails closed without staging config", () => {
+  assert.throws(
+    () => resolveFirebaseRuntimeConfig({}, productionConfig),
+    /FUTVERSE_STAGING_FIREBASE_CONFIG_MISSING:VITE_FIREBASE_PROJECT_ID/,
+  );
+});
+
+test("production use must be explicit and preserves the existing production Firebase config", () => {
   assert.deepEqual(
     resolveFirebaseRuntimeConfig({ VITE_FUTVERSE_ENV: "production" }, productionConfig),
     productionConfig,

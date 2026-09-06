@@ -31,7 +31,8 @@ export function resolveFirebaseRuntimeConfig(
   env: FutVerseFirebaseRuntimeEnv,
   productionConfig: FirebaseClientConfig,
 ): FirebaseClientConfig {
-  const runtimeEnv = env.VITE_FUTVERSE_ENV?.trim().toLowerCase() || "production";
+  // Integration/staging branch is fail-closed by default. Production must be explicit.
+  const runtimeEnv = env.VITE_FUTVERSE_ENV?.trim().toLowerCase() || "staging";
 
   if (runtimeEnv === "production") {
     return productionConfig;
