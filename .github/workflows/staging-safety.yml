@@ -76,6 +76,12 @@ jobs:
       - name: Verify staff roster server service
         run: node --import tsx --test tests/functions.proClubStaffRosterService.unit.test.ts
 
+      - name: Verify staff roster Firestore data source
+        run: node --import tsx --test tests/functions.proClubStaffRosterFirestoreDataSource.unit.test.ts
+
+      - name: Verify staff roster callable adapter
+        run: node --import tsx --test tests/functions.proClubStaffRosterCallable.unit.test.ts
+
       - name: Functions TypeScript build
         run: npm --prefix functions run build
 
