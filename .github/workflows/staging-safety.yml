@@ -47,6 +47,12 @@ jobs:
       - name: Install functions dependencies deterministically
         run: npm --prefix functions ci
 
+      - name: Verify engineering recovery change record
+        run: npm run verify:change-record
+
+      - name: Verify engineering recovery governance contracts
+        run: node --import tsx --test tests/engineeringChangeRecord.unit.test.ts
+
       - name: Block production Firebase CLI target
         run: >-
           node -e "const fs=require('fs'); const cfg=JSON.parse(fs.readFileSync('.firebaserc','utf8')); const id=cfg?.projects?.default; if (!id || id === 'futverse-d7872' || !id.startsWith('futverse-staging-')) { console.error('STAGING_FIREBASE_CLI_TARGET_GATE=BLOCKED:' + String(id)); process.exit(1); } console.log('STAGING_FIREBASE_CLI_TARGET_GATE=PASS:' + id);"
@@ -169,3 +175,7 @@ jobs:
 
       - name: Production build with synthetic staging config only
         run: npm run build
+
+      - name: FutVerse Owner Alert
+        if: failure()
+        run: node scripts/writeOwnerAlertSummary.mjs

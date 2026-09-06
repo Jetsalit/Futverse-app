@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
+    "verify:change-record": "node scripts/verifyEngineeringChangeRecord.mjs",
     "test:staging-isolation": "node --import tsx --test tests/firebaseRuntimeConfig.unit.test.ts",
     "plan:firebase-staging-bootstrap": "node scripts/planFirebaseStagingBootstrap.mjs",
     "verify:staging-live": "node scripts/verifyLiveStagingReadiness.mjs",
