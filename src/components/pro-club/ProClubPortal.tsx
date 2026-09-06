@@ -10,6 +10,7 @@ import type { ProClubOrganizationAuthority } from "../../lib/firestore/proClubOr
 import StaffOnboarding, { buttonClass, inputClass, secondaryClass, StatusBadge } from "./StaffOnboarding";
 import PendingStaffRequests from "./PendingStaffRequests";
 import StaffRoster from "./StaffRoster";
+import StaffLifecycleReview from "./StaffLifecycleReview";
 
 function ClubWorkspace({ clubId, uid }: { clubId: string; uid: string }) {
   const [authority, setAuthority] = useState<ProClubOrganizationAuthority | null>(null);
@@ -33,6 +34,7 @@ function ClubWorkspace({ clubId, uid }: { clubId: string; uid: string }) {
     {isProClubReviewer(authority) ? <>
       <PendingStaffRequests clubId={clubId} clubName={authority.organizationName} uid={uid} />
       <StaffRoster clubId={clubId} uid={uid} actorRole={authority.membershipAuthorizationRole} />
+      <StaffLifecycleReview clubId={clubId} uid={uid} actorRole={authority.membershipAuthorizationRole} />
     </> :
       <section className="rounded-2xl border border-slate-200 bg-white p-6"><Users className="text-emerald-600" /><h3 className="mt-3 text-lg font-bold">Welcome to your club</h3><p className="mt-2 text-sm text-slate-600">You have joined the club as {authority.staffRole ? staffRoleLabels[authority.staffRole].toLowerCase() : "a member"}.</p></section>}
   </div>;
