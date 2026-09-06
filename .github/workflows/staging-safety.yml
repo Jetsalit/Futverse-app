@@ -106,7 +106,7 @@ jobs:
       - name: Verify hardened staff management service
         run: node --import tsx --test tests/functions.proClubStaffManagementRateLimitedService.unit.test.ts
 
-      - name: Verify staff management callable remains closed
+      - name: Verify staff management callable wiring
         run: >-
           node --import tsx --test
           tests/functions.proClubStaffManagementCallable.unit.test.ts

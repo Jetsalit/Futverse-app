@@ -104,8 +104,16 @@ export const resolveProClubStaffCandidateV1 = onCall(
     const service = getResolutionService();
     return await executeResolveProClubStaffCandidateCallable(
       {
-        auth: request.auth ? { uid: request.auth.uid, token: request.auth.token } : undefined,
-        app: request.app ? { appId: request.app.appId, token: request.app.token, alreadyConsumed: request.app.alreadyConsumed } : undefined,
+        auth: request.auth
+          ? { uid: request.auth.uid, token: request.auth.token }
+          : undefined,
+        app: request.app
+          ? {
+              appId: request.app.appId,
+              token: request.app.token,
+              alreadyConsumed: request.app.alreadyConsumed,
+            }
+          : undefined,
         data: request.data,
       },
       {
@@ -164,14 +172,97 @@ export const loadProClubStaffRosterV1 = onCall(
     const service = getStaffRosterService();
     return await executeLoadProClubStaffRosterCallableV1(
       {
-        auth: request.auth ? { uid: request.auth.uid, token: request.auth.token } : undefined,
-        app: request.app ? { appId: request.app.appId, token: request.app.token, alreadyConsumed: request.app.alreadyConsumed } : undefined,
+        auth: request.auth
+          ? { uid: request.auth.uid, token: request.auth.token }
+          : undefined,
+        app: request.app
+          ? {
+              appId: request.app.appId,
+              token: request.app.token,
+              alreadyConsumed: request.app.alreadyConsumed,
+            }
+          : undefined,
         data: request.data,
       },
       {
         service,
         enforceAppCheck: true,
         logger: safeStaffRosterCallableLogger,
+      },
+    );
+  },
+);
+
+import {
+  createRateLimitedProClubStaffManagementServiceV1,
+  type ProClubStaffManagementServiceV1,
+} from "./proClubStaffManagement/service.ts";
+import {
+  createFirestoreProClubStaffManagementSourceV1,
+} from "./proClubStaffManagement/firestoreDataSource.ts";
+import {
+  createFirestoreProClubStaffManagementRateLimiterV1,
+} from "./proClubStaffManagement/rateLimiter.ts";
+import {
+  executeManageProClubStaffCallableV1,
+  type SafeStaffManagementCallableLoggerV1,
+} from "./proClubStaffManagement/callableHandler.ts";
+
+const safeStaffManagementCallableLogger: SafeStaffManagementCallableLoggerV1 = {
+  warn(message, meta) {
+    logWarn(message, meta);
+  },
+  error(message, meta) {
+    logError(message, meta);
+  },
+};
+
+let cachedStaffManagementService: ProClubStaffManagementServiceV1 | null = null;
+
+function getStaffManagementService(): ProClubStaffManagementServiceV1 {
+  if (!cachedStaffManagementService) {
+    const adminServices = initializeAdminServices();
+    const source = createFirestoreProClubStaffManagementSourceV1(
+      adminServices.firestore,
+    );
+    const rateLimiter = createFirestoreProClubStaffManagementRateLimiterV1(
+      adminServices.firestore,
+    );
+    cachedStaffManagementService =
+      createRateLimitedProClubStaffManagementServiceV1(source, rateLimiter);
+  }
+  return cachedStaffManagementService;
+}
+
+export const manageProClubStaffV1 = onCall(
+  {
+    region: "asia-southeast1",
+    enforceAppCheck: true,
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    concurrency: 10,
+    maxInstances: 5,
+  },
+  async (request) => {
+    const service = getStaffManagementService();
+    return await executeManageProClubStaffCallableV1(
+      {
+        auth: request.auth
+          ? { uid: request.auth.uid, token: request.auth.token }
+          : undefined,
+        app: request.app
+          ? {
+              appId: request.app.appId,
+              token: request.app.token,
+              alreadyConsumed: request.app.alreadyConsumed,
+            }
+          : undefined,
+        data: request.data,
+      },
+      {
+        service,
+        enforceAppCheck: true,
+        logger: safeStaffManagementCallableLogger,
       },
     );
   },
