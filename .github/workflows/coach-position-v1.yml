@@ -1,0 +1,39 @@
+name: Coach Position V1
+
+on:
+  push:
+    branches:
+      - integration/pro-club-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coach-position-v1-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  coach-position-v1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout staging lane
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install app dependencies deterministically
+        run: npm ci
+
+      - name: Verify Coach Position V1 contract
+        run: node --import tsx --test tests/proClubCoachPositionV1.unit.test.ts
+
+      - name: TypeScript gate
+        run: npm run lint

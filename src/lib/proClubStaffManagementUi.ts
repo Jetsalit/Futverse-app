@@ -5,19 +5,11 @@ import type {
 import type { ProClubStaffRosterEntryV1 } from "./proClubStaffRosterModel";
 import type { ProClubStaffLifecycleEntryV1 } from "./proClubStaffLifecycleReviewModel";
 import { isValidDocumentIdentifier } from "./proClubModel";
+import { PRO_CLUB_STAFF_ROLE_OPTIONS_V1 } from "./proClubCoachPositionV1";
 
-export const PRO_CLUB_STAFF_ROLE_OPTIONS: readonly ProClubStaffRole[] = [
-  "TECHNICAL_DIRECTOR",
-  "MANAGER",
-  "HEAD_COACH",
-  "ASSISTANT_COACH",
-  "GK_COACH",
-  "FITNESS_COACH",
-  "ANALYST",
-  "PHYSIO",
-  "TEAM_MANAGER",
-  "STAFF",
-] as const;
+/** Backward-compatible export; canonical ordering lives in Coach Position V1. */
+export const PRO_CLUB_STAFF_ROLE_OPTIONS: readonly ProClubStaffRole[] =
+  PRO_CLUB_STAFF_ROLE_OPTIONS_V1;
 
 export type ProClubStaffManagementUiReason =
   | "ALLOWED"
