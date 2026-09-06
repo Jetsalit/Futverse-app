@@ -182,7 +182,9 @@ test("3. unknown email consumes quota", async () => {
   const firestore = createMockAuthorityFirestore();
   const auth: MinimalAdminAuthForResolution = {
     async getUserByEmail() {
-      throw new Error("auth/user-not-found");
+      const err: any = new Error("User not found");
+      err.code = "auth/user-not-found";
+      throw err;
     },
   };
   const rateLimiter = createFirestoreRateLimiter(

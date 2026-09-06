@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   RESOLUTION_ERROR_CODES,
+  isValidDocumentIdentifier,
   normalizeAndValidateEmail,
   validateAndNormalizeCandidateRequest,
 } from "../functions/src/proClubStaffCandidateResolution/core.ts";
@@ -53,14 +54,67 @@ describe("Candidate Resolution Core Validators", () => {
     );
   });
 
-  it("validates clubId format", () => {
-    assert.throws(
-      () =>
-        validateAndNormalizeCandidateRequest({
-          clubId: "invalid/club/path",
-          email: "test@example.com",
-        }),
-      (err: any) => err.code === RESOLUTION_ERROR_CODES.INVALID_REQUEST,
-    );
+  it("canonical document identifier semantics: accepts valid forms", () => {
+    const validIdentifiers = [
+      "club.example",
+      "owner.uid@example-like-id",
+      "a".repeat(65),
+      "a".repeat(128),
+      "club-1",
+      "club_test_123",
+      "123456789",
+    ];
+
+    for (const validId of validIdentifiers) {
+      assert.equal(
+        isValidDocumentIdentifier(validId),
+        true,
+        `Should accept valid document identifier: ${validId}`,
+      );
+
+      const normalized = validateAndNormalizeCandidateRequest({
+        clubId: validId,
+        email: "coach@example.com",
+      });
+      assert.equal(normalized.clubId, validId);
+    }
+  });
+
+  it("canonical document identifier semantics: rejects invalid forms", () => {
+    const invalidIdentifiers = [
+      "",
+      " club-1",
+      "club-1 ",
+      "\tclub-1",
+      "club-1\n",
+      "   ",
+      "club/1",
+      "invalid/club/path",
+      "club//1",
+      null,
+      undefined,
+      12345,
+      {},
+      [],
+      true,
+    ];
+
+    for (const invalidId of invalidIdentifiers) {
+      assert.equal(
+        isValidDocumentIdentifier(invalidId),
+        false,
+        `Should reject invalid document identifier: ${String(invalidId)}`,
+      );
+
+      assert.throws(
+        () =>
+          validateAndNormalizeCandidateRequest({
+            clubId: invalidId,
+            email: "test@example.com",
+          }),
+        (err: any) => err.code === RESOLUTION_ERROR_CODES.INVALID_REQUEST,
+        `Should reject clubId in request: ${String(invalidId)}`,
+      );
+    }
   });
 });

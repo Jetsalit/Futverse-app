@@ -122,11 +122,23 @@ export class ProClubStaffCandidateResolutionService {
     let userRecord: MinimalUserRecord;
     try {
       userRecord = await auth.getUserByEmail(email);
-    } catch {
-      // Safe generic response for non-existent account; avoids leaking user existence details
+    } catch (error: unknown) {
+      const authErrorCode =
+        error && typeof error === "object" && "code" in error && typeof (error as { code: unknown }).code === "string"
+          ? (error as { code: string }).code
+          : undefined;
+
+      if (authErrorCode === "auth/user-not-found") {
+        // Safe generic response for non-existent account; avoids leaking user existence details
+        throw new ProClubStaffCandidateResolutionError(
+          RESOLUTION_ERROR_CODES.CANDIDATE_NOT_FOUND,
+          "Unable to use this account for a Pro Club invitation.",
+        );
+      }
+
       throw new ProClubStaffCandidateResolutionError(
-        RESOLUTION_ERROR_CODES.CANDIDATE_NOT_FOUND,
-        "Unable to use this account for a Pro Club invitation.",
+        RESOLUTION_ERROR_CODES.INTERNAL_ERROR,
+        "An internal error occurred while verifying the candidate account.",
       );
     }
 

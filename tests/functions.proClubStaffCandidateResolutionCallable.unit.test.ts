@@ -17,18 +17,25 @@ function createMockService(options: {
   memberRole?: string;
   memberStatus?: string;
   allowCandidate?: boolean;
+  authError?: any;
 } = {}) {
   const {
     clubStatus = "ACTIVE",
     memberRole = "OWNER",
     memberStatus = "ACTIVE",
     allowCandidate = true,
+    authError,
   } = options;
 
   const auth: MinimalAdminAuthForResolution = {
     async getUserByEmail(email) {
+      if (authError) {
+        throw authError;
+      }
       if (!allowCandidate) {
-        throw new Error("auth/user-not-found");
+        const err: any = new Error("User not found");
+        err.code = "auth/user-not-found";
+        throw err;
       }
       return {
         uid: "resolved-cand-uid-123",
@@ -365,4 +372,104 @@ test("13. resolver remains onCall + enforceAppCheck true", () => {
   assert.match(configBlock, /enforceAppCheck:\s*true/);
   assert.match(configBlock, /concurrency:\s*20/);
   assert.match(configBlock, /maxInstances:\s*10/);
+});
+
+test("14. auth/user-not-found surfaces as HttpsError not-found", async () => {
+  const service = createMockService({
+    authError: Object.assign(new Error("No user record found"), { code: "auth/user-not-found" }),
+  });
+  await assert.rejects(
+    async () => {
+      await executeResolveProClubStaffCandidateCallable(
+        {
+          auth: { uid: "owner-1" },
+          app: { appId: "valid-futverse-app-id" },
+          data: { clubId: "club-1", email: "nonexistent@example.com" },
+        },
+        { service, enforceAppCheck: true },
+      );
+    },
+    (err: any) => {
+      assert.equal(err.code, "not-found");
+      assert.equal(err.message, "Unable to use this account for a Pro Club invitation.");
+      return true;
+    },
+  );
+});
+
+test("15. operational auth/internal-error surfaces as sanitized internal error rather than not-found", async () => {
+  const rawAuthError = Object.assign(new Error("Firebase backend connection failure"), {
+    code: "auth/internal-error",
+  });
+  const service = createMockService({ authError: rawAuthError });
+
+  await assert.rejects(
+    async () => {
+      await executeResolveProClubStaffCandidateCallable(
+        {
+          auth: { uid: "owner-1" },
+          app: { appId: "valid-futverse-app-id" },
+          data: { clubId: "club-1", email: "coach@example.com" },
+        },
+        { service, enforceAppCheck: true },
+      );
+    },
+    (err: any) => {
+      assert.equal(err.code, "internal");
+      assert.equal(err.message, "An internal error occurred.");
+      assert.ok(!JSON.stringify(err).includes("Firebase backend connection failure"));
+      assert.ok(!JSON.stringify(err).includes("auth/internal-error"));
+      return true;
+    },
+  );
+});
+
+test("16. generic unexpected error surfaces as sanitized internal error without leaking raw details", async () => {
+  const genericError = new Error("Sensitive database cluster timeout on host ip 10.0.4.12");
+  const service = createMockService({ authError: genericError });
+
+  await assert.rejects(
+    async () => {
+      await executeResolveProClubStaffCandidateCallable(
+        {
+          auth: { uid: "owner-1" },
+          app: { appId: "valid-futverse-app-id" },
+          data: { clubId: "club-1", email: "coach@example.com" },
+        },
+        { service, enforceAppCheck: true },
+      );
+    },
+    (err: any) => {
+      assert.equal(err.code, "internal");
+      assert.equal(err.message, "An internal error occurred.");
+      assert.ok(!JSON.stringify(err).includes("Sensitive database cluster timeout"));
+      return true;
+    },
+  );
+});
+
+test("17. message-only Error('auth/user-not-found') without code surfaces as sanitized internal rather than not-found", async () => {
+  const service = createMockService({
+    authError: new Error("auth/user-not-found"),
+  });
+
+  await assert.rejects(
+    async () => {
+      await executeResolveProClubStaffCandidateCallable(
+        {
+          auth: { uid: "owner-1" },
+          app: { appId: "valid-futverse-app-id" },
+          data: { clubId: "club-1", email: "coach@example.com" },
+        },
+        { service, enforceAppCheck: true },
+      );
+    },
+    (err: any) => {
+      assert.equal(err.code, "internal");
+      assert.notEqual(err.code, "not-found");
+      assert.equal(err.message, "An internal error occurred.");
+      assert.ok(!JSON.stringify(err).includes("auth/user-not-found"));
+      return true;
+    },
+  );
 });

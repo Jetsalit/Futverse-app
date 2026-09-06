@@ -32,10 +32,12 @@ export interface ResolvedStaffCandidate {
   displayName: string | null;
 }
 
-const DOCUMENT_ID_REGEX = /^[A-Za-z0-9_-]{1,64}$/;
-
 export function isValidDocumentIdentifier(value: unknown): value is string {
-  return typeof value === "string" && DOCUMENT_ID_REGEX.test(value);
+  if (typeof value !== "string") return false;
+  if (!value) return false;
+  if (value.trim() !== value) return false;
+  if (value.includes("/")) return false;
+  return true;
 }
 
 // RFC 5322 compliant standard email validation regex

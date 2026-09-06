@@ -118,13 +118,17 @@ describe("Pro Club Staff Candidate Resolution Service", () => {
     },
   };
 
-  function setupService(customClubs?: Record<string, any>) {
+  function setupService(
+    customClubs?: Record<string, any>,
+    customAuth?: MinimalAdminAuthForResolution,
+    customMembers?: Record<string, Record<string, any>>,
+  ) {
     const firestore = createMockFirestore({
       clubs: customClubs ?? {
         [CLUB]: { name: "TNSU Club", status: "ACTIVE" },
         [OTHER_CLUB]: { name: "Other Club", status: "ACTIVE" },
       },
-      members: {
+      members: customMembers ?? {
         [CLUB]: {
           [OWNER]: { authorizationRole: "OWNER", status: "ACTIVE" },
           [ADMIN]: { authorizationRole: "ADMIN", status: "ACTIVE" },
@@ -136,7 +140,7 @@ describe("Pro Club Staff Candidate Resolution Service", () => {
         },
       },
     });
-    const auth = createMockAuth(users);
+    const auth = customAuth ?? createMockAuth(users);
     const rateLimiter = {
       async consumeQuota() {
         return { allowed: true, attempts: 1, limit: 10, bucketId: "b-test" };
@@ -301,6 +305,208 @@ describe("Pro Club Staff Candidate Resolution Service", () => {
         err instanceof ProClubStaffCandidateResolutionError &&
         err.code === RESOLUTION_ERROR_CODES.CANDIDATE_NOT_FOUND &&
         err.message === "Unable to use this account for a Pro Club invitation.",
+    );
+  });
+
+  it("12. canonical requesterUid semantics: accepts valid dotted / >64-char IDs", async () => {
+    const validUids = [
+      "owner.example",
+      "owner.uid@example-like-id",
+      "a".repeat(65),
+      "a".repeat(128),
+      "owner-1",
+    ];
+
+    for (const validUid of validUids) {
+      const { service } = setupService(undefined, undefined, {
+        [CLUB]: {
+          [validUid]: { authorizationRole: "OWNER", status: "ACTIVE" },
+        },
+      });
+      const result = await service.resolveCandidate({
+        requesterUid: validUid,
+        requestBody: { clubId: CLUB, email: TARGET_EMAIL },
+      });
+      assert.equal(result.targetUid, TARGET_UID);
+    }
+  });
+
+  it("13. canonical requesterUid semantics: rejects invalid padded / slash / empty IDs", async () => {
+    const invalidUids = [
+      "",
+      " owner-uid",
+      "owner-uid ",
+      "owner/uid",
+      "owner//uid",
+      undefined,
+    ];
+
+    const { service } = setupService();
+    for (const invalidUid of invalidUids) {
+      await assert.rejects(
+        service.resolveCandidate({
+          requesterUid: invalidUid,
+          requestBody: { clubId: CLUB, email: TARGET_EMAIL },
+        }),
+        (err: any) =>
+          err instanceof ProClubStaffCandidateResolutionError &&
+          err.code === RESOLUTION_ERROR_CODES.UNAUTHORIZED,
+        `Should reject invalid requesterUid: ${String(invalidUid)}`,
+      );
+    }
+  });
+
+  it("14. Auth failure classification: auth/user-not-found becomes CANDIDATE_NOT_FOUND", async () => {
+    const auth: MinimalAdminAuthForResolution = {
+      async getUserByEmail() {
+        const err: any = new Error("User does not exist");
+        err.code = "auth/user-not-found";
+        throw err;
+      },
+    };
+    const { service } = setupService(undefined, auth);
+    await assert.rejects(
+      service.resolveCandidate({
+        requesterUid: OWNER,
+        requestBody: { clubId: CLUB, email: TARGET_EMAIL },
+      }),
+      (err: any) =>
+        err instanceof ProClubStaffCandidateResolutionError &&
+        err.code === RESOLUTION_ERROR_CODES.CANDIDATE_NOT_FOUND &&
+        err.message === "Unable to use this account for a Pro Club invitation.",
+    );
+  });
+
+  it("15. Auth failure classification: auth/internal-error becomes sanitized INTERNAL_ERROR", async () => {
+    const rawSensitiveMessage = "Sensitive internal Firebase backend failure 500";
+    const auth: MinimalAdminAuthForResolution = {
+      async getUserByEmail() {
+        const err: any = new Error(rawSensitiveMessage);
+        err.code = "auth/internal-error";
+        throw err;
+      },
+    };
+    const { service } = setupService(undefined, auth);
+    await assert.rejects(
+      service.resolveCandidate({
+        requesterUid: OWNER,
+        requestBody: { clubId: CLUB, email: TARGET_EMAIL },
+      }),
+      (err: any) => {
+        assert.ok(err instanceof ProClubStaffCandidateResolutionError);
+        assert.equal(err.code, RESOLUTION_ERROR_CODES.INTERNAL_ERROR);
+        assert.equal(err.message.includes(rawSensitiveMessage), false);
+        assert.equal(err.message.includes("auth/internal-error"), false);
+        return true;
+      },
+    );
+  });
+
+  it("16. Auth failure classification: auth/insufficient-permission becomes sanitized INTERNAL_ERROR", async () => {
+    const auth: MinimalAdminAuthForResolution = {
+      async getUserByEmail() {
+        const err: any = new Error("Insufficient permission to call auth");
+        err.code = "auth/insufficient-permission";
+        throw err;
+      },
+    };
+    const { service } = setupService(undefined, auth);
+    await assert.rejects(
+      service.resolveCandidate({
+        requesterUid: OWNER,
+        requestBody: { clubId: CLUB, email: TARGET_EMAIL },
+      }),
+      (err: any) =>
+        err instanceof ProClubStaffCandidateResolutionError &&
+        err.code === RESOLUTION_ERROR_CODES.INTERNAL_ERROR &&
+        !err.message.includes("Insufficient permission"),
+    );
+  });
+
+  it("17. Auth failure classification: auth/quota-exceeded becomes sanitized INTERNAL_ERROR", async () => {
+    const auth: MinimalAdminAuthForResolution = {
+      async getUserByEmail() {
+        const err: any = new Error("Firebase auth quota exceeded");
+        err.code = "auth/quota-exceeded";
+        throw err;
+      },
+    };
+    const { service } = setupService(undefined, auth);
+    await assert.rejects(
+      service.resolveCandidate({
+        requesterUid: OWNER,
+        requestBody: { clubId: CLUB, email: TARGET_EMAIL },
+      }),
+      (err: any) =>
+        err instanceof ProClubStaffCandidateResolutionError &&
+        err.code === RESOLUTION_ERROR_CODES.INTERNAL_ERROR &&
+        !err.message.includes("quota exceeded"),
+    );
+  });
+
+  it("18. Auth failure classification: generic Error becomes sanitized INTERNAL_ERROR", async () => {
+    const auth: MinimalAdminAuthForResolution = {
+      async getUserByEmail() {
+        throw new Error("Network connection reset by peer");
+      },
+    };
+    const { service } = setupService(undefined, auth);
+    await assert.rejects(
+      service.resolveCandidate({
+        requesterUid: OWNER,
+        requestBody: { clubId: CLUB, email: TARGET_EMAIL },
+      }),
+      (err: any) =>
+        err instanceof ProClubStaffCandidateResolutionError &&
+        err.code === RESOLUTION_ERROR_CODES.INTERNAL_ERROR &&
+        !err.message.includes("Network connection reset"),
+    );
+  });
+
+  it("19. Auth failure classification: message-only Error('auth/user-not-found') without code becomes sanitized INTERNAL_ERROR", async () => {
+    const auth: MinimalAdminAuthForResolution = {
+      async getUserByEmail() {
+        throw new Error("auth/user-not-found");
+      },
+    };
+    const { service } = setupService(undefined, auth);
+    await assert.rejects(
+      service.resolveCandidate({
+        requesterUid: OWNER,
+        requestBody: { clubId: CLUB, email: TARGET_EMAIL },
+      }),
+      (err: any) => {
+        assert.ok(err instanceof ProClubStaffCandidateResolutionError);
+        assert.equal(err.code, RESOLUTION_ERROR_CODES.INTERNAL_ERROR);
+        assert.notEqual(err.code, RESOLUTION_ERROR_CODES.CANDIDATE_NOT_FOUND);
+        assert.equal(err.message.includes("auth/user-not-found"), false);
+        return true;
+      },
+    );
+  });
+
+  it("20. Auth failure classification: application-domain error from auth dependency maps to sanitized INTERNAL_ERROR", async () => {
+    const auth: MinimalAdminAuthForResolution = {
+      async getUserByEmail() {
+        throw new ProClubStaffCandidateResolutionError(
+          RESOLUTION_ERROR_CODES.CANDIDATE_NOT_FOUND,
+          "Injected dependency domain error",
+        );
+      },
+    };
+    const { service } = setupService(undefined, auth);
+    await assert.rejects(
+      service.resolveCandidate({
+        requesterUid: OWNER,
+        requestBody: { clubId: CLUB, email: TARGET_EMAIL },
+      }),
+      (err: any) => {
+        assert.ok(err instanceof ProClubStaffCandidateResolutionError);
+        assert.equal(err.code, RESOLUTION_ERROR_CODES.INTERNAL_ERROR);
+        assert.notEqual(err.code, RESOLUTION_ERROR_CODES.CANDIDATE_NOT_FOUND);
+        assert.equal(err.message.includes("Injected dependency domain error"), false);
+        return true;
+      },
     );
   });
 });
