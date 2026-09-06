@@ -115,6 +115,9 @@ jobs:
       - name: Verify staff management atomic Firestore adapter
         run: node --import tsx --test tests/functions.proClubStaffManagementFirestoreDataSource.unit.test.ts
 
+      - name: Verify staff management client repository
+        run: node --import tsx --test tests/proClubStaffManagementClient.unit.test.ts
+
       - name: Functions TypeScript build
         run: npm --prefix functions run build
 
