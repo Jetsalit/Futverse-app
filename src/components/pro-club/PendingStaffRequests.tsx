@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Check, Copy, UserPlus, Users, X } from "lucide-react";
+import { Check, Copy, UserCheck, UserPlus, Users, X } from "lucide-react";
 import { EmptyState } from "../common/EmptyState";
-import { proClubOnboardingRepository as repository, type PendingStaffRequest } from "../../lib/firestore/proClubOnboardingRepository";
-import { isClaimantIdentity, onboardingErrorMessage, staffRoleLabels, visibleInviteStatus, type ProClubInvite } from "../../lib/proClubOnboarding";
+import { proClubOnboardingRepository, type PendingStaffRequest } from "../../lib/firestore/proClubOnboardingRepository";
+import { isClaimantIdentity, onboardingErrorMessage, staffRoleLabels, visibleInviteStatus, type ProClubInvite, type ResolvedStaffCandidate } from "../../lib/proClubOnboarding";
 import type { ProClubStaffRole } from "../../types/ProClub";
 import { buttonClass, inputClass, secondaryClass, StatusBadge } from "./StaffOnboarding";
 
@@ -29,25 +29,56 @@ function IssueInviteForm({
   onClose: () => void;
   onIssued: (invite: ProClubInvite) => void;
 }) {
-  const [targetUid, setTargetUid] = useState("");
+  const [email, setEmail] = useState("");
+  const [candidate, setCandidate] = useState<ResolvedStaffCandidate | null>(null);
   const [staffRole, setStaffRole] = useState<ProClubStaffRole>("STAFF");
+  const [verifying, setVerifying] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const repository = proClubOnboardingRepository;
 
-  async function handleSubmit(e: React.FormEvent) {
+  // Clear candidate state if clubId or uid changes
+  useEffect(() => {
+    setCandidate(null);
+    setEmail("");
+    setError("");
+  }, [clubId, uid]);
+
+  async function handleVerify(e: React.FormEvent) {
     e.preventDefault();
-    const cleanUid = targetUid.trim();
-    if (!cleanUid) {
-      setError("Please enter the user's account reference (UID).");
+    setError("");
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes("@")) {
+      setError("Please enter a valid staff email address.");
+      return;
+    }
+    setVerifying(true);
+    try {
+      const resolved = await repository.resolveCandidate(clubId, cleanEmail, uid);
+      setCandidate(resolved);
+    } catch (cause) {
+      setCandidate(null);
+      setError(onboardingErrorMessage(cause));
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  async function handleCreateInvite(e: React.FormEvent) {
+    e.preventDefault();
+    if (!candidate || candidate.email.toLowerCase() !== email.trim().toLowerCase()) {
+      setError("Please verify the staff account before issuing an invitation.");
       return;
     }
     setSubmitting(true);
     setError("");
     try {
       const invite = await repository.issueInvitation(
-        { clubId, targetUid: cleanUid, staffRole },
+        { clubId, targetUid: candidate.targetUid, staffRole },
         uid,
       );
+      setCandidate(null);
+      setEmail("");
       onIssued(invite);
     } catch (cause) {
       setError(onboardingErrorMessage(cause));
@@ -65,61 +96,117 @@ function IssueInviteForm({
         </button>
       </div>
       <p className="text-sm text-slate-600">
-        Issue an official onboarding invitation to an existing FutVerse account for <strong>{clubName}</strong>.
+        Find and invite an existing FutVerse account for <strong>{clubName}</strong> using their registered email.
       </p>
       {error && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label htmlFor="staff-target-uid" className="block text-sm font-bold text-slate-700">
-            Staff account reference (UID)
-          </label>
-          <p className="mt-0.5 text-xs text-slate-500">
-            The candidate's unique FutVerse account reference.
-          </p>
-          <input
-            id="staff-target-uid"
-            className={`${inputClass} mt-1`}
-            value={targetUid}
-            onChange={(e) => setTargetUid(e.target.value)}
-            placeholder="e.g. 28-character Firebase UID"
-            maxLength={128}
-            required
-            autoComplete="off"
-            disabled={submitting}
-          />
-        </div>
-        <div>
-          <label htmlFor="staff-role-select" className="block text-sm font-bold text-slate-700">
-            Staff role
-          </label>
-          <select
-            id="staff-role-select"
-            className={`${inputClass} mt-1`}
-            value={staffRole}
-            onChange={(e) => setStaffRole(e.target.value as ProClubStaffRole)}
-            disabled={submitting}
-          >
-            {(Object.keys(staffRoleLabels) as ProClubStaffRole[]).map((role) => (
-              <option key={role} value={role}>
-                {staffRoleLabels[role]}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-wrap gap-3 pt-2">
-          <button type="submit" className={buttonClass} disabled={submitting}>
-            {submitting ? "Generating invitation…" : "Create invitation"}
-          </button>
-          <button type="button" className={secondaryClass} onClick={onClose} disabled={submitting}>
-            Cancel
-          </button>
-        </div>
-      </form>
+
+      {!candidate ? (
+        <form onSubmit={handleVerify} className="space-y-4">
+          <div>
+            <label htmlFor="staff-email" className="block text-sm font-bold text-slate-700">
+              Staff email address
+            </label>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Enter the exact email registered to the candidate's FutVerse account.
+            </p>
+            <input
+              id="staff-email"
+              type="email"
+              className={`${inputClass} mt-1`}
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setCandidate(null);
+                setError("");
+              }}
+              placeholder="e.g. coach@example.com"
+              maxLength={254}
+              required
+              autoComplete="off"
+              disabled={verifying}
+            />
+          </div>
+          <div className="flex flex-wrap gap-3 pt-2">
+            <button type="submit" className={buttonClass} disabled={verifying}>
+              {verifying ? "Verifying account…" : "Verify account"}
+            </button>
+            <button type="button" className={secondaryClass} onClick={onClose} disabled={verifying}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : (
+        <form onSubmit={handleCreateInvite} className="space-y-4">
+          <div className="rounded-xl border border-emerald-300 bg-emerald-50/60 p-4 space-y-2">
+            <div className="flex items-center gap-2 text-emerald-800 font-bold text-sm">
+              <UserCheck size={18} className="text-emerald-600" />
+              <span>Verified FutVerse account</span>
+            </div>
+            {candidate.displayName && (
+              <p className="text-sm text-slate-700">
+                <span className="font-semibold text-slate-500 text-xs block uppercase tracking-wider">Name</span>
+                {candidate.displayName}
+              </p>
+            )}
+            <p className="text-sm text-slate-700">
+              <span className="font-semibold text-slate-500 text-xs block uppercase tracking-wider">Email</span>
+              {candidate.email}
+            </p>
+            <button
+              type="button"
+              className="text-xs text-emerald-700 hover:text-emerald-900 underline font-medium pt-1"
+              onClick={() => {
+                setCandidate(null);
+                setError("");
+              }}
+            >
+              Change email
+            </button>
+          </div>
+
+          <div>
+            <label htmlFor="staff-role-select" className="block text-sm font-bold text-slate-700">
+              Staff role
+            </label>
+            <select
+              id="staff-role-select"
+              className={`${inputClass} mt-1`}
+              value={staffRole}
+              onChange={(e) => setStaffRole(e.target.value as ProClubStaffRole)}
+              disabled={submitting}
+            >
+              {(Object.keys(staffRoleLabels) as ProClubStaffRole[]).map((role) => (
+                <option key={role} value={role}>
+                  {staffRoleLabels[role]}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-wrap gap-3 pt-2">
+            <button type="submit" className={buttonClass} disabled={submitting}>
+              {submitting ? "Generating invitation…" : "Create invitation"}
+            </button>
+            <button
+              type="button"
+              className={secondaryClass}
+              onClick={() => {
+                setCandidate(null);
+                setError("");
+              }}
+              disabled={submitting}
+            >
+              Back
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }
 
 export default function PendingStaffRequests({ clubId, clubName, uid }: { clubId: string; clubName: string; uid: string }) {
+  const repository = proClubOnboardingRepository;
   const [requests, setRequests] = useState<PendingStaffRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

@@ -94,10 +94,16 @@ export function generateProClubInviteCode(): string {
   return `FUT-PC-${payload}`;
 }
 
+export interface ResolvedStaffCandidate {
+  targetUid: string;
+  email: string;
+  displayName: string | null;
+}
+
 export type OnboardingErrorCode = "INVALID_INVITE" | "UNAVAILABLE" | "AUTH_CHANGED" |
   "WRONG_RECIPIENT" | "EXPIRED" | "REVOKED" | "CONSUMED" | "MEMBERSHIP_EXISTS" |
   "REVIEWER_REQUIRED" | "STALE_REQUEST" | "INVALID_DATA" | "IDENTITY_UNAVAILABLE" |
-  "TARGET_USER_NOT_FOUND" | "NETWORK";
+  "TARGET_USER_NOT_FOUND" | "CANDIDATE_NOT_FOUND" | "RATE_LIMITED" | "NETWORK";
 export class OnboardingError extends Error {
   constructor(readonly code: OnboardingErrorCode) { super(code); }
 }
@@ -116,6 +122,8 @@ export function onboardingErrorMessage(error: unknown): string {
     INVALID_DATA: "This invitation or request could not be verified. Please contact your club.",
     IDENTITY_UNAVAILABLE: "Identity unavailable. We could not verify the claimant’s account identity. Contact your club before continuing.",
     TARGET_USER_NOT_FOUND: "No user account was found for this reference. Make sure the staff member has registered with FutVerse.",
+    CANDIDATE_NOT_FOUND: "Unable to find an eligible FutVerse account for this email address. Make sure the staff member has registered with this exact email.",
+    RATE_LIMITED: "Too many account verification attempts. Please try again later.",
     NETWORK: "We could not confirm the result. Check your connection and refresh before trying again.",
   };
   return error instanceof OnboardingError ? messages[error.code] : messages.NETWORK;
