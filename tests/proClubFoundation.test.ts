@@ -83,10 +83,13 @@ describe("Pro Club Foundation 1A", () => {
     assert.equal(validateProClub({ ...club, status: "SUSPENDED" }, clubContext), false);
   });
 
-  it("validates all seven functional staff roles independently of authorization roles", () => {
+  it("validates all ten functional staff roles independently of authorization roles", () => {
     const roles: ProClubStaffRole[] = [
+      "TECHNICAL_DIRECTOR",
+      "MANAGER",
       "HEAD_COACH",
       "ASSISTANT_COACH",
+      "GK_COACH",
       "FITNESS_COACH",
       "ANALYST",
       "PHYSIO",
