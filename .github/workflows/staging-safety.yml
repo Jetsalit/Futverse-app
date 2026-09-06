@@ -57,6 +57,12 @@ jobs:
       - name: Verify Vercel preview staging boundary
         run: node --import tsx --test tests/stagingVercelPrebuildGate.unit.test.ts
 
+      - name: Verify live staging readiness and deploy guard contracts
+        run: >-
+          node --import tsx --test
+          tests/liveStagingReadiness.unit.test.ts
+          tests/liveStagingDeployGuard.unit.test.ts
+
       - name: Verify build-time staging isolation gate
         run: node scripts/verifyStagingIsolation.mjs
 

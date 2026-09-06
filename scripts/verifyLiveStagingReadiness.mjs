@@ -25,12 +25,32 @@ if (runtimeEnv !== "staging") {
   fail("RUNTIME_ENV_MUST_BE_STAGING");
 }
 
-const productionConfig = JSON.parse(readFileSync(new URL("../firebase-applet-config.json", import.meta.url), "utf8"));
-const firebaseRc = JSON.parse(readFileSync(new URL("../.firebaserc", import.meta.url), "utf8"));
+const productionConfig = JSON.parse(
+  readFileSync(new URL("../firebase-applet-config.json", import.meta.url), "utf8"),
+);
+const firebaseRc = JSON.parse(
+  readFileSync(new URL("../.firebaserc", import.meta.url), "utf8"),
+);
 
-const cliProjectId = clean(firebaseRc?.projects?.default);
+const explicitCliProjectId = clean(process.env.FIREBASE_STAGING_PROJECT_ID);
+const repoCliProjectId = clean(firebaseRc?.projects?.default);
+const cliProjectId = explicitCliProjectId || repoCliProjectId;
+
 if (!cliProjectId || cliProjectId === "futverse-staging-not-configured") {
   fail("FIREBASE_CLI_STAGING_PROJECT_NOT_CONFIGURED");
+}
+
+if (!cliProjectId.startsWith("futverse-staging-")) {
+  fail("FIREBASE_CLI_STAGING_PROJECT_PREFIX_INVALID");
+}
+
+if (
+  explicitCliProjectId &&
+  repoCliProjectId &&
+  repoCliProjectId !== "futverse-staging-not-configured" &&
+  repoCliProjectId !== explicitCliProjectId
+) {
+  fail("FIREBASE_CLI_PROJECT_SOURCE_MISMATCH");
 }
 
 const projectId = requireRealValue("VITE_FIREBASE_PROJECT_ID");
@@ -77,5 +97,6 @@ if (requireAppCheck) {
 
 console.log(`LIVE_STAGING_READINESS_GATE=PASS:${requireAppCheck ? "APP_CHECK" : "BASE"}`);
 console.log(`STAGING_PROJECT_ID=${projectId}`);
+console.log(`FIREBASE_CLI_PROJECT_SOURCE=${explicitCliProjectId ? "ENV" : "FIREBASERC"}`);
 console.log("PRODUCTION_COLLISION=NO");
 console.log(`APP_CHECK_REQUIRED=${requireAppCheck ? "YES" : "NO"}`);
