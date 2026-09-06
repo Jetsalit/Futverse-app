@@ -26,9 +26,22 @@ function asExactRecord(
   return record;
 }
 
-function parseClub(value: unknown): { status: "ACTIVE" | "INACTIVE" } {
-  const record = asExactRecord(value, ["schemaVersion", "type", "proClubId", "name", "shortName", "countryCode", "level", "status", "createdAt", "updatedAt"]);
-  if (!record || record.status !== "ACTIVE") {
+function parseClub(value: unknown): { status: "ACTIVE" } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ProClubStaffManagementServiceError(
+      STAFF_MANAGEMENT_ERROR_CODES.INVALID_DATA,
+      "Canonical club data is invalid.",
+    );
+  }
+  const record = value as Record<string, unknown>;
+  const allowed = new Set(["name", "shortName", "level", "status", "country", "logoUrl", "createdAt", "updatedAt"]);
+  if (!Object.keys(record).every((key) => allowed.has(key)) || typeof record.name !== "string") {
+    throw new ProClubStaffManagementServiceError(
+      STAFF_MANAGEMENT_ERROR_CODES.INVALID_DATA,
+      "Canonical club data is invalid.",
+    );
+  }
+  if (record.status !== "ACTIVE") {
     throw new ProClubStaffManagementServiceError(
       STAFF_MANAGEMENT_ERROR_CODES.CONFLICT,
       "Club state changed before the staff action was committed.",
