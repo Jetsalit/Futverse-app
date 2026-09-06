@@ -116,3 +116,63 @@ export const resolveProClubStaffCandidateV1 = onCall(
     );
   },
 );
+
+import {
+  createProClubStaffRosterService,
+  type ProClubStaffRosterService,
+} from "./proClubStaffRoster/service.ts";
+import {
+  createFirestoreProClubStaffRosterDataSource,
+} from "./proClubStaffRoster/firestoreDataSource.ts";
+import {
+  executeLoadProClubStaffRosterCallableV1,
+  type SafeStaffRosterCallableLogger,
+} from "./proClubStaffRoster/callableHandler.ts";
+
+const safeStaffRosterCallableLogger: SafeStaffRosterCallableLogger = {
+  warn(message, meta) {
+    logWarn(message, meta);
+  },
+  error(message, meta) {
+    logError(message, meta);
+  },
+};
+
+let cachedStaffRosterService: ProClubStaffRosterService | null = null;
+
+function getStaffRosterService(): ProClubStaffRosterService {
+  if (!cachedStaffRosterService) {
+    const adminServices = initializeAdminServices();
+    const dataSource = createFirestoreProClubStaffRosterDataSource(
+      adminServices.firestore,
+    );
+    cachedStaffRosterService = createProClubStaffRosterService(dataSource);
+  }
+  return cachedStaffRosterService;
+}
+
+export const loadProClubStaffRosterV1 = onCall(
+  {
+    region: "asia-southeast1",
+    enforceAppCheck: true,
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    concurrency: 20,
+    maxInstances: 10,
+  },
+  async (request) => {
+    const service = getStaffRosterService();
+    return await executeLoadProClubStaffRosterCallableV1(
+      {
+        auth: request.auth ? { uid: request.auth.uid, token: request.auth.token } : undefined,
+        app: request.app ? { appId: request.app.appId, token: request.app.token, alreadyConsumed: request.app.alreadyConsumed } : undefined,
+        data: request.data,
+      },
+      {
+        service,
+        enforceAppCheck: true,
+        logger: safeStaffRosterCallableLogger,
+      },
+    );
+  },
+);
