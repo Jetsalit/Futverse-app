@@ -73,6 +73,12 @@ jobs:
       - name: Verify staff roster read-model contract
         run: node --import tsx --test tests/proClubStaffRosterModel.unit.test.ts
 
+      - name: Verify staff roster server service
+        run: node --import tsx --test tests/functions.proClubStaffRosterService.unit.test.ts
+
+      - name: Functions TypeScript build
+        run: npm --prefix functions run build
+
       - name: TypeScript gate
         run: npm run lint
 
