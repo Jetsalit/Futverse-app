@@ -11,6 +11,7 @@ import {
   resolveAuthoritativeAssociationSnapshot,
 } from "../lib/nonStaffPlayerAccess";
 import { EmptyState } from "./common/EmptyState";
+import ProPlayerOnboardingV1Form from "./ProPlayerOnboardingV1Form";
 
 const associationKey = (academyId: string, playerId: string) =>
   JSON.stringify([academyId, playerId]);
@@ -39,6 +40,7 @@ export default function PlayerDashboard({
   const [resolvedScopeKey, setResolvedScopeKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [readError, setReadError] = useState<string | null>(null);
+  const [showProPlayerOnboarding, setShowProPlayerOnboarding] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,6 +63,7 @@ export default function PlayerDashboard({
     clearResolvedProfiles();
     setReadError(null);
     setLoading(true);
+    setShowProPlayerOnboarding(false);
 
     if (lookup.type === "UNAVAILABLE") {
       setLoading(false);
@@ -245,6 +248,16 @@ export default function PlayerDashboard({
     visiblePlayerProfiles[0] ||
     null;
 
+  const presentedUid = currentUser?.uid || currentUser?.id || null;
+  const actualUid = actualUser?.uid || actualUser?.id || null;
+  const canStartOwnProPlayerOnboarding = Boolean(
+    currentUser?.role === "PLAYER" &&
+      presentedUid &&
+      actualUid === presentedUid &&
+      !nonStaffSupport.isActive &&
+      currentUser?.supportPresentation !== true,
+  );
+
   if (loading) {
     return (
       <div className="flex h-full w-full items-center justify-center">
@@ -254,6 +267,10 @@ export default function PlayerDashboard({
   }
 
   if (!playerProfile) {
+    if (showProPlayerOnboarding && canStartOwnProPlayerOnboarding && !readError) {
+      return <ProPlayerOnboardingV1Form onBack={() => setShowProPlayerOnboarding(false)} />;
+    }
+
     return (
       <div className="h-[calc(100vh-6rem)] w-full">
         <EmptyState
@@ -261,7 +278,17 @@ export default function PlayerDashboard({
           title={readError ? "Player data unavailable" : "Player Profile Not Found"}
           description={
             readError ||
-            "No authoritative player association was found for this account. Please contact your coach or administrator."
+            "No authoritative player association was found for this account. You can prepare a Professional Player V1 draft while secure persistence and FUTID linking remain separately controlled."
+          }
+          primaryActionLabel={
+            !readError && canStartOwnProPlayerOnboarding
+              ? "Start professional player profile"
+              : undefined
+          }
+          onPrimaryAction={
+            !readError && canStartOwnProPlayerOnboarding
+              ? () => setShowProPlayerOnboarding(true)
+              : undefined
           }
         />
       </div>

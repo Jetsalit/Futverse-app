@@ -1,0 +1,62 @@
+name: Pro Player Onboarding Form V1
+
+on:
+  push:
+    branches:
+      - integration/pro-club-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pro-player-onboarding-form-v1-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pro-player-onboarding-form-v1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VITE_FUTVERSE_ENV: staging
+      VITE_FIREBASE_PROJECT_ID: futverse-staging-ci
+      VITE_FIREBASE_APP_ID: staging-ci-app-id
+      VITE_FIREBASE_API_KEY: staging-ci-api-key
+      VITE_FIREBASE_AUTH_DOMAIN: futverse-staging-ci.invalid
+      VITE_FIREBASE_STORAGE_BUCKET: futverse-staging-ci.invalid
+      VITE_FIREBASE_MESSAGING_SENDER_ID: "999999999999"
+    steps:
+      - name: Checkout staging lane
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install app dependencies deterministically
+        run: npm ci
+
+      - name: Install functions dependencies deterministically
+        run: npm --prefix functions ci
+
+      - name: Verify engineering recovery change record
+        run: npm run verify:change-record
+
+      - name: Verify canonical Pro Player V1 contract
+        run: node --import tsx --test tests/proPlayerOnboardingV1.unit.test.ts
+
+      - name: Verify Pro Player onboarding form model
+        run: node --import tsx --test tests/proPlayerOnboardingFormV1.unit.test.ts
+
+      - name: Verify Pro Player onboarding UI safety contract
+        run: node --import tsx --test tests/proPlayerOnboardingUiContract.unit.test.ts
+
+      - name: TypeScript gate
+        run: npm run lint
+
+      - name: Staging build gate
+        run: npm run build
