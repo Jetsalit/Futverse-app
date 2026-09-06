@@ -187,3 +187,42 @@ export const loadProClubStaffLifecycleReviewV1 = onCall(
     { service: getStaffLifecycleReviewService(), enforceAppCheck: true, logger: safeStaffLifecycleReviewCallableLogger },
   ),
 );
+
+import {
+  createProPlayerClaimSubmissionServiceV1,
+  type ProPlayerClaimSubmissionServiceV1,
+} from "./proPlayerOnboardingClaimSubmission/service.ts";
+import { createFirestoreProPlayerClaimSubmissionSourceV1 } from "./proPlayerOnboardingClaimSubmission/firestoreDataSource.ts";
+import { createFirestoreProPlayerClaimSubmissionRateLimiterV1 } from "./proPlayerOnboardingClaimSubmission/rateLimiter.ts";
+import {
+  executeSubmitProPlayerOnboardingClaimCallableV1,
+  type SafeProPlayerClaimSubmissionLoggerV1,
+} from "./proPlayerOnboardingClaimSubmission/callableHandler.ts";
+
+const safeProPlayerClaimSubmissionLogger: SafeProPlayerClaimSubmissionLoggerV1 = {
+  warn(message, meta) { logWarn(message, meta); },
+  error(message, meta) { logError(message, meta); },
+};
+
+let cachedProPlayerClaimSubmissionService: ProPlayerClaimSubmissionServiceV1 | null = null;
+function getProPlayerClaimSubmissionService(): ProPlayerClaimSubmissionServiceV1 {
+  if (!cachedProPlayerClaimSubmissionService) {
+    const adminServices = initializeAdminServices();
+    const source = createFirestoreProPlayerClaimSubmissionSourceV1(adminServices.firestore);
+    const rateLimiter = createFirestoreProPlayerClaimSubmissionRateLimiterV1(adminServices.firestore);
+    cachedProPlayerClaimSubmissionService = createProPlayerClaimSubmissionServiceV1(source, rateLimiter);
+  }
+  return cachedProPlayerClaimSubmissionService;
+}
+
+export const submitProPlayerOnboardingClaimV1 = onCall(
+  { region: "asia-southeast1", enforceAppCheck: true, timeoutSeconds: 15, memory: "256MiB", concurrency: 10, maxInstances: 5 },
+  async (request) => executeSubmitProPlayerOnboardingClaimCallableV1(
+    {
+      auth: request.auth ? { uid: request.auth.uid, token: request.auth.token } : undefined,
+      app: request.app ? { appId: request.app.appId, token: request.app.token, alreadyConsumed: request.app.alreadyConsumed } : undefined,
+      data: request.data,
+    },
+    { service: getProPlayerClaimSubmissionService(), enforceAppCheck: true, logger: safeProPlayerClaimSubmissionLogger },
+  ),
+);

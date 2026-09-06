@@ -1,0 +1,73 @@
+name: Pro Player Claim Submission V1
+
+on:
+  push:
+    branches:
+      - integration/pro-club-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pro-player-claim-submission-v1-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pro-player-claim-submission-v1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout staging lane
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install app dependencies deterministically
+        run: npm ci
+
+      - name: Install functions dependencies deterministically
+        run: npm --prefix functions ci
+
+      - name: Verify engineering recovery change record
+        run: npm run verify:change-record
+
+      - name: Verify Pro Player claim contract regression
+        run: >-
+          node --import tsx --test
+          tests/proPlayerOnboardingClaimV1.unit.test.ts
+          tests/proPlayerOnboardingClaimContractV1.unit.test.ts
+
+      - name: Verify client/server onboarding validator parity
+        run: node --import tsx --test tests/proPlayerOnboardingClaimValidatorParity.unit.test.ts
+
+      - name: Verify claim submission service
+        run: node --import tsx --test tests/functions.proPlayerOnboardingClaimSubmissionService.unit.test.ts
+
+      - name: Verify claim submission Firestore adapter
+        run: node --import tsx --test tests/functions.proPlayerOnboardingClaimSubmissionFirestoreDataSource.unit.test.ts
+
+      - name: Verify claim submission rate limiter
+        run: node --import tsx --test tests/functions.proPlayerOnboardingClaimSubmissionRateLimiter.unit.test.ts
+
+      - name: Verify claim submission callable
+        run: node --import tsx --test tests/functions.proPlayerOnboardingClaimSubmissionCallable.unit.test.ts
+
+      - name: Verify claim submission function wiring
+        run: node --import tsx --test tests/functions.proPlayerOnboardingClaimSubmissionIndexContract.unit.test.ts
+
+      - name: Functions TypeScript build
+        run: npm --prefix functions run build
+
+      - name: App TypeScript gate
+        run: npm run lint
+
+      - name: FutVerse Owner Alert
+        if: failure()
+        run: node scripts/writeOwnerAlertSummary.mjs
