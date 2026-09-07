@@ -14,6 +14,7 @@ jobs:
       - name: Checkout verification branch
         uses: actions/checkout@v4
         with:
+          ref: verify/pr68-production-readiness
           fetch-depth: 0
 
       - name: Setup Node.js 22
