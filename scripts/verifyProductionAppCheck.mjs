@@ -16,8 +16,8 @@ function looksLikePlaceholder(value) {
   return /(MY_RECAPTCHA|YOUR_RECAPTCHA|CHANGE[_-]?ME|PLACEHOLDER|EXAMPLE|TEST[_-]?KEY|DEMO[_-]?KEY|DUMMY|FAKE[_-]?KEY)/i.test(value);
 }
 
-function hasProductionRecaptchaSiteKeyShape(value) {
-  return /^6L[A-Za-z0-9_-]{20,}$/.test(value);
+function hasProductionRecaptchaEnterpriseKeyIdShape(value) {
+  return /^[A-Za-z0-9_-]{40}$/.test(value);
 }
 
 export function validateProductionAppCheckEnvironment(env) {
@@ -45,8 +45,8 @@ export function validateProductionAppCheckEnvironment(env) {
     return { ok: false, reason: "VITE_RECAPTCHA_SITE_KEY still contains a placeholder value." };
   }
 
-  if (!hasProductionRecaptchaSiteKeyShape(siteKey)) {
-    return { ok: false, reason: "VITE_RECAPTCHA_SITE_KEY does not have a valid production reCAPTCHA site-key shape." };
+  if (!hasProductionRecaptchaEnterpriseKeyIdShape(siteKey)) {
+    return { ok: false, reason: "VITE_RECAPTCHA_SITE_KEY does not have a valid production reCAPTCHA Enterprise 40-character Key ID shape." };
   }
 
   if (debugToken) {
