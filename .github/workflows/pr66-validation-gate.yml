@@ -1,0 +1,64 @@
+name: PR66 Validation Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/pr66-validation-gate.yml"
+      - "src/**"
+      - "functions/**"
+      - "tests/**"
+      - "firebase.json"
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout verification branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Functions dependencies
+        run: npm --prefix functions ci
+
+      - name: Verify exact PR66 product-head ancestry
+        run: |
+          git rev-parse HEAD
+          git status --porcelain=v1
+          git merge-base --is-ancestor 1a03cb0df6c11e4800b18d8aad199fa2e15f6c76 HEAD
+
+      - name: Run Slice 4 and frozen-contract tests
+        run: node --import tsx --test tests/proClubProvisioningControlPlaneApi.unit.test.ts tests/proClubProvisioningControlPlaneIntegration.contract.test.ts tests/proClubProvisioningV1Contract.test.ts tests/proClubProvisioningAuditVerificationV1Contract.test.ts
+
+      - name: Run provisioning and verification backend regressions
+        run: node --import tsx --test tests/proClubProvisioningService.unit.test.ts tests/functions.proClubProvisioning.httpHandler.unit.test.ts tests/proClubProvisioningAuditVerificationCore.unit.test.ts tests/proClubProvisioningAuditVerificationService.unit.test.ts tests/functions.proClubProvisioningAuditVerification.httpHandler.unit.test.ts tests/proClubProvisioningAuditVerificationImplementation.contract.test.ts
+
+      - name: Build Functions
+        run: npm --prefix functions run build
+
+      - name: TypeScript gate
+        run: npm run lint
+
+      - name: Production bundle gate
+        run: npm run build
+
+      - name: Verify exact product diff
+        run: git diff --check 9aca7d8d72eeb33cac89d6b18a7b272559693baa..1a03cb0df6c11e4800b18d8aad199fa2e15f6c76
+
+      - name: Verify runner repository remained clean
+        run: git status --porcelain=v1
