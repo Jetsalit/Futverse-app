@@ -49,7 +49,13 @@ export function isKnownInvalidAppCheckTokenError(error: unknown): boolean {
 
 export function createServerAppCheckTokenVerifier(
   appCheck: MinimalAdminAppCheck,
+  expectedAppIds: readonly string[],
 ): ServerAppCheckTokenVerifier {
+  const allowedAppIds = new Set(expectedAppIds);
+  if (allowedAppIds.size === 0 || [...allowedAppIds].some((value) => !value || value.trim() !== value)) {
+    throw new Error("Server App Check verifier requires canonical expected app IDs");
+  }
+
   return {
     async verifyHeader(appCheckHeader: unknown): Promise<string> {
       if (
@@ -72,6 +78,10 @@ export function createServerAppCheckTokenVerifier(
 
       if (!decoded || typeof decoded.appId !== "string" || decoded.appId.trim().length === 0) {
         throw new AppCheckVerificationError("Verified App Check token has no valid app identifier");
+      }
+
+      if (!allowedAppIds.has(decoded.appId)) {
+        throw new AppCheckVerificationError("Verified App Check token belongs to an unauthorized app");
       }
 
       return decoded.appId;
