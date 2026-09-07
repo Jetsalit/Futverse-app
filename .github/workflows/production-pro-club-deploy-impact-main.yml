@@ -1,0 +1,82 @@
+name: Production Pro Club Deploy Impact — Main
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  deploy-impact:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Functions dependencies
+        run: npm --prefix functions ci
+
+      - name: Verify exact main provenance and verification-only scope
+        run: |
+          test "$(git rev-parse HEAD^)" = "21f7da8f273d778ffc81d2d267d722f4f01530e5"
+          test "$(git rev-parse origin/main)" = "21f7da8f273d778ffc81d2d267d722f4f01530e5"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/production-pro-club-deploy-impact-main.yml"
+
+      - name: Verify exact production Function export surface
+        run: |
+          actual="$(grep -oP '^export const \K[A-Za-z0-9_]+' functions/src/index.ts | sort | tr '\n' ' ' | sed 's/ $//')"
+          expected="provisionProClubV1 resolveProClubStaffCandidateV1 verifyProClubProvisioningAuditV1"
+          test "$actual" = "$expected"
+          echo "FUNCTION_EXPORT_SURFACE=PASS"
+
+      - name: Full Firestore regression under emulator
+        run: |
+          mapfile -t firestore_tests < <(find tests -maxdepth 1 -type f -name 'firestore*.test.ts' | sort)
+          test "${#firestore_tests[@]}" -gt 0
+          test_files="${firestore_tests[*]} tests/proClubOnboardingRuntime.test.ts tests/proClubStaffInvitationRuntime.test.ts"
+          npx firebase emulators:exec \
+            --project demo-futverse-production-deploy-impact \
+            --only firestore \
+            "node --import tsx --test $test_files"
+
+      - name: Production deploy readiness tests
+        run: npm run test:production-deploy-readiness
+
+      - name: Production boundary smoke harness tests
+        run: npm run test:production-pro-club-boundary-smoke
+
+      - name: Full production readiness with process-only shaped key
+        env:
+          VITE_RECAPTCHA_SITE_KEY: 6Lc_deploy-impact-temporary-production-shaped-key
+          VITE_APP_CHECK_DEBUG_TOKEN: ''
+        run: npm run verify:production-deploy-readiness
+
+      - name: Functions build
+        run: npm --prefix functions run build
+
+      - name: Root TypeScript gate
+        run: npm run lint
+
+      - name: Production Vite build with process-only shaped key
+        env:
+          VITE_RECAPTCHA_SITE_KEY: 6Lc_deploy-impact-temporary-production-shaped-key
+          VITE_APP_CHECK_DEBUG_TOKEN: ''
+        run: npm run build
+
+      - name: Diff and clean-tree gates
+        run: |
+          git diff --check 21f7da8f273d778ffc81d2d267d722f4f01530e5..HEAD
+          test -z "$(git status --porcelain=v1)"
