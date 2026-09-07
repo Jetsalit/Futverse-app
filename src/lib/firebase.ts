@@ -3,7 +3,7 @@ import { initializeApp } from "firebase/app";
 import { connectAuthEmulator, getAuth } from "firebase/auth";
 import { connectFirestoreEmulator, getFirestore } from "firebase/firestore";
 import { connectFunctionsEmulator, getFunctions } from "firebase/functions";
-import { initializeAppCheck, ReCaptchaV3Provider, type AppCheck } from "firebase/app-check";
+import { initializeAppCheck, ReCaptchaEnterpriseProvider, type AppCheck } from "firebase/app-check";
 import firebaseConfig from "../../firebase-applet-config.json";
 
 // Explicit local-only verification. Production builds always use the existing config.
@@ -23,7 +23,7 @@ if (localOnboarding) {
 }
 
 // App Check safe parameterized boundary:
-// Requires real reCAPTCHA v3 / Enterprise site key from environment in production.
+// Requires the real reCAPTCHA Enterprise site key from environment in production.
 // Never invent fake site keys.
 export function shouldEnableAppCheckDebug(env?: {
   DEV?: boolean;
@@ -49,7 +49,7 @@ if (typeof window !== "undefined" && isAppCheckConfigured) {
       import.meta.env.VITE_APP_CHECK_DEBUG_TOKEN;
   }
   appCheckInstance = initializeAppCheck(app, {
-    provider: new ReCaptchaV3Provider(import.meta.env.VITE_RECAPTCHA_SITE_KEY),
+    provider: new ReCaptchaEnterpriseProvider(import.meta.env.VITE_RECAPTCHA_SITE_KEY),
     isTokenAutoRefreshEnabled: true,
   });
 }
