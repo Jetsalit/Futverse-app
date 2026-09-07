@@ -2,7 +2,7 @@
 
 Status: FROZEN ARCHITECTURAL CONTRACT — DOCUMENTATION AND CONTRACT TESTS ONLY
 
-## 1. Baseline, Branch, and Exact Scope
+## 1. Baseline and exact slice scope
 
 - Repository: `Jetsalit/Futverse-app`
 - Production source of truth: `main`
@@ -11,28 +11,24 @@ Status: FROZEN ARCHITECTURAL CONTRACT — DOCUMENTATION AND CONTRACT TESTS ONLY
 - Governing predecessor: `docs/PRO_CLUB_PROVISIONING_V1_CONTRACT_FREEZE.md`
 - Governing authority predecessor: `docs/PRO_CLUB_AUTHORITY_FOUNDATION_V1_FREEZE.md`
 
-This contract slice may introduce exactly two files:
+This contract slice may introduce or modify exactly two files:
 
 1. `docs/PRO_CLUB_PROVISIONING_AUDIT_VERIFICATION_V1_CONTRACT_FREEZE.md`
 2. `tests/proClubProvisioningAuditVerificationV1Contract.test.ts`
 
-No production source, Firebase Function implementation, Firestore Rules, UI, routing, configuration, deployment artifact, or existing frozen contract is modified by this slice.
+No production source, Firebase Function implementation, Firestore Rules, UI, routing, configuration, deployment artifact, or predecessor contract is modified by this slice.
 
-This slice freezes the architecture for **Provisioning Slice 3 — Audit Verification and Observability** only. It does not authorize production implementation or production deployment.
+This slice freezes **Provisioning Slice 3 — Audit Verification and Observability** only. It does not authorize production implementation, merge to `main`, or production deployment.
 
----
+## 2. Purpose and non-goals
 
-## 2. Purpose
-
-Pro Club Provisioning V1 already creates canonical durable provisioning evidence at:
+Provisioning V1 creates canonical durable evidence at:
 
 `proClubProvisioningAudits/{provisioningId}`
 
-Provisioning Slice 3 defines an independent, privileged, read-only verification boundary that proves whether that canonical audit evidence still agrees with the canonical Pro Club and its sovereign initial OWNER membership.
+Slice 3 defines a separate privileged read-only verifier that determines whether one exact provisioning audit still agrees with the canonical Pro Club and its sovereign initial OWNER membership.
 
-The verifier exists to **detect and report integrity state**. It must never repair, mutate, backfill, recreate, normalize in place, or otherwise change production data.
-
-Core rule:
+Core invariants:
 
 ```text
 VERIFY != REPAIR
@@ -40,72 +36,65 @@ READ AUTHORITY != WRITE AUTHORITY
 OBSERVABILITY != TENANT AUTHORITY
 ```
 
----
+The verifier detects and reports integrity state. It must never repair, mutate, backfill, recreate, normalize in place, replace ownership, create staff, create invitations, or change production data.
 
-## 3. Requesting Authority
+## 3. Actor terminology and authority separation
 
-Only an authenticated platform principal that is canonically verified as an **ACTIVE SUPERADMIN** may request V1 provisioning audit verification.
+Two different identities exist and MUST NOT be conflated:
 
-The verifier must:
+1. `verifyingSuperAdminUid` — the current authenticated caller requesting verification.
+2. `audit.requestingSuperAdminUid` — historical evidence identifying the ACTIVE SUPERADMIN who originally authorized provisioning.
 
-1. cryptographically verify the authenticated caller identity;
-2. derive `requestingSuperAdminUid` only from verified authentication context, never from request payload;
-3. read canonical `users/{requestingSuperAdminUid}` server-side;
+These identities **MAY be different**.
+
+A valid audit created by SuperAdmin A must remain verifiable by a different currently ACTIVE SuperAdmin B. The verifier MUST NOT require:
+
+`verifyingSuperAdminUid === audit.requestingSuperAdminUid`
+
+The historical provisioning actor does not need to remain currently active or currently SUPERADMIN for the historical audit to remain valid evidence. Slice 3 therefore MUST NOT read `users/{audit.requestingSuperAdminUid}` merely to re-authorize the historical provisioning event.
+
+Only the current `verifyingSuperAdminUid` is authorization-bearing for the verification operation.
+
+## 4. Current verifier requesting authority
+
+Only an authenticated platform principal canonically verified as an **ACTIVE SUPERADMIN** may request verification.
+
+The trusted service must:
+
+1. cryptographically verify the current caller;
+2. derive `verifyingSuperAdminUid` only from verified authentication context, never from request payload;
+3. read `users/{verifyingSuperAdminUid}` server-side before any audit existence lookup;
 4. require `role === "SUPERADMIN"`;
 5. require `status === "Active"` or `status === "ACTIVE"`;
-6. fail closed if the user document is missing, unreadable, inactive, malformed, or not SUPERADMIN.
+6. fail closed if the user document is missing, unreadable, inactive, malformed, or not exact SUPERADMIN.
 
-The following are never sufficient verification authority:
+The following never authorize verification by themselves:
 
-- `OWNER`, `ADMIN`, or `MEMBER` Pro Club membership;
-- any football `staffRole`;
+- Pro Club `OWNER`, `ADMIN`, or `MEMBER`;
+- any football staff role;
 - `TECHNICAL_DIRECTOR`, `MANAGER`, `HEAD_COACH`, `ASSISTANT_COACH`, `GK_COACH`, `FITNESS_COACH`, `ANALYST`, `PHYSIO`, `TEAM_MANAGER`, or `STAFF`;
 - Academy membership or Academy role;
 - `requestedRole`;
 - support presentation / Work As Staff identity;
 - client-side `currentUser` presentation;
 - caller-supplied UID;
-- service identity without an authenticated ACTIVE SUPERADMIN requesting principal.
+- service identity without an authenticated ACTIVE SUPERADMIN principal.
 
-`SUPERADMIN` authorizes access to this platform control-plane verification operation only. It does not grant Pro Club tenant authority.
+Platform SUPERADMIN verification authority is control-plane authority only and never becomes Pro Club tenant authority.
 
----
+## 5. Trusted execution boundary and zero mutation
 
-## 4. Execution Boundary
+Verification executes only inside a trusted backend / Admin SDK boundary. Admin SDK execution authority is not business authorization; Section 4 must still be enforced.
 
-Verification executes only inside a trusted backend / Admin SDK boundary.
+The verifier is strictly read-only and every outcome performs **zero Firestore writes**.
 
-Admin SDK execution authority is not business authorization. The service must independently enforce the requesting-principal rules in Section 3.
+Forbidden operations include create, set, update, delete, transaction write, batch write, repair, backfill, owner replacement, membership mutation, staff mutation, invite/claim mutation, and audit mutation.
 
-The verifier is strictly read-only.
+A mismatch is evidence to report, never permission to repair.
 
-### 4.1 Absolute Zero-Mutation Rule
+## 6. Exact V1 request contract
 
-A verification request must perform **zero Firestore writes**.
-
-Forbidden operations include:
-
-- create;
-- set;
-- update;
-- delete;
-- transaction write;
-- batch write;
-- repair;
-- backfill;
-- owner replacement;
-- membership mutation;
-- staff assignment mutation;
-- invite or claim mutation;
-- audit mutation.
-
-A mismatch is evidence to report, not data to repair.
-
----
-
-## 5. Exact V1 Input Contract
-
-The V1 request contains exactly one domain input:
+The V1 JSON domain request is exactly:
 
 ```typescript
 export interface ProClubProvisioningAuditVerificationRequestV1 {
@@ -113,52 +102,55 @@ export interface ProClubProvisioningAuditVerificationRequestV1 {
 }
 ```
 
-Rules:
+Runtime shape is strict:
 
+- request body must be a non-null plain JSON object;
+- arrays are rejected;
+- it must contain exactly one own key: `provisioningId`;
+- every extra key is rejected, including `clubId`, `ownerUid`, `requestingSuperAdminUid`, `verifyingSuperAdminUid`, role, status, or target path;
 - `provisioningId` must be a string;
-- it must be trimmed and non-empty;
-- it must satisfy the same canonical document-identifier policy used by Provisioning V1;
-- no `clubId`, `ownerUid`, `requestingSuperAdminUid`, role, status, or target path may be supplied as an authority-bearing request field;
-- the target club and owner are derived only from a successfully validated canonical audit document.
+- it must already be trimmed, non-empty, contain no slash, and satisfy the Provisioning V1 canonical document-identifier policy;
+- target club and target owner are derived only from a structurally valid canonical audit document.
 
-V1 permits **exact document lookup only**.
+V1 supports exact document lookup only. It forbids collection list, collection query, prefix search, club-wide discovery, owner-wide discovery, audit browsing, and enumeration of provisioning records.
 
-Forbidden:
+## 7. Decision order and exact read set
 
-- collection list;
-- collection query;
-- prefix search;
-- club-wide discovery;
-- owner-wide discovery;
-- audit browsing;
-- enumeration of provisioning records.
+The security-critical decision order is:
 
----
+1. verify current caller authentication and derive `verifyingSuperAdminUid`;
+2. read and authorize `users/{verifyingSuperAdminUid}`;
+3. validate the exact request shape and canonical `provisioningId`;
+4. exact-get `proClubProvisioningAudits/{provisioningId}`;
+5. validate the complete stored audit before using audit-derived paths;
+6. read `proClubs/{audit.clubId}`;
+7. read `proClubs/{audit.clubId}/members/{audit.ownerUid}`;
+8. return a minimal result or stable safe failure.
 
-## 6. Exact Read Set and Decision Order
+Unauthorized callers must be rejected before audit existence is read, preventing an audit-existence oracle.
 
-After authentication and input validation, the verifier reads only the minimum canonical documents needed for verification.
+The verifier reads no staff document, no invitation, no onboarding claim, and no Academy document. It does not read `users/{audit.requestingSuperAdminUid}` as part of current verification authority.
 
-Required decision order:
+## 8. Replay validator separation
 
-1. `users/{requestingSuperAdminUid}`
-2. `proClubProvisioningAudits/{provisioningId}`
-3. `proClubs/{audit.clubId}`
-4. `proClubs/{audit.clubId}/members/{audit.ownerUid}`
+The existing Provisioning V1 replay validator `validateStoredAuditOnReplay` is replay-specific. It currently validates an incoming request fingerprint and requires the stored historical `requestingSuperAdminUid` to equal the authenticated provisioning retry caller.
 
-The verifier must not read a caller-supplied club or owner target. `audit.clubId` and `audit.ownerUid` become usable lookup keys only after the audit itself passes structural and binding validation.
+Slice 3 MUST NOT reuse that replay-specific caller-equality requirement as verification authority or audit-integrity semantics.
 
-No staff document and no invitation document is required to verify provisioning integrity.
+Slice 3 implementation must use a verification-specific pure validator (or a safely refactored shared structural validator) that:
 
----
+- validates the stored audit exact shape;
+- validates normalized-request exact shape and bindings;
+- recomputes the fingerprint from stored normalized evidence;
+- does not require an incoming provisioning request fingerprint;
+- does not require current `verifyingSuperAdminUid` to equal historical `audit.requestingSuperAdminUid`;
+- performs no writes.
 
-## 7. Canonical Audit Integrity Contract
+Any refactor of shared Provisioning V1 validator code must preserve existing provisioning replay behavior exactly and receive regression coverage.
 
-A provisioning audit is VERIFIED only if the document exists and satisfies the complete canonical V1 shape.
+## 9. Canonical audit integrity
 
-### 7.1 Exact Top-Level Allowed Fields
-
-The audit document must contain exactly these nine fields and no others:
+A provisioning audit is VERIFIED only if it exists and has exactly these nine top-level fields and no others:
 
 1. `schemaVersion`
 2. `provisioningId`
@@ -176,11 +168,9 @@ Required values and bindings:
 - `status === "COMPLETED"`;
 - document ID equals requested `provisioningId`;
 - `audit.provisioningId === provisioningId`;
-- `clubId`, `ownerUid`, and `requestingSuperAdminUid` are valid canonical document identifiers;
-- `createdAt` is a valid server-authoritative timestamp representation accepted by the Provisioning V1 contract;
+- `clubId`, `ownerUid`, and historical `requestingSuperAdminUid` are valid canonical document identifiers;
+- `createdAt` satisfies the existing canonical Provisioning V1 timestamp validator;
 - `requestFingerprint` matches `/^sha256:[a-f0-9]{64}$/`.
-
-### 7.2 Exact Normalized Request Shape
 
 `normalizedRequest` must contain exactly these nine fields and no others:
 
@@ -200,33 +190,23 @@ Bindings must satisfy:
 - `normalizedRequest.clubId === audit.clubId`;
 - `normalizedRequest.initialOwnerUid === audit.ownerUid`;
 - `normalizedRequest.requestingSuperAdminUid === audit.requestingSuperAdminUid`;
-- `level` is exactly `T1`, `T2`, or `T3`;
-- optional normalized fields are canonical string-or-null values;
-- `name` is a non-empty normalized string.
+- `level` is exact `T1`, `T2`, or `T3`;
+- `name` is a trimmed non-empty string;
+- `shortName`, `country`, and `logoUrl` are null or trimmed non-empty strings.
 
-The verifier must reconstruct canonical JSON using the frozen Provisioning V1 key order and recompute SHA-256. The recomputed value must exactly equal `audit.requestFingerprint`.
+The verifier reconstructs canonical JSON using the frozen Provisioning V1 key order and recomputes SHA-256 from the stored normalized request. The recomputed fingerprint must exactly equal `audit.requestFingerprint`.
 
-Any missing field, extra field, malformed value, invalid binding, or fingerprint mismatch is an integrity failure. It must never be reported as VERIFIED.
+Missing fields, extra fields, malformed values, invalid binding, or fingerprint mismatch are `INTEGRITY_FAILURE` and can never produce VERIFIED.
 
----
+## 10. Canonical resource integrity
 
-## 8. Canonical Resource Integrity Contract
+Only after Section 9 succeeds may audit-derived resource paths be read.
 
-Only after Section 7 passes may the verifier inspect the resources bound by that audit.
+`proClubs/{audit.clubId}` must exist, satisfy the existing canonical stored Pro Club validator, and remain `status === "ACTIVE"`.
 
-### 8.1 Pro Club
+Legitimate post-provisioning changes to mutable profile fields such as name, shortName, country, logoUrl, or level do not alone invalidate provisioning integrity when the current stored club still satisfies the canonical ACTIVE shape.
 
-`proClubs/{audit.clubId}` must:
-
-- exist;
-- satisfy the canonical Pro Club stored-shape validator;
-- have `status === "ACTIVE"`.
-
-Legitimate post-provisioning edits to mutable profile fields such as name, shortName, country, logoUrl, or level do not by themselves invalidate provisioning integrity, provided the current club document remains a valid canonical ACTIVE Pro Club.
-
-### 8.2 Sovereign Initial OWNER Membership
-
-`proClubs/{audit.clubId}/members/{audit.ownerUid}` must exist and match the exact membership payload:
+`proClubs/{audit.clubId}/members/{audit.ownerUid}` must exist and match exactly:
 
 ```json
 {
@@ -235,29 +215,24 @@ Legitimate post-provisioning edits to mutable profile fields such as name, short
 }
 ```
 
-No extra fields are permitted.
+No extra membership fields are permitted.
 
-Provisioning integrity does not require the OWNER to have a football staff assignment. `OWNER != staffRole` remains preserved.
+No football staff assignment, invitation, onboarding claim, Academy membership, or global football role is required. `OWNER != staffRole` remains preserved.
 
-Provisioning integrity does not require an invite, onboarding claim, Academy membership, or global football role.
+## 11. Result and error contract
 
----
-
-## 9. Verification Result Contract
-
-The domain verifier may classify a request internally as:
+Internal domain classifications are:
 
 - `VERIFIED`
 - `NOT_FOUND`
 - `INTEGRITY_FAILURE`
 - `UNAUTHORIZED`
+- `INVALID_REQUEST`
 - `INTERNAL_ERROR`
 
-Only an authenticated ACTIVE SUPERADMIN may receive domain verification detail.
+Unauthorized callers receive only generic authorization failure and must not learn whether the audit, club, or owner exists.
 
-Unauthorized callers must receive a generic authorization failure and must not learn whether the requested `provisioningId`, club, owner, or audit exists.
-
-A successful privileged verification response may contain a minimal summary:
+An authorized VERIFIED response is minimal:
 
 ```typescript
 export interface ProClubProvisioningAuditVerificationResultV1 {
@@ -269,139 +244,98 @@ export interface ProClubProvisioningAuditVerificationResultV1 {
 }
 ```
 
-The V1 public response must not expose:
+The public response never exposes tokens, Authorization headers, raw user documents, email, phone, raw Auth records, service credentials, stack traces, full raw audit payloads, or full normalized request snapshots.
 
-- Firebase ID token;
-- Authorization header;
-- App Check token;
-- raw user document;
-- user email;
-- phone number;
-- profile data;
-- raw Firebase Auth record;
-- service credentials;
-- stack traces;
-- entire raw audit object;
-- entire raw `normalizedRequest` object.
+## 12. Safe observability
 
-Endpoint transport shape and any App Check requirement are implementation-slice decisions; authenticated identity plus canonical ACTIVE SUPERADMIN revalidation are non-negotiable.
+Structured logs may contain only minimum operational metadata: operation name, exact `provisioningId`, safe result classification, stable domain error code, duration/execution metadata, and privileged `clubId` only after canonical audit validation when operationally necessary.
 
----
+Logs must never include authentication tokens, Authorization headers, App Check tokens, service credentials, email, phone, raw Auth user records, raw Firestore user documents, full raw audit payloads, or full normalized request snapshots.
 
-## 10. Safe Observability Contract
+Internal exceptions must be mapped to stable safe errors without dumping sensitive raw objects to clients.
 
-Observability exists to diagnose verification behavior without creating a new privacy or authority leak.
+## 13. Fail-closed matrix
 
-Structured logs may include only the minimum safe operational metadata required for diagnosis, such as:
+The verifier fails closed as follows:
 
-- operation name;
-- `provisioningId`;
-- safe result classification;
-- stable domain error code;
-- duration / execution metadata;
-- privileged `clubId` only after canonical audit validation when operationally necessary.
+1. missing/invalid authentication -> `UNAUTHORIZED`;
+2. missing canonical current verifier -> `UNAUTHORIZED`;
+3. current verifier inactive -> `UNAUTHORIZED`;
+4. current verifier not exact SUPERADMIN -> `UNAUTHORIZED`;
+5. malformed request body, array body, missing key, extra key, or invalid `provisioningId` -> `INVALID_REQUEST`;
+6. audit not found -> `NOT_FOUND` for an authorized caller only;
+7. malformed/extra-field audit -> `INTEGRITY_FAILURE`;
+8. malformed/extra-field normalized request -> `INTEGRITY_FAILURE`;
+9. fingerprint mismatch -> `INTEGRITY_FAILURE`;
+10. missing, malformed, or inactive club -> `INTEGRITY_FAILURE`;
+11. missing or non-exact ACTIVE OWNER membership -> `INTEGRITY_FAILURE`;
+12. Firestore read failure -> `INTERNAL_ERROR`;
+13. unexpected exception -> `INTERNAL_ERROR`;
+14. no path may fabricate VERIFIED;
+15. every path performs zero Firestore writes.
 
-Logs must never include authentication tokens, Authorization headers, service credentials, email, phone, raw Auth user records, raw Firestore user documents, full raw audit payloads, or full normalized request snapshots.
+Repeated verification is naturally idempotent because the operation is read-only.
 
-Integrity failures must be observable through a stable safe error code. Internal exceptions must not dump sensitive raw objects into client responses.
+## 14. Preserved FutVerse boundaries
 
----
+This slice preserves all existing boundaries:
 
-## 11. Fail-Closed Matrix
-
-The verifier must fail closed as follows:
-
-1. missing/invalid auth -> `UNAUTHORIZED`;
-2. missing canonical requester -> `UNAUTHORIZED`;
-3. requester not ACTIVE -> `UNAUTHORIZED`;
-4. requester role not exact SUPERADMIN -> `UNAUTHORIZED`;
-5. invalid `provisioningId` -> validation failure with zero reads beyond authority checks as implementation ordering permits and zero writes;
-6. audit not found -> `NOT_FOUND` for authorized caller only;
-7. malformed audit -> `INTEGRITY_FAILURE`;
-8. extra audit field -> `INTEGRITY_FAILURE`;
-9. malformed normalized request -> `INTEGRITY_FAILURE`;
-10. fingerprint mismatch -> `INTEGRITY_FAILURE`;
-11. missing club -> `INTEGRITY_FAILURE`;
-12. malformed or inactive club -> `INTEGRITY_FAILURE`;
-13. missing OWNER membership -> `INTEGRITY_FAILURE`;
-14. OWNER membership not exact ACTIVE OWNER -> `INTEGRITY_FAILURE`;
-15. Firestore read failure -> `INTERNAL_ERROR`;
-16. unexpected exception -> `INTERNAL_ERROR`;
-17. no failure path may fabricate `VERIFIED`;
-18. every path performs zero Firestore writes.
-
-Repeated verification of the same `provisioningId` is naturally idempotent because the operation is read-only.
-
----
-
-## 12. Security and Authority Preservation
-
-This slice must not change or weaken any existing FutVerse invariant:
-
-- public registration does not create a Pro Club;
+- public registration does not create Pro Clubs;
 - `users.role != tenant authority`;
-- Pro Club authorization roles remain exactly `OWNER`, `ADMIN`, `MEMBER`;
+- authorization roles remain exactly `OWNER`, `ADMIN`, `MEMBER`;
 - football staff roles remain exactly the canonical ten-role set;
 - `MANAGER` and `TEAM_MANAGER` remain distinct;
 - `staffRole != authorizationRole`;
 - staff assignment never creates membership authority;
 - Academy authority does not grant Pro Club authority;
-- support presentation does not become authenticated actor identity;
-- client Firestore root Pro Club creation remains closed;
+- support presentation is not authenticated actor identity;
+- client Pro Club root create remains closed;
 - OWNER bootstrap remains trusted-control-plane only;
-- provisioning audit client write access remains closed;
-- verification introduces no list/discovery capability;
-- verification introduces no mutation capability.
+- client provisioning-audit writes remain closed;
+- Slice 3 adds no list/discovery capability;
+- Slice 3 adds no mutation capability.
 
----
+## 15. Required implementation regressions
 
-## 13. Required Future Implementation Tests
+A later trusted read-only implementation must prove at minimum:
 
-A later implementation slice must prove at minimum:
+1. current ACTIVE SUPERADMIN can verify a valid exact audit;
+2. a different ACTIVE SUPERADMIN can verify an audit created by another historical SuperAdmin;
+3. historical provisioning actor does not need to remain currently ACTIVE/SUPERADMIN;
+4. current inactive SUPERADMIN is denied;
+5. current non-SUPERADMIN is denied;
+6. tenant OWNER without platform SUPERADMIN is denied;
+7. staff role never authorizes verification;
+8. caller-supplied verifier/requester UID cannot authorize;
+9. request body rejects arrays, missing key, and every extra key;
+10. exact `provisioningId` get succeeds and list/query/discovery is absent;
+11. unauthorized caller cannot distinguish missing from existing audit;
+12. exact audit whitelist is enforced;
+13. exact normalized-request whitelist and bindings are enforced;
+14. fingerprint is recomputed solely from stored normalized evidence;
+15. verifier does not inherit replay-only current-caller equality or incoming-fingerprint requirements;
+16. missing/malformed/inactive club fails closed;
+17. missing/non-exact OWNER fails closed;
+18. mutable canonical club profile edits do not cause false failure;
+19. no staff assignment/invitation/Academy document is required;
+20. zero writes occur on VERIFIED, NOT_FOUND, INTEGRITY_FAILURE, UNAUTHORIZED, INVALID_REQUEST, and INTERNAL_ERROR;
+21. safe logs contain no token/header/email/raw audit/raw normalized request;
+22. repeated verification is idempotent;
+23. no tenant authority is created or changed;
+24. Academy behavior remains unchanged;
+25. existing Provisioning V1 service and replay behavior remain unchanged.
 
-1. ACTIVE SUPERADMIN can verify a valid exact audit;
-2. inactive SUPERADMIN is denied;
-3. non-SUPERADMIN is denied;
-4. tenant OWNER without platform SUPERADMIN is denied;
-5. staff role never authorizes verification;
-6. caller-supplied requester UID cannot authorize;
-7. exact `provisioningId` lookup succeeds;
-8. list/query/discovery is absent;
-9. missing audit does not leak to unauthorized caller;
-10. exact audit whitelist is enforced;
-11. exact normalized-request whitelist is enforced;
-12. deterministic fingerprint is recomputed and compared;
-13. binding mismatch fails closed;
-14. missing club fails closed;
-15. malformed/inactive club fails closed;
-16. missing OWNER fails closed;
-17. non-exact OWNER membership fails closed;
-18. post-provisioning mutable club profile edits do not create a false integrity failure when the current club remains canonical and ACTIVE;
-19. no staff assignment is required;
-20. no invitation is required;
-21. zero writes occur on VERIFIED;
-22. zero writes occur on NOT_FOUND;
-23. zero writes occur on INTEGRITY_FAILURE;
-24. zero writes occur on UNAUTHORIZED;
-25. zero writes occur on INTERNAL_ERROR;
-26. safe logs contain no token/header/email/raw audit/raw normalized request;
-27. repeated verification is idempotent;
-28. no Pro Club membership or tenant authority is created or changed;
-29. Academy behavior remains unchanged;
-30. existing provisioning service behavior remains unchanged.
+## 16. Succession and review gate
 
----
+Independent architecture/security review finding addressed by this freeze:
 
-## 14. Succession and Review Gate
+- current verifier identity is explicitly separated from historical provisioning-requester evidence;
+- exact one-key request-body shape is explicit.
 
-This contract is the architecture freeze for Provisioning Slice 3.
-
-Next approved implementation slice after independent architecture/security review:
+Next approved implementation slice after this contract independently passes review:
 
 `PRO CLUB PROVISIONING AUDIT VERIFICATION V1 — TRUSTED READ-ONLY SERVICE IMPLEMENTATION`
 
-That implementation slice must remain read-only and must preserve the exact authority, integrity, privacy, and no-discovery boundaries frozen here.
-
-A later, separately reviewed **Slice 4 — Privileged Control-Plane UI / API Integration** may consume the trusted verifier only after the verifier implementation independently passes its own tests and review.
+A later separately reviewed **Slice 4 — Privileged Control-Plane UI / API Integration** may consume the verifier only after the trusted verifier implementation passes its own tests and review.
 
 No production implementation, merge to `main`, or production deployment is authorized merely by this Contract Freeze.
