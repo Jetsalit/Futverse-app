@@ -13,6 +13,14 @@ import {
   handleProClubProvisioningHttpRequest,
   type SafeHandlerLogger,
 } from "./proClubProvisioning/httpHandler.ts";
+import {
+  createProClubProvisioningAuditVerificationService,
+  type ProClubProvisioningAuditVerificationService,
+} from "./proClubProvisioningAuditVerification/service.ts";
+import {
+  handleProClubProvisioningAuditVerificationHttpRequest,
+  type SafeAuditVerificationLogger,
+} from "./proClubProvisioningAuditVerification/httpHandler.ts";
 
 const safeProvisioningLogger: SafeHandlerLogger = {
   warn(entry) {
@@ -23,7 +31,17 @@ const safeProvisioningLogger: SafeHandlerLogger = {
   },
 };
 
+const safeAuditVerificationLogger: SafeAuditVerificationLogger = {
+  warn(entry) {
+    logWarn("Pro Club provisioning audit verification domain error", entry);
+  },
+  error(entry) {
+    logError("Pro Club provisioning audit verification internal error", entry);
+  },
+};
+
 let cachedService: ProClubProvisioningService | null = null;
+let cachedAuditVerificationService: ProClubProvisioningAuditVerificationService | null = null;
 
 function getService(): ProClubProvisioningService {
   if (!cachedService) {
@@ -35,6 +53,18 @@ function getService(): ProClubProvisioningService {
     });
   }
   return cachedService;
+}
+
+function getAuditVerificationService(): ProClubProvisioningAuditVerificationService {
+  if (!cachedAuditVerificationService) {
+    const adminServices = initializeAdminServices();
+    const authTokenVerifier = createServerAuthTokenVerifier(adminServices.auth);
+    cachedAuditVerificationService = createProClubProvisioningAuditVerificationService({
+      firestore: adminServices.firestore,
+      authTokenVerifier,
+    });
+  }
+  return cachedAuditVerificationService;
 }
 
 export const provisionProClubV1 = onRequest(
@@ -51,6 +81,24 @@ export const provisionProClubV1 = onRequest(
     await handleProClubProvisioningHttpRequest(req, res, {
       service,
       logger: safeProvisioningLogger,
+    });
+  },
+);
+
+export const verifyProClubProvisioningAuditV1 = onRequest(
+  {
+    region: "asia-southeast1",
+    cors: false,
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    concurrency: 20,
+    maxInstances: 10,
+  },
+  async (req, res) => {
+    const service = getAuditVerificationService();
+    await handleProClubProvisioningAuditVerificationHttpRequest(req, res, {
+      service,
+      logger: safeAuditVerificationLogger,
     });
   },
 );
