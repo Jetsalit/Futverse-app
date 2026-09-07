@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 const script = path.resolve("scripts/verifyProductionAppCheck.mjs");
+const validEnterpriseKeyId = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AB";
 
 function runGuard(
   extraEnv: Record<string, string | undefined>,
@@ -51,10 +52,17 @@ test("production App Check guard blocks common and prefixed placeholder site key
   }
 });
 
-test("production App Check guard blocks malformed site key values", () => {
-  const result = runGuard({ VITE_RECAPTCHA_SITE_KEY: "not-a-real-key" });
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /site-key shape/i);
+test("production App Check guard blocks malformed Enterprise Key ID values", () => {
+  for (const value of [
+    "not-a-real-key",
+    "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_A",
+    "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_ABC",
+    "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789+/AB",
+  ]) {
+    const result = runGuard({ VITE_RECAPTCHA_SITE_KEY: value });
+    assert.equal(result.status, 1, value);
+    assert.match(result.stderr, /40-character Key ID shape/i);
+  }
 });
 
 test("production App Check guard blocks unresolved Vite dotenv interpolation", () => {
@@ -68,7 +76,7 @@ test("production App Check guard blocks unresolved Vite dotenv interpolation", (
 
 test("production App Check guard blocks site keys with surrounding whitespace", () => {
   const result = runGuard({
-    VITE_RECAPTCHA_SITE_KEY: " 6Lc_real-looking-public-site-key ",
+    VITE_RECAPTCHA_SITE_KEY: ` ${validEnterpriseKeyId} `,
   });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /already be trimmed/i);
@@ -76,16 +84,16 @@ test("production App Check guard blocks site keys with surrounding whitespace", 
 
 test("production App Check guard blocks debug token in production", () => {
   const result = runGuard({
-    VITE_RECAPTCHA_SITE_KEY: "6Lc_real-looking-public-site-key",
+    VITE_RECAPTCHA_SITE_KEY: validEnterpriseKeyId,
     VITE_APP_CHECK_DEBUG_TOKEN: "debug-token-must-not-ship",
   });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /DEBUG_TOKEN/);
 });
 
-test("production App Check guard passes with production-shaped site key and no debug token", () => {
+test("production App Check guard passes with 40-character Enterprise Key ID and no debug token", () => {
   const result = runGuard({
-    VITE_RECAPTCHA_SITE_KEY: "6Lc_real-looking-public-site-key",
+    VITE_RECAPTCHA_SITE_KEY: validEnterpriseKeyId,
     VITE_APP_CHECK_DEBUG_TOKEN: "",
   });
   assert.equal(result.status, 0);
