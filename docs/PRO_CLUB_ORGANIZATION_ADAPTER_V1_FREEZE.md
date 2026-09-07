@@ -332,3 +332,33 @@ a separate integration review rather than expanding implementation scope.
 Next approved slice after Contract Freeze:
 
 `PRO CLUB ORGANIZATION ADAPTER V1 — READ-ONLY IMPLEMENTATION`
+
+## 21. Staff Management V1 successor role-set amendment
+
+The historical baseline above froze the legacy seven-role set.
+Pro Club Staff Management V1 supersedes only the functional football
+staff-role enumeration with the following canonical set of exactly 10 roles:
+
+- `TECHNICAL_DIRECTOR`
+- `MANAGER`
+- `HEAD_COACH`
+- `ASSISTANT_COACH`
+- `GK_COACH`
+- `FITNESS_COACH`
+- `ANALYST`
+- `PHYSIO`
+- `TEAM_MANAGER`
+- `STAFF`
+
+MANAGER and TEAM_MANAGER are distinct.
+
+This successor amendment does NOT change:
+
+- authorization roles: OWNER / ADMIN / MEMBER
+- membership authority semantics
+- staffRole != authorizationRole
+- lifecycle states
+- exact-path authority
+- default-deny behavior
+- historical baseline SHA
+- historical implementation scope

@@ -192,6 +192,14 @@ export function visibleInviteStatus(invite: ProClubInvite, now = Date.now()): In
   return invite.status === "ACTIVE" && invite.expiresAt.toMillis() <= now ? "EXPIRED" : invite.status;
 }
 export const staffRoleLabels: Record<ProClubStaffRole, string> = {
-  HEAD_COACH: "Head coach", ASSISTANT_COACH: "Assistant coach", FITNESS_COACH: "Fitness coach",
-  ANALYST: "Analyst", PHYSIO: "Physio", TEAM_MANAGER: "Team manager", STAFF: "Staff",
+  TECHNICAL_DIRECTOR: "Technical Director",
+  MANAGER: "Manager",
+  HEAD_COACH: "Head coach",
+  ASSISTANT_COACH: "Assistant coach",
+  GK_COACH: "GK Coach",
+  FITNESS_COACH: "Fitness coach",
+  ANALYST: "Analyst",
+  PHYSIO: "Physio",
+  TEAM_MANAGER: "Team manager",
+  STAFF: "Staff",
 };
