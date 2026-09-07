@@ -1,0 +1,54 @@
+name: PR78 Production Readiness V2 Gate
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/pr78-production-readiness-v2.yml"
+      - "RELEASE_CHECKLIST.md"
+      - "package.json"
+      - "scripts/verifyProductionDeployReadiness.ts"
+      - "tests/productionDeployReadinessV2.unit.test.ts"
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm --prefix functions ci
+      - name: Verify exact product head ancestry
+        run: |
+          git merge-base --is-ancestor eb0587a519742fd97409b610a25bfa7d8cb9d27e HEAD
+          test "$(git rev-parse eb0587a519742fd97409b610a25bfa7d8cb9d27e)" = "eb0587a519742fd97409b610a25bfa7d8cb9d27e"
+      - name: Production readiness V2 tests
+        run: npm run test:production-deploy-readiness
+      - name: Canonical App Check guard blocks missing key
+        shell: bash
+        run: |
+          set +e
+          env -u VITE_RECAPTCHA_SITE_KEY -u VITE_APP_CHECK_DEBUG_TOKEN node scripts/verifyProductionAppCheck.mjs
+          code=$?
+          set -e
+          test "$code" -ne 0
+      - name: Full readiness command passes with temporary production-shaped key
+        env:
+          VITE_RECAPTCHA_SITE_KEY: 6Lc_pr78-temporary-production-shaped-key
+          VITE_APP_CHECK_DEBUG_TOKEN: ""
+        run: npm run verify:production-deploy-readiness
+      - run: npm --prefix functions run build
+      - run: npm run lint
+      - name: Production build with temporary production-shaped key
+        env:
+          VITE_RECAPTCHA_SITE_KEY: 6Lc_pr78-temporary-production-shaped-key
+          VITE_APP_CHECK_DEBUG_TOKEN: ""
+        run: npm run build
+      - run: git diff --check 20f422dc282c5d801d28ea713b12afe27d4b2b45..eb0587a519742fd97409b610a25bfa7d8cb9d27e
+      - run: test -z "$(git status --porcelain=v1)"
