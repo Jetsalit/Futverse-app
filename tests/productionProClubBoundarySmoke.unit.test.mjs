@@ -46,6 +46,7 @@ test("production origin accepts canonical HTTPS origin only", () => {
     "https://user:pass@futverse.example",
     "https://localhost",
     "https://127.0.0.1",
+    "https://[::1]",
     " https://futverse.example ",
   ]) {
     assert.throws(() => validateProductionOrigin(value), /FUTVERSE_PRODUCTION_ORIGIN/);
