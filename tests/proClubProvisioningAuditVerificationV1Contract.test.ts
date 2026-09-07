@@ -25,14 +25,29 @@ describe("Pro Club Provisioning Audit Verification V1 Contract Freeze", () => {
     assert.match(scope, /does not authorize production implementation, merge to `main`, or production deployment/);
   });
 
-  it("freezes verify-not-repair and absolute zero mutation", () => {
+  it("freezes verify-not-repair, consistent snapshot, and absolute zero mutation", () => {
     const purpose = section("## 2. Purpose and non-goals", "## 3. Actor terminology and authority separation");
     assert.match(purpose, /VERIFY != REPAIR/);
     assert.match(purpose, /READ AUTHORITY != WRITE AUTHORITY/);
     assert.match(purpose, /OBSERVABILITY != TENANT AUTHORITY/);
     assert.match(purpose, /must never repair, mutate, backfill, recreate/);
 
-    const execution = section("## 5. Trusted execution boundary and zero mutation", "## 6. Exact V1 request contract");
+    const execution = section(
+      "## 5. Trusted execution boundary, consistent snapshot, and zero mutation",
+      "## 6. Exact V1 request contract",
+    );
+    assert.match(execution, /one consistent Firestore snapshot/);
+    assert.match(execution, /single Firestore transaction/);
+    assert.match(execution, /same read timestamp/);
+    assert.match(execution, /reads only/);
+    for (const path of [
+      "users/{verifyingSuperAdminUid}",
+      "proClubProvisioningAudits/{provisioningId}",
+      "proClubs/{audit.clubId}",
+      "proClubs/{audit.clubId}/members/{audit.ownerUid}",
+    ]) {
+      assert.ok(execution.includes(path), `Missing consistent-snapshot read: ${path}`);
+    }
     assert.match(execution, /strictly read-only/);
     assert.match(execution, /zero Firestore writes/);
     for (const token of ["create", "set", "update", "delete", "transaction write", "batch write", "repair", "backfill", "audit mutation"]) {
@@ -51,7 +66,10 @@ describe("Pro Club Provisioning Audit Verification V1 Contract Freeze", () => {
   });
 
   it("requires current authenticated canonical ACTIVE SUPERADMIN only", () => {
-    const authority = section("## 4. Current verifier requesting authority", "## 5. Trusted execution boundary and zero mutation");
+    const authority = section(
+      "## 4. Current verifier requesting authority",
+      "## 5. Trusted execution boundary, consistent snapshot, and zero mutation",
+    );
     assert.match(authority, /users\/\{verifyingSuperAdminUid\}/);
     assert.match(authority, /role === "SUPERADMIN"/);
     assert.match(authority, /status === "Active"/);
@@ -64,7 +82,7 @@ describe("Pro Club Provisioning Audit Verification V1 Contract Freeze", () => {
   });
 
   it("freezes exact one-key request shape and no discovery", () => {
-    const input = section("## 6. Exact V1 request contract", "## 7. Decision order and exact read set");
+    const input = section("## 6. Exact V1 request contract", "## 7. Decision order and exact consistent-snapshot read set");
     assert.match(input, /exactly one own key: `provisioningId`/);
     assert.match(input, /arrays are rejected/);
     assert.match(input, /every extra key is rejected/);
@@ -74,16 +92,18 @@ describe("Pro Club Provisioning Audit Verification V1 Contract Freeze", () => {
     }
   });
 
-  it("freezes authority-before-existence decision order and minimum read set", () => {
-    const reads = section("## 7. Decision order and exact read set", "## 8. Replay validator separation");
+  it("freezes authority-before-existence order inside one consistent Firestore snapshot", () => {
+    const reads = section("## 7. Decision order and exact consistent-snapshot read set", "## 8. Replay validator separation");
     const ordered = [
-      "verify current caller authentication",
-      "users/{verifyingSuperAdminUid}",
+      "cryptographically verify current caller authentication",
       "validate the exact request shape",
+      "begin one read-only Firestore transaction",
+      "users/{verifyingSuperAdminUid}",
       "proClubProvisioningAudits/{provisioningId}",
       "validate the complete stored audit",
       "proClubs/{audit.clubId}",
       "proClubs/{audit.clubId}/members/{audit.ownerUid}",
+      "zero writes",
     ];
     let cursor = -1;
     for (const text of ordered) {
@@ -91,6 +111,8 @@ describe("Pro Club Provisioning Audit Verification V1 Contract Freeze", () => {
       assert.ok(next > cursor, `Missing/out-of-order decision step: ${text}`);
       cursor = next;
     }
+    assert.match(reads, /one consistent read timestamp/);
+    assert.match(reads, /Independent sequential document reads outside a consistent-snapshot boundary are forbidden/);
     assert.match(reads, /Unauthorized callers must be rejected before audit existence is read/);
     assert.match(reads, /does not read `users\/\{audit\.requestingSuperAdminUid\}`/);
   });
@@ -104,26 +126,59 @@ describe("Pro Club Provisioning Audit Verification V1 Contract Freeze", () => {
     assert.match(replay, /preserve existing provisioning replay behavior exactly/);
   });
 
-  it("freezes exact audit and normalized-request shape plus stored fingerprint recomputation", () => {
+  it("freezes exact audit and all nine normalized-request fields plus all four bindings", () => {
     const audit = section("## 9. Canonical audit integrity", "## 10. Canonical resource integrity");
-    for (const field of ["schemaVersion", "provisioningId", "clubId", "ownerUid", "requestingSuperAdminUid", "requestFingerprint", "normalizedRequest", "createdAt", "status"]) {
+    const auditFields = [
+      "schemaVersion",
+      "provisioningId",
+      "clubId",
+      "ownerUid",
+      "requestingSuperAdminUid",
+      "requestFingerprint",
+      "normalizedRequest",
+      "createdAt",
+      "status",
+    ];
+    for (const field of auditFields) {
       assert.ok(audit.includes(`\`${field}\``), `Missing audit field: ${field}`);
     }
     assert.match(audit, /exactly these nine top-level fields and no others/);
     assert.match(audit, /schemaVersion === 1/);
     assert.match(audit, /status === "COMPLETED"/);
     assert.match(audit, /\^sha256:\[a-f0-9\]\{64\}\$/);
-    for (const field of ["country", "initialOwnerUid", "level", "logoUrl", "name", "shortName"]) {
+
+    const normalizedFields = [
+      "clubId",
+      "country",
+      "initialOwnerUid",
+      "level",
+      "logoUrl",
+      "name",
+      "provisioningId",
+      "requestingSuperAdminUid",
+      "shortName",
+    ];
+    for (const field of normalizedFields) {
       assert.ok(audit.includes(`\`${field}\``), `Missing normalized field: ${field}`);
     }
-    assert.match(audit, /normalizedRequest\.initialOwnerUid === audit\.ownerUid/);
-    assert.match(audit, /normalizedRequest\.requestingSuperAdminUid === audit\.requestingSuperAdminUid/);
+    assert.match(audit, /`normalizedRequest` must contain exactly these nine fields and no others/);
+
+    const bindings = [
+      "normalizedRequest.provisioningId === audit.provisioningId",
+      "normalizedRequest.clubId === audit.clubId",
+      "normalizedRequest.initialOwnerUid === audit.ownerUid",
+      "normalizedRequest.requestingSuperAdminUid === audit.requestingSuperAdminUid",
+    ];
+    for (const binding of bindings) {
+      assert.ok(audit.includes(`\`${binding}\``), `Missing normalized binding: ${binding}`);
+    }
     assert.match(audit, /recomputes SHA-256 from the stored normalized request/);
     assert.match(audit, /must exactly equal `audit\.requestFingerprint`/);
   });
 
   it("requires canonical ACTIVE club and exact ACTIVE OWNER without staff dependency", () => {
     const resources = section("## 10. Canonical resource integrity", "## 11. Result and error contract");
+    assert.match(resources, /same consistent Firestore snapshot/);
     assert.match(resources, /existing canonical stored Pro Club validator/);
     assert.match(resources, /status === "ACTIVE"/);
     assert.match(resources, /"authorizationRole": "OWNER"/);
@@ -150,11 +205,24 @@ describe("Pro Club Provisioning Audit Verification V1 Contract Freeze", () => {
     assert.match(logs, /stable safe errors/);
   });
 
-  it("freezes fail-closed outcomes with zero writes", () => {
+  it("freezes fail-closed outcomes including snapshot failure with zero writes", () => {
     const matrix = section("## 13. Fail-closed matrix", "## 14. Preserved FutVerse boundaries");
-    for (const required of ["missing/invalid authentication", "current verifier inactive", "array body", "extra key", "audit not found", "fingerprint mismatch", "inactive club", "non-exact ACTIVE OWNER membership", "Firestore read failure", "unexpected exception"]) {
+    for (const required of [
+      "missing/invalid authentication",
+      "current verifier inactive",
+      "array body",
+      "extra key",
+      "audit not found",
+      "fingerprint mismatch",
+      "inactive club",
+      "non-exact ACTIVE OWNER membership",
+      "inability to obtain one consistent Firestore snapshot",
+      "Firestore read failure",
+      "unexpected exception",
+    ]) {
       assert.ok(matrix.includes(required), `Missing fail-closed case: ${required}`);
     }
+    assert.match(matrix, /never VERIFIED/);
     assert.match(matrix, /no path may fabricate VERIFIED/);
     assert.match(matrix, /every path performs zero Firestore writes/);
   });
@@ -170,12 +238,16 @@ describe("Pro Club Provisioning Audit Verification V1 Contract Freeze", () => {
     assert.match(preserved, /no mutation capability/);
   });
 
-  it("requires future implementation regression coverage for both review findings", () => {
+  it("requires future implementation regression coverage for all review findings", () => {
     const future = section("## 15. Required implementation regressions", "## 16. Succession and review gate");
     assert.match(future, /different ACTIVE SUPERADMIN can verify an audit created by another historical SuperAdmin/);
     assert.match(future, /historical provisioning actor does not need to remain currently ACTIVE\/SUPERADMIN/);
     assert.match(future, /request body rejects arrays, missing key, and every extra key/);
+    assert.match(future, /exact normalized-request whitelist and all four audit bindings are enforced/);
     assert.match(future, /does not inherit replay-only current-caller equality or incoming-fingerprint requirements/);
+    assert.match(future, /canonical verifier, audit, club, and OWNER membership reads share one consistent Firestore read timestamp/);
+    assert.match(future, /concurrent club or OWNER state change cannot produce VERIFIED from a mixed-time snapshot/);
+    assert.match(future, /failure to obtain the consistent read snapshot fails closed with zero writes/);
     assert.match(future, /existing Provisioning V1 service and replay behavior remain unchanged/);
     assert.match(future, /zero writes occur on VERIFIED, NOT_FOUND, INTEGRITY_FAILURE, UNAUTHORIZED, INVALID_REQUEST, and INTERNAL_ERROR/);
   });
@@ -184,6 +256,8 @@ describe("Pro Club Provisioning Audit Verification V1 Contract Freeze", () => {
     const succession = section("## 16. Succession and review gate");
     assert.match(succession, /current verifier identity is explicitly separated from historical provisioning-requester evidence/);
     assert.match(succession, /exact one-key request-body shape is explicit/);
+    assert.match(succession, /one read-only consistent Firestore snapshot/);
+    assert.match(succession, /all nine fields and all four bindings explicitly/);
     assert.match(succession, /TRUSTED READ-ONLY SERVICE IMPLEMENTATION/);
     assert.match(succession, /Slice 4 — Privileged Control-Plane UI \/ API Integration/);
     assert.match(succession, /No production implementation, merge to `main`, or production deployment is authorized/);
