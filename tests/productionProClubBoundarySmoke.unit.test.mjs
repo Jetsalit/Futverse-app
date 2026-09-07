@@ -1,15 +1,27 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
   EXPECTED_APP_CHECK_ERROR_CODE,
+  EXPECTED_PRODUCTION_PROJECT_ID,
   PRODUCTION_SMOKE_ACK,
+  PRODUCTION_SMOKE_TARGET_CONFIG_PATH,
   PROTECTED_PRO_CLUB_PATHS,
+  REQUIRED_DEFAULT_PRODUCTION_ORIGINS,
+  assertApprovedProductionOrigin,
   assertExpectedAppCheckRejection,
   runProductionProClubBoundarySmoke,
+  validateApprovedProductionSmokeTargets,
   validateProductionOrigin,
   validateSmokeEnvironment,
 } from "../scripts/smokeProductionProClubBoundary.mjs";
+
+const targetConfig = JSON.parse(
+  readFileSync(PRODUCTION_SMOKE_TARGET_CONFIG_PATH, "utf8"),
+);
+const targets = validateApprovedProductionSmokeTargets(targetConfig);
+const approvedOrigins = targets.allowedOrigins;
 
 function appCheckRequiredResponse({
   status = 401,
@@ -33,41 +45,122 @@ function appCheckRequiredResponse({
   };
 }
 
-test("production origin accepts canonical HTTPS origin only", () => {
+test("reviewed production smoke target config is bound to FutVerse production project", () => {
+  assert.equal(targets.projectId, EXPECTED_PRODUCTION_PROJECT_ID);
+  assert.deepEqual(approvedOrigins, REQUIRED_DEFAULT_PRODUCTION_ORIGINS);
+});
+
+test("target config rejects project drift, removed defaults, duplicates, and invalid origins", () => {
+  assert.throws(
+    () =>
+      validateApprovedProductionSmokeTargets({
+        projectId: "wrong-project",
+        allowedOrigins: REQUIRED_DEFAULT_PRODUCTION_ORIGINS,
+      }),
+    /projectId/,
+  );
+  assert.throws(
+    () =>
+      validateApprovedProductionSmokeTargets({
+        projectId: EXPECTED_PRODUCTION_PROJECT_ID,
+        allowedOrigins: [REQUIRED_DEFAULT_PRODUCTION_ORIGINS[0]],
+      }),
+    /retain required origin/,
+  );
+  assert.throws(
+    () =>
+      validateApprovedProductionSmokeTargets({
+        projectId: EXPECTED_PRODUCTION_PROJECT_ID,
+        allowedOrigins: [
+          ...REQUIRED_DEFAULT_PRODUCTION_ORIGINS,
+          REQUIRED_DEFAULT_PRODUCTION_ORIGINS[0],
+        ],
+      }),
+    /duplicates/,
+  );
+  assert.throws(
+    () =>
+      validateApprovedProductionSmokeTargets({
+        projectId: EXPECTED_PRODUCTION_PROJECT_ID,
+        allowedOrigins: [
+          ...REQUIRED_DEFAULT_PRODUCTION_ORIGINS,
+          "http://not-production.example",
+        ],
+      }),
+    /HTTPS/,
+  );
+});
+
+test("production origin accepts canonical HTTPS origin shape and rejects unsafe forms", () => {
   assert.equal(
-    validateProductionOrigin("https://futverse.example"),
-    "https://futverse.example",
+    validateProductionOrigin("https://futverse-d7872.web.app"),
+    "https://futverse-d7872.web.app",
   );
 
   for (const value of [
-    "http://futverse.example",
-    "https://futverse.example/path",
-    "https://futverse.example?x=1",
-    "https://user:pass@futverse.example",
+    "http://futverse-d7872.web.app",
+    "https://futverse-d7872.web.app/path",
+    "https://futverse-d7872.web.app?x=1",
+    "https://user:pass@futverse-d7872.web.app",
     "https://localhost",
     "https://127.0.0.1",
     "https://[::1]",
-    " https://futverse.example ",
+    " https://futverse-d7872.web.app ",
   ]) {
     assert.throws(() => validateProductionOrigin(value), /FUTVERSE_PRODUCTION_ORIGIN/);
   }
 });
 
-test("smoke environment requires explicit read-only acknowledgement and rejects credentials", () => {
+test("production origin must be in reviewed target allowlist", () => {
+  assert.equal(
+    assertApprovedProductionOrigin(
+      REQUIRED_DEFAULT_PRODUCTION_ORIGINS[0],
+      approvedOrigins,
+    ),
+    REQUIRED_DEFAULT_PRODUCTION_ORIGINS[0],
+  );
+  assert.throws(
+    () =>
+      assertApprovedProductionOrigin(
+        "https://attacker-or-wrong-environment.example",
+        approvedOrigins,
+      ),
+    /reviewed production smoke target allowlist/,
+  );
+});
+
+test("smoke environment requires acknowledgement, reviewed origin, and no credentials", () => {
   assert.deepEqual(
-    validateSmokeEnvironment({
-      FUTVERSE_PRODUCTION_ORIGIN: "https://futverse.example",
-      FUTVERSE_PRODUCTION_SMOKE_ACK: PRODUCTION_SMOKE_ACK,
-    }),
-    { origin: "https://futverse.example" },
+    validateSmokeEnvironment(
+      {
+        FUTVERSE_PRODUCTION_ORIGIN: REQUIRED_DEFAULT_PRODUCTION_ORIGINS[0],
+        FUTVERSE_PRODUCTION_SMOKE_ACK: PRODUCTION_SMOKE_ACK,
+      },
+      approvedOrigins,
+    ),
+    { origin: REQUIRED_DEFAULT_PRODUCTION_ORIGINS[0] },
   );
 
   assert.throws(
     () =>
-      validateSmokeEnvironment({
-        FUTVERSE_PRODUCTION_ORIGIN: "https://futverse.example",
-      }),
+      validateSmokeEnvironment(
+        {
+          FUTVERSE_PRODUCTION_ORIGIN: REQUIRED_DEFAULT_PRODUCTION_ORIGINS[0],
+        },
+        approvedOrigins,
+      ),
     /FUTVERSE_PRODUCTION_SMOKE_ACK/,
+  );
+  assert.throws(
+    () =>
+      validateSmokeEnvironment(
+        {
+          FUTVERSE_PRODUCTION_ORIGIN: "https://wrong-target.example",
+          FUTVERSE_PRODUCTION_SMOKE_ACK: PRODUCTION_SMOKE_ACK,
+        },
+        approvedOrigins,
+      ),
+    /reviewed production smoke target allowlist/,
   );
 
   for (const name of [
@@ -76,11 +169,14 @@ test("smoke environment requires explicit read-only acknowledgement and rejects 
   ]) {
     assert.throws(
       () =>
-        validateSmokeEnvironment({
-          FUTVERSE_PRODUCTION_ORIGIN: "https://futverse.example",
-          FUTVERSE_PRODUCTION_SMOKE_ACK: PRODUCTION_SMOKE_ACK,
-          [name]: "must-not-be-used",
-        }),
+        validateSmokeEnvironment(
+          {
+            FUTVERSE_PRODUCTION_ORIGIN: REQUIRED_DEFAULT_PRODUCTION_ORIGINS[0],
+            FUTVERSE_PRODUCTION_SMOKE_ACK: PRODUCTION_SMOKE_ACK,
+            [name]: "must-not-be-used",
+          },
+          approvedOrigins,
+        ),
       new RegExp(name),
     );
   }
@@ -120,7 +216,7 @@ test("boundary response must be privacy-safe App Check 401 JSON", async () => {
   );
 });
 
-test("smoke runner calls both protected paths without Authorization or App Check headers", async () => {
+test("smoke runner calls both protected paths only on an approved production origin", async () => {
   const calls = [];
   const fetchImpl = async (url, options) => {
     calls.push({ url, options });
@@ -128,11 +224,16 @@ test("smoke runner calls both protected paths without Authorization or App Check
   };
 
   const results = await runProductionProClubBoundarySmoke({
-    origin: "https://futverse.example",
+    origin: REQUIRED_DEFAULT_PRODUCTION_ORIGINS[0],
+    allowedOrigins: approvedOrigins,
     fetchImpl,
   });
 
   assert.equal(results.length, PROTECTED_PRO_CLUB_PATHS.length);
+  assert.deepEqual(
+    calls.map((call) => new URL(call.url).origin),
+    PROTECTED_PRO_CLUB_PATHS.map(() => REQUIRED_DEFAULT_PRODUCTION_ORIGINS[0]),
+  );
   assert.deepEqual(
     calls.map((call) => new URL(call.url).pathname),
     PROTECTED_PRO_CLUB_PATHS,
@@ -145,4 +246,21 @@ test("smoke runner calls both protected paths without Authorization or App Check
     assert.equal(headerNames.includes("authorization"), false);
     assert.equal(headerNames.includes("x-firebase-appcheck"), false);
   }
+});
+
+test("smoke runner blocks an unapproved origin before fetch", async () => {
+  let fetchCalled = false;
+  await assert.rejects(
+    () =>
+      runProductionProClubBoundarySmoke({
+        origin: "https://wrong-target.example",
+        allowedOrigins: approvedOrigins,
+        fetchImpl: async () => {
+          fetchCalled = true;
+          return appCheckRequiredResponse();
+        },
+      }),
+    /reviewed production smoke target allowlist/,
+  );
+  assert.equal(fetchCalled, false);
 });

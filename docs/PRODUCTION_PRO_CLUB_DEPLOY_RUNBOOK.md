@@ -8,6 +8,14 @@ It does **not** authorize a deployment by itself. The real production Firebase A
 ## Current production source baseline
 Start from an exact, clean `main` commit selected for deployment. Record the exact SHA before any environment configuration or deploy command. If `main` moves after review, stop and re-run the deploy-candidate gate on the new exact SHA.
 
+## Reviewed production smoke targets
+The credential-free smoke harness accepts only origins committed in `config/productionProClubSmokeTargets.json`. The config is pinned to Firebase project `futverse-d7872` and must retain the project-default Hosting origins:
+
+- `https://futverse-d7872.web.app`
+- `https://futverse-d7872.firebaseapp.com`
+
+Do not point the smoke harness at an arbitrary HTTPS URL. If FutVerse adopts a custom production domain, add that exact origin to the target config through a reviewed PR before using it as production smoke evidence. Operator environment variables cannot extend the allowlist.
+
 ## Phase A — Read-only deploy-candidate gate
 From the exact deploy-candidate checkout:
 
@@ -17,11 +25,12 @@ From the exact deploy-candidate checkout:
 4. Ensure `VITE_APP_CHECK_DEBUG_TOKEN` is absent/empty.
 5. `npm run test:production-deploy-readiness`
 6. `npm run verify:production-deploy-readiness`
-7. `npm run lint`
-8. `npm --prefix functions run build`
-9. `npm run build`
-10. `git diff --check`
-11. confirm the working tree is clean.
+7. `npm run test:production-pro-club-boundary-smoke`
+8. `npm run lint`
+9. `npm --prefix functions run build`
+10. `npm run build`
+11. `git diff --check`
+12. confirm the working tree is clean.
 
 `verify:production-deploy-readiness` must preserve three ordered layers:
 
@@ -38,6 +47,7 @@ Before deployment, verify outside Git that:
 - the configured site key is the real production key for the approved web origin;
 - no App Check debug token is present in the production build environment;
 - the Firebase project is exactly `futverse-d7872`;
+- the intended smoke/deploy origin is present in `config/productionProClubSmokeTargets.json`;
 - the operator identity and Firebase CLI context are intentionally targeting production.
 
 Do not paste the real site key, Firebase ID tokens, App Check tokens, service-account keys, or other credentials into PRs, issues, logs, screenshots, or this runbook.
@@ -50,10 +60,12 @@ After authorization, use only the approved Firebase deployment scope and re-chec
 ## Phase D — Immediate credential-free boundary smoke
 After a production deployment, first run the non-destructive public-boundary smoke harness. It intentionally sends **no Firebase ID token and no App Check token** and therefore cannot create a Pro Club. Even if the App Check layer were unexpectedly absent, the provisioning service verifies authorization before request validation or Firestore writes.
 
-PowerShell example:
+Choose exactly one origin from `config/productionProClubSmokeTargets.json`.
+
+PowerShell example using the project-default Hosting origin:
 
 ```powershell
-$env:FUTVERSE_PRODUCTION_ORIGIN = "https://<approved-production-origin>"
+$env:FUTVERSE_PRODUCTION_ORIGIN = "https://futverse-d7872.web.app"
 $env:FUTVERSE_PRODUCTION_SMOKE_ACK = "READ_ONLY_NO_CREDENTIALS"
 Remove-Item Env:FUTVERSE_PRODUCTION_ID_TOKEN -ErrorAction SilentlyContinue
 Remove-Item Env:FUTVERSE_PRODUCTION_APP_CHECK_TOKEN -ErrorAction SilentlyContinue
@@ -74,7 +86,7 @@ The harness checks:
 - `/api/pro-club/provision-v1`
 - `/api/pro-club/verify-audit-v1`
 
-A PASS proves only the public fail-closed App Check boundary and Hosting routing. It does **not** prove successful authenticated SuperAdmin provisioning or authenticated audit verification.
+A PASS proves only the public fail-closed App Check boundary and Hosting routing for the reviewed production origin. It does **not** prove successful authenticated SuperAdmin provisioning or authenticated audit verification.
 
 ## Phase E — Authenticated production smoke (separate controlled action)
 Only after the credential-free smoke passes should a separately authorized authenticated smoke be performed. That later check must use a known ACTIVE SUPERADMIN, a valid App Check token from the approved production app, deterministic test identities, and an explicitly reviewed non-destructive/idempotent plan.
@@ -88,9 +100,9 @@ Stop immediately if any of the following occurs:
 - readiness gate fails;
 - real production site key is missing, placeholder-like, padded, or paired with a debug token;
 - Firebase project is not exactly `futverse-d7872`;
-- production origin is not the approved HTTPS origin;
+- production origin is absent from the reviewed production smoke target config;
 - credential-free smoke returns anything other than the privacy-safe App Check `401` contract;
 - authenticated verification would require exposing credentials or bypassing the normal SuperAdmin control plane.
 
 ## Current status
-Source readiness is merged. Production deployment remains blocked until the external App Check production configuration is verified and the owner explicitly authorizes the exact deployment action.
+Source readiness and credential-free smoke tooling are merged. Production deployment remains blocked until the external App Check production configuration is verified and the owner explicitly authorizes the exact deployment action.
