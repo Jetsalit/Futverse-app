@@ -32,6 +32,20 @@ function validInput() {
   };
 }
 
+function replaceRequired(
+  source: string,
+  pattern: RegExp,
+  replacement: string,
+): string {
+  const mutated = source.replace(pattern, replacement);
+  assert.notEqual(
+    mutated,
+    source,
+    "Readiness negative-test mutation did not match the protected source shape.",
+  );
+  return mutated;
+}
+
 function expectBlocked(
   mutate: (input: ReturnType<typeof validInput>) => void,
   code: string,
@@ -134,18 +148,20 @@ test("production readiness binds staff candidate App Check enforcement to the on
 
 test("production readiness rejects protected function region drift", () => {
   expectBlocked((input) => {
-    input.functionsIndexSource = input.functionsIndexSource.replace(
-      'export const provisionProClubV1 = onRequest(\n  {\n    region: "asia-southeast1",',
-      'export const provisionProClubV1 = onRequest(\n  {\n    region: "us-central1",',
+    input.functionsIndexSource = replaceRequired(
+      input.functionsIndexSource,
+      /(export const provisionProClubV1 = onRequest\(\r?\n\s*\{\r?\n\s*region:\s*)"asia-southeast1"/,
+      '$1"us-central1"',
     );
   }, "FUNCTION_EXPORT_REGION_MISMATCH");
 });
 
 test("production readiness rejects spreads in protected function options", () => {
   expectBlocked((input) => {
-    input.functionsIndexSource = input.functionsIndexSource.replace(
-      'export const resolveProClubStaffCandidateV1 = onCall(\n  {\n    region: "asia-southeast1",',
-      'export const resolveProClubStaffCandidateV1 = onCall(\n  {\n    region: "asia-southeast1",\n    ...sharedOptions,',
+    input.functionsIndexSource = replaceRequired(
+      input.functionsIndexSource,
+      /(export const resolveProClubStaffCandidateV1 = onCall\(\r?\n\s*\{\r?\n\s*region:\s*"asia-southeast1",)(\r?\n)/,
+      "$1$2    ...sharedOptions,$2",
     );
   }, "FUNCTION_OPTIONS_SPREAD_FORBIDDEN");
 });
