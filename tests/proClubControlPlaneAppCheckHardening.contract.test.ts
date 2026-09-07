@@ -6,6 +6,7 @@ const clientSource = fs.readFileSync(
   "src/lib/proClubProvisioningControlPlaneApi.ts",
   "utf8",
 );
+const firebaseSource = fs.readFileSync("src/lib/firebase.ts", "utf8");
 const indexSource = fs.readFileSync("functions/src/index.ts", "utf8");
 const gateSource = fs.readFileSync(
   "functions/src/lib/privilegedHttpAppCheckGate.ts",
@@ -26,6 +27,12 @@ test("privileged Pro Club client requires Firebase App Check token and sends sta
   assert.match(clientSource, /"X-Firebase-AppCheck": appCheckToken/);
   assert.match(clientSource, /ERROR_APP_CHECK_NOT_CONFIGURED/);
   assert.equal(clientSource.includes("cloudfunctions.net"), false);
+});
+
+test("production web App Check uses reCAPTCHA Enterprise and cannot regress to deprecated v3 provider", () => {
+  assert.match(firebaseSource, /ReCaptchaEnterpriseProvider/);
+  assert.match(firebaseSource, /new ReCaptchaEnterpriseProvider\(import\.meta\.env\.VITE_RECAPTCHA_SITE_KEY\)/);
+  assert.equal(firebaseSource.includes("ReCaptchaV3Provider"), false);
 });
 
 test("both privileged HTTP functions gate App Check before business handlers", () => {
@@ -67,6 +74,7 @@ test("Firebase predeploy guard runs before Hosting build and Functions build", (
 
 test("environment template documents App Check without embedding a production key", () => {
   assert.match(envExample, /VITE_RECAPTCHA_SITE_KEY=""/);
+  assert.match(envExample, /reCAPTCHA Enterprise/i);
   assert.match(envExample, /VITE_APP_CHECK_DEBUG_TOKEN=""/);
   assert.equal(/VITE_RECAPTCHA_SITE_KEY="[^\"]+"/.test(envExample), false);
 });
