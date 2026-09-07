@@ -1,0 +1,46 @@
+name: Verify PR90 Production Readiness EOL
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install root dependencies
+        run: npm ci
+      - name: Install Functions dependencies
+        run: npm --prefix functions ci
+      - name: Exact product-head provenance
+        run: |
+          git merge-base --is-ancestor d0049e35e4dc1b2030b48268843c79b453ec612e HEAD
+          test "$(git diff --name-only d0049e35e4dc1b2030b48268843c79b453ec612e..HEAD)" = ".github/workflows/verify-pr90-production-readiness-eol.yml"
+      - name: Production readiness tests
+        run: npm run test:production-deploy-readiness
+      - name: TypeScript
+        run: npm run lint
+      - name: Functions build
+        run: npm --prefix functions run build
+      - name: Production build with shaped Enterprise key
+        env:
+          VITE_RECAPTCHA_SITE_KEY: 6Lc_enterprise-production-shaped-site-key
+          VITE_APP_CHECK_DEBUG_TOKEN: ''
+        run: npm run build
+      - name: Full readiness with shaped Enterprise key
+        env:
+          VITE_RECAPTCHA_SITE_KEY: 6Lc_enterprise-production-shaped-site-key
+          VITE_APP_CHECK_DEBUG_TOKEN: ''
+        run: npm run verify:production-deploy-readiness
+      - name: Diff check and clean tree
+        run: |
+          git diff --check d0049e35e4dc1b2030b48268843c79b453ec612e..HEAD
+          test -z "$(git status --porcelain=v1)"
