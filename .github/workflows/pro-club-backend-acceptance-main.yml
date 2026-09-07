@@ -1,0 +1,95 @@
+name: Pro Club Backend Acceptance — Main
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-acceptance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Functions dependencies
+        run: npm --prefix functions ci
+
+      - name: Verify exact main provenance
+        run: |
+          test "$(git rev-parse HEAD^)" = "21f7da8f273d778ffc81d2d267d722f4f01530e5"
+          test "$(git rev-parse origin/main)" = "21f7da8f273d778ffc81d2d267d722f4f01530e5"
+
+      - name: Provisioning backend unit and contract acceptance
+        run: >-
+          node --import tsx --test
+          tests/proClubProvisioningV1Contract.test.ts
+          tests/proClubProvisioningService.unit.test.ts
+          tests/functions.proClubProvisioning.httpHandler.unit.test.ts
+          tests/proClubProvisioningControlPlaneApi.unit.test.ts
+          tests/proClubProvisioningControlPlaneIntegration.contract.test.ts
+
+      - name: Audit verification backend acceptance
+        run: >-
+          node --import tsx --test
+          tests/proClubProvisioningAuditVerificationCore.unit.test.ts
+          tests/proClubProvisioningAuditVerificationService.unit.test.ts
+          tests/proClubProvisioningAuditVerificationV1Contract.test.ts
+          tests/proClubProvisioningAuditVerificationImplementation.contract.test.ts
+          tests/functions.proClubProvisioningAuditVerification.httpHandler.unit.test.ts
+
+      - name: Staff candidate backend acceptance
+        run: >-
+          node --import tsx --test
+          tests/proClubStaffCandidateResolutionCore.unit.test.ts
+          tests/proClubStaffCandidateResolutionRateLimiter.unit.test.ts
+          tests/proClubStaffCandidateResolutionService.unit.test.ts
+          tests/functions.proClubStaffCandidateResolutionCallable.unit.test.ts
+          tests/proClubStaffRequesterAccountStatus.unit.test.ts
+
+      - name: Staff onboarding business-contract acceptance
+        run: >-
+          node --import tsx --test
+          tests/proClubStaffOnboardingV1Contract.test.ts
+          tests/proClubOnboardingRuntime.test.ts
+          tests/proClubStaffInvitationRuntime.test.ts
+          tests/proClubInviteClaimMembershipRulesDataContractV1.test.ts
+          tests/proClubOnboardingApprovalProofContractV1.test.ts
+
+      - name: App Check and privileged boundary acceptance
+        run: >-
+          node --import tsx --test
+          tests/proClubControlPlaneAppCheckHardening.contract.test.ts
+          tests/serverAppCheckTokenVerifier.unit.test.ts
+          tests/privilegedHttpAppCheckGate.unit.test.ts
+
+      - name: Firestore-backed Pro Club acceptance on emulator only
+        run: >-
+          npx firebase emulators:exec
+          --project demo-futverse-backend-acceptance
+          --only firestore
+          "node --import tsx --test
+          tests/firestore.pro-club.rules.test.ts
+          tests/firestore.pro-club-onboarding.rules.test.ts
+          tests/firestore.pro-club-onboarding-read.rules.test.ts
+          tests/firestore.pro-club-claimant-identity.rules.test.ts
+          tests/firestore.pro-club-provisioning.service.test.ts
+          tests/firestore.pro-club-provisioning-audit-verification.service.test.ts"
+
+      - name: Functions build
+        run: npm --prefix functions run build
+
+      - name: Root TypeScript gate
+        run: npm run lint
+
+      - name: Verify clean repository
+        run: test -z "$(git status --porcelain=v1)"
