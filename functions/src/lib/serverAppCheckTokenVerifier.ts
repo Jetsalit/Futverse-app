@@ -13,6 +13,40 @@ export class AppCheckVerificationError extends Error {
   }
 }
 
+function getErrorCode(error: unknown): string {
+  if (!error || typeof error !== "object") return "";
+  const value = (error as { code?: unknown }).code;
+  return typeof value === "string" ? value : "";
+}
+
+function getErrorMessage(error: unknown): string {
+  if (!error || typeof error !== "object") return "";
+  const value = (error as { message?: unknown }).message;
+  return typeof value === "string" ? value : "";
+}
+
+export function isKnownInvalidAppCheckTokenError(error: unknown): boolean {
+  const code = getErrorCode(error).toLowerCase();
+  const message = getErrorMessage(error);
+
+  if (
+    code.endsWith("app-check-token-expired") ||
+    code.endsWith("app_check_token_expired")
+  ) {
+    return true;
+  }
+
+  if (!code.endsWith("invalid-argument") && !code.endsWith("invalid_argument")) {
+    return false;
+  }
+
+  return (
+    /^App check token must be a non-null string\./i.test(message) ||
+    /^Decoding App Check token failed\./i.test(message) ||
+    /^The provided App Check token has /i.test(message)
+  );
+}
+
 export function createServerAppCheckTokenVerifier(
   appCheck: MinimalAdminAppCheck,
 ): ServerAppCheckTokenVerifier {
@@ -29,8 +63,11 @@ export function createServerAppCheckTokenVerifier(
       let decoded: { appId: string };
       try {
         decoded = await appCheck.verifyToken(appCheckHeader);
-      } catch {
-        throw new AppCheckVerificationError("App Check token verification failed");
+      } catch (error) {
+        if (isKnownInvalidAppCheckTokenError(error)) {
+          throw new AppCheckVerificationError("App Check token verification failed");
+        }
+        throw error;
       }
 
       if (!decoded || typeof decoded.appId !== "string" || decoded.appId.trim().length === 0) {
