@@ -1,9 +1,17 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import {
   ProductionDeployReadinessError,
+  resolveViteProductionEnvironment,
   validateProductionDeployReadiness,
 } from "../scripts/verifyProductionDeployReadiness.ts";
 
@@ -13,10 +21,11 @@ const webFirebaseConfig = JSON.parse(
 ) as unknown;
 const firebaseJson = JSON.parse(readFileSync("firebase.json", "utf8")) as unknown;
 const functionsIndexSource = readFileSync("functions/src/index.ts", "utf8");
+const SYNTHETIC_VALID_SITE_KEY = "AbCdEfGhIjKlMnOpQrStUvWxYz_1234567890abcd";
 
 function validInput() {
   const env: Record<string, string | undefined> = {
-    VITE_RECAPTCHA_SITE_KEY: "unit-test-site-key-only",
+    VITE_RECAPTCHA_SITE_KEY: SYNTHETIC_VALID_SITE_KEY,
   };
 
   return {
@@ -51,8 +60,48 @@ test("production readiness passes with complete synthetic environment and reposi
     "firebase-project-identity",
     "functions-runtime-nodejs22",
     "pro-club-hosting-rewrites",
+    "function-export-regions",
     "staff-candidate-app-check-enforced",
   ]);
+});
+
+test("production readiness resolves debug token from Vite production env files", () => {
+  const dir = mkdtempSync(join(tmpdir(), "futverse-readiness-"));
+  try {
+    writeFileSync(
+      join(dir, ".env.production"),
+      `VITE_RECAPTCHA_SITE_KEY=${SYNTHETIC_VALID_SITE_KEY}\nVITE_APP_CHECK_DEBUG_TOKEN=must-be-detected\n`,
+      "utf8",
+    );
+    const env = resolveViteProductionEnvironment(dir, {});
+    assert.equal(env.VITE_RECAPTCHA_SITE_KEY, SYNTHETIC_VALID_SITE_KEY);
+    assert.equal(env.VITE_APP_CHECK_DEBUG_TOKEN, "must-be-detected");
+    assert.throws(
+      () => validateProductionDeployReadiness({ ...validInput(), env }),
+      (error: unknown) =>
+        error instanceof ProductionDeployReadinessError &&
+        error.code === "APP_CHECK_DEBUG_TOKEN_FORBIDDEN",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("process environment overrides Vite production env files", () => {
+  const dir = mkdtempSync(join(tmpdir(), "futverse-readiness-"));
+  try {
+    writeFileSync(
+      join(dir, ".env.production"),
+      "VITE_RECAPTCHA_SITE_KEY=placeholder-from-file\n",
+      "utf8",
+    );
+    const env = resolveViteProductionEnvironment(dir, {
+      VITE_RECAPTCHA_SITE_KEY: SYNTHETIC_VALID_SITE_KEY,
+    });
+    assert.equal(env.VITE_RECAPTCHA_SITE_KEY, SYNTHETIC_VALID_SITE_KEY);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("production readiness fails closed when App Check site key is missing", () => {
@@ -64,13 +113,21 @@ test("production readiness fails closed when App Check site key is missing", () 
   );
 });
 
-test("production readiness rejects placeholder App Check site key", () => {
-  expectBlocked(
-    (input) => {
-      input.env.VITE_RECAPTCHA_SITE_KEY = "CHANGE_ME_RECAPTCHA_SITE_KEY";
-    },
-    "APP_CHECK_SITE_KEY_PLACEHOLDER",
-  );
+test("production readiness rejects common App Check placeholders", () => {
+  for (const placeholder of [
+    "TODO",
+    "dummy",
+    "REPLACE_ME",
+    "unit-test-site-key-only",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaPLACEHOLDER",
+  ]) {
+    expectBlocked(
+      (input) => {
+        input.env.VITE_RECAPTCHA_SITE_KEY = placeholder;
+      },
+      "APP_CHECK_SITE_KEY_PLACEHOLDER",
+    );
+  }
 });
 
 test("production readiness forbids App Check debug token in production", () => {
@@ -126,14 +183,38 @@ test("production readiness fails when Pro Club function rewrites move after SPA 
   );
 });
 
-test("production readiness fails when staff candidate callable no longer enforces App Check", () => {
+test("production readiness binds App Check enforcement to the callable options object", () => {
   expectBlocked(
     (input) => {
       input.functionsIndexSource = input.functionsIndexSource.replace(
-        "enforceAppCheck: true",
-        "enforceAppCheck: false",
+        "enforceAppCheck: true,",
+        "enforceAppCheck: false, // enforceAppCheck: true",
       );
     },
     "STAFF_CANDIDATE_APP_CHECK_NOT_ENFORCED",
+  );
+});
+
+test("production readiness fails when provisioning function region drifts from Hosting rewrite", () => {
+  expectBlocked(
+    (input) => {
+      input.functionsIndexSource = input.functionsIndexSource.replace(
+        'export const provisionProClubV1 = onRequest(\n  {\n    region: "asia-southeast1",',
+        'export const provisionProClubV1 = onRequest(\n  {\n    region: "us-central1",',
+      );
+    },
+    "FUNCTION_EXPORT_REGION_MISMATCH",
+  );
+});
+
+test("production readiness fails when audit verification function region drifts from Hosting rewrite", () => {
+  expectBlocked(
+    (input) => {
+      input.functionsIndexSource = input.functionsIndexSource.replace(
+        'export const verifyProClubProvisioningAuditV1 = onRequest(\n  {\n    region: "asia-southeast1",',
+        'export const verifyProClubProvisioningAuditV1 = onRequest(\n  {\n    region: "europe-west1",',
+      );
+    },
+    "FUNCTION_EXPORT_REGION_MISMATCH",
   );
 });
