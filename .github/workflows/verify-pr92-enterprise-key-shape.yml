@@ -1,0 +1,50 @@
+name: Verify PR92 Enterprise Key Shape
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install root dependencies
+        run: npm ci
+      - name: Install Functions dependencies
+        run: npm --prefix functions ci
+      - name: Exact product-head provenance
+        run: |
+          git merge-base --is-ancestor 6c5cdf2667590d47d5fbdde5c6549763571733b0 HEAD
+          test "$(git diff --name-only 6c5cdf2667590d47d5fbdde5c6549763571733b0..HEAD)" = ".github/workflows/verify-pr92-enterprise-key-shape.yml"
+      - name: App Check environment guard tests
+        run: node --import tsx --test tests/productionAppCheckGuard.unit.test.ts
+      - name: Production readiness tests
+        run: npm run test:production-deploy-readiness
+      - name: App Check hardening contract
+        run: node --import tsx --test tests/proClubControlPlaneAppCheckHardening.contract.test.ts
+      - name: TypeScript
+        run: npm run lint
+      - name: Functions build
+        run: npm --prefix functions run build
+      - name: Production Vite build with shaped Enterprise Key ID
+        env:
+          VITE_RECAPTCHA_SITE_KEY: AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AB
+          VITE_APP_CHECK_DEBUG_TOKEN: ''
+        run: npm run build
+      - name: Full production readiness with shaped Enterprise Key ID
+        env:
+          VITE_RECAPTCHA_SITE_KEY: AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AB
+          VITE_APP_CHECK_DEBUG_TOKEN: ''
+        run: npm run verify:production-deploy-readiness
+      - name: Diff check and clean tree
+        run: |
+          git diff --check 6c5cdf2667590d47d5fbdde5c6549763571733b0..HEAD
+          test -z "$(git status --porcelain=v1)"
