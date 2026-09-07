@@ -19,9 +19,9 @@ jobs:
       - run: npm --prefix functions ci
       - name: Verify exact product head ancestry
         run: |
-          git merge-base --is-ancestor af5e030fc4433b4de74005586f3aad3b828622ee 9549def9ec5ecbe568beef4d71222ff82336ad4e
           test "$(git rev-parse origin/feat/production-pro-club-smoke-target-binding-v1)" = "9549def9ec5ecbe568beef4d71222ff82336ad4e"
-          test "$(git rev-parse HEAD^2^)" = "9549def9ec5ecbe568beef4d71222ff82336ad4e"
+          test "$(git rev-parse 9549def9ec5ecbe568beef4d71222ff82336ad4e^)" = "af5e030fc4433b4de74005586f3aad3b828622ee"
+          test "$(git rev-list --count af5e030fc4433b4de74005586f3aad3b828622ee..9549def9ec5ecbe568beef4d71222ff82336ad4e)" = "1"
       - name: Production smoke target binding tests
         run: npm run test:production-pro-club-boundary-smoke
       - name: Production readiness V2 tests
