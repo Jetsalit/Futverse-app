@@ -1,0 +1,79 @@
+name: PR68 Production Readiness Verification V3
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/pr68-production-readiness-v3.yml"
+
+jobs:
+  exact-head-readiness:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout verification branch
+        uses: actions/checkout@v4
+        with:
+          ref: verify/pr68-production-readiness-v3
+          fetch-depth: 0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Functions dependencies
+        run: npm --prefix functions ci
+
+      - name: Verify exact PR68 product-head ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          product_head="7c7efef1d971e3d45706471cd5653af7e12e4cde"
+          git merge-base --is-ancestor "$product_head" HEAD
+          changed_after_product="$(git diff --name-only "$product_head"..HEAD)"
+          test "$changed_after_product" = ".github/workflows/pr68-production-readiness-v3.yml"
+          test "$(git status --porcelain=v1)" = ""
+
+      - name: Run production readiness unit tests
+        run: npm run test:production-deploy-readiness
+
+      - name: Verify fail-closed without production App Check key
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          output="$(env -u VITE_RECAPTCHA_SITE_KEY -u VITE_APP_CHECK_DEBUG_TOKEN npm run verify:production-deploy-readiness 2>&1)"
+          status=$?
+          set -e
+          test "$status" -ne 0
+          printf '%s\n' "$output" | grep -F "PRODUCTION_DEPLOY_READINESS=BLOCKED"
+          printf '%s\n' "$output" | grep -F "CODE=APP_CHECK_SITE_KEY_MISSING"
+
+      - name: Verify synthetic process-only App Check key passes
+        shell: bash
+        run: |
+          set -euo pipefail
+          env -u VITE_APP_CHECK_DEBUG_TOKEN VITE_RECAPTCHA_SITE_KEY=AbCdEfGhIjKlMnOpQrStUvWxYz_1234567890abcd npm run verify:production-deploy-readiness
+
+      - name: Root TypeScript gate
+        run: npm run lint
+
+      - name: Production bundle gate
+        run: npm run build
+
+      - name: Functions build
+        run: npm --prefix functions run build
+
+      - name: Verify exact product diff
+        run: git diff --check b1196ef48f58ace0c74f1699a9cc4342aa03faec..7c7efef1d971e3d45706471cd5653af7e12e4cde
+
+      - name: Verify runner repository remained clean
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git status --porcelain=v1)" = ""
