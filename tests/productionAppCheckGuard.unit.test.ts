@@ -39,8 +39,12 @@ test("production App Check guard blocks when site key is missing", () => {
   assert.match(result.stderr, /PRODUCTION_APP_CHECK_GATE=BLOCKED/);
 });
 
-test("production App Check guard blocks common placeholder site keys", () => {
-  for (const value of ["MY_RECAPTCHA_SITE_KEY", "YOUR_RECAPTCHA_SITE_KEY"]) {
+test("production App Check guard blocks common and prefixed placeholder site keys", () => {
+  for (const value of [
+    "MY_RECAPTCHA_SITE_KEY",
+    "YOUR_RECAPTCHA_SITE_KEY",
+    "6LYOUR_RECAPTCHA_SITE_KEY",
+  ]) {
     const result = runGuard({ VITE_RECAPTCHA_SITE_KEY: value });
     assert.equal(result.status, 1, value);
     assert.match(result.stderr, /BLOCKED/);
@@ -60,6 +64,14 @@ test("production App Check guard blocks unresolved Vite dotenv interpolation", (
   );
   assert.equal(result.status, 1);
   assert.match(result.stderr, /BLOCKED/);
+});
+
+test("production App Check guard blocks site keys with surrounding whitespace", () => {
+  const result = runGuard({
+    VITE_RECAPTCHA_SITE_KEY: " 6Lc_real-looking-public-site-key ",
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /already be trimmed/i);
 });
 
 test("production App Check guard blocks debug token in production", () => {
