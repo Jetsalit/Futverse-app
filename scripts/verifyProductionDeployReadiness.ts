@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import * as ts from "typescript";
+import { loadEnv } from "vite";
 
 export const EXPECTED_PRODUCTION_PROJECT_ID = "futverse-d7872";
 export const EXPECTED_FUNCTION_REGION = "asia-southeast1";
@@ -15,6 +17,16 @@ export const EXPECTED_PRO_CLUB_HOSTING_REWRITES = [
   },
 ] as const;
 
+const EXPECTED_FUNCTION_EXPORTS = [
+  { exportName: "provisionProClubV1", callName: "onRequest" },
+  { exportName: "verifyProClubProvisioningAuditV1", callName: "onRequest" },
+  { exportName: "resolveProClubStaffCandidateV1", callName: "onCall" },
+] as const;
+
+const PRODUCTION_SITE_KEY_PATTERN = /^[A-Za-z0-9_-]{30,100}$/;
+const SITE_KEY_PLACEHOLDER_PATTERN =
+  /(PLACEHOLDER|CHANGE[_-]?ME|REPLACE[_-]?ME|EXAMPLE|DUMMY|FAKE|TODO|YOUR[_-]?|MY[_-]?|UNIT[_-]?TEST|TEST[_-]?SITE)/i;
+
 export type ProductionDeployReadinessErrorCode =
   | "APP_CHECK_SITE_KEY_MISSING"
   | "APP_CHECK_SITE_KEY_PLACEHOLDER"
@@ -22,6 +34,7 @@ export type ProductionDeployReadinessErrorCode =
   | "PROJECT_ALIAS_MISMATCH"
   | "WEB_CONFIG_PROJECT_MISMATCH"
   | "FUNCTIONS_RUNTIME_MISMATCH"
+  | "FUNCTION_EXPORT_REGION_MISMATCH"
   | "HOSTING_REWRITE_MISSING"
   | "HOSTING_REWRITE_TARGET_MISMATCH"
   | "HOSTING_REWRITE_ORDER_INVALID"
@@ -73,6 +86,17 @@ function requireRecord(value: unknown, label: string): Record<string, unknown> {
   return record;
 }
 
+export function resolveViteProductionEnvironment(
+  repoRoot: string,
+  processEnvironment: NodeJS.ProcessEnv,
+): Record<string, string | undefined> {
+  const fileEnvironment = loadEnv("production", repoRoot, "");
+  return {
+    ...fileEnvironment,
+    ...processEnvironment,
+  };
+}
+
 function assertAppCheckEnvironment(env: Record<string, string | undefined>): void {
   const siteKey = env.VITE_RECAPTCHA_SITE_KEY?.trim();
   if (!siteKey) {
@@ -82,22 +106,15 @@ function assertAppCheckEnvironment(env: Record<string, string | undefined>): voi
     );
   }
 
-  const upper = siteKey.toUpperCase();
-  const placeholderMarkers = [
-    "MY_RECAPTCHA",
-    "YOUR_RECAPTCHA",
-    "CHANGE_ME",
-    "PLACEHOLDER",
-    "EXAMPLE_SITE_KEY",
-  ];
   if (
+    !PRODUCTION_SITE_KEY_PATTERN.test(siteKey) ||
+    SITE_KEY_PLACEHOLDER_PATTERN.test(siteKey) ||
     siteKey.startsWith("<") ||
-    siteKey.endsWith(">") ||
-    placeholderMarkers.some((marker) => upper.includes(marker))
+    siteKey.endsWith(">")
   ) {
     fail(
       "APP_CHECK_SITE_KEY_PLACEHOLDER",
-      "VITE_RECAPTCHA_SITE_KEY is still a placeholder and cannot be used for production deployment.",
+      "VITE_RECAPTCHA_SITE_KEY does not look like a production reCAPTCHA site key; verify the registered production key before deployment.",
     );
   }
 
@@ -193,27 +210,98 @@ function assertHostingRewrites(firebaseJson: unknown): void {
   }
 }
 
-function assertStaffCandidateAppCheckEnforced(functionsIndexSource: string): void {
-  const marker = "export const resolveProClubStaffCandidateV1 = onCall(";
-  const start = functionsIndexSource.indexOf(marker);
-  if (start < 0) {
+function propertyNameText(name: ts.PropertyName): string | null {
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) {
+    return name.text;
+  }
+  return null;
+}
+
+function findFunctionOptionsObject(
+  functionsIndexSource: string,
+  exportName: string,
+  callName: string,
+): ts.ObjectLiteralExpression {
+  const sourceFile = ts.createSourceFile(
+    "functions/src/index.ts",
+    functionsIndexSource,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+
+  let options: ts.ObjectLiteralExpression | null = null;
+
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+
+    for (const declaration of statement.declarationList.declarations) {
+      if (!ts.isIdentifier(declaration.name) || declaration.name.text !== exportName) {
+        continue;
+      }
+      if (!declaration.initializer || !ts.isCallExpression(declaration.initializer)) {
+        continue;
+      }
+
+      const call = declaration.initializer;
+      if (!ts.isIdentifier(call.expression) || call.expression.text !== callName) {
+        continue;
+      }
+
+      const firstArgument = call.arguments[0];
+      if (firstArgument && ts.isObjectLiteralExpression(firstArgument)) {
+        options = firstArgument;
+      }
+    }
+  }
+
+  if (!options) {
     fail(
-      "STAFF_CANDIDATE_APP_CHECK_NOT_ENFORCED",
-      "resolveProClubStaffCandidateV1 export was not found.",
+      "INVALID_REPOSITORY_CONFIG",
+      `${exportName} must remain a direct ${callName} call with an object-literal options argument.`,
     );
   }
 
-  const handlerStart = functionsIndexSource.indexOf("async (request)", start);
-  const optionsBlock = functionsIndexSource.slice(
-    start,
-    handlerStart >= 0 ? handlerStart : start + 800,
-  );
+  return options;
+}
 
-  if (!/enforceAppCheck\s*:\s*true/.test(optionsBlock)) {
-    fail(
-      "STAFF_CANDIDATE_APP_CHECK_NOT_ENFORCED",
-      "resolveProClubStaffCandidateV1 must keep enforceAppCheck: true.",
+function getObjectPropertyInitializer(
+  options: ts.ObjectLiteralExpression,
+  propertyName: string,
+): ts.Expression | null {
+  for (const property of options.properties) {
+    if (!ts.isPropertyAssignment(property)) continue;
+    if (propertyNameText(property.name) === propertyName) {
+      return property.initializer;
+    }
+  }
+  return null;
+}
+
+function assertFunctionExportSecurity(functionsIndexSource: string): void {
+  for (const expected of EXPECTED_FUNCTION_EXPORTS) {
+    const options = findFunctionOptionsObject(
+      functionsIndexSource,
+      expected.exportName,
+      expected.callName,
     );
+    const region = getObjectPropertyInitializer(options, "region");
+    if (!region || !ts.isStringLiteral(region) || region.text !== EXPECTED_FUNCTION_REGION) {
+      fail(
+        "FUNCTION_EXPORT_REGION_MISMATCH",
+        `${expected.exportName} must be deployed in ${EXPECTED_FUNCTION_REGION}.`,
+      );
+    }
+
+    if (expected.exportName === "resolveProClubStaffCandidateV1") {
+      const enforceAppCheck = getObjectPropertyInitializer(options, "enforceAppCheck");
+      if (!enforceAppCheck || enforceAppCheck.kind !== ts.SyntaxKind.TrueKeyword) {
+        fail(
+          "STAFF_CANDIDATE_APP_CHECK_NOT_ENFORCED",
+          "resolveProClubStaffCandidateV1 must keep enforceAppCheck: true in its effective onCall options object.",
+        );
+      }
+    }
   }
 }
 
@@ -224,7 +312,7 @@ export function validateProductionDeployReadiness(
   assertProjectIdentity(input.firebaseRc, input.webFirebaseConfig);
   assertFunctionsRuntime(input.firebaseJson);
   assertHostingRewrites(input.firebaseJson);
-  assertStaffCandidateAppCheckEnforced(input.functionsIndexSource);
+  assertFunctionExportSecurity(input.functionsIndexSource);
 
   return {
     ok: true,
@@ -234,6 +322,7 @@ export function validateProductionDeployReadiness(
       "firebase-project-identity",
       "functions-runtime-nodejs22",
       "pro-club-hosting-rewrites",
+      "function-export-regions",
       "staff-candidate-app-check-enforced",
     ],
   };
@@ -248,7 +337,7 @@ function runCli(): void {
 
   try {
     const result = validateProductionDeployReadiness({
-      env: process.env,
+      env: resolveViteProductionEnvironment(repoRoot, process.env),
       firebaseRc: readJson(resolve(repoRoot, ".firebaserc")),
       webFirebaseConfig: readJson(resolve(repoRoot, "firebase-applet-config.json")),
       firebaseJson: readJson(resolve(repoRoot, "firebase.json")),
