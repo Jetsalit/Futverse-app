@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   AppCheckVerificationError,
   createServerAppCheckTokenVerifier,
+  isKnownInvalidAppCheckTokenError,
 } from "../functions/src/lib/serverAppCheckTokenVerifier.ts";
 
 test("server App Check verifier accepts a verified token and returns appId", async () => {
@@ -35,19 +36,64 @@ test("server App Check verifier rejects missing, blank, and padded headers", asy
   }
 });
 
-test("server App Check verifier maps token verification failure to safe domain error", async () => {
-  const verifier = createServerAppCheckTokenVerifier({
-    async verifyToken() {
-      throw new Error("private verifier detail");
+test("known invalid App Check token errors map to privacy-safe unauthorized domain error", async () => {
+  const invalidErrors = [
+    {
+      code: "app-check/app-check-token-expired",
+      message: "The provided App Check token has expired.",
     },
-  });
+    {
+      code: "app-check/invalid-argument",
+      message: "Decoding App Check token failed. Make sure you passed the entire string JWT.",
+    },
+    {
+      code: "app-check/invalid-argument",
+      message: "The provided App Check token has invalid signature.",
+    },
+  ];
 
-  await assert.rejects(
-    () => verifier.verifyHeader("bad-token"),
-    (error: unknown) =>
-      error instanceof AppCheckVerificationError &&
-      !error.message.includes("private verifier detail"),
-  );
+  for (const invalidError of invalidErrors) {
+    assert.equal(isKnownInvalidAppCheckTokenError(invalidError), true);
+    const verifier = createServerAppCheckTokenVerifier({
+      async verifyToken() {
+        throw invalidError;
+      },
+    });
+
+    await assert.rejects(
+      () => verifier.verifyHeader("bad-token"),
+      (error: unknown) =>
+        error instanceof AppCheckVerificationError &&
+        !error.message.includes(invalidError.message),
+    );
+  }
+});
+
+test("operational App Check verifier failures propagate to the internal-error gate", async () => {
+  const operationalErrors = [
+    {
+      code: "app-check/invalid-credential",
+      message: "Must initialize app with a cert credential or set project ID.",
+    },
+    {
+      code: "app-check/invalid-argument",
+      message: "Error fetching public keys for Google certs: network unavailable",
+    },
+  ];
+
+  for (const operationalError of operationalErrors) {
+    assert.equal(isKnownInvalidAppCheckTokenError(operationalError), false);
+    const verifier = createServerAppCheckTokenVerifier({
+      async verifyToken() {
+        throw operationalError;
+      },
+    });
+
+    await assert.rejects(
+      () => verifier.verifyHeader("valid-looking-token"),
+      (error: unknown) => error === operationalError,
+    );
+  }
 });
 
 test("server App Check verifier rejects a decoded token without canonical appId", async () => {
