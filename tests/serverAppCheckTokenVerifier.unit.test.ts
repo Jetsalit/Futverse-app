@@ -7,26 +7,26 @@ import {
   isKnownInvalidAppCheckTokenError,
 } from "../functions/src/lib/serverAppCheckTokenVerifier.ts";
 
-test("server App Check verifier accepts a verified token and returns appId", async () => {
-  const verifier = createServerAppCheckTokenVerifier({
-    async verifyToken(token) {
-      assert.equal(token, "valid-app-check-token");
-      return { appId: "1:123:web:abc" };
-    },
+const expectedAppId = "1:123:web:expected";
+
+function createVerifier(verifyToken: (token: string) => Promise<{ appId: string }>) {
+  return createServerAppCheckTokenVerifier({ verifyToken }, [expectedAppId]);
+}
+
+test("server App Check verifier accepts a verified token from the expected app", async () => {
+  const verifier = createVerifier(async (token) => {
+    assert.equal(token, "valid-app-check-token");
+    return { appId: expectedAppId };
   });
 
   assert.equal(
     await verifier.verifyHeader("valid-app-check-token"),
-    "1:123:web:abc",
+    expectedAppId,
   );
 });
 
 test("server App Check verifier rejects missing, blank, and padded headers", async () => {
-  const verifier = createServerAppCheckTokenVerifier({
-    async verifyToken() {
-      return { appId: "should-not-run" };
-    },
-  });
+  const verifier = createVerifier(async () => ({ appId: expectedAppId }));
 
   for (const value of [undefined, null, "", " token "]) {
     await assert.rejects(
@@ -54,10 +54,8 @@ test("known invalid App Check token errors map to privacy-safe unauthorized doma
 
   for (const invalidError of invalidErrors) {
     assert.equal(isKnownInvalidAppCheckTokenError(invalidError), true);
-    const verifier = createServerAppCheckTokenVerifier({
-      async verifyToken() {
-        throw invalidError;
-      },
+    const verifier = createVerifier(async () => {
+      throw invalidError;
     });
 
     await assert.rejects(
@@ -83,10 +81,8 @@ test("operational App Check verifier failures propagate to the internal-error ga
 
   for (const operationalError of operationalErrors) {
     assert.equal(isKnownInvalidAppCheckTokenError(operationalError), false);
-    const verifier = createServerAppCheckTokenVerifier({
-      async verifyToken() {
-        throw operationalError;
-      },
+    const verifier = createVerifier(async () => {
+      throw operationalError;
     });
 
     await assert.rejects(
@@ -97,14 +93,32 @@ test("operational App Check verifier failures propagate to the internal-error ga
 });
 
 test("server App Check verifier rejects a decoded token without canonical appId", async () => {
-  const verifier = createServerAppCheckTokenVerifier({
-    async verifyToken() {
-      return { appId: "   " };
-    },
-  });
+  const verifier = createVerifier(async () => ({ appId: "   " }));
 
   await assert.rejects(
     () => verifier.verifyHeader("valid-looking-token"),
     (error: unknown) => error instanceof AppCheckVerificationError,
+  );
+});
+
+test("server App Check verifier rejects a valid token minted for a sibling Firebase app", async () => {
+  const verifier = createVerifier(async () => ({ appId: "1:123:web:sibling" }));
+
+  await assert.rejects(
+    () => verifier.verifyHeader("valid-sibling-app-token"),
+    (error: unknown) =>
+      error instanceof AppCheckVerificationError &&
+      /unauthorized app/i.test(error.message),
+  );
+});
+
+test("server App Check verifier requires a non-empty canonical expected app allowlist", () => {
+  assert.throws(
+    () => createServerAppCheckTokenVerifier({ async verifyToken() { return { appId: expectedAppId }; } }, []),
+    /requires canonical expected app IDs/,
+  );
+  assert.throws(
+    () => createServerAppCheckTokenVerifier({ async verifyToken() { return { appId: expectedAppId }; } }, [" bad-app-id "]),
+    /requires canonical expected app IDs/,
   );
 });
