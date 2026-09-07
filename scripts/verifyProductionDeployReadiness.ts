@@ -26,15 +26,19 @@ const EXPECTED_FUNCTION_EXPORTS = [
 const PRODUCTION_SITE_KEY_PATTERN = /^[A-Za-z0-9_-]{30,100}$/;
 const SITE_KEY_PLACEHOLDER_PATTERN =
   /(PLACEHOLDER|CHANGE[_-]?ME|REPLACE[_-]?ME|EXAMPLE|DUMMY|FAKE|TODO|YOUR[_-]?|MY[_-]?|UNIT[_-]?TEST|TEST[_-]?SITE)/i;
+const REQUIRED_UNIQUE_SITE_KEY_CHARACTERS = 8;
+const MAX_SITE_KEY_CHARACTER_RATIO = 0.5;
 
 export type ProductionDeployReadinessErrorCode =
   | "APP_CHECK_SITE_KEY_MISSING"
   | "APP_CHECK_SITE_KEY_PLACEHOLDER"
+  | "APP_CHECK_SITE_KEY_LOW_ENTROPY"
   | "APP_CHECK_DEBUG_TOKEN_FORBIDDEN"
   | "PROJECT_ALIAS_MISMATCH"
   | "WEB_CONFIG_PROJECT_MISMATCH"
   | "FUNCTIONS_RUNTIME_MISMATCH"
   | "FUNCTION_EXPORT_REGION_MISMATCH"
+  | "FUNCTION_OPTIONS_SPREAD_FORBIDDEN"
   | "HOSTING_REWRITE_MISSING"
   | "HOSTING_REWRITE_TARGET_MISMATCH"
   | "HOSTING_REWRITE_ORDER_INVALID"
@@ -86,15 +90,47 @@ function requireRecord(value: unknown, label: string): Record<string, unknown> {
   return record;
 }
 
+function resolvedEnvValue(
+  name: "VITE_RECAPTCHA_SITE_KEY" | "VITE_APP_CHECK_DEBUG_TOKEN",
+  fileEnvironment: Record<string, string>,
+  processEnvironment: NodeJS.ProcessEnv,
+): string | undefined {
+  return Object.prototype.hasOwnProperty.call(processEnvironment, name)
+    ? processEnvironment[name]
+    : fileEnvironment[name];
+}
+
 export function resolveViteProductionEnvironment(
   repoRoot: string,
   processEnvironment: NodeJS.ProcessEnv,
 ): Record<string, string | undefined> {
-  const fileEnvironment = loadEnv("production", repoRoot, "");
+  const fileEnvironment = loadEnv("production", repoRoot, "VITE_");
   return {
-    ...fileEnvironment,
-    ...processEnvironment,
+    VITE_RECAPTCHA_SITE_KEY: resolvedEnvValue(
+      "VITE_RECAPTCHA_SITE_KEY",
+      fileEnvironment,
+      processEnvironment,
+    ),
+    VITE_APP_CHECK_DEBUG_TOKEN: resolvedEnvValue(
+      "VITE_APP_CHECK_DEBUG_TOKEN",
+      fileEnvironment,
+      processEnvironment,
+    ),
   };
+}
+
+function hasLowSiteKeyEntropy(siteKey: string): boolean {
+  const counts = new Map<string, number>();
+  for (const character of siteKey) {
+    counts.set(character, (counts.get(character) ?? 0) + 1);
+  }
+
+  if (counts.size < REQUIRED_UNIQUE_SITE_KEY_CHARACTERS) {
+    return true;
+  }
+
+  const highestCount = Math.max(...counts.values());
+  return highestCount / siteKey.length > MAX_SITE_KEY_CHARACTER_RATIO;
 }
 
 function assertAppCheckEnvironment(env: Record<string, string | undefined>): void {
@@ -115,6 +151,13 @@ function assertAppCheckEnvironment(env: Record<string, string | undefined>): voi
     fail(
       "APP_CHECK_SITE_KEY_PLACEHOLDER",
       "VITE_RECAPTCHA_SITE_KEY does not look like a production reCAPTCHA site key; verify the registered production key before deployment.",
+    );
+  }
+
+  if (hasLowSiteKeyEntropy(siteKey)) {
+    fail(
+      "APP_CHECK_SITE_KEY_LOW_ENTROPY",
+      "VITE_RECAPTCHA_SITE_KEY has placeholder-like repetition and must be replaced with the registered production key.",
     );
   }
 
@@ -179,15 +222,19 @@ function assertHostingRewrites(firebaseJson: unknown): void {
     );
   }
 
-  for (const expected of EXPECTED_PRO_CLUB_HOSTING_REWRITES) {
-    const index = rewrites.findIndex((rewrite) => rewrite?.source === expected.source);
-    if (index < 0) {
+  for (const [expectedIndex, expected] of EXPECTED_PRO_CLUB_HOSTING_REWRITES.entries()) {
+    const rewrite = rewrites[expectedIndex];
+    if (!rewrite || rewrite.source !== expected.source) {
+      const existsElsewhere = rewrites.some(
+        (candidate) => candidate?.source === expected.source,
+      );
       fail(
-        "HOSTING_REWRITE_MISSING",
-        `Required Hosting rewrite is missing: ${expected.source}.`,
+        existsElsewhere ? "HOSTING_REWRITE_ORDER_INVALID" : "HOSTING_REWRITE_MISSING",
+        `Protected Hosting rewrite ${expected.source} must occupy position ${expectedIndex + 1} before any broader rewrite can shadow it.`,
       );
     }
-    if (index >= spaIndex) {
+
+    if (expectedIndex >= spaIndex) {
       fail(
         "HOSTING_REWRITE_ORDER_INVALID",
         `Hosting rewrite ${expected.source} must precede the SPA catch-all.`,
@@ -195,7 +242,7 @@ function assertHostingRewrites(firebaseJson: unknown): void {
     }
 
     const functionTarget = requireRecord(
-      rewrites[index]?.function,
+      rewrite.function,
       `Hosting rewrite function target for ${expected.source}`,
     );
     if (
@@ -265,6 +312,18 @@ function findFunctionOptionsObject(
   return options;
 }
 
+function assertNoOptionSpreads(
+  options: ts.ObjectLiteralExpression,
+  exportName: string,
+): void {
+  if (options.properties.some((property) => ts.isSpreadAssignment(property))) {
+    fail(
+      "FUNCTION_OPTIONS_SPREAD_FORBIDDEN",
+      `${exportName} protected deployment options must not contain spreads; use explicit properties so readiness checks bind to effective values.`,
+    );
+  }
+}
+
 function getObjectPropertyInitializer(
   options: ts.ObjectLiteralExpression,
   propertyName: string,
@@ -285,6 +344,8 @@ function assertFunctionExportSecurity(functionsIndexSource: string): void {
       expected.exportName,
       expected.callName,
     );
+    assertNoOptionSpreads(options, expected.exportName);
+
     const region = getObjectPropertyInitializer(options, "region");
     if (!region || !ts.isStringLiteral(region) || region.text !== EXPECTED_FUNCTION_REGION) {
       fail(
@@ -318,11 +379,13 @@ export function validateProductionDeployReadiness(
     ok: true,
     checks: [
       "app-check-site-key-present",
+      "app-check-site-key-entropy",
       "app-check-debug-token-absent",
       "firebase-project-identity",
       "functions-runtime-nodejs22",
-      "pro-club-hosting-rewrites",
+      "pro-club-hosting-rewrites-leading",
       "function-export-regions",
+      "function-options-explicit",
       "staff-candidate-app-check-enforced",
     ],
   };
