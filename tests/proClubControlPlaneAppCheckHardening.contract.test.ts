@@ -11,7 +11,14 @@ const gateSource = fs.readFileSync(
   "functions/src/lib/privilegedHttpAppCheckGate.ts",
   "utf8",
 );
+const verifierSource = fs.readFileSync(
+  "functions/src/lib/serverAppCheckTokenVerifier.ts",
+  "utf8",
+);
 const firebaseConfig = JSON.parse(fs.readFileSync("firebase.json", "utf8"));
+const firebaseAppletConfig = JSON.parse(
+  fs.readFileSync("firebase-applet-config.json", "utf8"),
+);
 const envExample = fs.readFileSync(".env.example", "utf8");
 
 test("privileged Pro Club client requires Firebase App Check token and sends standard header", () => {
@@ -30,6 +37,14 @@ test("both privileged HTTP functions gate App Check before business handlers", (
   assert.ok(provisionGate > 0 && provisionHandler > provisionGate);
   assert.ok(verifyGate > 0 && verifyHandler > verifyGate);
   assert.match(indexSource, /getAppCheck\(adminServices\.app\)/);
+});
+
+test("server App Check verification is bound to the exact production FutVerse web app ID", () => {
+  const appId = String(firebaseAppletConfig.appId);
+  assert.ok(appId.length > 0);
+  assert.ok(indexSource.includes(`FUTVERSE_PRODUCTION_WEB_APP_ID = "${appId}"`));
+  assert.match(indexSource, /createServerAppCheckTokenVerifier\([\s\S]*\[FUTVERSE_PRODUCTION_WEB_APP_ID\]/);
+  assert.match(verifierSource, /allowedAppIds\.has\(decoded\.appId\)/);
 });
 
 test("App Check gate fails closed with privacy-safe responses and logs", () => {
