@@ -33,7 +33,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "00ccbd297f9b35baa01f6c9fbb3ffcca2637358e"
+          product_head="00ccbd297f9b35baa01f6c9fbb3ffcca2637358e"
+          git merge-base --is-ancestor "$product_head" HEAD
+          changed_after_product="$(git diff --name-only "$product_head"..HEAD)"
+          test "$changed_after_product" = ".github/workflows/pr68-production-readiness.yml"
           test "$(git status --porcelain=v1)" = ""
 
       - name: Run production readiness unit tests
