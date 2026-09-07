@@ -1,0 +1,46 @@
+name: Verify App Check Enterprise PR88
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Exact product-head provenance
+        run: |
+          test "$(git rev-parse HEAD^)" = "1ba821e4963a81a23f91eafc36bca81e885a8148"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/verify-app-check-enterprise-pr88.yml"
+      - name: App Check contract
+        run: node --import tsx --test tests/proClubControlPlaneAppCheckHardening.contract.test.ts
+      - name: App Check environment guard tests
+        run: node --import tsx --test tests/productionAppCheckGuard.unit.test.ts
+      - name: Production readiness tests
+        run: npm run test:production-deploy-readiness
+      - name: TypeScript
+        run: npm run lint
+      - name: Production build with process-only shaped Enterprise key
+        env:
+          VITE_RECAPTCHA_SITE_KEY: 6Lc_enterprise-production-shaped-site-key
+          VITE_APP_CHECK_DEBUG_TOKEN: ''
+        run: npm run build
+      - name: Full readiness with process-only shaped Enterprise key
+        env:
+          VITE_RECAPTCHA_SITE_KEY: 6Lc_enterprise-production-shaped-site-key
+          VITE_APP_CHECK_DEBUG_TOKEN: ''
+        run: npm run verify:production-deploy-readiness
+      - name: Diff check and clean tree
+        run: |
+          git diff --check 1ba821e4963a81a23f91eafc36bca81e885a8148..HEAD
+          test -z "$(git status --porcelain=v1)"
