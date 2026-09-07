@@ -1,8 +1,16 @@
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
 export const PRODUCTION_SMOKE_ACK = "READ_ONLY_NO_CREDENTIALS";
+export const EXPECTED_PRODUCTION_PROJECT_ID = "futverse-d7872";
+export const PRODUCTION_SMOKE_TARGET_CONFIG_PATH =
+  "config/productionProClubSmokeTargets.json";
+export const REQUIRED_DEFAULT_PRODUCTION_ORIGINS = [
+  "https://futverse-d7872.web.app",
+  "https://futverse-d7872.firebaseapp.com",
+];
 export const PROTECTED_PRO_CLUB_PATHS = [
   "/api/pro-club/provision-v1",
   "/api/pro-club/verify-audit-v1",
@@ -16,6 +24,13 @@ const FORBIDDEN_CREDENTIAL_ENV_VARS = [
 
 function hasNonEmptyValue(value) {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function asRecord(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value;
 }
 
 export function validateProductionOrigin(rawOrigin) {
@@ -57,10 +72,77 @@ export function validateProductionOrigin(rawOrigin) {
     throw new Error("FUTVERSE_PRODUCTION_ORIGIN must not target a local host.");
   }
 
-  return parsed.origin;
+  const canonicalOrigin = parsed.origin;
+  if (canonicalOrigin !== rawOrigin) {
+    throw new Error("FUTVERSE_PRODUCTION_ORIGIN must already be canonical.");
+  }
+  return canonicalOrigin;
 }
 
-export function validateSmokeEnvironment(env = process.env) {
+export function validateApprovedProductionSmokeTargets(rawConfig) {
+  const config = asRecord(rawConfig);
+  if (!config) {
+    throw new Error("Production smoke target config must be a JSON object.");
+  }
+  if (config.projectId !== EXPECTED_PRODUCTION_PROJECT_ID) {
+    throw new Error(
+      `Production smoke target projectId must be ${EXPECTED_PRODUCTION_PROJECT_ID}.`,
+    );
+  }
+  if (
+    !Array.isArray(config.allowedOrigins) ||
+    config.allowedOrigins.length === 0 ||
+    config.allowedOrigins.some((value) => typeof value !== "string")
+  ) {
+    throw new Error("Production smoke target allowedOrigins must be a non-empty string array.");
+  }
+
+  const allowedOrigins = config.allowedOrigins.map((origin) =>
+    validateProductionOrigin(origin),
+  );
+  if (new Set(allowedOrigins).size !== allowedOrigins.length) {
+    throw new Error("Production smoke target allowedOrigins must not contain duplicates.");
+  }
+  for (const requiredOrigin of REQUIRED_DEFAULT_PRODUCTION_ORIGINS) {
+    if (!allowedOrigins.includes(requiredOrigin)) {
+      throw new Error(
+        `Production smoke target config must retain required origin ${requiredOrigin}.`,
+      );
+    }
+  }
+
+  return {
+    projectId: EXPECTED_PRODUCTION_PROJECT_ID,
+    allowedOrigins,
+  };
+}
+
+export function loadApprovedProductionSmokeTargets(
+  configPath = path.resolve(process.cwd(), PRODUCTION_SMOKE_TARGET_CONFIG_PATH),
+) {
+  let rawConfig;
+  try {
+    rawConfig = JSON.parse(readFileSync(configPath, "utf8"));
+  } catch {
+    throw new Error("Production smoke target config could not be read as JSON.");
+  }
+  return validateApprovedProductionSmokeTargets(rawConfig);
+}
+
+export function assertApprovedProductionOrigin(rawOrigin, allowedOrigins) {
+  if (!Array.isArray(allowedOrigins) || allowedOrigins.length === 0) {
+    throw new Error("Approved production smoke origins are required.");
+  }
+  const canonicalOrigin = validateProductionOrigin(rawOrigin);
+  if (!allowedOrigins.includes(canonicalOrigin)) {
+    throw new Error(
+      "FUTVERSE_PRODUCTION_ORIGIN is not in the reviewed production smoke target allowlist.",
+    );
+  }
+  return canonicalOrigin;
+}
+
+export function validateSmokeEnvironment(env = process.env, allowedOrigins) {
   if (env.FUTVERSE_PRODUCTION_SMOKE_ACK !== PRODUCTION_SMOKE_ACK) {
     throw new Error(
       `FUTVERSE_PRODUCTION_SMOKE_ACK must equal ${PRODUCTION_SMOKE_ACK}.`,
@@ -74,7 +156,10 @@ export function validateSmokeEnvironment(env = process.env) {
   }
 
   return {
-    origin: validateProductionOrigin(env.FUTVERSE_PRODUCTION_ORIGIN),
+    origin: assertApprovedProductionOrigin(
+      env.FUTVERSE_PRODUCTION_ORIGIN,
+      allowedOrigins,
+    ),
   };
 }
 
@@ -116,9 +201,10 @@ export async function assertExpectedAppCheckRejection(response, requestPath) {
 
 export async function runProductionProClubBoundarySmoke({
   origin,
+  allowedOrigins,
   fetchImpl = globalThis.fetch,
 } = {}) {
-  const canonicalOrigin = validateProductionOrigin(origin);
+  const canonicalOrigin = assertApprovedProductionOrigin(origin, allowedOrigins);
   if (typeof fetchImpl !== "function") {
     throw new Error("A fetch implementation is required.");
   }
@@ -142,9 +228,18 @@ export async function runProductionProClubBoundarySmoke({
 
 async function runCli() {
   try {
-    const { origin } = validateSmokeEnvironment(process.env);
-    const results = await runProductionProClubBoundarySmoke({ origin });
+    const targets = loadApprovedProductionSmokeTargets();
+    const { origin } = validateSmokeEnvironment(
+      process.env,
+      targets.allowedOrigins,
+    );
+    const results = await runProductionProClubBoundarySmoke({
+      origin,
+      allowedOrigins: targets.allowedOrigins,
+    });
     console.log("PRODUCTION_PRO_CLUB_BOUNDARY_SMOKE=PASS");
+    console.log(`PROJECT_ID=${targets.projectId}`);
+    console.log(`ORIGIN=${origin}`);
     for (const result of results) {
       console.log(
         `PATH=${result.path} STATUS=${result.status} ERROR_CODE=${result.errorCode}`,

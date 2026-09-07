@@ -26,6 +26,7 @@
 - [x] **Same-origin CORS boundary**: Both privileged HTTP Functions preserve `cors: false`.
 - [ ] **Production deployment**: Not yet authorized or executed.
 - [x] **Credential-free production smoke harness**: `npm run smoke:production-pro-club-boundary` verifies both privileged HTTP routes fail closed at App Check without sending Firebase ID/App Check credentials.
+- [x] **Production smoke target binding**: The credential-free smoke target is restricted by reviewed `config/productionProClubSmokeTargets.json`, pinned to `futverse-d7872` and retaining the default Firebase Hosting origins.
 - [ ] **Authenticated post-deploy production smoke**: Must separately verify authenticated SuperAdmin access, exact-ID audit verification, App Check-protected staff candidate lookup, and no unintended tenant/client write path.
 
 ## Database & Firebase
@@ -56,11 +57,11 @@ Before any production deployment, also require:
 1. exact deploy-candidate provenance verification;
 2. `npm run test:production-deploy-readiness` PASS;
 3. `npm run verify:production-deploy-readiness` PASS in the exact production build environment;
-4. `npm run test:production-pro-club-boundary-smoke` PASS;
+4. `npm run test:production-pro-club-boundary-smoke` PASS, including reviewed target allowlist regression coverage;
 5. root TypeScript gate, production Vite build, and Functions build PASS;
 6. separate explicit production-deployment authorization.
 
-After an authorized deploy, run the credential-free boundary smoke first using `docs/PRODUCTION_PRO_CLUB_DEPLOY_RUNBOOK.md`. This smoke is deliberately non-destructive and does not prove authenticated provisioning success.
+After an authorized deploy, run the credential-free boundary smoke first using `docs/PRODUCTION_PRO_CLUB_DEPLOY_RUNBOOK.md`. The smoke must use an origin committed in `config/productionProClubSmokeTargets.json`; environment variables cannot extend that allowlist.
 
 ## Final Verdict
 The **Pro Club provisioning/control-plane code path is source-ready but not yet production-deploy-ready** because the real Firebase App Check/reCAPTCHA site key has not yet been verified in the production environment and no production deployment has been authorized. Broader full-product readiness remains separate from the Pro Club pilot path.
