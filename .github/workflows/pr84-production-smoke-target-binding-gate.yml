@@ -1,0 +1,47 @@
+name: PR84 Production Smoke Target Binding Gate
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  exact-head-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm --prefix functions ci
+      - name: Verify exact product head ancestry
+        run: |
+          git merge-base --is-ancestor af5e030fc4433b4de74005586f3aad3b828622ee 9549def9ec5ecbe568beef4d71222ff82336ad4e
+          test "$(git rev-parse HEAD^)" = "9549def9ec5ecbe568beef4d71222ff82336ad4e"
+      - name: Production smoke target binding tests
+        run: npm run test:production-pro-club-boundary-smoke
+      - name: Production readiness V2 tests
+        run: npm run test:production-deploy-readiness
+      - name: Canonical App Check source-boundary contract
+        run: node --import tsx --test tests/proClubControlPlaneAppCheckHardening.contract.test.ts
+      - name: Canonical App Check guard blocks missing key
+        run: |
+          if node scripts/verifyProductionAppCheck.mjs; then
+            echo "Expected App Check guard to block without production key"
+            exit 1
+          fi
+      - name: Full readiness command passes with temporary production-shaped key
+        env:
+          VITE_RECAPTCHA_SITE_KEY: 6Lc_ci-verification-only-production-shaped-key
+        run: npm run verify:production-deploy-readiness
+      - run: npm --prefix functions run build
+      - run: npm run lint
+      - name: Production build with temporary production-shaped key
+        env:
+          VITE_RECAPTCHA_SITE_KEY: 6Lc_ci-verification-only-production-shaped-key
+        run: npm run build
+      - run: git diff --check af5e030fc4433b4de74005586f3aad3b828622ee..9549def9ec5ecbe568beef4d71222ff82336ad4e
+      - run: test -z "$(git status --porcelain=v1)"
