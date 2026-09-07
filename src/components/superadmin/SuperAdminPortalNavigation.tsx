@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Activity,
   Bell,
@@ -18,6 +19,7 @@ import {
   SUPERADMIN_PRIMARY_NAVIGATION,
   findSuperAdminSectionForTab,
 } from "./superAdminNavigationModel";
+import ProClubProvisioningControlPlane from "./ProClubProvisioningControlPlane";
 
 interface SuperAdminPortalNavigationProps {
   activeTab: SuperAdminTab;
@@ -56,6 +58,9 @@ export default function SuperAdminPortalNavigation({
   operationalSignals,
   academyCount,
 }: SuperAdminPortalNavigationProps) {
+  const [isProClubControlPlaneOpen, setIsProClubControlPlaneOpen] =
+    useState(false);
+
   const tabSections =
     SUPERADMIN_PRIMARY_NAVIGATION.filter(
       (section) => section.kind === "tabs",
@@ -277,6 +282,17 @@ export default function SuperAdminPortalNavigation({
             </p>
           </div>
 
+          {activeSection.id === "organizations" && (
+            <button
+              type="button"
+              onClick={() => setIsProClubControlPlaneOpen(true)}
+              className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-800 transition hover:border-emerald-300 hover:bg-emerald-100"
+            >
+              <ShieldCheck size={15} />
+              Pro Club Control Plane
+            </button>
+          )}
+
           {activeSection.tabs.length > 1 && (
             <nav
               className="flex flex-wrap items-center gap-1.5"
@@ -331,6 +347,12 @@ export default function SuperAdminPortalNavigation({
           )}
         </div>
       </div>
+
+      {isProClubControlPlaneOpen && (
+        <ProClubProvisioningControlPlane
+          onClose={() => setIsProClubControlPlaneOpen(false)}
+        />
+      )}
     </section>
   );
 }
