@@ -1,37 +1,23 @@
-import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
-
-function parseEnvText(text) {
-  const values = {};
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("#")) continue;
-    const separator = line.indexOf("=");
-    if (separator <= 0) continue;
-    const key = line.slice(0, separator).trim();
-    let value = line.slice(separator + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    values[key] = value;
-  }
-  return values;
-}
+import { loadEnv } from "vite";
 
 export function loadProductionEnvironment(rootDir = process.cwd(), shellEnv = process.env) {
-  const merged = {};
-  for (const filename of [".env", ".env.local", ".env.production", ".env.production.local"]) {
-    const filePath = path.join(rootDir, filename);
-    if (fs.existsSync(filePath)) {
-      Object.assign(merged, parseEnvText(fs.readFileSync(filePath, "utf8")));
-    }
-  }
-  return { ...merged, ...shellEnv };
+  const viteExpanded = loadEnv("production", rootDir, "");
+  return { ...viteExpanded, ...shellEnv };
+}
+
+function containsUnresolvedExpansion(value) {
+  return /\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*/.test(value);
+}
+
+function looksLikePlaceholder(value) {
+  return /^(MY_|YOUR_|CHANGE[_-]?ME|PLACEHOLDER|EXAMPLE|TEST[_-]?KEY|DEMO[_-]?KEY|DUMMY|FAKE)/i.test(value);
+}
+
+function hasProductionRecaptchaSiteKeyShape(value) {
+  return /^6L[A-Za-z0-9_-]{20,}$/.test(value);
 }
 
 export function validateProductionAppCheckEnvironment(env) {
@@ -46,8 +32,16 @@ export function validateProductionAppCheckEnvironment(env) {
     return { ok: false, reason: "VITE_RECAPTCHA_SITE_KEY is required for production deployment." };
   }
 
-  if (/^(MY_|CHANGE_ME|PLACEHOLDER|TEST_KEY|DEMO_KEY)/i.test(siteKey)) {
+  if (containsUnresolvedExpansion(siteKey)) {
+    return { ok: false, reason: "VITE_RECAPTCHA_SITE_KEY contains unresolved environment interpolation." };
+  }
+
+  if (looksLikePlaceholder(siteKey)) {
     return { ok: false, reason: "VITE_RECAPTCHA_SITE_KEY still contains a placeholder value." };
+  }
+
+  if (!hasProductionRecaptchaSiteKeyShape(siteKey)) {
+    return { ok: false, reason: "VITE_RECAPTCHA_SITE_KEY does not have a valid production reCAPTCHA site-key shape." };
   }
 
   if (debugToken) {
