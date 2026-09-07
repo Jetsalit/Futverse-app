@@ -6,8 +6,10 @@ export const EXPECTED_PRODUCTION_PROJECT_ID = "futverse-d7872";
 export const EXPECTED_FUNCTION_REGION = "asia-southeast1";
 export const CANONICAL_APP_CHECK_GUARD_COMMAND =
   "node scripts/verifyProductionAppCheck.mjs";
+export const CANONICAL_APP_CHECK_CONTRACT_COMMAND =
+  "node --import tsx --test tests/proClubControlPlaneAppCheckHardening.contract.test.ts";
 export const EXPECTED_READINESS_COMMAND =
-  `${CANONICAL_APP_CHECK_GUARD_COMMAND} && node --import tsx scripts/verifyProductionDeployReadiness.ts`;
+  `${CANONICAL_APP_CHECK_GUARD_COMMAND} && ${CANONICAL_APP_CHECK_CONTRACT_COMMAND} && node --import tsx scripts/verifyProductionDeployReadiness.ts`;
 
 export const EXPECTED_PRO_CLUB_HOSTING_REWRITES = [
   {
@@ -26,12 +28,20 @@ const EXPECTED_FUNCTION_EXPORTS = [
   { exportName: "resolveProClubStaffCandidateV1", callName: "onCall", requireCorsFalse: false },
 ] as const;
 
+const EXPECTED_HOSTING_PREDEPLOY = [
+  CANONICAL_APP_CHECK_GUARD_COMMAND,
+  "npm run build",
+] as const;
+const EXPECTED_FUNCTIONS_PREDEPLOY = [
+  CANONICAL_APP_CHECK_GUARD_COMMAND,
+  'npm --prefix "$RESOURCE_DIR" run build',
+] as const;
+
 export type ProductionDeployReadinessErrorCode =
   | "PROJECT_ALIAS_MISMATCH"
   | "WEB_CONFIG_PROJECT_MISMATCH"
   | "FUNCTIONS_RUNTIME_MISMATCH"
-  | "APP_CHECK_PREDEPLOY_MISSING"
-  | "APP_CHECK_PREDEPLOY_ORDER_INVALID"
+  | "APP_CHECK_PREDEPLOY_MISMATCH"
   | "HOSTING_REWRITE_MISSING"
   | "HOSTING_REWRITE_TARGET_MISMATCH"
   | "HOSTING_REWRITE_ORDER_INVALID"
@@ -141,18 +151,18 @@ function assertFunctionsRuntime(firebaseJson: unknown): void {
   }
 }
 
-function assertGuardFirst(predeploy: string[], label: string): void {
-  const guardIndex = predeploy.indexOf(CANONICAL_APP_CHECK_GUARD_COMMAND);
-  if (guardIndex < 0) {
+function assertExactCommandArray(
+  actual: string[],
+  expected: readonly string[],
+  label: string,
+): void {
+  if (
+    actual.length !== expected.length ||
+    actual.some((command, index) => command !== expected[index])
+  ) {
     fail(
-      "APP_CHECK_PREDEPLOY_MISSING",
-      `${label} must execute the canonical production App Check guard.`,
-    );
-  }
-  if (guardIndex !== 0) {
-    fail(
-      "APP_CHECK_PREDEPLOY_ORDER_INVALID",
-      `${label} must execute the canonical production App Check guard first.`,
+      "APP_CHECK_PREDEPLOY_MISMATCH",
+      `${label} must preserve the exact canonical App Check guard-before-build sequence.`,
     );
   }
 }
@@ -160,14 +170,16 @@ function assertGuardFirst(predeploy: string[], label: string): void {
 function assertCanonicalAppCheckPredeployWiring(firebaseJson: unknown): void {
   const config = requireRecord(firebaseJson, "firebase.json");
   const hosting = requireRecord(config.hosting, "firebase.json.hosting");
-  assertGuardFirst(
+  assertExactCommandArray(
     requireStringArray(hosting.predeploy, "firebase.json.hosting.predeploy"),
+    EXPECTED_HOSTING_PREDEPLOY,
     "Firebase Hosting predeploy",
   );
 
   const codebase = getDefaultFunctionsCodebase(firebaseJson);
-  assertGuardFirst(
+  assertExactCommandArray(
     requireStringArray(codebase.predeploy, "firebase.json.functions[].predeploy"),
+    EXPECTED_FUNCTIONS_PREDEPLOY,
     "Firebase Functions predeploy",
   );
 }
@@ -326,7 +338,7 @@ function assertReadinessScriptChain(packageJson: unknown): void {
   if (scripts["verify:production-deploy-readiness"] !== EXPECTED_READINESS_COMMAND) {
     fail(
       "READINESS_SCRIPT_CHAIN_MISMATCH",
-      "verify:production-deploy-readiness must run the canonical App Check guard before the structural readiness gate.",
+      "verify:production-deploy-readiness must run the canonical App Check environment guard and source-boundary contract before the structural readiness gate.",
     );
   }
 }
@@ -346,13 +358,13 @@ export function validateProductionDeployReadiness(
     checks: [
       "firebase-project-identity",
       "functions-runtime-nodejs22",
-      "canonical-app-check-predeploy-first",
+      "canonical-app-check-predeploy-exact",
       "pro-club-hosting-rewrites-leading",
       "function-export-regions",
       "function-options-explicit",
       "privileged-http-cors-false",
       "staff-candidate-app-check-enforced",
-      "readiness-script-chains-canonical-app-check",
+      "readiness-script-chains-app-check-environment-and-source-contracts",
     ],
   };
 }
