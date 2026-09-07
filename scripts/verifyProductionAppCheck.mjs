@@ -13,7 +13,7 @@ function containsUnresolvedExpansion(value) {
 }
 
 function looksLikePlaceholder(value) {
-  return /^(MY_|YOUR_|CHANGE[_-]?ME|PLACEHOLDER|EXAMPLE|TEST[_-]?KEY|DEMO[_-]?KEY|DUMMY|FAKE)/i.test(value);
+  return /(MY_RECAPTCHA|YOUR_RECAPTCHA|CHANGE[_-]?ME|PLACEHOLDER|EXAMPLE|TEST[_-]?KEY|DEMO[_-]?KEY|DUMMY|FAKE[_-]?KEY)/i.test(value);
 }
 
 function hasProductionRecaptchaSiteKeyShape(value) {
@@ -21,15 +21,20 @@ function hasProductionRecaptchaSiteKeyShape(value) {
 }
 
 export function validateProductionAppCheckEnvironment(env) {
-  const siteKey = typeof env.VITE_RECAPTCHA_SITE_KEY === "string"
-    ? env.VITE_RECAPTCHA_SITE_KEY.trim()
+  const rawSiteKey = typeof env.VITE_RECAPTCHA_SITE_KEY === "string"
+    ? env.VITE_RECAPTCHA_SITE_KEY
     : "";
+  const siteKey = rawSiteKey.trim();
   const debugToken = typeof env.VITE_APP_CHECK_DEBUG_TOKEN === "string"
     ? env.VITE_APP_CHECK_DEBUG_TOKEN.trim()
     : "";
 
   if (!siteKey) {
     return { ok: false, reason: "VITE_RECAPTCHA_SITE_KEY is required for production deployment." };
+  }
+
+  if (rawSiteKey !== siteKey) {
+    return { ok: false, reason: "VITE_RECAPTCHA_SITE_KEY must already be trimmed exactly as Vite will embed it." };
   }
 
   if (containsUnresolvedExpansion(siteKey)) {
