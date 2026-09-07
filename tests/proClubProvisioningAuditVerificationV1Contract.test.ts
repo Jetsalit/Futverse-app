@@ -14,6 +14,10 @@ function section(startHeading: string, nextHeading?: string): string {
   return contract.slice(start, end);
 }
 
+function numberedBacktickItems(block: string): string[] {
+  return Array.from(block.matchAll(/^\d+\. `([^`]+)`$/gm), (match) => match[1]);
+}
+
 describe("Pro Club Provisioning Audit Verification V1 Contract Freeze", () => {
   it("freezes exact baseline and two-file contract-only scope", () => {
     const scope = section("## 1. Baseline and exact slice scope", "## 2. Purpose and non-goals");
@@ -139,10 +143,13 @@ describe("Pro Club Provisioning Audit Verification V1 Contract Freeze", () => {
       "createdAt",
       "status",
     ];
-    for (const field of auditFields) {
-      assert.ok(audit.includes(`\`${field}\``), `Missing audit field: ${field}`);
-    }
-    assert.match(audit, /exactly these nine top-level fields and no others/);
+    const auditListStart = audit.indexOf("A provisioning audit is VERIFIED only if it exists and has exactly these nine top-level fields and no others:");
+    const auditListEnd = audit.indexOf("Required values and bindings:", auditListStart);
+    assert.notEqual(auditListStart, -1, "Missing audit whitelist introduction");
+    assert.notEqual(auditListEnd, -1, "Missing audit whitelist terminator");
+    const topLevelWhitelist = audit.slice(auditListStart, auditListEnd);
+    assert.deepEqual(numberedBacktickItems(topLevelWhitelist), auditFields);
+    assert.equal(numberedBacktickItems(topLevelWhitelist).length, 9);
     assert.match(audit, /schemaVersion === 1/);
     assert.match(audit, /status === "COMPLETED"/);
     assert.match(audit, /\^sha256:\[a-f0-9\]\{64\}\$/);
@@ -158,11 +165,17 @@ describe("Pro Club Provisioning Audit Verification V1 Contract Freeze", () => {
       "requestingSuperAdminUid",
       "shortName",
     ];
-    for (const field of normalizedFields) {
-      assert.ok(audit.includes(`\`${field}\``), `Missing normalized field: ${field}`);
-    }
-    assert.match(audit, /`normalizedRequest` must contain exactly these nine fields and no others/);
+    const normalizedListStart = audit.indexOf("`normalizedRequest` must contain exactly these nine fields and no others:");
+    const normalizedListEnd = audit.indexOf("Bindings must satisfy:", normalizedListStart);
+    assert.notEqual(normalizedListStart, -1, "Missing normalized-request whitelist introduction");
+    assert.notEqual(normalizedListEnd, -1, "Missing normalized-request whitelist terminator");
+    const normalizedWhitelist = audit.slice(normalizedListStart, normalizedListEnd);
+    assert.deepEqual(numberedBacktickItems(normalizedWhitelist), normalizedFields);
+    assert.equal(numberedBacktickItems(normalizedWhitelist).length, 9);
 
+    const bindingBlockEnd = audit.indexOf("The verifier reconstructs canonical JSON", normalizedListEnd);
+    assert.notEqual(bindingBlockEnd, -1, "Missing normalized binding block terminator");
+    const bindingBlock = audit.slice(normalizedListEnd, bindingBlockEnd);
     const bindings = [
       "normalizedRequest.provisioningId === audit.provisioningId",
       "normalizedRequest.clubId === audit.clubId",
@@ -170,7 +183,7 @@ describe("Pro Club Provisioning Audit Verification V1 Contract Freeze", () => {
       "normalizedRequest.requestingSuperAdminUid === audit.requestingSuperAdminUid",
     ];
     for (const binding of bindings) {
-      assert.ok(audit.includes(`\`${binding}\``), `Missing normalized binding: ${binding}`);
+      assert.ok(bindingBlock.includes(`\`${binding}\``), `Missing normalized binding: ${binding}`);
     }
     assert.match(audit, /recomputes SHA-256 from the stored normalized request/);
     assert.match(audit, /must exactly equal `audit\.requestFingerprint`/);
