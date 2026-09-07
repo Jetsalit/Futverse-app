@@ -82,11 +82,22 @@ The following never authorize verification by themselves:
 
 Platform SUPERADMIN verification authority is control-plane authority only and never becomes Pro Club tenant authority.
 
-## 5. Trusted execution boundary and zero mutation
+## 5. Trusted execution boundary, consistent snapshot, and zero mutation
 
 Verification executes only inside a trusted backend / Admin SDK boundary. Admin SDK execution authority is not business authorization; Section 4 must still be enforced.
 
-The verifier is strictly read-only and every outcome performs **zero Firestore writes**.
+After cryptographic authentication and exact request-shape validation, every canonical Firestore read that can affect the verification decision MUST share one consistent Firestore snapshot. The implementation must use a single Firestore transaction (or an equivalent Firestore mechanism that explicitly guarantees the same read timestamp for every required canonical read) and perform **reads only** inside that boundary.
+
+The consistent snapshot MUST include all four canonical reads:
+
+1. `users/{verifyingSuperAdminUid}`;
+2. `proClubProvisioningAudits/{provisioningId}`;
+3. `proClubs/{audit.clubId}`;
+4. `proClubs/{audit.clubId}/members/{audit.ownerUid}`.
+
+The verifier MUST NOT authorize against one snapshot and then verify the audit, club, or OWNER membership against later independent reads. It must never combine states that did not coexist at one Firestore read timestamp.
+
+The verifier is strictly read-only and every outcome performs **zero Firestore writes**. A read-only transaction does not permit `set`, `create`, `update`, `delete`, or any other mutation.
 
 Forbidden operations include create, set, update, delete, transaction write, batch write, repair, backfill, owner replacement, membership mutation, staff mutation, invite/claim mutation, and audit mutation.
 
@@ -114,20 +125,23 @@ Runtime shape is strict:
 
 V1 supports exact document lookup only. It forbids collection list, collection query, prefix search, club-wide discovery, owner-wide discovery, audit browsing, and enumeration of provisioning records.
 
-## 7. Decision order and exact read set
+## 7. Decision order and exact consistent-snapshot read set
 
 The security-critical decision order is:
 
-1. verify current caller authentication and derive `verifyingSuperAdminUid`;
-2. read and authorize `users/{verifyingSuperAdminUid}`;
-3. validate the exact request shape and canonical `provisioningId`;
-4. exact-get `proClubProvisioningAudits/{provisioningId}`;
-5. validate the complete stored audit before using audit-derived paths;
-6. read `proClubs/{audit.clubId}`;
-7. read `proClubs/{audit.clubId}/members/{audit.ownerUid}`;
-8. return a minimal result or stable safe failure.
+1. cryptographically verify current caller authentication and derive `verifyingSuperAdminUid`;
+2. validate the exact request shape and canonical `provisioningId` without performing an audit lookup;
+3. begin one read-only Firestore transaction / equivalent single-consistent-snapshot boundary;
+4. transaction-read and authorize `users/{verifyingSuperAdminUid}`;
+5. transaction exact-get `proClubProvisioningAudits/{provisioningId}`;
+6. validate the complete stored audit before using audit-derived paths;
+7. transaction-read `proClubs/{audit.clubId}`;
+8. transaction-read `proClubs/{audit.clubId}/members/{audit.ownerUid}`;
+9. finish the read-only boundary with zero writes and return a minimal result or stable safe failure.
 
-Unauthorized callers must be rejected before audit existence is read, preventing an audit-existence oracle.
+Within Firestore, the canonical verifier, audit, club, and OWNER membership reads MUST observe one consistent read timestamp. Independent sequential document reads outside a consistent-snapshot boundary are forbidden for a result that can return VERIFIED.
+
+Unauthorized callers must be rejected before audit existence is read, preventing an audit-existence oracle. The canonical `users/{verifyingSuperAdminUid}` authorization read therefore occurs inside the same read-only consistent snapshot but before the audit read.
 
 The verifier reads no staff document, no invitation, no onboarding claim, and no Academy document. It does not read `users/{audit.requestingSuperAdminUid}` as part of current verification authority.
 
@@ -200,7 +214,7 @@ Missing fields, extra fields, malformed values, invalid binding, or fingerprint 
 
 ## 10. Canonical resource integrity
 
-Only after Section 9 succeeds may audit-derived resource paths be read.
+Only after Section 9 succeeds may audit-derived resource paths be read, and those resource reads remain inside the same consistent Firestore snapshot used for current verifier authorization and audit lookup.
 
 `proClubs/{audit.clubId}` must exist, satisfy the existing canonical stored Pro Club validator, and remain `status === "ACTIVE"`.
 
@@ -269,10 +283,11 @@ The verifier fails closed as follows:
 9. fingerprint mismatch -> `INTEGRITY_FAILURE`;
 10. missing, malformed, or inactive club -> `INTEGRITY_FAILURE`;
 11. missing or non-exact ACTIVE OWNER membership -> `INTEGRITY_FAILURE`;
-12. Firestore read failure -> `INTERNAL_ERROR`;
-13. unexpected exception -> `INTERNAL_ERROR`;
-14. no path may fabricate VERIFIED;
-15. every path performs zero Firestore writes.
+12. inability to obtain one consistent Firestore snapshot for all canonical decision reads -> `INTERNAL_ERROR` and never VERIFIED;
+13. Firestore read failure -> `INTERNAL_ERROR`;
+14. unexpected exception -> `INTERNAL_ERROR`;
+15. no path may fabricate VERIFIED;
+16. every path performs zero Firestore writes.
 
 Repeated verification is naturally idempotent because the operation is read-only.
 
@@ -311,26 +326,31 @@ A later trusted read-only implementation must prove at minimum:
 10. exact `provisioningId` get succeeds and list/query/discovery is absent;
 11. unauthorized caller cannot distinguish missing from existing audit;
 12. exact audit whitelist is enforced;
-13. exact normalized-request whitelist and bindings are enforced;
+13. exact normalized-request whitelist and all four audit bindings are enforced;
 14. fingerprint is recomputed solely from stored normalized evidence;
 15. verifier does not inherit replay-only current-caller equality or incoming-fingerprint requirements;
-16. missing/malformed/inactive club fails closed;
-17. missing/non-exact OWNER fails closed;
-18. mutable canonical club profile edits do not cause false failure;
-19. no staff assignment/invitation/Academy document is required;
-20. zero writes occur on VERIFIED, NOT_FOUND, INTEGRITY_FAILURE, UNAUTHORIZED, INVALID_REQUEST, and INTERNAL_ERROR;
-21. safe logs contain no token/header/email/raw audit/raw normalized request;
-22. repeated verification is idempotent;
-23. no tenant authority is created or changed;
-24. Academy behavior remains unchanged;
-25. existing Provisioning V1 service and replay behavior remain unchanged.
+16. canonical verifier, audit, club, and OWNER membership reads share one consistent Firestore read timestamp;
+17. a concurrent club or OWNER state change cannot produce VERIFIED from a mixed-time snapshot;
+18. failure to obtain the consistent read snapshot fails closed with zero writes;
+19. missing/malformed/inactive club fails closed;
+20. missing/non-exact OWNER fails closed;
+21. mutable canonical club profile edits do not cause false failure;
+22. no staff assignment/invitation/Academy document is required;
+23. zero writes occur on VERIFIED, NOT_FOUND, INTEGRITY_FAILURE, UNAUTHORIZED, INVALID_REQUEST, and INTERNAL_ERROR;
+24. safe logs contain no token/header/email/raw audit/raw normalized request;
+25. repeated verification is idempotent;
+26. no tenant authority is created or changed;
+27. Academy behavior remains unchanged;
+28. existing Provisioning V1 service and replay behavior remain unchanged.
 
 ## 16. Succession and review gate
 
-Independent architecture/security review finding addressed by this freeze:
+Independent architecture/security review findings addressed by this freeze:
 
 - current verifier identity is explicitly separated from historical provisioning-requester evidence;
-- exact one-key request-body shape is explicit.
+- exact one-key request-body shape is explicit;
+- all canonical decision reads are frozen to one read-only consistent Firestore snapshot;
+- normalized-request contract regression coverage must assert all nine fields and all four bindings explicitly.
 
 Next approved implementation slice after this contract independently passes review:
 
