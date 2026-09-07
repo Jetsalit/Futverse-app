@@ -1,0 +1,64 @@
+name: PR72 App Check Gate V4
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/pr72-app-check-gate-v4.yml"
+      - ".env.example"
+      - "firebase.json"
+      - "functions/src/**"
+      - "scripts/verifyProductionAppCheck.mjs"
+      - "src/lib/proClubProvisioningControlPlaneApi.ts"
+      - "tests/**"
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm --prefix functions ci
+      - name: Verify exact product head ancestry
+        run: |
+          git merge-base --is-ancestor 388ab78fcfb0a240a3570b10513af87a38c7df4f HEAD
+          test "$(git rev-parse 388ab78fcfb0a240a3570b10513af87a38c7df4f)" = "388ab78fcfb0a240a3570b10513af87a38c7df4f"
+      - name: App Check hardening tests
+        run: node --import tsx --test tests/serverAppCheckTokenVerifier.unit.test.ts tests/privilegedHttpAppCheckGate.unit.test.ts tests/productionAppCheckGuard.unit.test.ts tests/proClubControlPlaneAppCheckHardening.contract.test.ts tests/proClubProvisioningControlPlaneApi.unit.test.ts tests/proClubProvisioningControlPlaneIntegration.contract.test.ts
+      - name: Predecessor regressions
+        run: node --import tsx --test tests/proClubProvisioningService.unit.test.ts tests/functions.proClubProvisioning.httpHandler.unit.test.ts tests/proClubProvisioningAuditVerificationCore.unit.test.ts tests/proClubProvisioningAuditVerificationService.unit.test.ts tests/functions.proClubProvisioningAuditVerification.httpHandler.unit.test.ts tests/proClubProvisioningAuditVerificationImplementation.contract.test.ts tests/proClubProvisioningV1Contract.test.ts tests/proClubProvisioningAuditVerificationV1Contract.test.ts
+      - run: npm --prefix functions run build
+      - run: npm run lint
+      - run: npm run build
+      - name: Guard blocks missing key
+        shell: bash
+        run: |
+          set +e
+          env -u VITE_RECAPTCHA_SITE_KEY -u VITE_APP_CHECK_DEBUG_TOKEN node scripts/verifyProductionAppCheck.mjs
+          code=$?
+          set -e
+          test "$code" -ne 0
+      - name: Guard passes production-shaped temporary key
+        env:
+          VITE_RECAPTCHA_SITE_KEY: 6Lc_pr72-v4-temporary-production-shaped-key
+          VITE_APP_CHECK_DEBUG_TOKEN: ""
+        run: node scripts/verifyProductionAppCheck.mjs
+      - name: Firebase predeploy ordering
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const config = JSON.parse(fs.readFileSync('firebase.json','utf8'));
+          const hosting = config.hosting?.predeploy ?? [];
+          const functions = config.functions?.[0]?.predeploy ?? [];
+          if (!hosting[0]?.includes('verifyProductionAppCheck.mjs')) throw new Error('hosting guard not first');
+          if (!functions[0]?.includes('verifyProductionAppCheck.mjs')) throw new Error('functions guard not first');
+          NODE
+      - run: git diff --check b1196ef48f58ace0c74f1699a9cc4342aa03faec..388ab78fcfb0a240a3570b10513af87a38c7df4f
+      - run: test -z "$(git status --porcelain=v1)"
