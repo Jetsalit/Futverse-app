@@ -26,7 +26,8 @@ jobs:
 
       - name: Verify exact main provenance
         run: |
-          test "$(git rev-parse HEAD^)" = "21f7da8f273d778ffc81d2d267d722f4f01530e5"
+          test "$(git rev-parse HEAD^)" = "06ad134341384396568b83471460b536bc391bfc"
+          test "$(git rev-parse HEAD^^)" = "21f7da8f273d778ffc81d2d267d722f4f01530e5"
           test "$(git rev-parse origin/main)" = "21f7da8f273d778ffc81d2d267d722f4f01530e5"
 
       - name: Provisioning backend unit and contract acceptance
@@ -56,12 +57,10 @@ jobs:
           tests/functions.proClubStaffCandidateResolutionCallable.unit.test.ts
           tests/proClubStaffRequesterAccountStatus.unit.test.ts
 
-      - name: Staff onboarding business-contract acceptance
+      - name: Staff onboarding contract acceptance
         run: >-
           node --import tsx --test
           tests/proClubStaffOnboardingV1Contract.test.ts
-          tests/proClubOnboardingRuntime.test.ts
-          tests/proClubStaffInvitationRuntime.test.ts
           tests/proClubInviteClaimMembershipRulesDataContractV1.test.ts
           tests/proClubOnboardingApprovalProofContractV1.test.ts
 
@@ -78,6 +77,8 @@ jobs:
           --project demo-futverse-backend-acceptance
           --only firestore
           "node --import tsx --test
+          tests/proClubOnboardingRuntime.test.ts
+          tests/proClubStaffInvitationRuntime.test.ts
           tests/firestore.pro-club.rules.test.ts
           tests/firestore.pro-club-onboarding.rules.test.ts
           tests/firestore.pro-club-onboarding-read.rules.test.ts
