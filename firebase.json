@@ -28,6 +28,20 @@
     ],
     "rewrites": [
       {
+        "source": "/api/pro-club/provision-v1",
+        "function": {
+          "functionId": "provisionProClubV1",
+          "region": "asia-southeast1"
+        }
+      },
+      {
+        "source": "/api/pro-club/verify-audit-v1",
+        "function": {
+          "functionId": "verifyProClubProvisioningAuditV1",
+          "region": "asia-southeast1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
