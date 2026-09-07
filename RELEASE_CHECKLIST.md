@@ -25,7 +25,8 @@
 - [x] **Same-origin Hosting routes**: `/api/pro-club/provision-v1` and `/api/pro-club/verify-audit-v1` target the exact trusted Functions before the SPA catch-all.
 - [x] **Same-origin CORS boundary**: Both privileged HTTP Functions preserve `cors: false`.
 - [ ] **Production deployment**: Not yet authorized or executed.
-- [ ] **Post-deploy production smoke test**: Must verify authenticated SuperAdmin access, unauthorized denial, exact-ID audit verification, App Check-protected staff candidate lookup, and no unintended tenant/client write path.
+- [x] **Credential-free production smoke harness**: `npm run smoke:production-pro-club-boundary` verifies both privileged HTTP routes fail closed at App Check without sending Firebase ID/App Check credentials.
+- [ ] **Authenticated post-deploy production smoke**: Must separately verify authenticated SuperAdmin access, exact-ID audit verification, App Check-protected staff candidate lookup, and no unintended tenant/client write path.
 
 ## Database & Firebase
 - [x] **Firestore connection**: Core database connection is established.
@@ -34,28 +35,32 @@
   - Some drills, scouting, fitness, player/match/team flows may still depend on local/mock/state-backed implementations and require dedicated production slices.
 
 ## Production Deploy Readiness Gate V2
-`npm run verify:production-deploy-readiness` is the operator-facing gate. It deliberately has two layers with one App Check source of truth:
+`npm run verify:production-deploy-readiness` is the operator-facing gate. It has three ordered layers while preserving one App Check environment parser:
 
-1. It runs `node scripts/verifyProductionAppCheck.mjs` first. This is the canonical PR #72 guard for the exact production App Check environment.
-2. Only after that passes, `scripts/verifyProductionDeployReadiness.ts` validates structural deployment contracts without re-implementing site-key parsing.
+1. `node scripts/verifyProductionAppCheck.mjs` validates the exact production App Check environment.
+2. `tests/proClubControlPlaneAppCheckHardening.contract.test.ts` preserves the privileged HTTP App Check source boundary, exact production web App ID binding, and guard-before-build wiring.
+3. `scripts/verifyProductionDeployReadiness.ts` validates structural deployment contracts without duplicating site-key parsing.
 
 The structural gate blocks deployment if any of these drift:
 - Firebase default project or web project ID is not exactly `futverse-d7872`;
 - default Functions codebase is not `functions` on Node.js 22;
-- Hosting or Functions predeploy no longer runs the canonical App Check guard first;
+- Hosting or Functions predeploy no longer matches the exact canonical guard-before-build sequence;
 - protected Pro Club Hosting rewrites are missing, moved behind a broader rewrite, or target the wrong Function/region;
 - protected Function regions are no longer `asia-southeast1`;
 - protected Function options use spreads instead of explicit security-relevant properties;
 - privileged HTTP endpoints no longer preserve `cors: false`;
 - `resolveProClubStaffCandidateV1` no longer preserves `enforceAppCheck: true`;
-- the operator-facing readiness command no longer chains the canonical App Check guard first.
+- the operator-facing readiness command no longer chains both canonical App Check boundaries before the structural gate.
 
 Before any production deployment, also require:
 1. exact deploy-candidate provenance verification;
 2. `npm run test:production-deploy-readiness` PASS;
 3. `npm run verify:production-deploy-readiness` PASS in the exact production build environment;
-4. root TypeScript gate, production Vite build, and Functions build PASS;
-5. separate explicit production-deployment authorization.
+4. `npm run test:production-pro-club-boundary-smoke` PASS;
+5. root TypeScript gate, production Vite build, and Functions build PASS;
+6. separate explicit production-deployment authorization.
+
+After an authorized deploy, run the credential-free boundary smoke first using `docs/PRODUCTION_PRO_CLUB_DEPLOY_RUNBOOK.md`. This smoke is deliberately non-destructive and does not prove authenticated provisioning success.
 
 ## Final Verdict
 The **Pro Club provisioning/control-plane code path is source-ready but not yet production-deploy-ready** because the real Firebase App Check/reCAPTCHA site key has not yet been verified in the production environment and no production deployment has been authorized. Broader full-product readiness remains separate from the Pro Club pilot path.
