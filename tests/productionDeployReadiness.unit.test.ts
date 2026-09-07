@@ -15,10 +15,12 @@ const firebaseJson = JSON.parse(readFileSync("firebase.json", "utf8")) as unknow
 const functionsIndexSource = readFileSync("functions/src/index.ts", "utf8");
 
 function validInput() {
+  const env: Record<string, string | undefined> = {
+    VITE_RECAPTCHA_SITE_KEY: "unit-test-site-key-only",
+  };
+
   return {
-    env: {
-      VITE_RECAPTCHA_SITE_KEY: "unit-test-site-key-only",
-    },
+    env,
     firebaseRc,
     webFirebaseConfig,
     firebaseJson,
