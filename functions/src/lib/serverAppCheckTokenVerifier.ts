@@ -1,5 +1,5 @@
 export interface MinimalAdminAppCheck {
-  verifyToken(appCheckToken: string): Promise<{ appId: string; [key: string]: unknown }>;
+  verifyToken(appCheckToken: string): Promise<{ appId: string }>;
 }
 
 export interface ServerAppCheckTokenVerifier {
@@ -26,7 +26,7 @@ export function createServerAppCheckTokenVerifier(
         throw new AppCheckVerificationError("Missing or invalid App Check header");
       }
 
-      let decoded: { appId: string; [key: string]: unknown };
+      let decoded: { appId: string };
       try {
         decoded = await appCheck.verifyToken(appCheckHeader);
       } catch {
