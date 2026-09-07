@@ -56,26 +56,33 @@ test("production readiness passes with complete synthetic environment and reposi
   assert.equal(result.ok, true);
   assert.deepEqual(result.checks, [
     "app-check-site-key-present",
+    "app-check-site-key-entropy",
     "app-check-debug-token-absent",
     "firebase-project-identity",
     "functions-runtime-nodejs22",
-    "pro-club-hosting-rewrites",
+    "pro-club-hosting-rewrites-leading",
     "function-export-regions",
+    "function-options-explicit",
     "staff-candidate-app-check-enforced",
   ]);
 });
 
-test("production readiness resolves debug token from Vite production env files", () => {
+test("production readiness resolves only required Vite variables from production env files", () => {
   const dir = mkdtempSync(join(tmpdir(), "futverse-readiness-"));
   try {
     writeFileSync(
       join(dir, ".env.production"),
-      `VITE_RECAPTCHA_SITE_KEY=${SYNTHETIC_VALID_SITE_KEY}\nVITE_APP_CHECK_DEBUG_TOKEN=must-be-detected\n`,
+      `VITE_RECAPTCHA_SITE_KEY=${SYNTHETIC_VALID_SITE_KEY}\nVITE_APP_CHECK_DEBUG_TOKEN=must-be-detected\nDEPLOY_SECRET=must-not-be-loaded\n`,
       "utf8",
     );
     const env = resolveViteProductionEnvironment(dir, {});
+    assert.deepEqual(Object.keys(env).sort(), [
+      "VITE_APP_CHECK_DEBUG_TOKEN",
+      "VITE_RECAPTCHA_SITE_KEY",
+    ]);
     assert.equal(env.VITE_RECAPTCHA_SITE_KEY, SYNTHETIC_VALID_SITE_KEY);
     assert.equal(env.VITE_APP_CHECK_DEBUG_TOKEN, "must-be-detected");
+    assert.equal((env as Record<string, string | undefined>).DEPLOY_SECRET, undefined);
     assert.throws(
       () => validateProductionDeployReadiness({ ...validInput(), env }),
       (error: unknown) =>
@@ -128,6 +135,15 @@ test("production readiness rejects common App Check placeholders", () => {
       "APP_CHECK_SITE_KEY_PLACEHOLDER",
     );
   }
+});
+
+test("production readiness rejects low-entropy repeated-character site key", () => {
+  expectBlocked(
+    (input) => {
+      input.env.VITE_RECAPTCHA_SITE_KEY = "x".repeat(40);
+    },
+    "APP_CHECK_SITE_KEY_LOW_ENTROPY",
+  );
 });
 
 test("production readiness forbids App Check debug token in production", () => {
@@ -183,6 +199,22 @@ test("production readiness fails when Pro Club function rewrites move after SPA 
   );
 });
 
+test("production readiness rejects broader rewrite shadowing protected API routes", () => {
+  expectBlocked(
+    (input) => {
+      const cloned = structuredClone(input.firebaseJson) as {
+        hosting: { rewrites: unknown[] };
+      };
+      cloned.hosting.rewrites.unshift({
+        source: "/api/**",
+        destination: "/index.html",
+      });
+      input.firebaseJson = cloned;
+    },
+    "HOSTING_REWRITE_ORDER_INVALID",
+  );
+});
+
 test("production readiness binds App Check enforcement to the callable options object", () => {
   expectBlocked(
     (input) => {
@@ -192,6 +224,18 @@ test("production readiness binds App Check enforcement to the callable options o
       );
     },
     "STAFF_CANDIDATE_APP_CHECK_NOT_ENFORCED",
+  );
+});
+
+test("production readiness rejects spreads in protected function options", () => {
+  expectBlocked(
+    (input) => {
+      input.functionsIndexSource = input.functionsIndexSource.replace(
+        'export const resolveProClubStaffCandidateV1 = onCall(\n  {\n    region: "asia-southeast1",\n    enforceAppCheck: true,',
+        'export const resolveProClubStaffCandidateV1 = onCall(\n  {\n    region: "asia-southeast1",\n    enforceAppCheck: true,\n    ...sharedOptions,',
+      );
+    },
+    "FUNCTION_OPTIONS_SPREAD_FORBIDDEN",
   );
 });
 
