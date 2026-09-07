@@ -22,8 +22,8 @@ jobs:
         run: npm --prefix functions ci
       - name: Exact product-head provenance
         run: |
-          test "$(git rev-parse HEAD^)" = "1ba821e4963a81a23f91eafc36bca81e885a8148"
-          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/verify-app-check-enterprise-pr88.yml"
+          git merge-base --is-ancestor 1ba821e4963a81a23f91eafc36bca81e885a8148 HEAD
+          test "$(git diff --name-only 1ba821e4963a81a23f91eafc36bca81e885a8148..HEAD)" = ".github/workflows/verify-app-check-enterprise-pr88.yml"
       - name: App Check contract
         run: node --import tsx --test tests/proClubControlPlaneAppCheckHardening.contract.test.ts
       - name: App Check environment guard tests
