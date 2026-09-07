@@ -51,7 +51,8 @@ export function validateProductionOrigin(rawOrigin) {
     hostname === "localhost" ||
     hostname.endsWith(".localhost") ||
     hostname === "127.0.0.1" ||
-    hostname === "::1"
+    hostname === "::1" ||
+    hostname === "[::1]"
   ) {
     throw new Error("FUTVERSE_PRODUCTION_ORIGIN must not target a local host.");
   }
