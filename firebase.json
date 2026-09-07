@@ -6,6 +6,10 @@
       "**/.*",
       "**/node_modules/**"
     ],
+    "predeploy": [
+      "node scripts/verifyProductionAppCheck.mjs",
+      "npm run build"
+    ],
     "headers": [
       {
         "source": "/",
@@ -62,6 +66,7 @@
         "firebase-debug.*.log"
       ],
       "predeploy": [
+        "node scripts/verifyProductionAppCheck.mjs",
         "npm --prefix \"$RESOURCE_DIR\" run build"
       ]
     }

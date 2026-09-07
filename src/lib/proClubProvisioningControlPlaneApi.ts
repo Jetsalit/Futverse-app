@@ -1,4 +1,5 @@
-import { auth } from "./firebase";
+import { getToken } from "firebase/app-check";
+import { appCheck, auth } from "./firebase";
 
 export type ProClubLevel = "T1" | "T2" | "T3";
 
@@ -99,6 +100,17 @@ export function buildProvisioningControlPlanePath(
     : "/api/pro-club/verify-audit-v1";
 }
 
+export function buildTrustedControlPlaneHeaders(
+  idToken: string,
+  appCheckToken: string,
+): Record<string, string> {
+  return {
+    Authorization: `Bearer ${idToken}`,
+    "X-Firebase-AppCheck": appCheckToken,
+    "Content-Type": "application/json",
+  };
+}
+
 async function postTrustedControlPlane<T>(path: string, body: unknown): Promise<T> {
   const firebaseUser = auth.currentUser;
   if (!firebaseUser) {
@@ -109,13 +121,29 @@ async function postTrustedControlPlane<T>(path: string, body: unknown): Promise<
     );
   }
 
+  if (!appCheck) {
+    throw new ProClubControlPlaneApiError(
+      "ERROR_APP_CHECK_NOT_CONFIGURED",
+      "Application verification is not configured for this build.",
+      0,
+    );
+  }
+
+  let appCheckToken: string;
+  try {
+    appCheckToken = (await getToken(appCheck, false)).token;
+  } catch {
+    throw new ProClubControlPlaneApiError(
+      "ERROR_APP_CHECK_TOKEN_UNAVAILABLE",
+      "Application verification could not be completed.",
+      0,
+    );
+  }
+
   const idToken = await firebaseUser.getIdToken();
   const response = await fetch(path, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${idToken}`,
-      "Content-Type": "application/json",
-    },
+    headers: buildTrustedControlPlaneHeaders(idToken, appCheckToken),
     body: JSON.stringify(body),
     credentials: "same-origin",
   });

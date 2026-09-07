@@ -1,3 +1,4 @@
+import { getAppCheck } from "firebase-admin/app-check";
 import { HttpsError, onCall, onRequest } from "firebase-functions/v2/https";
 import {
   error as logError,
@@ -5,6 +6,8 @@ import {
 } from "firebase-functions/logger";
 import { initializeAdminServices } from "./lib/firebaseAdmin.ts";
 import { createServerAuthTokenVerifier } from "./lib/serverAuthTokenVerifier.ts";
+import { createServerAppCheckTokenVerifier, type ServerAppCheckTokenVerifier } from "./lib/serverAppCheckTokenVerifier.ts";
+import { requireVerifiedAppCheckForPrivilegedHttp, type SafeAppCheckGateLogger } from "./lib/privilegedHttpAppCheckGate.ts";
 import {
   createProClubProvisioningService,
   type ProClubProvisioningService,
@@ -21,6 +24,8 @@ import {
   handleProClubProvisioningAuditVerificationHttpRequest,
   type SafeAuditVerificationLogger,
 } from "./proClubProvisioningAuditVerification/httpHandler.ts";
+
+const FUTVERSE_PRODUCTION_WEB_APP_ID = "1:504089427500:web:3cc2c8b1283316bdee9b89";
 
 const safeProvisioningLogger: SafeHandlerLogger = {
   warn(entry) {
@@ -40,8 +45,18 @@ const safeAuditVerificationLogger: SafeAuditVerificationLogger = {
   },
 };
 
+const safeAppCheckGateLogger: SafeAppCheckGateLogger = {
+  warn(entry) {
+    logWarn("Privileged Pro Club HTTP App Check rejected", entry);
+  },
+  error(entry) {
+    logError("Privileged Pro Club HTTP App Check internal error", entry);
+  },
+};
+
 let cachedService: ProClubProvisioningService | null = null;
 let cachedAuditVerificationService: ProClubProvisioningAuditVerificationService | null = null;
+let cachedAppCheckVerifier: ServerAppCheckTokenVerifier | null = null;
 
 function getService(): ProClubProvisioningService {
   if (!cachedService) {
@@ -67,6 +82,17 @@ function getAuditVerificationService(): ProClubProvisioningAuditVerificationServ
   return cachedAuditVerificationService;
 }
 
+function getAppCheckVerifier(): ServerAppCheckTokenVerifier {
+  if (!cachedAppCheckVerifier) {
+    const adminServices = initializeAdminServices();
+    cachedAppCheckVerifier = createServerAppCheckTokenVerifier(
+      getAppCheck(adminServices.app),
+      [FUTVERSE_PRODUCTION_WEB_APP_ID],
+    );
+  }
+  return cachedAppCheckVerifier;
+}
+
 export const provisionProClubV1 = onRequest(
   {
     region: "asia-southeast1",
@@ -77,6 +103,14 @@ export const provisionProClubV1 = onRequest(
     maxInstances: 10,
   },
   async (req, res) => {
+    const appCheckAccepted = await requireVerifiedAppCheckForPrivilegedHttp(
+      req.get("X-Firebase-AppCheck"),
+      res,
+      getAppCheckVerifier(),
+      safeAppCheckGateLogger,
+    );
+    if (!appCheckAccepted) return;
+
     const service = getService();
     await handleProClubProvisioningHttpRequest(req, res, {
       service,
@@ -95,6 +129,14 @@ export const verifyProClubProvisioningAuditV1 = onRequest(
     maxInstances: 10,
   },
   async (req, res) => {
+    const appCheckAccepted = await requireVerifiedAppCheckForPrivilegedHttp(
+      req.get("X-Firebase-AppCheck"),
+      res,
+      getAppCheckVerifier(),
+      safeAppCheckGateLogger,
+    );
+    if (!appCheckAccepted) return;
+
     const service = getAuditVerificationService();
     await handleProClubProvisioningAuditVerificationHttpRequest(req, res, {
       service,
