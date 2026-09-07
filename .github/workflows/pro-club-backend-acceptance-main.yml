@@ -18,17 +18,22 @@ jobs:
           node-version: 22
           cache: npm
 
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
       - name: Install root dependencies
         run: npm ci
 
       - name: Install Functions dependencies
         run: npm --prefix functions ci
 
-      - name: Verify exact main provenance
+      - name: Verify exact main provenance and verification-only scope
         run: |
-          test "$(git rev-parse HEAD^)" = "06ad134341384396568b83471460b536bc391bfc"
-          test "$(git rev-parse HEAD^^)" = "21f7da8f273d778ffc81d2d267d722f4f01530e5"
           test "$(git rev-parse origin/main)" = "21f7da8f273d778ffc81d2d267d722f4f01530e5"
+          git merge-base --is-ancestor 21f7da8f273d778ffc81d2d267d722f4f01530e5 HEAD
+          test "$(git diff --name-only 21f7da8f273d778ffc81d2d267d722f4f01530e5..HEAD)" = ".github/workflows/pro-club-backend-acceptance-main.yml"
 
       - name: Provisioning backend unit and contract acceptance
         run: >-
