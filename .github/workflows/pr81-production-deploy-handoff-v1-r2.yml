@@ -1,0 +1,65 @@
+name: PR81 Production Deploy Handoff V1 Gate R2
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/pr81-production-deploy-handoff-v1-r2.yml"
+      - "RELEASE_CHECKLIST.md"
+      - "docs/PRODUCTION_PRO_CLUB_DEPLOY_RUNBOOK.md"
+      - "package.json"
+      - "scripts/smokeProductionProClubBoundary.mjs"
+      - "tests/productionProClubBoundarySmoke.unit.test.mjs"
+      - "scripts/verifyProductionAppCheck.mjs"
+      - "scripts/verifyProductionDeployReadiness.ts"
+      - "tests/proClubControlPlaneAppCheckHardening.contract.test.ts"
+      - "tests/productionDeployReadinessV2.unit.test.ts"
+      - "functions/src/**"
+      - "firebase.json"
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm --prefix functions ci
+      - name: Verify exact product head ancestry
+        run: |
+          git merge-base --is-ancestor 4065e1da62ef8afaf9bffee40b3bce671cb00dc4 HEAD
+          test "$(git rev-parse 4065e1da62ef8afaf9bffee40b3bce671cb00dc4)" = "4065e1da62ef8afaf9bffee40b3bce671cb00dc4"
+      - name: Boundary smoke harness tests
+        run: npm run test:production-pro-club-boundary-smoke
+      - name: Production readiness V2 tests
+        run: npm run test:production-deploy-readiness
+      - name: Canonical App Check source-boundary contract
+        run: node --import tsx --test tests/proClubControlPlaneAppCheckHardening.contract.test.ts
+      - name: Canonical App Check guard blocks missing key
+        shell: bash
+        run: |
+          set +e
+          env -u VITE_RECAPTCHA_SITE_KEY -u VITE_APP_CHECK_DEBUG_TOKEN node scripts/verifyProductionAppCheck.mjs
+          code=$?
+          set -e
+          test "$code" -ne 0
+      - name: Full readiness command passes with temporary production-shaped key
+        env:
+          VITE_RECAPTCHA_SITE_KEY: 6Lc_pr81-r2-temporary-production-shaped-key
+          VITE_APP_CHECK_DEBUG_TOKEN: ""
+        run: npm run verify:production-deploy-readiness
+      - run: npm --prefix functions run build
+      - run: npm run lint
+      - name: Production build with temporary production-shaped key
+        env:
+          VITE_RECAPTCHA_SITE_KEY: 6Lc_pr81-r2-temporary-production-shaped-key
+          VITE_APP_CHECK_DEBUG_TOKEN: ""
+        run: npm run build
+      - run: git diff --check b47013dd2cecc79ec0f584ef41026e1059d4c5fe..4065e1da62ef8afaf9bffee40b3bce671cb00dc4
+      - run: test -z "$(git status --porcelain=v1)"
