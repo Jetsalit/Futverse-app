@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
+  CANONICAL_APP_CHECK_CONTRACT_COMMAND,
   CANONICAL_APP_CHECK_GUARD_COMMAND,
   EXPECTED_READINESS_COMMAND,
   ProductionDeployReadinessError,
@@ -50,13 +51,13 @@ test("production readiness V2 passes on the post-PR72 production source baseline
   assert.deepEqual(result.checks, [
     "firebase-project-identity",
     "functions-runtime-nodejs22",
-    "canonical-app-check-predeploy-first",
+    "canonical-app-check-predeploy-exact",
     "pro-club-hosting-rewrites-leading",
     "function-export-regions",
     "function-options-explicit",
     "privileged-http-cors-false",
     "staff-candidate-app-check-enforced",
-    "readiness-script-chains-canonical-app-check",
+    "readiness-script-chains-app-check-environment-and-source-contracts",
   ]);
 });
 
@@ -64,7 +65,13 @@ test("V2 delegates App Check environment validation to the canonical PR72 guard"
   assert.equal(readinessSource.includes("VITE_RECAPTCHA_SITE_KEY"), false);
   assert.equal(readinessSource.includes("VITE_APP_CHECK_DEBUG_TOKEN"), false);
   assert.equal(readinessSource.includes("loadEnv"), false);
-  assert.match(EXPECTED_READINESS_COMMAND, /^node scripts\/verifyProductionAppCheck\.mjs && /);
+});
+
+test("operator readiness chain preserves both canonical PR72 App Check gates", () => {
+  assert.equal(
+    EXPECTED_READINESS_COMMAND,
+    `${CANONICAL_APP_CHECK_GUARD_COMMAND} && ${CANONICAL_APP_CHECK_CONTRACT_COMMAND} && node --import tsx scripts/verifyProductionDeployReadiness.ts`,
+  );
 });
 
 test("production readiness rejects Firebase project alias drift", () => {
@@ -86,18 +93,18 @@ test("production readiness rejects Functions runtime drift", () => {
   }, "FUNCTIONS_RUNTIME_MISMATCH");
 });
 
-test("production readiness requires the canonical App Check guard first in Hosting predeploy", () => {
+test("production readiness requires exact Hosting guard-before-build wiring", () => {
   expectBlocked((input) => {
     const config = input.firebaseJson as { hosting: { predeploy: string[] } };
-    config.hosting.predeploy = ["npm run build", CANONICAL_APP_CHECK_GUARD_COMMAND];
-  }, "APP_CHECK_PREDEPLOY_ORDER_INVALID");
+    config.hosting.predeploy = [CANONICAL_APP_CHECK_GUARD_COMMAND];
+  }, "APP_CHECK_PREDEPLOY_MISMATCH");
 });
 
-test("production readiness requires the canonical App Check guard in Functions predeploy", () => {
+test("production readiness requires exact Functions guard-before-build wiring", () => {
   expectBlocked((input) => {
     const config = input.firebaseJson as { functions: Array<{ predeploy: string[] }> };
-    config.functions[0].predeploy = ['npm --prefix "$RESOURCE_DIR" run build'];
-  }, "APP_CHECK_PREDEPLOY_MISSING");
+    config.functions[0].predeploy = [CANONICAL_APP_CHECK_GUARD_COMMAND];
+  }, "APP_CHECK_PREDEPLOY_MISMATCH");
 });
 
 test("production readiness rejects protected rewrite shadowing or reordering", () => {
@@ -152,10 +159,10 @@ test("production readiness preserves same-origin cors:false on privileged HTTP e
   }, "PRIVILEGED_HTTP_CORS_MISMATCH");
 });
 
-test("production readiness command cannot bypass the canonical App Check guard", () => {
+test("production readiness command cannot bypass the canonical App Check source contract", () => {
   expectBlocked((input) => {
     const pkg = input.packageJson as { scripts: Record<string, string> };
     pkg.scripts["verify:production-deploy-readiness"] =
-      "node --import tsx scripts/verifyProductionDeployReadiness.ts";
+      `${CANONICAL_APP_CHECK_GUARD_COMMAND} && node --import tsx scripts/verifyProductionDeployReadiness.ts`;
   }, "READINESS_SCRIPT_CHAIN_MISMATCH");
 });
