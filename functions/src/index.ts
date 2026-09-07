@@ -25,6 +25,8 @@ import {
   type SafeAuditVerificationLogger,
 } from "./proClubProvisioningAuditVerification/httpHandler.ts";
 
+const FUTVERSE_PRODUCTION_WEB_APP_ID = "1:504089427500:web:3cc2c8b1283316bdee9b89";
+
 const safeProvisioningLogger: SafeHandlerLogger = {
   warn(entry) {
     logWarn("Pro Club provisioning domain error", entry);
@@ -83,7 +85,10 @@ function getAuditVerificationService(): ProClubProvisioningAuditVerificationServ
 function getAppCheckVerifier(): ServerAppCheckTokenVerifier {
   if (!cachedAppCheckVerifier) {
     const adminServices = initializeAdminServices();
-    cachedAppCheckVerifier = createServerAppCheckTokenVerifier(getAppCheck(adminServices.app));
+    cachedAppCheckVerifier = createServerAppCheckTokenVerifier(
+      getAppCheck(adminServices.app),
+      [FUTVERSE_PRODUCTION_WEB_APP_ID],
+    );
   }
   return cachedAppCheckVerifier;
 }
