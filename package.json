@@ -13,6 +13,8 @@
     "test:production-deploy-readiness": "node --import tsx --test tests/productionDeployReadinessV2.unit.test.ts",
     "smoke:production-pro-club-boundary": "node scripts/smokeProductionProClubBoundary.mjs",
     "test:production-pro-club-boundary-smoke": "node --test tests/productionProClubBoundarySmoke.unit.test.mjs",
+    "verify:production-pro-club-known-state": "node --import tsx scripts/verifyProductionProClubKnownState.ts",
+    "test:production-pro-club-known-state": "node --import tsx --test tests/productionProClubKnownStateVerifier.unit.test.ts",
     "verify:spark-production-readiness": "node scripts/verifyProductionAppCheck.mjs && node --import tsx --test tests/sparkProductionReadiness.unit.test.ts && node --import tsx scripts/verifySparkProductionReadiness.ts",
     "test:spark-production-readiness": "node --import tsx --test tests/sparkProductionReadiness.unit.test.ts",
     "test:rules": "firebase emulators:exec --project demo-futverse-membership --only firestore \"node --import tsx --test tests/firestore.membership.rules.test.ts\"",
