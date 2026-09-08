@@ -125,7 +125,7 @@ export async function runLocalRenameCli(
       out(`  Operator UID   : ${result.operatorUid}\n`);
       out(`  Club ID        : ${result.requestBody.clubId}\n`);
       out(`  New Name       : ${result.requestBody.newName}\n`);
-    } else {
+    } else if ("changeId" in result) {
       out(`[RENAMED] Pro Club rename completed through the canonical trusted service.\n`);
       out(`  Club ID        : ${result.clubId}\n`);
       out(`  Change ID      : ${result.changeId}\n`);
@@ -133,6 +133,8 @@ export async function runLocalRenameCli(
       out(`  Short Name     : ${result.shortName ?? "(none)"}\n`);
       out(`  Changed At     : ${result.changedAt}\n`);
       out(`  Changed By     : ${result.changedBy}\n`);
+    } else {
+      throw new Error("Unexpected canonical rename result shape");
     }
     return 0;
   } catch (error) {
