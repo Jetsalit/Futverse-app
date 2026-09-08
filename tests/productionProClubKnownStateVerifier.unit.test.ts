@@ -160,8 +160,10 @@ test("rename history with unexpected fields fails exact-shape validation", () =>
 });
 
 test("malformed history missing effectiveAt fails closed instead of being hidden by query ordering", () => {
-  const malformed = renameRecord();
-  delete malformed.effectiveAt;
+  const {
+    effectiveAt: _omittedEffectiveAt,
+    ...malformed
+  } = renameRecord();
   const result = evaluateKnownState(makeInput({
     club: {
       ...makeInput().club,
