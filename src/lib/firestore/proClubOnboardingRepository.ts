@@ -4,6 +4,7 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { auth, db, functions } from "../firebase";
+import { FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE } from "../../config/runtimeCapabilities";
 import { isProClubStaffRole, isValidDocumentIdentifier } from "../proClubModel";
 import {
   isPermissionDenied, normalizeProClubInviteCode, OnboardingError, parseProClubClaim,
@@ -44,6 +45,12 @@ export type ResolveCandidateFn = (
 ) => Promise<ResolvedStaffCandidate>;
 
 export const defaultCallableCaller: ResolveCandidateCallableCaller = async (data) => {
+  // Spark-first defense-in-depth: do not even construct/invoke the callable in
+  // a production web build. Candidate lookup stays server-only and is never
+  // replaced by a browser-side user-directory search.
+  if (!FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE) {
+    throw new OnboardingError("UNAVAILABLE");
+  }
   const callable = httpsCallable<typeof data, unknown>(
     functions,
     "resolveProClubStaffCandidateV1",
@@ -60,6 +67,7 @@ export async function defaultResolveCandidateFn(
   try {
     result = await caller({ clubId, email });
   } catch (error: any) {
+    if (error instanceof OnboardingError) throw error;
     const code = error?.code;
     if (code === "unauthenticated" || code === "functions/unauthenticated") {
       throw new OnboardingError("AUTH_CHANGED");
