@@ -1,0 +1,13 @@
+{
+  "projectId": "futverse-d7872",
+  "targets": [
+    {
+      "clubId": "tnsu-lampang",
+      "provisioningId": "proclub-tnsu-lampang-20260904-001",
+      "originalName": "มหาวิทยาลัยการกีฬาแห่งชาติ วิทยาเขตลำปาง",
+      "originalShortName": "TNSU Lampang",
+      "level": "T3",
+      "country": "TH"
+    }
+  ]
+}
