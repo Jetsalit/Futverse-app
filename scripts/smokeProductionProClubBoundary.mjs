@@ -165,6 +165,15 @@ export function validateSmokeEnvironment(env = process.env, allowedOrigins) {
 }
 
 export async function assertExpectedAppCheckRejection(response, requestPath) {
+  const location = response.headers?.get?.("location") ?? "";
+  if (
+    response.redirected === true ||
+    (response.status >= 300 && response.status < 400) ||
+    location
+  ) {
+    throw new Error(`${requestPath} attempted a redirect before the App Check boundary.`);
+  }
+
   const contentType = response.headers?.get?.("content-type") ?? "";
   if (!contentType.toLowerCase().includes("application/json")) {
     throw new Error(`${requestPath} returned a non-JSON response.`);

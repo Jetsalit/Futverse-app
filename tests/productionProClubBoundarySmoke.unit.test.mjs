@@ -28,12 +28,17 @@ function appCheckRequiredResponse({
   contentType = "application/json; charset=utf-8",
   code = EXPECTED_APP_CHECK_ERROR_CODE,
   message = "Application verification is required.",
+  location = "",
+  redirected = false,
 } = {}) {
   return {
     status,
+    redirected,
     headers: {
       get(name) {
-        return name.toLowerCase() === "content-type" ? contentType : null;
+        if (name.toLowerCase() === "content-type") return contentType;
+        if (name.toLowerCase() === "location") return location;
+        return null;
       },
     },
     async json() {
@@ -213,6 +218,25 @@ test("boundary response must be privacy-safe App Check 401 JSON", async () => {
         PROTECTED_PRO_CLUB_PATHS[0],
       ),
     /non-JSON/,
+  );
+  await assert.rejects(
+    () =>
+      assertExpectedAppCheckRejection(
+        appCheckRequiredResponse({
+          status: 302,
+          location: "https://external.example/",
+        }),
+        PROTECTED_PRO_CLUB_PATHS[0],
+      ),
+    /redirect/,
+  );
+  await assert.rejects(
+    () =>
+      assertExpectedAppCheckRejection(
+        appCheckRequiredResponse({ redirected: true }),
+        PROTECTED_PRO_CLUB_PATHS[0],
+      ),
+    /redirect/,
   );
 });
 
