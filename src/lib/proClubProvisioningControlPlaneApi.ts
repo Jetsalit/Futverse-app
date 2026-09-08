@@ -1,5 +1,9 @@
 import { getToken } from "firebase/app-check";
 import { appCheck, auth } from "./firebase";
+import {
+  FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE,
+  SPARK_FUNCTION_BACKED_WEB_UNAVAILABLE_MESSAGE,
+} from "../config/runtimeCapabilities";
 
 export type ProClubLevel = "T1" | "T2" | "T3";
 
@@ -40,6 +44,18 @@ export class ProClubControlPlaneApiError extends Error {
   ) {
     super(message);
     this.name = "ProClubControlPlaneApiError";
+  }
+}
+
+export function assertProClubServerControlPlaneAvailable(
+  available = FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE,
+): void {
+  if (!available) {
+    throw new ProClubControlPlaneApiError(
+      "ERROR_SERVER_CONTROL_PLANE_UNAVAILABLE_ON_SPARK",
+      SPARK_FUNCTION_BACKED_WEB_UNAVAILABLE_MESSAGE,
+      0,
+    );
   }
 }
 
@@ -112,6 +128,11 @@ export function buildTrustedControlPlaneHeaders(
 }
 
 async function postTrustedControlPlane<T>(path: string, body: unknown): Promise<T> {
+  // Spark-first defense-in-depth: production web builds stop before reading
+  // auth/App Check tokens or attempting any network request to an unavailable
+  // Function-backed route.
+  assertProClubServerControlPlaneAvailable();
+
   const firebaseUser = auth.currentUser;
   if (!firebaseUser) {
     throw new ProClubControlPlaneApiError(

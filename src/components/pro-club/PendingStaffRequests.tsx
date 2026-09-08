@@ -4,6 +4,10 @@ import { EmptyState } from "../common/EmptyState";
 import { proClubOnboardingRepository, type PendingStaffRequest } from "../../lib/firestore/proClubOnboardingRepository";
 import { isClaimantIdentity, onboardingErrorMessage, staffRoleLabels, visibleInviteStatus, type ProClubInvite, type ResolvedStaffCandidate } from "../../lib/proClubOnboarding";
 import type { ProClubStaffRole } from "../../types/ProClub";
+import {
+  FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE,
+  SPARK_FUNCTION_BACKED_WEB_UNAVAILABLE_MESSAGE,
+} from "../../config/runtimeCapabilities";
 import { buttonClass, inputClass, secondaryClass, StatusBadge } from "./StaffOnboarding";
 
 function ClaimantDetails({ request }: { request: PendingStaffRequest }) {
@@ -47,6 +51,11 @@ function IssueInviteForm({
   async function handleVerify(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    if (!FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE) {
+      setCandidate(null);
+      setError(SPARK_FUNCTION_BACKED_WEB_UNAVAILABLE_MESSAGE);
+      return;
+    }
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes("@")) {
       setError("Please enter a valid staff email address.");
@@ -66,6 +75,10 @@ function IssueInviteForm({
 
   async function handleCreateInvite(e: React.FormEvent) {
     e.preventDefault();
+    if (!FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE) {
+      setError(SPARK_FUNCTION_BACKED_WEB_UNAVAILABLE_MESSAGE);
+      return;
+    }
     if (!candidate || candidate.email.toLowerCase() !== email.trim().toLowerCase()) {
       setError("Please verify the staff account before issuing an invitation.");
       return;
@@ -123,11 +136,11 @@ function IssueInviteForm({
               maxLength={254}
               required
               autoComplete="off"
-              disabled={verifying}
+              disabled={verifying || !FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE}
             />
           </div>
           <div className="flex flex-wrap gap-3 pt-2">
-            <button type="submit" className={buttonClass} disabled={verifying}>
+            <button type="submit" className={buttonClass} disabled={verifying || !FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE}>
               {verifying ? "Verifying account…" : "Verify account"}
             </button>
             <button type="button" className={secondaryClass} onClick={onClose} disabled={verifying}>
@@ -184,7 +197,7 @@ function IssueInviteForm({
           </div>
 
           <div className="flex flex-wrap gap-3 pt-2">
-            <button type="submit" className={buttonClass} disabled={submitting}>
+            <button type="submit" className={buttonClass} disabled={submitting || !FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE}>
               {submitting ? "Generating invitation…" : "Create invitation"}
             </button>
             <button
@@ -257,14 +270,30 @@ export default function PendingStaffRequests({ clubId, clubName, uid }: { clubId
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div><h2 id="pending-staff-title" className="text-xl font-black text-slate-900">Pending staff requests</h2><p className="mt-1 text-sm text-slate-500">Review invitations and manage onboarding for this club.</p></div>
       <div className="flex flex-wrap gap-2">
-        <button className={buttonClass} disabled={loading || busy} onClick={() => { setIsInviting(true); setIssuedInvite(null); }}>
+        <button
+          className={buttonClass}
+          disabled={loading || busy || !FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE}
+          title={!FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE ? "Staff account lookup requires the trusted server control plane." : undefined}
+          onClick={() => {
+            if (!FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE) return;
+            setIsInviting(true);
+            setIssuedInvite(null);
+          }}
+        >
           <UserPlus size={16} className="inline mr-1.5" /> Invite staff
         </button>
         <button className={secondaryClass} disabled={loading || busy} onClick={() => void refresh()}>Refresh</button>
       </div>
     </div>
 
-    {isInviting && (
+    {!FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE && (
+      <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <strong>Invite staff is unavailable on the Spark production web app.</strong>{" "}
+        {SPARK_FUNCTION_BACKED_WEB_UNAVAILABLE_MESSAGE} Pending request review remains available.
+      </p>
+    )}
+
+    {isInviting && FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE && (
       <IssueInviteForm
         clubId={clubId}
         clubName={clubName}

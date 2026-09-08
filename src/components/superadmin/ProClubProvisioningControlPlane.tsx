@@ -8,6 +8,10 @@ import {
   type ProvisionProClubControlPlaneResult,
   type VerifyProvisioningAuditResult,
 } from "../../lib/proClubProvisioningControlPlaneApi";
+import {
+  FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE,
+  SPARK_FUNCTION_BACKED_WEB_UNAVAILABLE_MESSAGE,
+} from "../../config/runtimeCapabilities";
 
 interface ProClubProvisioningControlPlaneProps {
   onClose: () => void;
@@ -41,6 +45,7 @@ export default function ProClubProvisioningControlPlane({
 
   const canSubmitProvision = useMemo(
     () =>
+      FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE &&
       provisioningId.trim().length > 0 &&
       clubId.trim().length > 0 &&
       name.trim().length > 0 &&
@@ -58,7 +63,7 @@ export default function ProClubProvisioningControlPlane({
   };
 
   const handleProvision = async () => {
-    if (!canSubmitProvision) return;
+    if (!canSubmitProvision || !FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE) return;
     setBusy("provision");
     setError(null);
     setProvisionResult(null);
@@ -85,6 +90,7 @@ export default function ProClubProvisioningControlPlane({
   };
 
   const handleVerify = async () => {
+    if (!FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE) return;
     setBusy("verify");
     setError(null);
     setVerificationResult(null);
@@ -99,6 +105,45 @@ export default function ProClubProvisioningControlPlane({
       setBusy(null);
     }
   };
+
+  if (!FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE) {
+    return (
+      <div className="fixed inset-0 z-[80] bg-slate-950/55 p-3 backdrop-blur-sm sm:p-6">
+        <div className="mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+          <header className="flex items-start justify-between border-b border-slate-200 px-5 py-4 sm:px-7">
+            <div>
+              <div className="mb-1 flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-amber-700">
+                <ShieldCheck size={16} />
+                Spark production boundary
+              </div>
+              <h1 className="text-xl font-black text-slate-950 sm:text-2xl">
+                Pro Club server control plane unavailable
+              </h1>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+              aria-label="Close Pro Club control plane"
+            >
+              <X size={20} />
+            </button>
+          </header>
+          <div className="flex flex-1 items-center justify-center p-6 sm:p-10">
+            <div className="max-w-xl rounded-2xl border border-amber-200 bg-amber-50 p-6 text-amber-950">
+              <p className="font-black">Protected server actions are intentionally disabled on Spark.</p>
+              <p className="mt-2 text-sm leading-6">
+                {SPARK_FUNCTION_BACKED_WEB_UNAVAILABLE_MESSAGE}
+              </p>
+              <p className="mt-3 text-xs leading-5 text-amber-800">
+                No browser fallback is provided for provisioning or audit verification. Existing trusted server code is preserved for the reviewed post-revenue phase.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-[80] bg-slate-950/55 p-3 backdrop-blur-sm sm:p-6">
