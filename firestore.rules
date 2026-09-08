@@ -2388,6 +2388,13 @@ service cloud.firestore {
         allow update, delete: if false;
       }
 
+      // Name history is append-only and written only by the trusted Admin SDK
+      // transaction. ACTIVE OWNER/ADMIN reviewers may read it for audit use.
+      match /nameHistory/{changeId} {
+        allow get, list: if isActiveProClubReviewerV1(clubId);
+        allow create, update, delete: if false;
+      }
+
       match /onboardingClaims/{claimId} {
         allow get: if isSignedIn()
           && (

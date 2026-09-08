@@ -5,6 +5,7 @@ import { test } from "node:test";
 import {
   CANONICAL_APP_CHECK_CONTRACT_COMMAND,
   CANONICAL_APP_CHECK_GUARD_COMMAND,
+  EXPECTED_PRO_CLUB_HOSTING_REWRITES,
   EXPECTED_READINESS_COMMAND,
   ProductionDeployReadinessError,
   validateProductionDeployReadiness,
@@ -137,6 +138,34 @@ test("production readiness rejects protected rewrite target drift", () => {
   }, "HOSTING_REWRITE_TARGET_MISMATCH");
 });
 
+test("production readiness protects the exact rename rewrite and deployment target", () => {
+  assert.deepEqual(EXPECTED_PRO_CLUB_HOSTING_REWRITES[2], {
+    source: "/api/pro-club/rename-v1",
+    functionId: "renameProClubV1",
+  });
+  expectBlocked((input) => {
+    const config = input.firebaseJson as {
+      hosting: { rewrites: Array<{ function?: { functionId?: string } }> };
+    };
+    config.hosting.rewrites[2].function!.functionId = "wrongRenameFunction";
+  }, "HOSTING_REWRITE_TARGET_MISMATCH");
+});
+
+test("production readiness blocks a missing rename rewrite", () => {
+  expectBlocked((input) => {
+    const config = input.firebaseJson as { hosting: { rewrites: unknown[] } };
+    config.hosting.rewrites.splice(2, 1);
+  }, "HOSTING_REWRITE_MISSING");
+});
+
+test("production readiness blocks a reordered rename rewrite", () => {
+  expectBlocked((input) => {
+    const config = input.firebaseJson as { hosting: { rewrites: unknown[] } };
+    const rewrites = config.hosting.rewrites;
+    [rewrites[1], rewrites[2]] = [rewrites[2], rewrites[1]];
+  }, "HOSTING_REWRITE_ORDER_INVALID");
+});
+
 test("production readiness binds staff candidate App Check enforcement to the onCall options object", () => {
   expectBlocked((input) => {
     input.functionsIndexSource = input.functionsIndexSource.replace(
@@ -151,6 +180,16 @@ test("production readiness rejects protected function region drift", () => {
     input.functionsIndexSource = replaceRequired(
       input.functionsIndexSource,
       /(export const provisionProClubV1 = onRequest\(\r?\n\s*\{\r?\n\s*region:\s*)"asia-southeast1"/,
+      '$1"us-central1"',
+    );
+  }, "FUNCTION_EXPORT_REGION_MISMATCH");
+});
+
+test("production readiness rejects rename function region drift", () => {
+  expectBlocked((input) => {
+    input.functionsIndexSource = replaceRequired(
+      input.functionsIndexSource,
+      /(export const renameProClubV1 = onRequest\(\r?\n\s*\{\r?\n\s*region:\s*)"asia-southeast1"/,
       '$1"us-central1"',
     );
   }, "FUNCTION_EXPORT_REGION_MISMATCH");
@@ -171,6 +210,16 @@ test("production readiness preserves same-origin cors:false on privileged HTTP e
     input.functionsIndexSource = input.functionsIndexSource.replace(
       "cors: false,",
       "cors: true,",
+    );
+  }, "PRIVILEGED_HTTP_CORS_MISMATCH");
+});
+
+test("production readiness preserves cors:false on renameProClubV1", () => {
+  expectBlocked((input) => {
+    input.functionsIndexSource = replaceRequired(
+      input.functionsIndexSource,
+      /(export const renameProClubV1 = onRequest\([\s\S]*?\bcors:\s*)false/,
+      "$1true",
     );
   }, "PRIVILEGED_HTTP_CORS_MISMATCH");
 });

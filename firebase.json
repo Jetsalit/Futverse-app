@@ -46,6 +46,13 @@
         }
       },
       {
+        "source": "/api/pro-club/rename-v1",
+        "function": {
+          "functionId": "renameProClubV1",
+          "region": "asia-southeast1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

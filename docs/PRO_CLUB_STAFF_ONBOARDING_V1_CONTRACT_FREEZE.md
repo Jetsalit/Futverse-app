@@ -455,3 +455,20 @@ This successor amendment does NOT change:
 - default-deny behavior
 - historical baseline SHA
 - historical implementation scope
+
+## 26. Pro Club Identity & Name History V1 successor amendment
+
+The successor path `proClubs/{clubId}/nameHistory/{changeId}` is an append-only
+audit/read surface. Reviewer reads are restricted to an ACTIVE OWNER/ADMIN with
+canonical active-account and exact-club Membership authority.
+
+The client boundary for this successor path is frozen explicitly:
+
+- client create=false
+- client update=false
+- client delete=false
+
+This successor amendment makes no Membership authority change, makes no
+staff-role authority change, provides no `users.role` bypass, and permits no
+historical baseline rewrite. It does not weaken onboarding or production
+default-deny behavior.

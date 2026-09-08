@@ -14,6 +14,7 @@ export const REQUIRED_DEFAULT_PRODUCTION_ORIGINS = [
 export const PROTECTED_PRO_CLUB_PATHS = [
   "/api/pro-club/provision-v1",
   "/api/pro-club/verify-audit-v1",
+  "/api/pro-club/rename-v1",
 ];
 export const EXPECTED_APP_CHECK_ERROR_CODE = "ERROR_APP_CHECK_REQUIRED";
 

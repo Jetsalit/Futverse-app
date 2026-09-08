@@ -58,7 +58,7 @@ A production deployment is a separate write action. Require explicit owner autho
 After authorization, use only the approved Firebase deployment scope and re-check the exact SHA immediately before execution. If the branch, SHA, project, or working tree differs from the approved candidate, stop.
 
 ## Phase D — Immediate credential-free boundary smoke
-After a production deployment, first run the non-destructive public-boundary smoke harness. It intentionally sends **no Firebase ID token and no App Check token** and therefore cannot create a Pro Club. Even if the App Check layer were unexpectedly absent, the provisioning service verifies authorization before request validation or Firestore writes.
+After a production deployment, first run the non-destructive public-boundary smoke harness. It intentionally sends **no Firebase ID token and no App Check token** and therefore cannot create or rename a Pro Club. App Check is verified before the business handler. On the rename path, Firebase authentication occurs before request validation, and ACTIVE SUPERADMIN authority is transactionally revalidated before any Firestore write.
 
 Choose exactly one origin from `config/productionProClubSmokeTargets.json`.
 
@@ -72,7 +72,7 @@ Remove-Item Env:FUTVERSE_PRODUCTION_APP_CHECK_TOKEN -ErrorAction SilentlyContinu
 npm run smoke:production-pro-club-boundary
 ```
 
-Expected result for both protected paths:
+Expected result for all three protected paths:
 
 - HTTP `401`;
 - JSON response;
@@ -85,13 +85,14 @@ The harness checks:
 
 - `/api/pro-club/provision-v1`
 - `/api/pro-club/verify-audit-v1`
+- `/api/pro-club/rename-v1`
 
-A PASS proves only the public fail-closed App Check boundary and Hosting routing for the reviewed production origin. It does **not** prove successful authenticated SuperAdmin provisioning or authenticated audit verification.
+A PASS proves only the public fail-closed App Check boundary and Hosting routing for the reviewed production origin. It does **not** prove successful authenticated SuperAdmin provisioning, authenticated audit verification, or authenticated rename.
 
 ## Phase E — Authenticated production smoke (separate controlled action)
-Only after the credential-free smoke passes should a separately authorized authenticated smoke be performed. That later check must use a known ACTIVE SUPERADMIN, a valid App Check token from the approved production app, deterministic test identities, and an explicitly reviewed non-destructive/idempotent plan.
+Only after the credential-free smoke passes should a separately authorized authenticated smoke be performed. That later check must cover the rename endpoint, use a known ACTIVE SUPERADMIN, a valid App Check token from the approved production app, deterministic test identities, and an explicitly reviewed non-destructive/idempotent plan.
 
-Do not improvise a real Pro Club creation as a smoke test. Successful production provisioning should use the approved operational workflow and recorded audit evidence.
+Do not improvise a real Pro Club creation or rename a real Pro Club as a smoke test. Authenticated rename verification must use either a separately reviewed non-destructive failure path or a dedicated disposable fixture plan. Successful production provisioning should use the approved operational workflow and recorded audit evidence. Nothing in this runbook authorizes deployment.
 
 ## Stop conditions
 Stop immediately if any of the following occurs:

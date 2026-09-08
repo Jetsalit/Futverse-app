@@ -4,6 +4,8 @@ import type {
   ProClubLevel,
   ProClubMembership,
   ProClubMembershipStatus,
+  ProClubNameChangeReason,
+  ProClubNameHistoryRecord,
   ProClubStaffAssignment,
   ProClubStaffRole,
   ProClubStaffStatus,
@@ -31,6 +33,20 @@ const PRO_CLUB_STAFF_ASSIGNMENT_FIELDS = new Set([
   "status",
 ]);
 
+const PRO_CLUB_NAME_HISTORY_FIELDS = new Set([
+  "schemaVersion",
+  "clubId",
+  "previousName",
+  "previousShortName",
+  "newName",
+  "newShortName",
+  "reason",
+  "reasonNote",
+  "effectiveAt",
+  "changedAt",
+  "changedBy",
+]);
+
 export interface ProClubDocumentContext {
   /** Tenant requested by the caller. */
   clubId: string;
@@ -46,6 +62,13 @@ export interface ProClubMemberDocumentContext {
   /** User requested by the caller. */
   userId: string;
   /** Document ID read from members/{uid} or staff/{uid}. */
+  documentId: string;
+}
+
+export interface ProClubNameHistoryDocumentContext {
+  clubId: string;
+  documentClubId: string;
+  changeId: string;
   documentId: string;
 }
 
@@ -82,6 +105,29 @@ export function isProClubLevel(value: unknown): value is ProClubLevel {
 
 export function isProClubStatus(value: unknown): value is ProClubStatus {
   return value === "ACTIVE" || value === "INACTIVE";
+}
+
+export function isProClubNameChangeReason(
+  value: unknown,
+): value is ProClubNameChangeReason {
+  return (
+    value === "TAKEOVER" ||
+    value === "REBRAND" ||
+    value === "LEGAL_NAME_CHANGE" ||
+    value === "OTHER"
+  );
+}
+
+function isCanonicalIsoUtcTimestamp(value: unknown): value is string {
+  if (typeof value !== "string" || !value.endsWith("Z")) return false;
+  const parsed = Date.parse(value);
+  return !Number.isNaN(parsed) && new Date(parsed).toISOString() === value;
+}
+
+function isNullableExactString(value: unknown): value is string | null {
+  return value === null || (
+    typeof value === "string" && value.length > 0 && value.trim() === value
+  );
 }
 
 export function isProClubAuthorizationRole(
@@ -172,6 +218,53 @@ export function validateProClub(
     isOptionalExactString(candidate.logoUrl) &&
     isOptionalExactString(candidate.createdAt) &&
     isOptionalExactString(candidate.updatedAt)
+  );
+}
+
+export function validateProClubNameHistoryRecord(
+  history: unknown,
+  context: ProClubNameHistoryDocumentContext,
+): history is ProClubNameHistoryRecord {
+  if (
+    !context ||
+    typeof context !== "object" ||
+    !isValidDocumentIdentifier(context.clubId) ||
+    !isValidDocumentIdentifier(context.documentClubId) ||
+    context.clubId !== context.documentClubId ||
+    !isValidDocumentIdentifier(context.changeId) ||
+    !isValidDocumentIdentifier(context.documentId) ||
+    context.changeId !== context.documentId
+  ) {
+    return false;
+  }
+
+  const candidate = asRecord(history);
+  if (!candidate || !hasOnlyFields(candidate, PRO_CLUB_NAME_HISTORY_FIELDS)) {
+    return false;
+  }
+
+  return (
+    Object.keys(candidate).length === PRO_CLUB_NAME_HISTORY_FIELDS.size &&
+    candidate.schemaVersion === 1 &&
+    candidate.clubId === context.clubId &&
+    typeof candidate.previousName === "string" &&
+    candidate.previousName.length > 0 &&
+    candidate.previousName.trim() === candidate.previousName &&
+    isNullableExactString(candidate.previousShortName) &&
+    typeof candidate.newName === "string" &&
+    candidate.newName.length > 0 &&
+    candidate.newName.length <= 120 &&
+    candidate.newName.trim() === candidate.newName &&
+    isNullableExactString(candidate.newShortName) &&
+    isProClubNameChangeReason(candidate.reason) &&
+    isNullableExactString(candidate.reasonNote) &&
+    (candidate.reasonNote === null || candidate.reasonNote.length <= 500) &&
+    (candidate.reason === "OTHER"
+      ? candidate.reasonNote !== null
+      : candidate.reasonNote === null) &&
+    isCanonicalIsoUtcTimestamp(candidate.effectiveAt) &&
+    isCanonicalIsoUtcTimestamp(candidate.changedAt) &&
+    isValidDocumentIdentifier(candidate.changedBy)
   );
 }
 

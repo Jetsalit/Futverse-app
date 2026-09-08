@@ -216,7 +216,12 @@ test("boundary response must be privacy-safe App Check 401 JSON", async () => {
   );
 });
 
-test("smoke runner calls both protected paths only on an approved production origin", async () => {
+test("smoke runner calls all protected paths, including rename, only on an approved production origin", async () => {
+  assert.deepEqual(PROTECTED_PRO_CLUB_PATHS, [
+    "/api/pro-club/provision-v1",
+    "/api/pro-club/verify-audit-v1",
+    "/api/pro-club/rename-v1",
+  ]);
   const calls = [];
   const fetchImpl = async (url, options) => {
     calls.push({ url, options });
