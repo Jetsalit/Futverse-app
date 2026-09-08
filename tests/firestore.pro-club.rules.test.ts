@@ -194,6 +194,22 @@ async function seedBaseline(): Promise<void> {
       `proClubs/${CLUB_A}/staff/${STAFF_ONLY}`,
       staffData("PHYSIO", "ACTIVE"),
     ],
+    [
+      `proClubs/${CLUB_A}/nameHistory/change-1`,
+      {
+        schemaVersion: 1,
+        clubId: CLUB_A,
+        previousName: "Old Club A",
+        previousShortName: null,
+        newName: "Club A",
+        newShortName: null,
+        reason: "REBRAND",
+        reasonNote: null,
+        effectiveAt: "2026-09-01T00:00:00.000Z",
+        changedAt: "2026-09-01T00:00:01.000Z",
+        changedBy: GLOBAL_SUPERADMIN,
+      },
+    ],
 
     // Existing global/Acedemy authority must never become Pro Club authority.
     [
@@ -202,6 +218,18 @@ async function seedBaseline(): Promise<void> {
         role: "SUPERADMIN",
         status: "ACTIVE",
       },
+    ],
+    [
+      `users/${OWNER}`,
+      { role: "USER", status: "ACTIVE" },
+    ],
+    [
+      `users/${ADMIN}`,
+      { role: "USER", status: "ACTIVE" },
+    ],
+    [
+      `users/${MEMBER}`,
+      { role: "USER", status: "ACTIVE" },
     ],
     [
       `users/${ACADEMY_ADMIN}`,
@@ -899,3 +927,57 @@ test(
     );
   },
 );
+
+test("17. ACTIVE OWNER and ADMIN may read exact name history", async () => {
+  for (const uid of [OWNER, ADMIN]) {
+    const snapshot = await assertSucceeds(getDoc(doc(
+      authedDb(uid), "proClubs", CLUB_A, "nameHistory", "change-1",
+    )));
+    assert.equal(snapshot.data()?.clubId, CLUB_A);
+    const listing = await assertSucceeds(getDocs(collection(
+      authedDb(uid), "proClubs", CLUB_A, "nameHistory",
+    )));
+    assert.equal(listing.size, 1);
+  }
+});
+
+test("18. unauthorized, inactive, and ordinary members cannot read name history", async () => {
+  for (const uid of [OUTSIDER, MEMBER, INACTIVE_MEMBER, GLOBAL_SUPERADMIN]) {
+    await assertFails(getDoc(doc(
+      authedDb(uid), "proClubs", CLUB_A, "nameHistory", "change-1",
+    )));
+  }
+  await assertFails(getDoc(doc(
+    anonymousDb(), "proClubs", CLUB_A, "nameHistory", "change-1",
+  )));
+});
+
+test("19. all client name-history mutations fail closed", async () => {
+  const historyRef = doc(
+    authedDb(OWNER), "proClubs", CLUB_A, "nameHistory", "change-1",
+  );
+  await assertFails(setDoc(doc(
+    authedDb(OWNER), "proClubs", CLUB_A, "nameHistory", "change-2",
+  ), {
+    schemaVersion: 1,
+    clubId: CLUB_A,
+    previousName: "Club A",
+    previousShortName: null,
+    newName: "Injected Name",
+    newShortName: null,
+    reason: "REBRAND",
+    reasonNote: null,
+    effectiveAt: "2026-09-02T00:00:00.000Z",
+    changedAt: "2026-09-02T00:00:01.000Z",
+    changedBy: OWNER,
+  }));
+  await assertFails(updateDoc(historyRef, { newName: "Overwritten" }));
+  await assertFails(deleteDoc(historyRef));
+});
+
+test("20. direct client root rename remains denied", async () => {
+  await assertFails(updateDoc(doc(authedDb(OWNER), "proClubs", CLUB_A), {
+    name: "Direct Client Rename",
+    updatedAt: "2026-09-07T00:00:00.000Z",
+  }));
+});

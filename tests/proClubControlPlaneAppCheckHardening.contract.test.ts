@@ -35,15 +35,28 @@ test("production web App Check uses reCAPTCHA Enterprise and cannot regress to d
   assert.equal(firebaseSource.includes("ReCaptchaV3Provider"), false);
 });
 
-test("both privileged HTTP functions gate App Check before business handlers", () => {
+test("all privileged HTTP functions gate App Check before business handlers", () => {
   const provisionGate = indexSource.indexOf("requireVerifiedAppCheckForPrivilegedHttp", indexSource.indexOf("export const provisionProClubV1"));
   const provisionHandler = indexSource.indexOf("handleProClubProvisioningHttpRequest", indexSource.indexOf("export const provisionProClubV1"));
   const verifyGate = indexSource.indexOf("requireVerifiedAppCheckForPrivilegedHttp", indexSource.indexOf("export const verifyProClubProvisioningAuditV1"));
   const verifyHandler = indexSource.indexOf("handleProClubProvisioningAuditVerificationHttpRequest", indexSource.indexOf("export const verifyProClubProvisioningAuditV1"));
+  const renameGate = indexSource.indexOf("requireVerifiedAppCheckForPrivilegedHttp", indexSource.indexOf("export const renameProClubV1"));
+  const renameHandler = indexSource.indexOf("handleProClubRenameHttpRequest", indexSource.indexOf("export const renameProClubV1"));
 
   assert.ok(provisionGate > 0 && provisionHandler > provisionGate);
   assert.ok(verifyGate > 0 && verifyHandler > verifyGate);
+  assert.ok(renameGate > 0 && renameHandler > renameGate);
   assert.match(indexSource, /getAppCheck\(adminServices\.app\)/);
+});
+
+test("rename endpoint is exposed only through the same-origin Hosting rewrite", () => {
+  const rewrite = firebaseConfig.hosting.rewrites.find(
+    (entry: { source?: string }) => entry.source === "/api/pro-club/rename-v1",
+  );
+  assert.deepEqual(rewrite, {
+    source: "/api/pro-club/rename-v1",
+    function: { functionId: "renameProClubV1", region: "asia-southeast1" },
+  });
 });
 
 test("server App Check verification is bound to the exact production FutVerse web app ID", () => {

@@ -217,6 +217,7 @@ interface DirectBlockStructure {
 const EXPECTED_PRO_CLUB_DIRECT_CHILD_MATCHES = [
   "match /members/{uid}",
   "match /staff/{uid}",
+  "match /nameHistory/{changeId}",
   "match /onboardingClaims/{claimId}",
   "match /onboardingApprovals/{uid}",
   "match /{document=**}",
@@ -767,7 +768,7 @@ MANAGER and TEAM_MANAGER are distinct.
       EXPECTED_PRO_CLUB_DIRECT_CHILD_MATCHES,
       "/proClubs/{clubId}",
     );
-    assert.equal(directChildren.length, 5);
+    assert.equal(directChildren.length, 6);
 
     // Validate complete root-direct allow declarations (no pollution from children, no extra allows)
     const proClubStructure = extractDirectBlockStructure(proClubBlock);
@@ -1532,6 +1533,28 @@ MANAGER and TEAM_MANAGER are distinct.
     assert.equal(scenarios.length, 33);
     for (const scenario of scenarios) {
       assert.ok(contract.includes(scenario), `missing scenario: ${scenario}`);
+    }
+  });
+
+  await t.test("freezes the Pro Club name-history successor amendment", () => {
+    const heading = "## 26. Pro Club Identity & Name History V1 successor amendment";
+    assert.ok(contract.includes(heading), "missing name-history successor amendment");
+    const amendment = contract.slice(contract.indexOf(heading)).replace(/\s+/g, " ");
+    for (const boundary of [
+      "`proClubs/{clubId}/nameHistory/{changeId}`",
+      "append-only audit/read surface",
+      "ACTIVE OWNER/ADMIN",
+      "canonical active-account and exact-club Membership authority",
+      "client create=false",
+      "client update=false",
+      "client delete=false",
+      "no Membership authority change",
+      "no staff-role authority change",
+      "no `users.role` bypass",
+      "no historical baseline rewrite",
+      "does not weaken onboarding or production default-deny behavior",
+    ]) {
+      assert.ok(amendment.includes(boundary), `missing successor boundary: ${boundary}`);
     }
   });
 

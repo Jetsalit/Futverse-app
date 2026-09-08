@@ -1,6 +1,12 @@
 export type ProClubLevel = "T1" | "T2" | "T3";
 export type ProClubStatus = "ACTIVE" | "INACTIVE";
 
+export type ProClubNameChangeReason =
+  | "TAKEOVER"
+  | "REBRAND"
+  | "LEGAL_NAME_CHANGE"
+  | "OTHER";
+
 /**
  * Tenant authorization granted by a canonical Pro Club membership.
  * This is intentionally separate from a football staff assignment.
@@ -37,6 +43,21 @@ export interface ProClub {
   logoUrl?: string;
   createdAt?: string;
   updatedAt?: string;
+}
+
+/** Stored append-only at proClubs/{clubId}/nameHistory/{changeId}. */
+export interface ProClubNameHistoryRecord {
+  schemaVersion: 1;
+  clubId: string;
+  previousName: string;
+  previousShortName: string | null;
+  newName: string;
+  newShortName: string | null;
+  reason: ProClubNameChangeReason;
+  reasonNote: string | null;
+  effectiveAt: string;
+  changedAt: string;
+  changedBy: string;
 }
 
 /** Stored at proClubs/{clubId}/members/{uid}; neither identity is payload data. */

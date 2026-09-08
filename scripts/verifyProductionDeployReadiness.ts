@@ -20,11 +20,16 @@ export const EXPECTED_PRO_CLUB_HOSTING_REWRITES = [
     source: "/api/pro-club/verify-audit-v1",
     functionId: "verifyProClubProvisioningAuditV1",
   },
+  {
+    source: "/api/pro-club/rename-v1",
+    functionId: "renameProClubV1",
+  },
 ] as const;
 
 const EXPECTED_FUNCTION_EXPORTS = [
   { exportName: "provisionProClubV1", callName: "onRequest", requireCorsFalse: true },
   { exportName: "verifyProClubProvisioningAuditV1", callName: "onRequest", requireCorsFalse: true },
+  { exportName: "renameProClubV1", callName: "onRequest", requireCorsFalse: true },
   { exportName: "resolveProClubStaffCandidateV1", callName: "onCall", requireCorsFalse: false },
 ] as const;
 

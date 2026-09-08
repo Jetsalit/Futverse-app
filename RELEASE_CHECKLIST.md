@@ -15,19 +15,20 @@
 - [x] **Firebase Auth**: Email/password and Google authentication are implemented.
 - [x] **Account-status boundary**: Pro Club privileged flows preserve the canonical ACTIVE-account checks added in predecessor slices.
 - [x] **Pro Club staff candidate App Check enforcement**: `resolveProClubStaffCandidateV1` preserves `enforceAppCheck: true`.
-- [x] **Privileged HTTP App Check enforcement**: Pro Club provisioning and audit-verification HTTP endpoints verify App Check before business handlers.
+- [x] **Privileged HTTP App Check enforcement**: Pro Club provisioning, audit-verification, and rename HTTP endpoints verify App Check before business handlers.
 - [x] **Production web-app binding**: Privileged HTTP App Check verification is restricted to the exact FutVerse production web App ID.
 
 ## Pro Club Trusted Control Plane
 - [x] **Provisioning backend**: Trusted Gen2 HTTP service exists in `asia-southeast1`.
 - [x] **Provisioning audit verification**: Trusted read-only verification service exists in `asia-southeast1`.
+- [x] **Pro Club rename backend**: `renameProClubV1` is a trusted Gen2 HTTP service in `asia-southeast1` with `cors: false`.
 - [x] **Privileged SuperAdmin UI**: Available under the SuperAdmin organization control plane.
-- [x] **Same-origin Hosting routes**: `/api/pro-club/provision-v1` and `/api/pro-club/verify-audit-v1` target the exact trusted Functions before the SPA catch-all.
-- [x] **Same-origin CORS boundary**: Both privileged HTTP Functions preserve `cors: false`.
+- [x] **Same-origin Hosting routes**: `/api/pro-club/provision-v1`, `/api/pro-club/verify-audit-v1`, and `/api/pro-club/rename-v1` target the exact trusted Functions before the SPA catch-all.
+- [x] **Same-origin CORS boundary**: All three privileged HTTP Functions preserve `cors: false`.
 - [ ] **Production deployment**: Not yet authorized or executed.
-- [x] **Credential-free production smoke harness**: `npm run smoke:production-pro-club-boundary` verifies both privileged HTTP routes fail closed at App Check without sending Firebase ID/App Check credentials.
+- [x] **Credential-free production smoke harness**: `npm run smoke:production-pro-club-boundary` verifies all three privileged HTTP routes, including rename, fail closed at App Check without sending Firebase ID/App Check credentials.
 - [x] **Production smoke target binding**: The credential-free smoke target is restricted by reviewed `config/productionProClubSmokeTargets.json`, pinned to `futverse-d7872` and retaining the default Firebase Hosting origins.
-- [ ] **Authenticated post-deploy production smoke**: Must separately verify authenticated SuperAdmin access, exact-ID audit verification, App Check-protected staff candidate lookup, and no unintended tenant/client write path.
+- [ ] **Authenticated post-deploy production smoke**: Must separately cover the rename endpoint, authenticated SuperAdmin access, exact-ID audit verification, App Check-protected staff candidate lookup, and no unintended tenant/client write path. Do not rename a real Pro Club as a smoke test; authenticated rename verification requires a separately reviewed non-destructive failure path or a dedicated disposable fixture plan. This checklist does not authorize deployment.
 
 ## Database & Firebase
 - [x] **Firestore connection**: Core database connection is established.
