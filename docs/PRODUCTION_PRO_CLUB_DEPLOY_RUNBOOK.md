@@ -25,12 +25,19 @@ From the exact deploy-candidate checkout:
 4. Ensure `VITE_APP_CHECK_DEBUG_TOKEN` is absent/empty.
 5. `npm run test:production-deploy-readiness`
 6. `npm run verify:production-deploy-readiness`
-7. `npm run test:production-pro-club-boundary-smoke`
-8. `npm run lint`
-9. `npm --prefix functions run build`
-10. `npm run build`
-11. `git diff --check`
-12. confirm the working tree is clean.
+7. `npm run test:production-spark-hosting-boundary-smoke`
+8. `npm run test:production-pro-club-boundary-smoke`
+9. `npm run lint`
+10. `npm --prefix functions run build`
+11. `npm run build`
+12. `git diff --check`
+13. confirm the working tree is clean.
+
+For a Spark Hosting-only candidate, also run
+`npm run test:spark-production-readiness` and
+`npm run verify:spark-production-readiness`. The latter verifies the reviewed
+Hosting-only deployment config while preserving the future server rewrites in
+`firebase.json`.
 
 `verify:production-deploy-readiness` must preserve three ordered layers:
 
@@ -57,12 +64,48 @@ A production deployment is a separate write action. Require explicit owner autho
 
 After authorization, use only the approved Firebase deployment scope and re-check the exact SHA immediately before execution. If the branch, SHA, project, or working tree differs from the approved candidate, stop.
 
-## Phase D — Immediate credential-free boundary smoke
-After a production deployment, first run the non-destructive public-boundary smoke harness. It intentionally sends **no Firebase ID token and no App Check token** and therefore cannot create or rename a Pro Club. App Check is verified before the business handler. On the rename path, Firebase authentication occurs before request validation, and ACTIVE SUPERADMIN authority is transactionally revalidated before any Firestore write.
+## Phase D1 — Spark Hosting-only verification
+Run this mode after an explicitly authorized deployment using
+`firebase deploy --config firebase.spark.json --only hosting`. The reviewed Spark
+configuration exposes only the SPA catch-all rewrite to `/index.html`; it does not
+expose Cloud Functions, Cloud Run, or a protected Pro Club business API.
 
-Choose exactly one origin from `config/productionProClubSmokeTargets.json`.
+Choose exactly one origin from `config/productionProClubSmokeTargets.json`. The
+smoke sends an empty JSON POST with **no Firebase ID token and no App Check token**
+to all three protected path names:
+
+- `/api/pro-club/provision-v1`
+- `/api/pro-club/verify-audit-v1`
+- `/api/pro-club/rename-v1`
 
 PowerShell example using the project-default Hosting origin:
+
+```powershell
+$env:FUTVERSE_PRODUCTION_ORIGIN = "https://futverse-d7872.web.app"
+$env:FUTVERSE_PRODUCTION_SMOKE_ACK = "READ_ONLY_NO_CREDENTIALS"
+Remove-Item Env:FUTVERSE_PRODUCTION_ID_TOKEN -ErrorAction SilentlyContinue
+Remove-Item Env:FUTVERSE_PRODUCTION_APP_CHECK_TOKEN -ErrorAction SilentlyContinue
+npm run smoke:production-spark-hosting-boundary
+```
+
+Expected result in Spark Hosting-only mode:
+
+- the reviewed HTTPS origin is used without credentials;
+- no redirect or external location is followed;
+- each protected path returns the exact reviewed Hosting behavior: HTTP `200`,
+  `text/html`, and the recognizable built FutVerse SPA shell;
+- no JSON success, JSON business error, or other evidence of a Pro Club handler
+  executing is accepted;
+- arbitrary or malformed HTML does not pass.
+
+A PASS proves that the deployed Spark Hosting boundary matches the reviewed
+Hosting-only architecture. It does not prove App Check enforcement by a server,
+because no production server control-plane route is exposed in this mode.
+
+## Phase D2 — Server control-plane credential-free smoke
+Run this mode only after the future Functions/server control plane in
+`firebase.json` has been deployed through a separate, explicit authorization. Do
+not run D2 after a Spark Hosting-only deployment.
 
 ```powershell
 $env:FUTVERSE_PRODUCTION_ORIGIN = "https://futverse-d7872.web.app"
@@ -72,22 +115,20 @@ Remove-Item Env:FUTVERSE_PRODUCTION_APP_CHECK_TOKEN -ErrorAction SilentlyContinu
 npm run smoke:production-pro-club-boundary
 ```
 
-Expected result for all three protected paths:
+Expected result for all three protected server routes:
 
 - HTTP `401`;
 - JSON response;
 - `error.code = ERROR_APP_CHECK_REQUIRED`;
-- no redirect to the SPA;
+- no redirect;
 - no credentials sent;
 - no Firestore write path reached.
 
-The harness checks:
-
-- `/api/pro-club/provision-v1`
-- `/api/pro-club/verify-audit-v1`
-- `/api/pro-club/rename-v1`
-
-A PASS proves only the public fail-closed App Check boundary and Hosting routing for the reviewed production origin. It does **not** prove successful authenticated SuperAdmin provisioning, authenticated audit verification, or authenticated rename.
+In server-control-plane mode, App Check is verified before the business handler.
+On the rename path, Firebase authentication occurs before request validation, and
+ACTIVE SUPERADMIN authority is transactionally revalidated before any Firestore
+write. A PASS proves only this public fail-closed boundary for the reviewed
+production origin; it does not prove a successful authenticated operation.
 
 ## Phase E — Authenticated production smoke (separate controlled action)
 Only after the credential-free smoke passes should a separately authorized authenticated smoke be performed. That later check must cover the rename endpoint, use a known ACTIVE SUPERADMIN, a valid App Check token from the approved production app, deterministic test identities, and an explicitly reviewed non-destructive/idempotent plan.
@@ -102,8 +143,16 @@ Stop immediately if any of the following occurs:
 - real production site key is missing, placeholder-like, padded, or paired with a debug token;
 - Firebase project is not exactly `futverse-d7872`;
 - production origin is absent from the reviewed production smoke target config;
-- credential-free smoke returns anything other than the privacy-safe App Check `401` contract;
+- the D1 Spark smoke returns anything other than the reviewed FutVerse SPA
+  Hosting fallback, exposes a JSON business response, or redirects;
+- the D2 server smoke returns anything other than the privacy-safe App Check
+  `401` contract;
+- D2 is selected after a Spark Hosting-only deployment;
 - authenticated verification would require exposing credentials or bypassing the normal SuperAdmin control plane.
 
 ## Current status
-Source readiness and credential-free smoke tooling are merged. Production deployment remains blocked until the external App Check production configuration is verified and the owner explicitly authorizes the exact deployment action.
+The current production architecture is Spark Hosting-only. Its deployed boundary
+must be verified with Phase D1. The future server control-plane rewrites remain
+preserved in `firebase.json`, but Phase D2 is deferred until that server scope is
+separately reviewed, authorized, and deployed. Nothing in this runbook authorizes
+either deployment mode.
