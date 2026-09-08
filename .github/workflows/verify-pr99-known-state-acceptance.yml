@@ -1,0 +1,67 @@
+name: Verify PR99 Known State Acceptance
+
+on:
+  pull_request:
+    branches:
+      - fix/pro-club-known-state-verifier-p2-hardening-v1
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact product head
+        uses: actions/checkout@v4
+        with:
+          ref: 7767ceb4ec04f7527a783f8c13c9d316dae3ab57
+          fetch-depth: 0
+
+      - name: Prove exact product head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "7767ceb4ec04f7527a783f8c13c9d316dae3ab57"
+          test -z "$(git status --short)"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Focused known-state verifier tests
+        run: npm run test:production-pro-club-known-state
+
+      - name: Pro Club emulator regression
+        run: npm run test:pro-club-emulator-regression
+
+      - name: TypeScript gate
+        run: npm run lint
+
+      - name: Production build
+        run: npm run build
+
+      - name: Diff and clean-tree gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --short)"
+
+      - name: Confirm no production action
+        run: |
+          echo 'PRODUCTION_DEPLOYED=NO'
+          echo 'PRODUCTION_HTTP_CALLED=NO'
+          echo 'PRODUCTION_DATA_WRITTEN=NO'
