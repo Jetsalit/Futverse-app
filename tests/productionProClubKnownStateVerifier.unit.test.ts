@@ -258,6 +258,41 @@ test("rename history rejects short names longer than the canonical 32-character 
   assert.equal(result.overall, false);
 });
 
+test("rename history permits an unchanged legacy short name over 32 characters", () => {
+  const longShortName = "x".repeat(33);
+  const legacyTarget: KnownStateTarget = {
+    ...target,
+    originalShortName: longShortName,
+  };
+  const baseAudit = makeAudit();
+  const normalizedRequest = {
+    ...baseAudit.normalizedRequest,
+    shortName: longShortName,
+  };
+  const legacyAudit = {
+    ...baseAudit,
+    requestFingerprint: computeProvisioningRequestFingerprint(normalizedRequest),
+    normalizedRequest,
+  };
+  const result = evaluateKnownState(makeInput({
+    target: legacyTarget,
+    audit: legacyAudit,
+    club: {
+      ...makeInput().club,
+      name: "Lampang United",
+      shortName: longShortName,
+      updatedAt: "2026-09-08T03:00:00.000Z",
+    },
+    nameHistory: [renameRecord({
+      previousShortName: longShortName,
+      newShortName: longShortName,
+    })],
+  }));
+  assert.equal(result.historyShapeValid, true);
+  assert.equal(result.renameContinuityHealthy, true);
+  assert.equal(result.overall, true);
+});
+
 test("rename history rejects no-op transitions that the trusted rename path cannot create", () => {
   const result = evaluateKnownState(makeInput({
     club: {

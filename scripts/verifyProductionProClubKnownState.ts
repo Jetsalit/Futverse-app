@@ -119,7 +119,11 @@ function isCanonicalHistoryRecord(value: unknown, clubId: string): value is Reco
   if (!isCanonicalText(history.previousName) || !isCanonicalText(history.newName)) return false;
   if (history.newName.length > MAX_RENAME_NAME_LENGTH) return false;
   if (!isNullableCanonicalText(history.previousShortName) || !isNullableCanonicalText(history.newShortName)) return false;
-  if (history.newShortName !== null && history.newShortName.length > MAX_RENAME_SHORT_NAME_LENGTH) return false;
+  if (
+  history.newShortName !== null &&
+  history.newShortName !== history.previousShortName &&
+  history.newShortName.length > MAX_RENAME_SHORT_NAME_LENGTH
+) return false;
   if (
     history.previousName === history.newName &&
     (history.previousShortName ?? null) === (history.newShortName ?? null)
