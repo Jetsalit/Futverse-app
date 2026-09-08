@@ -39,6 +39,7 @@ const HISTORY_FIELDS = new Set([
 ]);
 const RENAME_REASONS = new Set(["TAKEOVER", "REBRAND", "LEGAL_NAME_CHANGE", "OTHER"]);
 const MAX_RENAME_NAME_LENGTH = 120;
+const MAX_RENAME_SHORT_NAME_LENGTH = 32;
 const MAX_REASON_NOTE_LENGTH = 500;
 
 export interface KnownStateTarget {
@@ -118,6 +119,15 @@ function isCanonicalHistoryRecord(value: unknown, clubId: string): value is Reco
   if (!isCanonicalText(history.previousName) || !isCanonicalText(history.newName)) return false;
   if (history.newName.length > MAX_RENAME_NAME_LENGTH) return false;
   if (!isNullableCanonicalText(history.previousShortName) || !isNullableCanonicalText(history.newShortName)) return false;
+  if (
+  history.newShortName !== null &&
+  history.newShortName !== history.previousShortName &&
+  history.newShortName.length > MAX_RENAME_SHORT_NAME_LENGTH
+) return false;
+  if (
+    history.previousName === history.newName &&
+    (history.previousShortName ?? null) === (history.newShortName ?? null)
+  ) return false;
   if (typeof history.reason !== "string" || !RENAME_REASONS.has(history.reason)) return false;
   if (!isNullableCanonicalText(history.reasonNote)) return false;
   if (history.reasonNote !== null && history.reasonNote.length > MAX_REASON_NOTE_LENGTH) return false;
@@ -225,7 +235,11 @@ export function evaluateKnownState(input: KnownStateEvaluationInput): KnownState
   let historyFirstLinkValid = nameHistory.length === 0;
   let historyChainValid = nameHistory.length === 0;
   let historyCurrentLinkValid = nameHistory.length === 0;
-  let historyRootTimestampValid = nameHistory.length === 0;
+  let historyRootTimestampValid =
+    nameHistory.length === 0 &&
+    typeof club.createdAt === "string" &&
+    typeof club.updatedAt === "string" &&
+    club.updatedAt === club.createdAt;
 
   if (nameHistory.length > 0 && !historyShapeValid) {
     historyTemporalOrderValid = false;
@@ -295,7 +309,7 @@ export function evaluateKnownState(input: KnownStateEvaluationInput): KnownState
   const runtimeAuthorityHealthy = canonicalMembership && ownerActive;
   const currentClubHealthy = canonicalClub && currentLevelMatches && currentCountryMatches && currentStatusActive;
   const renameContinuityHealthy = nameHistory.length === 0
-    ? currentNameStillOriginal && currentShortNameStillOriginal
+    ? currentNameStillOriginal && currentShortNameStillOriginal && historyRootTimestampValid
     : historyShapeValid &&
       historyTemporalOrderValid &&
       historyFirstLinkValid &&
