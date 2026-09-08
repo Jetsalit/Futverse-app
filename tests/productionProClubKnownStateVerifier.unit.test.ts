@@ -136,10 +136,13 @@ test("broken rename continuity fails closed", () => {
 });
 
 test("tampered provisioning evidence fails the canonical audit fingerprint gate", () => {
-  const tamperedAudit = makeAudit();
-  tamperedAudit.normalizedRequest = {
-    ...tamperedAudit.normalizedRequest,
-    name: "Tampered Name",
+  const originalAudit = makeAudit();
+  const tamperedAudit = {
+    ...originalAudit,
+    normalizedRequest: {
+      ...originalAudit.normalizedRequest,
+      name: "Tampered Name",
+    },
   };
   const result = evaluateKnownState(makeInput({ audit: tamperedAudit }));
   assert.equal(result.canonicalAudit, false);
