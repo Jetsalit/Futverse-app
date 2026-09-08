@@ -28,7 +28,11 @@
     "export:membership-planning": "node --import tsx scripts/membershipExportReadOnly.ts",
     "test:bootstrap-legacy-admin": "node --import tsx --test tests/bootstrapLegacyAdmin.test.ts",
     "test:superadmin-work-as": "node --import tsx --test tests/superAdminSupportModel.test.ts tests/superAdminNonStaffSupportModel.test.ts tests/durableNonStaffSupportAudit.test.ts tests/staffAuthorityRevalidation.test.ts tests/supportPresentationAccess.test.ts tests/assistedRecordIdentity.test.ts tests/drillOwnership.test.ts tests/playerDashboardAccess.test.ts tests/parentSupportFlow.test.ts",
-    "provision:pro-club:local": "node --import tsx scripts/provisionProClubLocal.ts"
+    "provision:pro-club:local": "node --import tsx scripts/provisionProClubLocal.ts",
+    "verify:pro-club-audit:local": "node --import tsx scripts/verifyProClubAuditLocal.ts",
+    "resolve:pro-club-staff:local": "node --import tsx scripts/resolveProClubStaffCandidateLocal.ts",
+    "rename:pro-club:local": "node --import tsx scripts/renameProClubLocal.ts",
+    "test:spark-trusted-local-operations": "node --import tsx --test tests/localTrustedProClubOperations.unit.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
