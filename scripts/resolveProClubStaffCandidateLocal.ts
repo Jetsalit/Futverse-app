@@ -118,11 +118,13 @@ export async function runLocalStaffCandidateCli(
       out(`  Requester UID  : ${result.requesterUid}\n`);
       out(`  Club ID        : ${result.clubId}\n`);
       out(`  Email          : ${result.email}\n`);
-    } else {
+    } else if ("targetUid" in result) {
       out(`[RESOLVED] Staff candidate account verified.\n`);
       out(`  Target UID     : ${result.targetUid}\n`);
       out(`  Email          : ${result.email}\n`);
       out(`  Display Name   : ${result.displayName ?? "(none)"}\n`);
+    } else {
+      throw new Error("Unexpected canonical staff candidate result shape");
     }
     return 0;
   } catch (error) {
