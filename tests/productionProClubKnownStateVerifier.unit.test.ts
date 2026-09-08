@@ -97,6 +97,7 @@ test("unchanged Thai club state passes without shell encoding dependencies", () 
   assert.equal(result.canonicalClub, true);
   assert.equal(result.canonicalAudit, true);
   assert.equal(result.auditOriginalNameMatches, true);
+  assert.equal(result.provisioningTimestampBindingMatches, true);
   assert.equal(result.currentNameStillOriginal, true);
   assert.equal(result.renameContinuityHealthy, true);
   assert.equal(result.overall, true);
@@ -119,6 +120,7 @@ test("a valid rename chain may change the current name without invalidating prov
   assert.equal(result.historyTemporalOrderValid, true);
   assert.equal(result.historyFirstLinkValid, true);
   assert.equal(result.historyCurrentLinkValid, true);
+  assert.equal(result.historyRootTimestampValid, true);
   assert.equal(result.renameContinuityHealthy, true);
   assert.equal(result.overall, true);
 });
@@ -129,6 +131,7 @@ test("broken rename continuity fails closed", () => {
       ...makeInput().club,
       name: "Unexpected Name",
       shortName: "UN",
+      updatedAt: "2026-09-08T03:00:00.000Z",
     },
     nameHistory: [renameRecord({
       previousName: "Wrong Previous Name",
@@ -147,6 +150,7 @@ test("rename history with unexpected fields fails exact-shape validation", () =>
       ...makeInput().club,
       name: "Lampang United",
       shortName: "LUFC",
+      updatedAt: "2026-09-08T03:00:00.000Z",
     },
     nameHistory: [renameRecord({ unexpectedField: true })],
   }));
@@ -155,7 +159,57 @@ test("rename history with unexpected fields fails exact-shape validation", () =>
   assert.equal(result.overall, false);
 });
 
-test("rename history with non-monotonic effectiveAt order fails closed", () => {
+test("malformed history missing effectiveAt fails closed instead of being hidden by query ordering", () => {
+  const malformed = renameRecord();
+  delete malformed.effectiveAt;
+  const result = evaluateKnownState(makeInput({
+    club: {
+      ...makeInput().club,
+      name: "Lampang United",
+      shortName: "LUFC",
+      updatedAt: "2026-09-08T03:00:00.000Z",
+    },
+    nameHistory: [malformed],
+  }));
+  assert.equal(result.historyShapeValid, false);
+  assert.equal(result.historyTemporalOrderValid, false);
+  assert.equal(result.renameContinuityHealthy, false);
+  assert.equal(result.overall, false);
+});
+
+test("rename history is sorted in-memory and must form a monotonic effectiveAt chain", () => {
+  const first = renameRecord({
+    newName: "Lampang United",
+    newShortName: "LUFC",
+    effectiveAt: "2026-09-08T03:00:00.000Z",
+    changedAt: "2026-09-08T03:30:00.000Z",
+  });
+  const second = renameRecord({
+    previousName: "Lampang United",
+    previousShortName: "LUFC",
+    newName: "Lampang City",
+    newShortName: "LCFC",
+    effectiveAt: "2026-09-08T04:00:00.000Z",
+    changedAt: "2026-09-08T05:00:00.000Z",
+  });
+  const result = evaluateKnownState(makeInput({
+    club: {
+      ...makeInput().club,
+      name: "Lampang City",
+      shortName: "LCFC",
+      updatedAt: "2026-09-08T05:00:00.000Z",
+    },
+    nameHistory: [second, first],
+  }));
+  assert.equal(result.historyShapeValid, true);
+  assert.equal(result.historyChainValid, true);
+  assert.equal(result.historyTemporalOrderValid, true);
+  assert.equal(result.historyCurrentLinkValid, true);
+  assert.equal(result.historyRootTimestampValid, true);
+  assert.equal(result.overall, true);
+});
+
+test("duplicate or non-increasing effectiveAt values fail closed", () => {
   const first = renameRecord({
     newName: "Lampang United",
     newShortName: "LUFC",
@@ -167,7 +221,7 @@ test("rename history with non-monotonic effectiveAt order fails closed", () => {
     previousShortName: "LUFC",
     newName: "Lampang City",
     newShortName: "LCFC",
-    effectiveAt: "2026-09-08T03:00:00.000Z",
+    effectiveAt: "2026-09-08T04:00:00.000Z",
     changedAt: "2026-09-08T05:00:00.000Z",
   });
   const result = evaluateKnownState(makeInput({
@@ -175,14 +229,53 @@ test("rename history with non-monotonic effectiveAt order fails closed", () => {
       ...makeInput().club,
       name: "Lampang City",
       shortName: "LCFC",
+      updatedAt: "2026-09-08T05:00:00.000Z",
     },
     nameHistory: [first, second],
   }));
   assert.equal(result.historyShapeValid, true);
-  assert.equal(result.historyChainValid, true);
   assert.equal(result.historyTemporalOrderValid, false);
   assert.equal(result.renameContinuityHealthy, false);
   assert.equal(result.overall, false);
+});
+
+test("provisioning audit createdAt must bind exactly to club createdAt", () => {
+  const result = evaluateKnownState(makeInput({
+    club: {
+      ...makeInput().club,
+      createdAt: "2026-09-04T16:14:34.000Z",
+      updatedAt: "2026-09-04T16:14:34.000Z",
+    },
+  }));
+  assert.equal(result.canonicalClub, true);
+  assert.equal(result.provisioningTimestampBindingMatches, false);
+  assert.equal(result.provisioningEvidenceHealthy, false);
+  assert.equal(result.overall, false);
+});
+
+test("latest rename changedAt must bind exactly to club updatedAt", () => {
+  const result = evaluateKnownState(makeInput({
+    club: {
+      ...makeInput().club,
+      name: "Lampang United",
+      shortName: "LUFC",
+      updatedAt: "2026-09-08T03:00:01.000Z",
+    },
+    nameHistory: [renameRecord()],
+  }));
+  assert.equal(result.historyRootTimestampValid, false);
+  assert.equal(result.renameContinuityHealthy, false);
+  assert.equal(result.overall, false);
+});
+
+test("historical provisioning operator may later become inactive without revoking current owner runtime", () => {
+  const result = evaluateKnownState(makeInput({
+    operatorUser: { status: "INACTIVE", role: "SUPERADMIN" },
+  }));
+  assert.equal(result.operatorActiveSuperAdmin, false);
+  assert.equal(result.provisioningEvidenceHealthy, true);
+  assert.equal(result.runtimeAuthorityHealthy, true);
+  assert.equal(result.overall, true);
 });
 
 test("tampered provisioning evidence fails the canonical audit fingerprint gate", () => {
