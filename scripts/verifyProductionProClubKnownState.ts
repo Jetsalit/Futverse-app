@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { initializeAdminServices, cleanupAdminApp } from "../functions/src/lib/firebaseAdmin.ts";
 import { assertPinnedProject } from "./lib/localTrustedOperatorVerifier.ts";
 import {
+  isValidCanonicalIsoUtcTimestamp,
+  isValidDocumentIdentifier,
   validateStoredClubPayload,
   validateStoredMembershipPayload,
 } from "../functions/src/proClubProvisioning/core.ts";
@@ -12,6 +14,30 @@ import { validateStoredProClubProvisioningAuditForVerification } from "../functi
 
 export const KNOWN_STATE_CONFIG_PATH = "config/productionProClubKnownState.json";
 export const EXPECTED_PROJECT_ID = "futverse-d7872";
+
+const CONFIG_FIELDS = new Set(["projectId", "targets"]);
+const TARGET_FIELDS = new Set([
+  "clubId",
+  "provisioningId",
+  "originalName",
+  "originalShortName",
+  "level",
+  "country",
+]);
+const HISTORY_FIELDS = new Set([
+  "schemaVersion",
+  "clubId",
+  "previousName",
+  "previousShortName",
+  "newName",
+  "newShortName",
+  "reason",
+  "reasonNote",
+  "effectiveAt",
+  "changedAt",
+  "changedBy",
+]);
+const RENAME_REASONS = new Set(["TAKEOVER", "REBRAND", "LEGAL_NAME_CHANGE", "OTHER"]);
 
 export interface KnownStateTarget {
   clubId: string;
@@ -51,6 +77,8 @@ export interface KnownStateEvaluation {
   currentStatusActive: boolean;
   ownerActive: boolean;
   operatorActiveSuperAdmin: boolean;
+  historyShapeValid: boolean;
+  historyTemporalOrderValid: boolean;
   historyFirstLinkValid: boolean;
   historyChainValid: boolean;
   historyCurrentLinkValid: boolean;
@@ -66,31 +94,69 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+function hasExactKeys(record: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
+  const keys = Object.keys(record);
+  return keys.length === allowed.size && keys.every((key) => allowed.has(key));
+}
+
+function isCanonicalText(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.trim() === value;
+}
+
+function isNullableCanonicalText(value: unknown): value is string | null {
+  return value === null || isCanonicalText(value);
+}
+
+function isCanonicalHistoryRecord(value: unknown, clubId: string): value is Record<string, unknown> {
+  const history = asRecord(value);
+  if (!history || !hasExactKeys(history, HISTORY_FIELDS)) return false;
+  if (history.schemaVersion !== 1 || history.clubId !== clubId) return false;
+  if (!isCanonicalText(history.previousName) || !isCanonicalText(history.newName)) return false;
+  if (!isNullableCanonicalText(history.previousShortName) || !isNullableCanonicalText(history.newShortName)) return false;
+  if (typeof history.reason !== "string" || !RENAME_REASONS.has(history.reason)) return false;
+  if (!isNullableCanonicalText(history.reasonNote)) return false;
+  if (history.reason === "OTHER" ? history.reasonNote === null : history.reasonNote !== null) return false;
+  if (!isValidCanonicalIsoUtcTimestamp(history.effectiveAt) || !isValidCanonicalIsoUtcTimestamp(history.changedAt)) return false;
+  if (Date.parse(history.effectiveAt) > Date.parse(history.changedAt)) return false;
+  return isValidDocumentIdentifier(history.changedBy);
+}
+
 export function loadKnownStateConfig(path = resolve(process.cwd(), KNOWN_STATE_CONFIG_PATH)): {
   projectId: string;
   targets: KnownStateTarget[];
 } {
   const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
   const record = asRecord(parsed);
-  if (!record || record.projectId !== EXPECTED_PROJECT_ID || !Array.isArray(record.targets)) {
+  if (
+    !record ||
+    !hasExactKeys(record, CONFIG_FIELDS) ||
+    record.projectId !== EXPECTED_PROJECT_ID ||
+    !Array.isArray(record.targets)
+  ) {
     throw new Error("Invalid production Pro Club known-state config");
   }
   const targets = record.targets.map((value) => {
     const target = asRecord(value);
     if (
       !target ||
-      typeof target.clubId !== "string" ||
-      typeof target.provisioningId !== "string" ||
-      typeof target.originalName !== "string" ||
-      typeof target.originalShortName !== "string" ||
+      !hasExactKeys(target, TARGET_FIELDS) ||
+      !isValidDocumentIdentifier(target.clubId) ||
+      !isValidDocumentIdentifier(target.provisioningId) ||
+      !isCanonicalText(target.originalName) ||
+      !isCanonicalText(target.originalShortName) ||
       (target.level !== "T1" && target.level !== "T2" && target.level !== "T3") ||
-      typeof target.country !== "string"
+      !isCanonicalText(target.country)
     ) {
       throw new Error("Invalid production Pro Club known-state target");
     }
     return target as unknown as KnownStateTarget;
   });
   if (targets.length === 0) throw new Error("Known-state target list must not be empty");
+  const clubIds = targets.map((target) => target.clubId);
+  const provisioningIds = targets.map((target) => target.provisioningId);
+  if (new Set(clubIds).size !== clubIds.length || new Set(provisioningIds).size !== provisioningIds.length) {
+    throw new Error("Known-state targets must have unique clubId and provisioningId values");
+  }
   return { projectId: EXPECTED_PROJECT_ID, targets };
 }
 
@@ -133,11 +199,23 @@ export function evaluateKnownState(input: KnownStateEvaluationInput): KnownState
     operatorUser.role === "SUPERADMIN",
   );
 
+  const historyShapeValid = nameHistory.every((entry) => isCanonicalHistoryRecord(entry, target.clubId));
+  let historyTemporalOrderValid = historyShapeValid;
   let historyFirstLinkValid = true;
   let historyChainValid = true;
   let historyCurrentLinkValid = true;
   if (nameHistory.length > 0) {
-    historyFirstLinkValid = nameHistory[0]?.previousName === normalized.name;
+    historyFirstLinkValid = nameHistory[0]?.previousName === normalized.name &&
+      (nameHistory[0]?.previousShortName ?? null) === (normalized.shortName ?? null);
+    const clubCreatedAt = typeof club.createdAt === "string" ? club.createdAt : null;
+    if (
+      clubCreatedAt &&
+      isValidCanonicalIsoUtcTimestamp(clubCreatedAt) &&
+      typeof nameHistory[0]?.effectiveAt === "string" &&
+      Date.parse(nameHistory[0].effectiveAt) < Date.parse(clubCreatedAt)
+    ) {
+      historyTemporalOrderValid = false;
+    }
     for (let index = 1; index < nameHistory.length; index += 1) {
       const previous = nameHistory[index - 1];
       const current = nameHistory[index];
@@ -146,6 +224,13 @@ export function evaluateKnownState(input: KnownStateEvaluationInput): KnownState
         (previous?.newShortName ?? null) !== (current?.previousShortName ?? null)
       ) {
         historyChainValid = false;
+      }
+      if (
+        typeof previous?.effectiveAt !== "string" ||
+        typeof current?.effectiveAt !== "string" ||
+        Date.parse(current.effectiveAt) <= Date.parse(previous.effectiveAt)
+      ) {
+        historyTemporalOrderValid = false;
       }
     }
     const latest = nameHistory[nameHistory.length - 1];
@@ -168,7 +253,7 @@ export function evaluateKnownState(input: KnownStateEvaluationInput): KnownState
   const currentClubHealthy = canonicalClub && currentLevelMatches && currentCountryMatches && currentStatusActive;
   const renameContinuityHealthy = nameHistory.length === 0
     ? currentNameStillOriginal && currentShortNameStillOriginal
-    : historyFirstLinkValid && historyChainValid && historyCurrentLinkValid;
+    : historyShapeValid && historyTemporalOrderValid && historyFirstLinkValid && historyChainValid && historyCurrentLinkValid;
 
   return {
     canonicalClub,
@@ -188,6 +273,8 @@ export function evaluateKnownState(input: KnownStateEvaluationInput): KnownState
     currentStatusActive,
     ownerActive,
     operatorActiveSuperAdmin,
+    historyShapeValid,
+    historyTemporalOrderValid,
     historyFirstLinkValid,
     historyChainValid,
     historyCurrentLinkValid,
@@ -256,6 +343,8 @@ async function main(): Promise<void> {
     console.log(`CANONICAL_CLUB_SHAPE=${result.canonicalClub ? "PASS" : "FAIL"}`);
     console.log(`CANONICAL_MEMBERSHIP=${result.canonicalMembership ? "PASS" : "FAIL"}`);
     console.log(`CANONICAL_AUDIT_FINGERPRINT=${result.canonicalAudit ? "PASS" : "FAIL"}`);
+    console.log(`RENAME_HISTORY_SHAPE=${result.historyShapeValid ? "PASS" : "FAIL"}`);
+    console.log(`RENAME_HISTORY_ORDER=${result.historyTemporalOrderValid ? "PASS" : "FAIL"}`);
     console.log(`RENAME_CONTINUITY=${result.renameContinuityHealthy ? "PASS" : "FAIL"}`);
     console.log(`RUNTIME_AUTHORITY=${result.runtimeAuthorityHealthy ? "PASS" : "FAIL"}`);
     console.log(`KNOWN_STATE_VERDICT=${result.overall ? "PASS" : "FAIL"}`);
