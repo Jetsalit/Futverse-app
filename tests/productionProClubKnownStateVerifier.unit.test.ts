@@ -67,6 +67,23 @@ function makeInput(overrides: Partial<Parameters<typeof evaluateKnownState>[0]> 
   };
 }
 
+function renameRecord(overrides: Record<string, unknown> = {}) {
+  return {
+    schemaVersion: 1,
+    clubId: target.clubId,
+    previousName: target.originalName,
+    previousShortName: target.originalShortName,
+    newName: "Lampang United",
+    newShortName: "LUFC",
+    reason: "REBRAND",
+    reasonNote: null,
+    effectiveAt: "2026-09-08T02:00:00.000Z",
+    changedAt: "2026-09-08T03:00:00.000Z",
+    changedBy: operatorUid,
+    ...overrides,
+  };
+}
+
 test("UTF-8 config preserves the canonical Thai TNSU Lampang name exactly", () => {
   const config = loadKnownStateConfig();
   assert.equal(config.projectId, "futverse-d7872");
@@ -94,22 +111,12 @@ test("a valid rename chain may change the current name without invalidating prov
   };
   const result = evaluateKnownState(makeInput({
     club: renamedClub,
-    nameHistory: [{
-      schemaVersion: 1,
-      clubId: target.clubId,
-      previousName: target.originalName,
-      previousShortName: target.originalShortName,
-      newName: "Lampang United",
-      newShortName: "LUFC",
-      reason: "REBRAND",
-      reasonNote: null,
-      effectiveAt: "2026-09-08T02:00:00.000Z",
-      changedAt: "2026-09-08T03:00:00.000Z",
-      changedBy: operatorUid,
-    }],
+    nameHistory: [renameRecord()],
   }));
   assert.equal(result.auditOriginalNameMatches, true);
   assert.equal(result.currentNameStillOriginal, false);
+  assert.equal(result.historyShapeValid, true);
+  assert.equal(result.historyTemporalOrderValid, true);
   assert.equal(result.historyFirstLinkValid, true);
   assert.equal(result.historyCurrentLinkValid, true);
   assert.equal(result.renameContinuityHealthy, true);
@@ -123,14 +130,57 @@ test("broken rename continuity fails closed", () => {
       name: "Unexpected Name",
       shortName: "UN",
     },
-    nameHistory: [{
+    nameHistory: [renameRecord({
       previousName: "Wrong Previous Name",
-      previousShortName: target.originalShortName,
       newName: "Unexpected Name",
       newShortName: "UN",
-    }],
+    })],
   }));
   assert.equal(result.historyFirstLinkValid, false);
+  assert.equal(result.renameContinuityHealthy, false);
+  assert.equal(result.overall, false);
+});
+
+test("rename history with unexpected fields fails exact-shape validation", () => {
+  const result = evaluateKnownState(makeInput({
+    club: {
+      ...makeInput().club,
+      name: "Lampang United",
+      shortName: "LUFC",
+    },
+    nameHistory: [renameRecord({ unexpectedField: true })],
+  }));
+  assert.equal(result.historyShapeValid, false);
+  assert.equal(result.renameContinuityHealthy, false);
+  assert.equal(result.overall, false);
+});
+
+test("rename history with non-monotonic effectiveAt order fails closed", () => {
+  const first = renameRecord({
+    newName: "Lampang United",
+    newShortName: "LUFC",
+    effectiveAt: "2026-09-08T04:00:00.000Z",
+    changedAt: "2026-09-08T04:01:00.000Z",
+  });
+  const second = renameRecord({
+    previousName: "Lampang United",
+    previousShortName: "LUFC",
+    newName: "Lampang City",
+    newShortName: "LCFC",
+    effectiveAt: "2026-09-08T03:00:00.000Z",
+    changedAt: "2026-09-08T05:00:00.000Z",
+  });
+  const result = evaluateKnownState(makeInput({
+    club: {
+      ...makeInput().club,
+      name: "Lampang City",
+      shortName: "LCFC",
+    },
+    nameHistory: [first, second],
+  }));
+  assert.equal(result.historyShapeValid, true);
+  assert.equal(result.historyChainValid, true);
+  assert.equal(result.historyTemporalOrderValid, false);
   assert.equal(result.renameContinuityHealthy, false);
   assert.equal(result.overall, false);
 });
