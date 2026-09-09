@@ -1,0 +1,71 @@
+name: Temporary Weekly Training Root Rules Team 2 Audit R1
+
+on:
+  push:
+    branches:
+      - audit/weekly-training-root-rules-team2-r1
+
+permissions:
+  contents: read
+
+jobs:
+  independent-review:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout audit branch
+        uses: actions/checkout@v4
+        with:
+          ref: audit/weekly-training-root-rules-team2-r1
+          fetch-depth: 0
+
+      - name: Verify reviewed product commit and audit-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          REVIEWED='fd653d3000c0a8fb31c4b953399f519f9dc1b897'
+          test "$(git rev-parse HEAD~2)" = "$REVIEWED"
+          PRODUCT_FILES="$(git diff --name-only 024dc984a16041e7435acff274bac20387144a92...$REVIEWED)"
+          test "$PRODUCT_FILES" = "firestore.rules"
+          AUDIT_FILES="$(git diff --name-only $REVIEWED...HEAD)"
+          EXPECTED=$'.github/workflows/tmp-audit-weekly-training-root-rules-team2-r1.yml\ntests/firestore.pro-club-weekly-training-atomic-adversarial.team2.rules.test.ts'
+          test "$AUDIT_FILES" = "$EXPECTED"
+          git diff --check 024dc984a16041e7435acff274bac20387144a92...HEAD
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Independent adversarial atomic authorization proof
+        run: >-
+          npx firebase-tools emulators:exec --only firestore
+          --project demo-futverse-weekly-training-team2-r1
+          "node --import tsx --test tests/firestore.pro-club-weekly-training-atomic-adversarial.team2.rules.test.ts"
+
+      - name: Re-run canonical real-root proof independently
+        run: >-
+          npx firebase-tools emulators:exec --only firestore
+          --project demo-futverse-weekly-training-team2-canonical-r1
+          "node --import tsx --test tests/firestore.pro-club-weekly-training-atomic-create.rules.test.ts tests/firestore.pro-club-weekly-training-root.rules.test.ts"
+
+      - name: Static safety boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check 024dc984a16041e7435acff274bac20387144a92...fd653d3000c0a8fb31c4b953399f519f9dc1b897
+          test "$(git diff --name-only 024dc984a16041e7435acff274bac20387144a92...fd653d3000c0a8fb31c4b953399f519f9dc1b897)" = "firestore.rules"
+          echo 'TEAM2_REVIEWED_PRODUCT_HEAD=fd653d3000c0a8fb31c4b953399f519f9dc1b897'
+          echo 'PRODUCTION_DEPLOYED=NO'
+          echo 'PRODUCTION_HTTP_CALLED=NO'
+          echo 'PRODUCTION_DATA_WRITTEN=NO'
+          echo 'FORCE_PUSH=NO'
