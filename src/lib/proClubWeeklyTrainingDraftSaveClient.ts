@@ -15,8 +15,14 @@ export type ProClubWeeklyTrainingFreshDraftInput = Omit<
   "clubId" | "authorUid" | "technicalDirectorNote"
 >;
 
+export interface ProClubWeeklyTrainingDraftSaveRequest {
+  requestId: string;
+  draft: ProClubWeeklyTrainingDraft;
+}
+
 export interface ProClubWeeklyTrainingDraftSaveResult {
   status: "COMPLETED";
+  requestId: string;
   clubId: string;
   planId: string;
   documentCount: number;
@@ -40,13 +46,33 @@ export class ProClubWeeklyTrainingDraftSaveClientError extends Error {
 }
 
 export type WeeklyTrainingDraftSaveCallableCaller = (
-  draft: ProClubWeeklyTrainingDraft,
+  request: ProClubWeeklyTrainingDraftSaveRequest,
 ) => Promise<{ data: unknown }>;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+export function isCanonicalWeeklyTrainingDraftSaveRequestId(
+  value: unknown,
+): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value)
+  );
+}
+
+export function createWeeklyTrainingDraftSaveRequestId(): string {
+  if (typeof globalThis.crypto?.randomUUID !== "function") {
+    throw new ProClubWeeklyTrainingDraftSaveClientError("UNAVAILABLE");
+  }
+  const requestId = globalThis.crypto.randomUUID();
+  if (!isCanonicalWeeklyTrainingDraftSaveRequestId(requestId)) {
+    throw new ProClubWeeklyTrainingDraftSaveClientError("UNAVAILABLE");
+  }
+  return requestId;
 }
 
 function expectedDocumentCount(draft: ProClubWeeklyTrainingDraft): number {
@@ -93,23 +119,29 @@ function normalizeCallableError(error: unknown): ProClubWeeklyTrainingDraftSaveC
   return new ProClubWeeklyTrainingDraftSaveClientError("NETWORK");
 }
 
+export function isAmbiguousWeeklyTrainingDraftSaveError(error: unknown): boolean {
+  return (
+    error instanceof ProClubWeeklyTrainingDraftSaveClientError &&
+    (error.code === "NETWORK" || error.code === "INVALID_RESPONSE")
+  );
+}
+
 export const defaultWeeklyTrainingDraftSaveCallableCaller: WeeklyTrainingDraftSaveCallableCaller =
-  async (draft) => {
-    // Spark-first fail-closed gate. Do not construct or invoke the production
-    // callable while function-backed Pro Club web operations remain disabled.
+  async (request) => {
     if (!FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE) {
       throw new ProClubWeeklyTrainingDraftSaveClientError("UNAVAILABLE");
     }
 
-    const callable = httpsCallable<ProClubWeeklyTrainingDraft, unknown>(
+    const callable = httpsCallable<ProClubWeeklyTrainingDraftSaveRequest, unknown>(
       functions,
       WEEKLY_TRAINING_DRAFT_SAVE_CALLABLE,
     );
-    return await callable(draft);
+    return await callable(request);
   };
 
 export async function saveProClubWeeklyTrainingFreshDraft(
   input: {
+    requestId: string;
     clubId: string;
     actorUid: string;
     draft: ProClubWeeklyTrainingFreshDraftInput;
@@ -118,6 +150,7 @@ export async function saveProClubWeeklyTrainingFreshDraft(
     defaultWeeklyTrainingDraftSaveCallableCaller,
 ): Promise<ProClubWeeklyTrainingDraftSaveResult> {
   if (
+    !isCanonicalWeeklyTrainingDraftSaveRequestId(input.requestId) ||
     !isValidDocumentIdentifier(input.clubId) ||
     !isValidDocumentIdentifier(input.actorUid) ||
     containsClosedTechnicalDirectorNote(input.draft)
@@ -138,7 +171,7 @@ export async function saveProClubWeeklyTrainingFreshDraft(
 
   let result: { data: unknown };
   try {
-    result = await caller(parsed.value);
+    result = await caller({ requestId: input.requestId, draft: parsed.value });
   } catch (error) {
     throw normalizeCallableError(error);
   }
@@ -148,6 +181,7 @@ export async function saveProClubWeeklyTrainingFreshDraft(
   if (
     !response ||
     response.status !== "COMPLETED" ||
+    response.requestId !== input.requestId ||
     response.clubId !== input.clubId ||
     !isValidDocumentIdentifier(response.planId) ||
     typeof response.documentCount !== "number" ||
@@ -160,6 +194,7 @@ export async function saveProClubWeeklyTrainingFreshDraft(
 
   return {
     status: "COMPLETED",
+    requestId: response.requestId,
     clubId: response.clubId,
     planId: response.planId,
     documentCount: response.documentCount,
@@ -185,10 +220,10 @@ export function weeklyTrainingDraftSaveClientErrorMessage(
     case "INVALID_ARGUMENT":
       return "Check the weekly plan, sessions and training blocks before saving.";
     case "FAILED_PRECONDITION":
-      return "The club or technical-governance state is not ready for this save.";
+      return "The club, technical-governance state, or save request identity is not ready for this save.";
     case "INVALID_RESPONSE":
-      return "The save response could not be verified. The draft is not marked as saved.";
+      return "The server result could not be verified. Keep this draft unchanged and retry the same save to reconcile it safely.";
     default:
-      return "The Weekly Training draft could not be saved. Try again when the connection is available.";
+      return "The save result is uncertain because the connection was interrupted. Keep this draft unchanged and retry the same save safely.";
   }
 }
