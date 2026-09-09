@@ -194,6 +194,16 @@ test("plan metadata rejects embedded sessions so nested data cannot bypass docum
   );
 });
 
+test("required and optional plan text must already be normalized", async () => {
+  const db = authedDb(HC);
+  const planRef = doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`);
+
+  await assertFails(setDoc(planRef, { ...planData(), squadLabel: "   " }));
+  await assertFails(setDoc(planRef, { ...planData(), mainObjective: " Build through pressure " }));
+  await assertFails(setDoc(planRef, { ...planData(), secondaryObjective: "   " }));
+  await assertFails(setDoc(planRef, { ...planData(), headCoachNote: " note with padding " }));
+});
+
 test("Head Coach cannot create another author's DRAFT", async () => {
   await assertFails(
     setDoc(doc(authedDb(HC), `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), planData(TD)),
@@ -268,6 +278,18 @@ test("session writes require an existing own DRAFT parent plan", async () => {
   await assertSucceeds(setDoc(sessionRef, sessionData()));
 });
 
+test("session required text must already be normalized", async () => {
+  const db = authedDb(HC);
+  await createPlan(db);
+  const sessionRef = doc(
+    db,
+    `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600`,
+  );
+
+  await assertFails(setDoc(sessionRef, { ...sessionData(), location: "   " }));
+  await assertFails(setDoc(sessionRef, { ...sessionData(), objective: " padded objective " }));
+});
+
 test("session ID is bound to payload date/time and immutable on update", async () => {
   const db = authedDb(HC);
   await createPlan(db);
@@ -318,6 +340,19 @@ test("session date must be a real calendar date inside the parent plan week", as
   );
 });
 
+test("plan week is immutable on DRAFT update so existing sessions cannot be orphaned", async () => {
+  const db = authedDb(HC);
+  await createDraftHierarchy(db);
+
+  await assertFails(
+    updateDoc(doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), {
+      weekStartDate: "2026-09-14",
+      updatedAt: serverTimestamp(),
+      updatedBy: HC,
+    }),
+  );
+});
+
 test("block writes require existing session and validate coaching points deeply", async () => {
   const db = authedDb(HC);
   await createPlan(db);
@@ -352,6 +387,33 @@ test("block writes require existing session and validate coaching points deeply"
         `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600/blocks/block-02`,
       ),
       { ...blockData(), orderIndex: 1, coachingPoints: ["Good", 42] },
+    ),
+  );
+  await assertFails(
+    setDoc(
+      doc(
+        db,
+        `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600/blocks/block-02`,
+      ),
+      { ...blockData(), orderIndex: 1, coachingPoints: ["   "] },
+    ),
+  );
+});
+
+test("block title must already be normalized", async () => {
+  const db = authedDb(HC);
+  await createPlan(db);
+  await assertSucceeds(
+    setDoc(
+      doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600`),
+      sessionData(),
+    ),
+  );
+
+  await assertFails(
+    setDoc(
+      doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600/blocks/block-01`),
+      { ...blockData(), title: " padded title " },
     ),
   );
 });
