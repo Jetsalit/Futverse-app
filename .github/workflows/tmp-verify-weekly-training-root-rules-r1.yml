@@ -1,0 +1,61 @@
+name: Temporary Weekly Training Root Rules Verify R1
+
+on:
+  push:
+    branches:
+      - verify/weekly-training-root-rules-r1
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: verify/weekly-training-root-rules-r1
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install root and Functions dependencies
+        run: |
+          npm ci
+          npm --prefix functions ci
+
+      - name: Weekly Training pure tests
+        run: |
+          node --import tsx --test tests/proClubWeeklyTraining.unit.test.ts
+          node --import tsx --test tests/proClubWeeklyTrainingPersistence.unit.test.ts
+
+      - name: Weekly Training foundation and real-root Firestore Emulator tests
+        run: |
+          npx firebase-tools emulators:exec --only firestore --project demo-futverse-pro-club-weekly-training-root "node --import tsx --test tests/firestore.pro-club-weekly-training-foundation.rules.test.ts tests/firestore.pro-club-weekly-training-root.rules.test.ts"
+
+      - name: TypeScript
+        run: npx tsc --noEmit
+
+      - name: Functions build
+        run: npm --prefix functions run build
+
+      - name: Production build
+        run: npm run build
+
+      - name: Exact product scope and preservation
+        shell: bash
+        run: |
+          git diff --check origin/main...HEAD -- firestore.rules tests/firestore.pro-club-weekly-training-root.rules.test.ts
+          FILES="$(git diff --name-only origin/main...HEAD | grep -v '^.github/workflows/tmp-verify-weekly-training-root-rules-r1.yml$')"
+          EXPECTED=$'firestore.rules\ntests/firestore.pro-club-weekly-training-root.rules.test.ts'
+          test "$FILES" = "$EXPECTED"
+          git diff --numstat origin/main...HEAD -- firestore.rules | awk '{exit !($1 > 0 && $2 == 0)}'
+          grep -q "Pro Club Weekly Training V1 — root Firestore Rules integration" firestore.rules
