@@ -254,8 +254,12 @@ function parseBlock(value: unknown, path: string, errors: string[]): ProClubTrai
   }
 
   const coachingPoints: string[] = [];
-  if (!Array.isArray(record.coachingPoints) || record.coachingPoints.length > 10) {
-    errors.push(`${path}.coachingPoints must be an array with at most 10 items.`);
+  if (
+    !Array.isArray(record.coachingPoints) ||
+    record.coachingPoints.length < 1 ||
+    record.coachingPoints.length > 10
+  ) {
+    errors.push(`${path}.coachingPoints must contain from 1 to 10 items.`);
   } else {
     record.coachingPoints.forEach((point, index) => {
       const parsed = readBoundedText(point, 300, true);
@@ -269,6 +273,7 @@ function parseBlock(value: unknown, path: string, errors: string[]): ProClubTrai
     title === null ||
     !isBoundedInteger(record.durationMinutes, 1, 180) ||
     !Array.isArray(record.coachingPoints) ||
+    record.coachingPoints.length < 1 ||
     record.coachingPoints.length > 10 ||
     coachingPoints.length !== record.coachingPoints.length ||
     (record.drillReference !== undefined && drillReference === undefined)
