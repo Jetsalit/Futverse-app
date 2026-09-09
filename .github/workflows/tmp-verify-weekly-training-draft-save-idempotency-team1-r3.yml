@@ -1,0 +1,98 @@
+name: Temporary Weekly Training Idempotency Team1 R3
+
+on:
+  push:
+    branches:
+      - verify/weekly-training-draft-save-idempotency-team1-r3
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact product head and scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='bf4f22446753cb9cdc56909f6acacc4790b5d201'
+          PRODUCT_HEAD='c01b5fdb0d1a973d35aaed45de30e8cf7e14b1b7'
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_HEAD"
+          test "$(git merge-base "$BASE" "$PRODUCT_HEAD")" = "$BASE"
+          mapfile -t product_files < <(git diff --name-only "$BASE" "$PRODUCT_HEAD")
+          expected=(
+            'docs/PRO_CLUB_WEEKLY_TRAINING_DRAFT_SAVE_CLIENT_UI_V1_CONTRACT_FREEZE.md'
+            'functions/src/proClubWeeklyTrainingDraftSave/callableHandler.ts'
+            'functions/src/proClubWeeklyTrainingDraftSave/service.ts'
+            'src/components/pro-club/operations/ProClubOperationsDashboard.tsx'
+            'src/components/pro-club/operations/ProClubRoleWorkspace.tsx'
+            'src/components/pro-club/operations/WeeklyTrainingDraftComposer.tsx'
+            'src/components/pro-club/operations/weeklyTrainingDraftComposerModel.ts'
+            'src/lib/proClubWeeklyTrainingDraftSaveClient.ts'
+            'tests/functions.proClubWeeklyTrainingDraftSave.callable.test.ts'
+            'tests/functions.proClubWeeklyTrainingDraftSave.maxShape.test.ts'
+            'tests/proClubWeeklyTrainingDraftComposerModel.unit.test.ts'
+            'tests/proClubWeeklyTrainingDraftSaveClient.unit.test.ts'
+            'tests/proClubWeeklyTrainingDraftUiWiring.test.ts'
+          )
+          test "${#product_files[@]}" -eq "${#expected[@]}"
+          for i in "${!expected[@]}"; do test "${product_files[$i]}" = "${expected[$i]}"; done
+          test "$(git diff --name-only "$PRODUCT_HEAD" HEAD)" = '.github/workflows/tmp-verify-weekly-training-draft-save-idempotency-team1-r3.yml'
+          git diff --check "$BASE" HEAD
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix functions ci
+
+      - name: Functions build
+        run: npm --prefix functions run build
+
+      - name: Product client callable and UI tests
+        run: |
+          node --import tsx --test tests/proClubWeeklyTrainingDraftSaveClient.unit.test.ts
+          node --import tsx --test tests/proClubWeeklyTrainingDraftComposerModel.unit.test.ts
+          node --import tsx --test tests/proClubWeeklyTrainingDraftUiWiring.test.ts
+          node --import tsx --test tests/functions.proClubWeeklyTrainingDraftSave.callable.test.ts
+
+      - name: Idempotency max-shape rollback emulator proof
+        run: npx firebase-tools emulators:exec --only firestore --project demo-futverse-weekly-training-idempotency-r3 "node --import tsx --test --test-concurrency=1 tests/functions.proClubWeeklyTrainingDraftSave.maxShape.test.ts"
+
+      - name: Existing Weekly Training parity and domain regressions
+        run: |
+          node --import tsx --test tests/functions.proClubWeeklyTrainingDraftSave.parity.test.ts
+          node --import tsx --test tests/proClubWeeklyTraining.unit.test.ts
+          node --import tsx --test tests/proClubWeeklyTrainingPersistence.unit.test.ts
+
+      - name: Root TypeScript and production build
+        run: |
+          npx tsc --noEmit
+          npm run build
+
+      - name: Production safety boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only 'bf4f22446753cb9cdc56909f6acacc4790b5d201' 'c01b5fdb0d1a973d35aaed45de30e8cf7e14b1b7' | grep -Ec '^(firestore.rules|src/config/runtimeCapabilities.ts|src/lib/firebase.ts|functions/src/index.ts)$')" -eq 0
+          echo 'PRODUCTION_DEPLOYED=NO'
+          echo 'PRODUCTION_CALLABLE_INVOKED=NO'
+          echo 'PRODUCTION_DATA_WRITTEN=NO'
+          echo 'BILLING_PLAN_CHANGED=NO'
