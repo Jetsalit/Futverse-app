@@ -148,3 +148,26 @@ test("Assistant Coach cannot use the trusted server path", async () => {
   const plans = await db.collection("proClubs").doc(CLUB_ID).collection("weeklyTrainingPlans").get();
   assert.equal(plans.empty, true);
 });
+
+test("commit failure rolls back the new plan and sessions with no partial hierarchy", async () => {
+  const planId = "rollback-proof-plan";
+  const planRef = db.collection("proClubs").doc(CLUB_ID).collection("weeklyTrainingPlans").doc(planId);
+  const firstSessionRef = planRef.collection("sessions").doc("2026-09-07-0900");
+  const conflictingBlockRef = firstSessionRef.collection("blocks").doc("block-01");
+  await conflictingBlockRef.set({ preexistingConflict: true });
+
+  const service = createWeeklyTrainingDraftSaveService({
+    firestore: db,
+    planIdFactory: () => planId,
+  });
+
+  await assert.rejects(
+    service.saveFreshDraft({ actorUid: HEAD_COACH_UID, draft: maxShapeDraft() }),
+  );
+
+  assert.equal((await planRef.get()).exists, false);
+  assert.equal((await firstSessionRef.get()).exists, false);
+  assert.equal((await conflictingBlockRef.get()).exists, true);
+  const sessions = await planRef.collection("sessions").get();
+  assert.equal(sessions.empty, true);
+});
