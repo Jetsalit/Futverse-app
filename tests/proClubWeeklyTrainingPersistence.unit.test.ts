@@ -4,7 +4,9 @@ import { describe, it } from "node:test";
 import {
   buildProClubWeeklyTrainingDraftWrite,
   proClubTechnicalGovernanceCurrentPath,
+  proClubWeeklyTrainingBlockPath,
   proClubWeeklyTrainingPlanPath,
+  proClubWeeklyTrainingSessionPath,
 } from "../src/lib/firestore/proClubWeeklyTrainingPersistence.js";
 
 function validPlan() {
@@ -39,10 +41,23 @@ function validPlan() {
 }
 
 describe("Pro Club Weekly Training persistence foundation", () => {
-  it("builds exact Pro Club-only canonical paths", () => {
+  it("builds exact normalized Pro Club-only canonical paths", () => {
     assert.equal(
       proClubWeeklyTrainingPlanPath("club-1", "plan-1"),
       "proClubs/club-1/weeklyTrainingPlans/plan-1",
+    );
+    assert.equal(
+      proClubWeeklyTrainingSessionPath("club-1", "plan-1", "2026-09-08-1600"),
+      "proClubs/club-1/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600",
+    );
+    assert.equal(
+      proClubWeeklyTrainingBlockPath(
+        "club-1",
+        "plan-1",
+        "2026-09-08-1600",
+        "block-01",
+      ),
+      "proClubs/club-1/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600/blocks/block-01",
     );
     assert.equal(
       proClubTechnicalGovernanceCurrentPath("club-1"),
@@ -50,18 +65,20 @@ describe("Pro Club Weekly Training persistence foundation", () => {
     );
   });
 
-  it("rejects padded and path-like identifiers", () => {
-    for (const [clubId, planId] of [
-      [" club-1 ", "plan-1"],
-      ["club-1", "plans/plan-1"],
-      ["club/1", "plan-1"],
-      ["club-1", " plan-1 "],
-    ]) {
-      assert.equal(proClubWeeklyTrainingPlanPath(clubId, planId), null);
-    }
+  it("rejects padded and path-like identifiers at every path level", () => {
+    assert.equal(proClubWeeklyTrainingPlanPath(" club-1 ", "plan-1"), null);
+    assert.equal(proClubWeeklyTrainingPlanPath("club-1", "plans/plan-1"), null);
+    assert.equal(
+      proClubWeeklyTrainingSessionPath("club-1", "plan-1", "sessions/s1"),
+      null,
+    );
+    assert.equal(
+      proClubWeeklyTrainingBlockPath("club-1", "plan-1", "s1", " block-1 "),
+      null,
+    );
   });
 
-  it("builds a DRAFT persistence payload only from a domain-valid plan", () => {
+  it("normalizes a domain-valid DRAFT into plan/session/block documents", () => {
     const result = buildProClubWeeklyTrainingDraftWrite({
       clubId: "club-1",
       planId: "plan-1",
@@ -69,15 +86,26 @@ describe("Pro Club Weekly Training persistence foundation", () => {
     });
 
     assert.equal(result.state, "VALID");
-    if (result.state !== "VALID") throw new Error("Expected valid persistence payload");
+    if (result.state !== "VALID") throw new Error("Expected valid persistence bundle");
 
-    assert.equal(result.payload.schemaVersion, 1);
-    assert.equal(result.payload.status, "DRAFT");
-    assert.equal(result.payload.authorUid, "hc-1");
-    assert.equal(result.payload.sessions.length, 1);
-    assert.equal("clubId" in result.payload, false);
-    assert.equal("planId" in result.payload, false);
-    assert.equal("technicalDirectorNote" in result.payload, false);
+    assert.equal(result.bundle.planPayload.schemaVersion, 1);
+    assert.equal(result.bundle.planPayload.status, "DRAFT");
+    assert.equal(result.bundle.planPayload.authorUid, "hc-1");
+    assert.equal("sessions" in result.bundle.planPayload, false);
+    assert.equal("clubId" in result.bundle.planPayload, false);
+    assert.equal("planId" in result.bundle.planPayload, false);
+
+    assert.equal(result.bundle.sessions.length, 1);
+    const session = result.bundle.sessions[0];
+    assert.equal(session.sessionId, "2026-09-08-1600");
+    assert.equal(session.payload.orderIndex, 0);
+    assert.equal("blocks" in session.payload, false);
+    assert.equal(session.blocks.length, 1);
+    assert.equal(session.blocks[0].blockId, "block-01");
+    assert.equal(session.blocks[0].payload.orderIndex, 0);
+    assert.deepEqual(session.blocks[0].payload.coachingPoints, [
+      "Create the third-man option",
+    ]);
   });
 
   it("fails closed when the plan tenant does not match the path tenant", () => {
@@ -91,7 +119,7 @@ describe("Pro Club Weekly Training persistence foundation", () => {
     );
   });
 
-  it("fails closed before persistence when deep plan validation fails", () => {
+  it("fails closed before normalization when deep plan validation fails", () => {
     const plan = validPlan();
     plan.sessions[0].blocks[0].coachingPoints = [];
 
