@@ -8,24 +8,23 @@ service cloud.firestore {
 
     function activeAccount() {
       return signedIn()
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status in ['ACTIVE', 'Active'];
     }
 
     function activeMember(clubId, uid) {
-      return exists(/databases/$(database)/documents/proClubs/$(clubId)/members/$(uid))
-        && get(/databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)).data.status == 'ACTIVE';
+      return get(/databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)).data.status == 'ACTIVE';
     }
 
     function activeStaff(clubId, uid) {
-      return exists(/databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid))
-        && get(/databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)).data.status == 'ACTIVE';
+      return get(/databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)).data.status == 'ACTIVE';
     }
 
     function activeHeadCoach(clubId, uid) {
-      return activeMember(clubId, uid)
-        && activeStaff(clubId, uid)
-        && get(/databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)).data.staffRole == 'HEAD_COACH';
+      let membership = get(/databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)).data;
+      let staff = get(/databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)).data;
+      return membership.status == 'ACTIVE'
+        && staff.status == 'ACTIVE'
+        && staff.staffRole == 'HEAD_COACH';
     }
 
     function currentAuthorityPath(clubId) {
@@ -33,15 +32,16 @@ service cloud.firestore {
     }
 
     function currentAuthorityIsValid(clubId) {
-      return exists(currentAuthorityPath(clubId))
-        && get(currentAuthorityPath(clubId)).data.schemaVersion == 1
-        && get(currentAuthorityPath(clubId)).data.status == 'ACTIVE'
-        && get(currentAuthorityPath(clubId)).data.authorityUid is string
-        && get(currentAuthorityPath(clubId)).data.authorityRole in ['TECHNICAL_DIRECTOR', 'HEAD_COACH']
-        && activeMember(clubId, get(currentAuthorityPath(clubId)).data.authorityUid)
-        && activeStaff(clubId, get(currentAuthorityPath(clubId)).data.authorityUid)
-        && get(/databases/$(database)/documents/proClubs/$(clubId)/staff/$(get(currentAuthorityPath(clubId)).data.authorityUid)).data.staffRole
-          == get(currentAuthorityPath(clubId)).data.authorityRole;
+      let authority = get(currentAuthorityPath(clubId)).data;
+      let membership = get(/databases/$(database)/documents/proClubs/$(clubId)/members/$(authority.authorityUid)).data;
+      let staff = get(/databases/$(database)/documents/proClubs/$(clubId)/staff/$(authority.authorityUid)).data;
+      return authority.schemaVersion == 1
+        && authority.status == 'ACTIVE'
+        && authority.authorityUid is string
+        && authority.authorityRole in ['TECHNICAL_DIRECTOR', 'HEAD_COACH']
+        && membership.status == 'ACTIVE'
+        && staff.status == 'ACTIVE'
+        && staff.staffRole == authority.authorityRole;
     }
 
     function weeklyPlanKeysAreValid(data) {
