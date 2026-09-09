@@ -1,0 +1,342 @@
+name: Temporary Weekly Training Root Rules Integration R1
+
+on:
+  push:
+    branches:
+      - verify/weekly-training-root-rules-integration-r1
+
+permissions:
+  contents: write
+
+jobs:
+  integrate-and-verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout target integration branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/pro-club-weekly-training-draft-save-v1-root-rules
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify exact source baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_HEAD='024dc984a16041e7435acff274bac20387144a92'
+          EXPECTED_RULES_BLOB='062bdb624b1570ed4e15b9bd18db21ac530bd325'
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git hash-object firestore.rules)" = "$EXPECTED_RULES_BLOB"
+          test -z "$(git status --porcelain)"
+          echo "SOURCE_HEAD=$EXPECTED_HEAD"
+          echo "SOURCE_RULES_BLOB=$EXPECTED_RULES_BLOB"
+
+      - name: Apply deterministic Weekly Training atomic-create remediation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('firestore.rules')
+          text = path.read_text(encoding='utf-8')
+
+          insertion_anchor = "function proClubWeeklyTrainingParentDraftOwnedByActorV1(clubId, planId) {"
+          if text.count(insertion_anchor) != 1:
+              raise SystemExit('STOP: parent helper anchor count mismatch')
+
+          helper_block = r'''function proClubWeeklyTrainingPlanPathV1(clubId, planId) {
+  return /databases/$(database)/documents/proClubs/$(clubId)/weeklyTrainingPlans/$(planId);
+}
+
+function proClubWeeklyTrainingSessionPathV1(clubId, planId, sessionId) {
+  return /databases/$(database)/documents/proClubs/$(clubId)/weeklyTrainingPlans/$(planId)/sessions/$(sessionId);
+}
+
+// Fresh atomic hierarchy path. Full account, Membership, Head Coach and
+// technical-governance authorization is still enforced by the plan CREATE
+// rule in the same atomic commit. Child rules only prove same-commit ancestry
+// and keep their document-level schema, identity, date and audit checks.
+function proClubWeeklyTrainingFreshPlanCreatedByActorAfterV1(clubId, planId) {
+  let planPath = proClubWeeklyTrainingPlanPathV1(clubId, planId);
+  let plan = getAfter(planPath).data;
+
+  return !exists(planPath)
+    && existsAfter(planPath)
+    && plan.get('schemaVersion', 0) == 1
+    && plan.get('status', '') == 'DRAFT'
+    && plan.get('authorUid', '') == request.auth.uid;
+}
+
+function proClubWeeklyTrainingFreshSessionExistsAfterV1(
+  clubId,
+  planId,
+  sessionId
+) {
+  let sessionPath = proClubWeeklyTrainingSessionPathV1(
+    clubId,
+    planId,
+    sessionId
+  );
+
+  return !exists(sessionPath) && existsAfter(sessionPath);
+}
+
+'''
+          text = text.replace(insertion_anchor, helper_block + insertion_anchor, 1)
+
+          session_start = "function proClubWeeklyTrainingValidSessionCreateV1(clubId, planId, sessionId) {"
+          session_end = "function proClubWeeklyTrainingValidSessionUpdateV1(clubId, planId, sessionId) {"
+          if text.count(session_start) != 1 or text.count(session_end) != 1:
+              raise SystemExit('STOP: session create span mismatch')
+          start = text.index(session_start)
+          end = text.index(session_end, start)
+          old_session = text[start:end]
+          required_session_fragments = [
+              'proClubWeeklyTrainingParentDraftOwnedByActorV1(clubId, planId)',
+              'proClubWeeklyTrainingValidSessionKeysV1(request.resource.data)',
+              'proClubWeeklyTrainingValidSessionValuesV1(request.resource.data)',
+              'proClubWeeklyTrainingSessionDateInsideParentWeekV1(',
+              'proClubWeeklyTrainingValidAuditCreateV1(request.resource.data)'
+          ]
+          if not all(fragment in old_session for fragment in required_session_fragments):
+              raise SystemExit('STOP: session create contract drift')
+
+          new_session = r'''function proClubWeeklyTrainingSessionDateInsideFreshParentWeekV1(
+  clubId,
+  planId,
+  data
+) {
+  let plan = getAfter(
+    proClubWeeklyTrainingPlanPathV1(clubId, planId)
+  ).data;
+  let sessionDate = proClubWeeklyTrainingDateTimestampV1(
+    data.get('sessionDate', '')
+  );
+  let weekStart = proClubWeeklyTrainingDateTimestampV1(
+    plan.get('weekStartDate', '')
+  );
+
+  return proClubWeeklyTrainingStrictCalendarDateV1(
+      plan.get('weekStartDate', '')
+    )
+    && proClubWeeklyTrainingStrictCalendarDateV1(
+      data.get('sessionDate', '')
+    )
+    && sessionDate >= weekStart
+    && sessionDate <= weekStart + duration.value(6, 'd');
+}
+
+function proClubWeeklyTrainingValidFreshAtomicSessionCreateV1(
+  clubId,
+  planId,
+  sessionId
+) {
+  return proClubWeeklyTrainingFreshPlanCreatedByActorAfterV1(clubId, planId)
+    && proClubWeeklyTrainingValidSessionKeysV1(request.resource.data)
+    && proClubWeeklyTrainingValidSessionValuesV1(request.resource.data)
+    && proClubWeeklyTrainingSessionIdMatchesPayloadV1(
+      sessionId,
+      request.resource.data
+    )
+    && proClubWeeklyTrainingSessionDateInsideFreshParentWeekV1(
+      clubId,
+      planId,
+      request.resource.data
+    )
+    && proClubWeeklyTrainingValidAuditCreateV1(request.resource.data);
+}
+
+function proClubWeeklyTrainingValidSequentialSessionCreateV1(
+  clubId,
+  planId,
+  sessionId
+) {
+  return proClubWeeklyTrainingParentDraftOwnedByActorV1(clubId, planId)
+    && proClubWeeklyTrainingValidSessionKeysV1(request.resource.data)
+    && proClubWeeklyTrainingValidSessionValuesV1(request.resource.data)
+    && proClubWeeklyTrainingSessionIdMatchesPayloadV1(
+      sessionId,
+      request.resource.data
+    )
+    && proClubWeeklyTrainingSessionDateInsideParentWeekV1(
+      clubId,
+      planId,
+      request.resource.data
+    )
+    && proClubWeeklyTrainingValidAuditCreateV1(request.resource.data);
+}
+
+function proClubWeeklyTrainingValidSessionCreateV1(
+  clubId,
+  planId,
+  sessionId
+) {
+  return proClubWeeklyTrainingValidFreshAtomicSessionCreateV1(
+      clubId,
+      planId,
+      sessionId
+    )
+    || proClubWeeklyTrainingValidSequentialSessionCreateV1(
+      clubId,
+      planId,
+      sessionId
+    );
+}
+
+'''
+          text = text[:start] + new_session + text[end:]
+
+          block_start = "function proClubWeeklyTrainingValidBlockCreateV1(\n  clubId,\n  planId,\n  sessionId,\n  blockId\n) {"
+          block_end = "function proClubWeeklyTrainingValidBlockUpdateV1(\n  clubId,\n  planId,\n  sessionId,\n  blockId\n) {"
+          if text.count(block_start) != 1 or text.count(block_end) != 1:
+              raise SystemExit('STOP: block create span mismatch')
+          start = text.index(block_start)
+          end = text.index(block_end, start)
+          old_block = text[start:end]
+          required_block_fragments = [
+              'proClubWeeklyTrainingParentDraftOwnedByActorV1(clubId, planId)',
+              'proClubWeeklyTrainingSessionExistsV1(clubId, planId, sessionId)',
+              'proClubWeeklyTrainingValidBlockKeysV1(request.resource.data)',
+              'proClubWeeklyTrainingValidBlockValuesV1(request.resource.data)',
+              'proClubWeeklyTrainingBlockIdMatchesOrderV1(',
+              'proClubWeeklyTrainingValidAuditCreateV1(request.resource.data)'
+          ]
+          if not all(fragment in old_block for fragment in required_block_fragments):
+              raise SystemExit('STOP: block create contract drift')
+
+          new_block = r'''function proClubWeeklyTrainingValidFreshAtomicBlockCreateV1(
+  clubId,
+  planId,
+  sessionId,
+  blockId
+) {
+  return proClubWeeklyTrainingFreshPlanCreatedByActorAfterV1(clubId, planId)
+    && proClubWeeklyTrainingFreshSessionExistsAfterV1(
+      clubId,
+      planId,
+      sessionId
+    )
+    && proClubWeeklyTrainingValidBlockKeysV1(request.resource.data)
+    && proClubWeeklyTrainingValidBlockValuesV1(request.resource.data)
+    && proClubWeeklyTrainingBlockIdMatchesOrderV1(
+      blockId,
+      request.resource.data.get('orderIndex', -1)
+    )
+    && proClubWeeklyTrainingValidAuditCreateV1(request.resource.data);
+}
+
+function proClubWeeklyTrainingValidSequentialBlockCreateV1(
+  clubId,
+  planId,
+  sessionId,
+  blockId
+) {
+  return proClubWeeklyTrainingParentDraftOwnedByActorV1(clubId, planId)
+    && proClubWeeklyTrainingSessionExistsV1(clubId, planId, sessionId)
+    && proClubWeeklyTrainingValidBlockKeysV1(request.resource.data)
+    && proClubWeeklyTrainingValidBlockValuesV1(request.resource.data)
+    && proClubWeeklyTrainingBlockIdMatchesOrderV1(
+      blockId,
+      request.resource.data.get('orderIndex', -1)
+    )
+    && proClubWeeklyTrainingValidAuditCreateV1(request.resource.data);
+}
+
+function proClubWeeklyTrainingValidBlockCreateV1(
+  clubId,
+  planId,
+  sessionId,
+  blockId
+) {
+  return proClubWeeklyTrainingValidFreshAtomicBlockCreateV1(
+      clubId,
+      planId,
+      sessionId,
+      blockId
+    )
+    || proClubWeeklyTrainingValidSequentialBlockCreateV1(
+      clubId,
+      planId,
+      sessionId,
+      blockId
+    );
+}
+
+'''
+          text = text[:start] + new_block + text[end:]
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          git diff --check
+          test "$(git diff --name-only)" = "firestore.rules"
+          grep -q "proClubWeeklyTrainingValidFreshAtomicSessionCreateV1" firestore.rules
+          grep -q "proClubWeeklyTrainingValidFreshAtomicBlockCreateV1" firestore.rules
+          grep -q "proClubWeeklyTrainingFreshPlanCreatedByActorAfterV1" firestore.rules
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix functions ci
+
+      - name: Contract test
+        run: node --import tsx --test tests/proClubWeeklyTrainingDraftSaveV1Contract.test.ts
+
+      - name: Real-root atomic create proof
+        run: >-
+          npx firebase-tools emulators:exec --only firestore
+          --project demo-futverse-pro-club-weekly-training-root-integration-r1
+          "node --import tsx --test tests/firestore.pro-club-weekly-training-atomic-create.rules.test.ts"
+
+      - name: Existing Weekly Training root regressions
+        run: >-
+          npx firebase-tools emulators:exec --only firestore
+          --project demo-futverse-pro-club-weekly-training-root-regression-r1
+          "node --import tsx --test tests/firestore.pro-club-weekly-training-foundation.rules.test.ts tests/firestore.pro-club-weekly-training-root.rules.test.ts"
+
+      - name: Pure regressions
+        run: |
+          node --import tsx --test tests/proClubWeeklyTraining.unit.test.ts
+          node --import tsx --test tests/proClubWeeklyTrainingPersistence.unit.test.ts
+
+      - name: TypeScript and builds
+        run: |
+          npx tsc --noEmit
+          npm --prefix functions run build
+          npm run build
+
+      - name: Final exact-scope gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test "$(git diff --name-only)" = "firestore.rules"
+          test "$(git rev-parse HEAD)" = "024dc984a16041e7435acff274bac20387144a92"
+          test "$(git hash-object HEAD:firestore.rules)" = "062bdb624b1570ed4e15b9bd18db21ac530bd325"
+          echo 'PRODUCTION_DEPLOYED=NO'
+          echo 'PRODUCTION_HTTP_CALLED=NO'
+          echo 'PRODUCTION_DATA_WRITTEN=NO'
+          echo 'FORCE_PUSH=NO'
+
+      - name: Commit and push verified root Rules slice
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Jetsalit'
+          git config user.email '79343884+Jetsalit@users.noreply.github.com'
+          git add firestore.rules
+          git commit -m 'fix(pro-club): support atomic weekly training draft hierarchy'
+          git push origin HEAD:feat/pro-club-weekly-training-draft-save-v1-root-rules
