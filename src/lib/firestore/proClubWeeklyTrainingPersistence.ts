@@ -132,6 +132,10 @@ export function buildProClubWeeklyTrainingDraftWrite(input: {
   }
 
   const plan = parsed.value;
+  if (plan.technicalDirectorNote) {
+    return { state: "INVALID", reason: "INVALID_PLAN" };
+  }
+
   const planPath = proClubWeeklyTrainingPlanPath(input.clubId, input.planId);
   if (!planPath) return { state: "INVALID", reason: "INVALID_PLAN" };
 
