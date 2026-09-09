@@ -2331,6 +2331,442 @@ service cloud.firestore {
         && claim.get('rejectedBy', '') == request.auth.uid
         && claim.get('updatedAt', null) == request.time;
     }
+    // Pro Club Weekly Training V1 — root Firestore Rules integration.
+//
+// This intentionally opens only the reviewed DRAFT persistence surface.
+// Lifecycle transitions, deletes, Technical Director co-author writes and
+// unrelated Pro Club child paths remain fail-closed.
+function proClubWeeklyTrainingActiveMemberV1(clubId, uid) {
+  let membershipPath =
+    /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid);
+  return exists(membershipPath)
+    && get(membershipPath).data.get('status', '') == 'ACTIVE';
+}
+
+function proClubWeeklyTrainingActiveStaffV1(clubId, uid) {
+  let staffPath =
+    /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid);
+  return exists(staffPath)
+    && get(staffPath).data.get('status', '') == 'ACTIVE';
+}
+
+function proClubWeeklyTrainingActiveHeadCoachV1(clubId, uid) {
+  let membershipPath =
+    /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid);
+  let staffPath =
+    /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid);
+  let membership = get(membershipPath).data;
+  let staff = get(staffPath).data;
+
+  return currentUserIsActive()
+    && exists(membershipPath)
+    && exists(staffPath)
+    && membership.get('status', '') == 'ACTIVE'
+    && staff.get('status', '') == 'ACTIVE'
+    && staff.get('staffRole', '') == 'HEAD_COACH';
+}
+
+function proClubWeeklyTrainingCurrentAuthorityIsValidV1(clubId) {
+  let authorityPath =
+    /databases/$(database)/documents/proClubs/$(clubId)/technicalGovernance/current;
+  let authority = get(authorityPath).data;
+  let authorityUid = authority.get('authorityUid', '');
+  let membershipPath =
+    /databases/$(database)/documents/proClubs/$(clubId)/members/$(authorityUid);
+  let staffPath =
+    /databases/$(database)/documents/proClubs/$(clubId)/staff/$(authorityUid);
+  let membership = get(membershipPath).data;
+  let staff = get(staffPath).data;
+
+  return exists(authorityPath)
+    && authority.get('schemaVersion', 0) == 1
+    && authority.get('status', '') == 'ACTIVE'
+    && exactDocumentId(authorityUid)
+    && authority.get('authorityRole', '')
+      in ['TECHNICAL_DIRECTOR', 'HEAD_COACH']
+    && exists(membershipPath)
+    && exists(staffPath)
+    && membership.get('status', '') == 'ACTIVE'
+    && staff.get('status', '') == 'ACTIVE'
+    && staff.get('staffRole', '')
+      == authority.get('authorityRole', '');
+}
+
+function proClubWeeklyTrainingValidAuditCreateV1(data) {
+  return data.get('createdBy', '') == request.auth.uid
+    && data.get('updatedBy', '') == request.auth.uid
+    && data.get('createdAt', null) == request.time
+    && data.get('updatedAt', null) == request.time;
+}
+
+function proClubWeeklyTrainingValidAuditUpdateV1(data, previous) {
+  return data.get('createdBy', '') == previous.get('createdBy', '')
+    && data.get('createdAt', null) == previous.get('createdAt', null)
+    && data.get('updatedBy', '') == request.auth.uid
+    && data.get('updatedAt', null) == request.time;
+}
+
+function proClubWeeklyTrainingStrictCalendarDateV1(value) {
+  let parsed = timestamp.date(
+    int(value[0:4]),
+    int(value[5:7]),
+    int(value[8:10])
+  );
+  return value is string
+    && value.matches('^\\d{4}-\\d{2}-\\d{2}$')
+    && parsed.year() == int(value[0:4])
+    && parsed.month() == int(value[5:7])
+    && parsed.day() == int(value[8:10]);
+}
+
+function proClubWeeklyTrainingDateTimestampV1(value) {
+  return timestamp.date(
+    int(value[0:4]),
+    int(value[5:7]),
+    int(value[8:10])
+  );
+}
+
+function proClubWeeklyTrainingNormalizedTextV1(value, maxLength) {
+  return value is string
+    && value.size() > 0
+    && value.size() <= maxLength
+    && value.trim() == value;
+}
+
+function proClubWeeklyTrainingValidPlanKeysV1(data) {
+  return data.keys().hasOnly([
+      'schemaVersion', 'authorUid', 'status', 'weekStartDate', 'squadLabel',
+      'mainObjective', 'secondaryObjective', 'headCoachNote',
+      'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+    ])
+    && data.keys().hasAll([
+      'schemaVersion', 'authorUid', 'status', 'weekStartDate', 'squadLabel',
+      'mainObjective', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+    ]);
+}
+
+function proClubWeeklyTrainingValidPlanValuesV1(data) {
+  return data.get('schemaVersion', 0) == 1
+    && exactDocumentId(data.get('authorUid', ''))
+    && data.get('status', '') == 'DRAFT'
+    && proClubWeeklyTrainingStrictCalendarDateV1(data.get('weekStartDate', ''))
+    && proClubWeeklyTrainingNormalizedTextV1(data.get('squadLabel', ''), 100)
+    && proClubWeeklyTrainingNormalizedTextV1(data.get('mainObjective', ''), 500)
+    && (!data.keys().hasAny(['secondaryObjective'])
+      || proClubWeeklyTrainingNormalizedTextV1(data.secondaryObjective, 500))
+    && (!data.keys().hasAny(['headCoachNote'])
+      || proClubWeeklyTrainingNormalizedTextV1(data.headCoachNote, 2000));
+}
+
+function proClubWeeklyTrainingValidDraftPlanCreateV1(clubId) {
+  return currentUserIsActive()
+    && proClubWeeklyTrainingActiveHeadCoachV1(clubId, request.auth.uid)
+    && proClubWeeklyTrainingCurrentAuthorityIsValidV1(clubId)
+    && proClubWeeklyTrainingValidPlanKeysV1(request.resource.data)
+    && proClubWeeklyTrainingValidPlanValuesV1(request.resource.data)
+    && request.resource.data.get('authorUid', '') == request.auth.uid
+    && proClubWeeklyTrainingValidAuditCreateV1(request.resource.data);
+}
+
+function proClubWeeklyTrainingValidDraftPlanUpdateV1(clubId) {
+  return currentUserIsActive()
+    && proClubWeeklyTrainingActiveHeadCoachV1(clubId, request.auth.uid)
+    && proClubWeeklyTrainingCurrentAuthorityIsValidV1(clubId)
+    && resource.data.get('status', '') == 'DRAFT'
+    && request.resource.data.get('status', '') == 'DRAFT'
+    && resource.data.get('authorUid', '') == request.auth.uid
+    && request.resource.data.get('authorUid', '') == request.auth.uid
+    && proClubWeeklyTrainingValidPlanKeysV1(request.resource.data)
+    && proClubWeeklyTrainingValidPlanValuesV1(request.resource.data)
+    && request.resource.data.get('schemaVersion', 0)
+      == resource.data.get('schemaVersion', 0)
+    && request.resource.data.get('weekStartDate', '')
+      == resource.data.get('weekStartDate', '')
+    && proClubWeeklyTrainingValidAuditUpdateV1(
+      request.resource.data,
+      resource.data
+    );
+}
+
+function proClubWeeklyTrainingParentDraftOwnedByActorV1(clubId, planId) {
+  let planPath =
+    /databases/$(database)/documents/proClubs/$(clubId)/weeklyTrainingPlans/$(planId);
+  let plan = get(planPath).data;
+  return currentUserIsActive()
+    && proClubWeeklyTrainingActiveHeadCoachV1(clubId, request.auth.uid)
+    && proClubWeeklyTrainingCurrentAuthorityIsValidV1(clubId)
+    && exists(planPath)
+    && plan.get('schemaVersion', 0) == 1
+    && plan.get('status', '') == 'DRAFT'
+    && plan.get('authorUid', '') == request.auth.uid;
+}
+
+function proClubWeeklyTrainingParentPlanV1(clubId, planId) {
+  return get(
+    /databases/$(database)/documents/proClubs/$(clubId)/weeklyTrainingPlans/$(planId)
+  ).data;
+}
+
+function proClubWeeklyTrainingValidSessionKeysV1(data) {
+  return data.keys().hasOnly([
+      'schemaVersion', 'orderIndex', 'sessionDate', 'startTime', 'location',
+      'objective', 'phaseOfPlay', 'plannedLoad', 'durationMinutes',
+      'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+    ])
+    && data.keys().hasAll([
+      'schemaVersion', 'orderIndex', 'sessionDate', 'startTime', 'location',
+      'objective', 'phaseOfPlay', 'plannedLoad', 'durationMinutes',
+      'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+    ]);
+}
+
+function proClubWeeklyTrainingValidSessionValuesV1(data) {
+  return data.get('schemaVersion', 0) == 1
+    && data.get('orderIndex', -1) is int
+    && data.get('orderIndex', -1) >= 0
+    && data.get('orderIndex', -1) <= 13
+    && proClubWeeklyTrainingStrictCalendarDateV1(data.get('sessionDate', ''))
+    && data.get('startTime', '') is string
+    && data.get('startTime', '').matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+    && proClubWeeklyTrainingNormalizedTextV1(data.get('location', ''), 200)
+    && proClubWeeklyTrainingNormalizedTextV1(data.get('objective', ''), 500)
+    && data.get('phaseOfPlay', '') in [
+      'GENERAL', 'IN_POSSESSION', 'OUT_OF_POSSESSION',
+      'TRANSITION_TO_ATTACK', 'TRANSITION_TO_DEFEND', 'SET_PIECES'
+    ]
+    && data.get('plannedLoad', '') in ['LOW', 'MODERATE', 'HIGH']
+    && data.get('durationMinutes', 0) is int
+    && data.get('durationMinutes', 0) >= 15
+    && data.get('durationMinutes', 0) <= 360;
+}
+
+function proClubWeeklyTrainingSessionIdMatchesPayloadV1(sessionId, data) {
+  return sessionId
+    == data.get('sessionDate', '') + '-' + data.get('startTime', '').replace(':', '');
+}
+
+function proClubWeeklyTrainingSessionDateInsideParentWeekV1(
+  clubId,
+  planId,
+  data
+) {
+  let plan = proClubWeeklyTrainingParentPlanV1(clubId, planId);
+  let sessionDate = proClubWeeklyTrainingDateTimestampV1(data.get('sessionDate', ''));
+  let weekStart = proClubWeeklyTrainingDateTimestampV1(plan.get('weekStartDate', ''));
+  return proClubWeeklyTrainingStrictCalendarDateV1(plan.get('weekStartDate', ''))
+    && proClubWeeklyTrainingStrictCalendarDateV1(data.get('sessionDate', ''))
+    && sessionDate >= weekStart
+    && sessionDate <= weekStart + duration.value(6, 'd');
+}
+
+function proClubWeeklyTrainingValidSessionCreateV1(clubId, planId, sessionId) {
+  return proClubWeeklyTrainingParentDraftOwnedByActorV1(clubId, planId)
+    && proClubWeeklyTrainingValidSessionKeysV1(request.resource.data)
+    && proClubWeeklyTrainingValidSessionValuesV1(request.resource.data)
+    && proClubWeeklyTrainingSessionIdMatchesPayloadV1(sessionId, request.resource.data)
+    && proClubWeeklyTrainingSessionDateInsideParentWeekV1(
+      clubId,
+      planId,
+      request.resource.data
+    )
+    && proClubWeeklyTrainingValidAuditCreateV1(request.resource.data);
+}
+
+function proClubWeeklyTrainingValidSessionUpdateV1(clubId, planId, sessionId) {
+  return proClubWeeklyTrainingParentDraftOwnedByActorV1(clubId, planId)
+    && proClubWeeklyTrainingValidSessionKeysV1(request.resource.data)
+    && proClubWeeklyTrainingValidSessionValuesV1(request.resource.data)
+    && proClubWeeklyTrainingSessionIdMatchesPayloadV1(sessionId, request.resource.data)
+    && proClubWeeklyTrainingSessionDateInsideParentWeekV1(
+      clubId,
+      planId,
+      request.resource.data
+    )
+    && request.resource.data.get('schemaVersion', 0)
+      == resource.data.get('schemaVersion', 0)
+    && request.resource.data.get('orderIndex', -1)
+      == resource.data.get('orderIndex', -1)
+    && request.resource.data.get('sessionDate', '')
+      == resource.data.get('sessionDate', '')
+    && request.resource.data.get('startTime', '')
+      == resource.data.get('startTime', '')
+    && proClubWeeklyTrainingValidAuditUpdateV1(
+      request.resource.data,
+      resource.data
+    );
+}
+
+function proClubWeeklyTrainingValidPointV1(point) {
+  return proClubWeeklyTrainingNormalizedTextV1(point, 300);
+}
+
+function proClubWeeklyTrainingValidCoachingPointsV1(points) {
+  return points is list
+    && points.size() >= 1
+    && points.size() <= 10
+    && proClubWeeklyTrainingValidPointV1(points[0])
+    && (points.size() < 2 || proClubWeeklyTrainingValidPointV1(points[1]))
+    && (points.size() < 3 || proClubWeeklyTrainingValidPointV1(points[2]))
+    && (points.size() < 4 || proClubWeeklyTrainingValidPointV1(points[3]))
+    && (points.size() < 5 || proClubWeeklyTrainingValidPointV1(points[4]))
+    && (points.size() < 6 || proClubWeeklyTrainingValidPointV1(points[5]))
+    && (points.size() < 7 || proClubWeeklyTrainingValidPointV1(points[6]))
+    && (points.size() < 8 || proClubWeeklyTrainingValidPointV1(points[7]))
+    && (points.size() < 9 || proClubWeeklyTrainingValidPointV1(points[8]))
+    && (points.size() < 10 || proClubWeeklyTrainingValidPointV1(points[9]));
+}
+
+function proClubWeeklyTrainingValidBlockKeysV1(data) {
+  return data.keys().hasOnly([
+      'schemaVersion', 'orderIndex', 'blockType', 'title', 'durationMinutes',
+      'drillReference', 'coachingPoints',
+      'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+    ])
+    && data.keys().hasAll([
+      'schemaVersion', 'orderIndex', 'blockType', 'title', 'durationMinutes',
+      'coachingPoints', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+    ]);
+}
+
+function proClubWeeklyTrainingValidExactDocumentIdentifierV1(value) {
+  return value is string
+    && value.size() > 0
+    && value.trim() == value
+    && !value.matches('.*[/].*');
+}
+
+function proClubWeeklyTrainingValidBlockValuesV1(data) {
+  return data.get('schemaVersion', 0) == 1
+    && data.get('orderIndex', -1) is int
+    && data.get('orderIndex', -1) >= 0
+    && data.get('orderIndex', -1) <= 11
+    && data.get('blockType', '') in [
+      'WARM_UP', 'TECHNICAL', 'TACTICAL', 'GAME',
+      'CONDITIONING', 'COOL_DOWN', 'OTHER'
+    ]
+    && proClubWeeklyTrainingNormalizedTextV1(data.get('title', ''), 200)
+    && data.get('durationMinutes', 0) is int
+    && data.get('durationMinutes', 0) >= 1
+    && data.get('durationMinutes', 0) <= 180
+    && (!data.keys().hasAny(['drillReference'])
+      || proClubWeeklyTrainingValidExactDocumentIdentifierV1(data.drillReference))
+    && proClubWeeklyTrainingValidCoachingPointsV1(
+      data.get('coachingPoints', [])
+    );
+}
+
+function proClubWeeklyTrainingBlockIdMatchesOrderV1(blockId, orderIndex) {
+  return (orderIndex == 0 && blockId == 'block-01')
+    || (orderIndex == 1 && blockId == 'block-02')
+    || (orderIndex == 2 && blockId == 'block-03')
+    || (orderIndex == 3 && blockId == 'block-04')
+    || (orderIndex == 4 && blockId == 'block-05')
+    || (orderIndex == 5 && blockId == 'block-06')
+    || (orderIndex == 6 && blockId == 'block-07')
+    || (orderIndex == 7 && blockId == 'block-08')
+    || (orderIndex == 8 && blockId == 'block-09')
+    || (orderIndex == 9 && blockId == 'block-10')
+    || (orderIndex == 10 && blockId == 'block-11')
+    || (orderIndex == 11 && blockId == 'block-12');
+}
+
+function proClubWeeklyTrainingSessionExistsV1(clubId, planId, sessionId) {
+  return exists(
+    /databases/$(database)/documents/proClubs/$(clubId)/weeklyTrainingPlans/$(planId)/sessions/$(sessionId)
+  );
+}
+
+function proClubWeeklyTrainingValidBlockCreateV1(
+  clubId,
+  planId,
+  sessionId,
+  blockId
+) {
+  return proClubWeeklyTrainingParentDraftOwnedByActorV1(clubId, planId)
+    && proClubWeeklyTrainingSessionExistsV1(clubId, planId, sessionId)
+    && proClubWeeklyTrainingValidBlockKeysV1(request.resource.data)
+    && proClubWeeklyTrainingValidBlockValuesV1(request.resource.data)
+    && proClubWeeklyTrainingBlockIdMatchesOrderV1(
+      blockId,
+      request.resource.data.get('orderIndex', -1)
+    )
+    && proClubWeeklyTrainingValidAuditCreateV1(request.resource.data);
+}
+
+function proClubWeeklyTrainingValidBlockUpdateV1(
+  clubId,
+  planId,
+  sessionId,
+  blockId
+) {
+  return proClubWeeklyTrainingParentDraftOwnedByActorV1(clubId, planId)
+    && proClubWeeklyTrainingSessionExistsV1(clubId, planId, sessionId)
+    && proClubWeeklyTrainingValidBlockKeysV1(request.resource.data)
+    && proClubWeeklyTrainingValidBlockValuesV1(request.resource.data)
+    && proClubWeeklyTrainingBlockIdMatchesOrderV1(
+      blockId,
+      request.resource.data.get('orderIndex', -1)
+    )
+    && request.resource.data.get('schemaVersion', 0)
+      == resource.data.get('schemaVersion', 0)
+    && request.resource.data.get('orderIndex', -1)
+      == resource.data.get('orderIndex', -1)
+    && proClubWeeklyTrainingValidAuditUpdateV1(
+      request.resource.data,
+      resource.data
+    );
+}
+
+match /proClubs/{clubId}/technicalGovernance/current {
+  allow get: if currentUserIsActive()
+    && proClubWeeklyTrainingActiveMemberV1(clubId, request.auth.uid)
+    && proClubWeeklyTrainingActiveStaffV1(clubId, request.auth.uid);
+  allow list, create, update, delete: if false;
+}
+
+match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
+  allow get, list: if currentUserIsActive()
+    && proClubWeeklyTrainingActiveMemberV1(clubId, request.auth.uid);
+  allow create: if proClubWeeklyTrainingValidDraftPlanCreateV1(clubId);
+  allow update: if proClubWeeklyTrainingValidDraftPlanUpdateV1(clubId);
+  allow delete: if false;
+
+  match /sessions/{sessionId} {
+    allow get, list: if currentUserIsActive()
+      && proClubWeeklyTrainingActiveMemberV1(clubId, request.auth.uid);
+    allow create: if proClubWeeklyTrainingValidSessionCreateV1(
+      clubId,
+      planId,
+      sessionId
+    );
+    allow update: if proClubWeeklyTrainingValidSessionUpdateV1(
+      clubId,
+      planId,
+      sessionId
+    );
+    allow delete: if false;
+
+    match /blocks/{blockId} {
+      allow get, list: if currentUserIsActive()
+        && proClubWeeklyTrainingActiveMemberV1(clubId, request.auth.uid);
+      allow create: if proClubWeeklyTrainingValidBlockCreateV1(
+        clubId,
+        planId,
+        sessionId,
+        blockId
+      );
+      allow update: if proClubWeeklyTrainingValidBlockUpdateV1(
+        clubId,
+        planId,
+        sessionId,
+        blockId
+      );
+      allow delete: if false;
+    }
+  }
+}
+
     match /proClubInvites/{inviteCode} {
       allow get: if isSignedIn()
         && (
