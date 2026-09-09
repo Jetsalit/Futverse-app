@@ -1,0 +1,88 @@
+name: Temporary Weekly Training Root Rules Stage V2
+
+on:
+  push:
+    branches:
+      - staging/pro-club-weekly-training-v1-root-rules
+
+permissions:
+  contents: write
+
+jobs:
+  stage-and-verify-v2:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging/pro-club-weekly-training-v1-root-rules
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Apply the reviewed deterministic insertion script
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          workflow = Path('.github/workflows/tmp-weekly-training-root-rules-stage.yml').read_text(encoding='utf-8')
+          start_marker = "          python <<'PY'\n"
+          end_marker = "          PY\n"
+          start = workflow.index(start_marker) + len(start_marker)
+          end = workflow.index(end_marker, start)
+          lines = workflow[start:end].splitlines()
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines) + '\n'
+          compile(script, '<weekly-training-root-rules-insertion>', 'exec')
+          exec(script, {'__name__': '__main__'})
+          PY
+
+      - name: Install root and Functions dependencies
+        run: |
+          npm ci
+          npm --prefix functions ci
+
+      - name: Weekly Training pure tests
+        run: |
+          node --import tsx --test tests/proClubWeeklyTraining.unit.test.ts
+          node --import tsx --test tests/proClubWeeklyTrainingPersistence.unit.test.ts
+
+      - name: Weekly Training foundation and real-root Firestore Emulator tests
+        run: |
+          npx firebase-tools emulators:exec --only firestore --project demo-futverse-pro-club-weekly-training-root "node --import tsx --test tests/firestore.pro-club-weekly-training-foundation.rules.test.ts tests/firestore.pro-club-weekly-training-root.rules.test.ts"
+
+      - name: TypeScript
+        run: npx tsc --noEmit
+
+      - name: Functions build
+        run: npm --prefix functions run build
+
+      - name: Production build
+        run: npm run build
+
+      - name: Preservation and scope checks
+        shell: bash
+        run: |
+          git diff --check
+          CHANGED="$(git diff --name-only HEAD)"
+          test "$CHANGED" = "firestore.rules"
+          grep -q "Pro Club Weekly Training V1 — root Firestore Rules integration" firestore.rules
+          git diff --exit-code HEAD -- ':!firestore.rules'
+
+      - name: Commit verified integration and remove temporary harnesses
+        shell: bash
+        run: |
+          rm .github/workflows/tmp-weekly-training-root-rules-stage.yml
+          rm .github/workflows/tmp-weekly-training-root-rules-stage-v2.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add firestore.rules .github/workflows/tmp-weekly-training-root-rules-stage.yml .github/workflows/tmp-weekly-training-root-rules-stage-v2.yml
+          git commit -m "feat(pro-club): integrate weekly training root rules"
+          git push origin HEAD:staging/pro-club-weekly-training-v1-root-rules
