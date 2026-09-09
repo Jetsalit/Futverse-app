@@ -30,7 +30,7 @@ export interface SaveWeeklyTrainingDraftResult {
 const WEEKLY_TRAINING_DRAFT_SAVE_RECEIPTS = "weeklyTrainingDraftSaveReceipts";
 
 function exactId(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0 && !value.includes("/");
+  return typeof value === "string" && value.length > 0 && value.trim() === value && !value.includes("/");
 }
 
 export function isCanonicalWeeklyTrainingDraftSaveRequestId(
@@ -152,20 +152,18 @@ export class WeeklyTrainingDraftSaveService {
       const authorityStaffRef = clubRef.collection("staff").doc(authorityUid);
 
       const receipt = receiptSnap.data();
-      let existingPlanRef: ReturnType<typeof clubRef.collection> extends infer _Never ? never : never;
-      void existingPlanRef;
       const existingPlanId = receiptSnap.exists ? receipt?.planId : undefined;
       if (receiptSnap.exists && !exactId(existingPlanId)) {
         throw new WeeklyTrainingDraftSaveError("FAILED_PRECONDITION", "Stored save receipt is invalid.");
       }
-      const existingPlan = receiptSnap.exists
+      const existingPlanRef = receiptSnap.exists
         ? clubRef.collection("weeklyTrainingPlans").doc(existingPlanId as string)
         : null;
 
       const [authorityMemberSnap, authorityStaffSnap, existingPlanSnap] = await Promise.all([
         transaction.get(authorityMemberRef),
         transaction.get(authorityStaffRef),
-        existingPlan ? transaction.get(existingPlan) : Promise.resolve(null),
+        existingPlanRef ? transaction.get(existingPlanRef) : Promise.resolve(null),
       ]);
       const authorityMember = authorityMemberSnap.data();
       const authorityStaff = authorityStaffSnap.data();
@@ -275,9 +273,9 @@ export class WeeklyTrainingDraftSaveService {
         );
       }
 
-      // The server-only receipt is written in the same transaction as the
-      // entire hierarchy. If this receipt exists on a retry, the hierarchy
-      // commit necessarily completed atomically for this logical request.
+      // This receipt is Admin-SDK-only because no Firestore Rules match grants
+      // client access to this collection. It commits atomically with the whole
+      // hierarchy and is the source of truth for retries of this logical save.
       transaction.create(receiptRef, {
         schemaVersion: 1,
         operationType: "PRO_CLUB_WEEKLY_TRAINING_DRAFT_SAVE",
