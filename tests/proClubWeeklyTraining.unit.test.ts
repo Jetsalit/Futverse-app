@@ -57,6 +57,20 @@ function validPlan() {
   };
 }
 
+function tdAuthority() {
+  return resolveProClubTechnicalAuthority(
+    { authorityMode: "AUTO" },
+    [td, headCoach],
+  );
+}
+
+function headCoachAuthority() {
+  return resolveProClubTechnicalAuthority(
+    { authorityMode: "AUTO" },
+    [headCoach],
+  );
+}
+
 describe("Pro Club Weekly Training V1", () => {
   it("parses a canonical weekly training plan", () => {
     const result = parseProClubWeeklyTrainingDraft(validPlan());
@@ -74,16 +88,32 @@ describe("Pro Club Weekly Training V1", () => {
       "INVALID",
     );
 
-    const badSession = validPlan();
-    badSession.sessions[0] = { ...badSession.sessions[0], legacyField: "x" } as typeof badSession.sessions[0];
-    assert.equal(parseProClubWeeklyTrainingDraft(badSession).state, "INVALID");
+    const sessionPlan = validPlan();
+    const unexpectedSession: unknown = {
+      ...sessionPlan.sessions[0],
+      legacyField: "x",
+    };
+    const sessionInput: unknown = {
+      ...sessionPlan,
+      sessions: [unexpectedSession],
+    };
+    assert.equal(parseProClubWeeklyTrainingDraft(sessionInput).state, "INVALID");
 
-    const badBlock = validPlan();
-    badBlock.sessions[0].blocks[0] = {
-      ...badBlock.sessions[0].blocks[0],
+    const blockPlan = validPlan();
+    const unexpectedBlock: unknown = {
+      ...blockPlan.sessions[0].blocks[0],
       durationMin: 15,
-    } as typeof badBlock.sessions[0].blocks[0];
-    assert.equal(parseProClubWeeklyTrainingDraft(badBlock).state, "INVALID");
+    };
+    const blockInput: unknown = {
+      ...blockPlan,
+      sessions: [
+        {
+          ...blockPlan.sessions[0],
+          blocks: [unexpectedBlock],
+        },
+      ],
+    };
+    assert.equal(parseProClubWeeklyTrainingDraft(blockInput).state, "INVALID");
   });
 
   it("rejects impossible dates, out-of-week sessions, duplicate slots and block overflow", () => {
@@ -119,19 +149,14 @@ describe("Pro Club Weekly Training V1", () => {
   });
 
   it("requires resolved authority before allowing plan creation", () => {
-    const authority = resolveProClubTechnicalAuthority(
-      { authorityMode: "AUTO" },
-      [headCoach],
-    );
     assert.equal(
       canCreateProClubWeeklyTrainingPlan({
         actorUid: "hc-1",
         actorRole: "HEAD_COACH",
-        authority,
+        authority: headCoachAuthority(),
       }),
       true,
     );
-
     assert.equal(
       canCreateProClubWeeklyTrainingPlan({
         actorUid: "hc-1",
@@ -143,18 +168,13 @@ describe("Pro Club Weekly Training V1", () => {
   });
 
   it("Head Coach submits own plan when TD is resolved authority", () => {
-    const authority = resolveProClubTechnicalAuthority(
-      { authorityMode: "AUTO" },
-      [td, headCoach],
-    );
-
     assert.deepEqual(
       resolveProClubWeeklyTrainingWorkflow({
         actorUid: "hc-1",
         actorRole: "HEAD_COACH",
         authorUid: "hc-1",
         currentStatus: "DRAFT",
-        authority,
+        authority: tdAuthority(),
         action: "SUBMIT",
       }),
       {
@@ -168,11 +188,7 @@ describe("Pro Club Weekly Training V1", () => {
   });
 
   it("TD authority can begin review, request revision and approve another author's plan", () => {
-    const authority = resolveProClubTechnicalAuthority(
-      { authorityMode: "AUTO" },
-      [td, headCoach],
-    );
-
+    const authority = tdAuthority();
     assert.equal(
       resolveProClubWeeklyTrainingWorkflow({
         actorUid: "td-1",
@@ -184,46 +200,44 @@ describe("Pro Club Weekly Training V1", () => {
       }).allowed,
       true,
     );
-
-    const revision = resolveProClubWeeklyTrainingWorkflow({
-      actorUid: "td-1",
-      actorRole: "TECHNICAL_DIRECTOR",
-      authorUid: "hc-1",
-      currentStatus: "IN_REVIEW",
-      authority,
-      action: "REQUEST_REVISION",
-    });
-    assert.deepEqual(revision, {
-      allowed: true,
-      action: "REQUEST_REVISION",
-      fromStatus: "IN_REVIEW",
-      toStatus: "NEEDS_REVISION",
-      authorityAction: "REVIEW_AND_APPROVE",
-    });
-
-    const approve = resolveProClubWeeklyTrainingWorkflow({
-      actorUid: "td-1",
-      actorRole: "TECHNICAL_DIRECTOR",
-      authorUid: "hc-1",
-      currentStatus: "IN_REVIEW",
-      authority,
-      action: "APPROVE",
-    });
-    assert.deepEqual(approve, {
-      allowed: true,
-      action: "APPROVE",
-      fromStatus: "IN_REVIEW",
-      toStatus: "APPROVED",
-      authorityAction: "REVIEW_AND_APPROVE",
-    });
+    assert.deepEqual(
+      resolveProClubWeeklyTrainingWorkflow({
+        actorUid: "td-1",
+        actorRole: "TECHNICAL_DIRECTOR",
+        authorUid: "hc-1",
+        currentStatus: "IN_REVIEW",
+        authority,
+        action: "REQUEST_REVISION",
+      }),
+      {
+        allowed: true,
+        action: "REQUEST_REVISION",
+        fromStatus: "IN_REVIEW",
+        toStatus: "NEEDS_REVISION",
+        authorityAction: "REVIEW_AND_APPROVE",
+      },
+    );
+    assert.deepEqual(
+      resolveProClubWeeklyTrainingWorkflow({
+        actorUid: "td-1",
+        actorRole: "TECHNICAL_DIRECTOR",
+        authorUid: "hc-1",
+        currentStatus: "IN_REVIEW",
+        authority,
+        action: "APPROVE",
+      }),
+      {
+        allowed: true,
+        action: "APPROVE",
+        fromStatus: "IN_REVIEW",
+        toStatus: "APPROVED",
+        authorityAction: "REVIEW_AND_APPROVE",
+      },
+    );
   });
 
-  it("Head Coach authority must publish own work instead of self-submitting/self-approving", () => {
-    const authority = resolveProClubTechnicalAuthority(
-      { authorityMode: "AUTO" },
-      [headCoach],
-    );
-
+  it("Head Coach authority publishes own work instead of self-submitting/self-approving", () => {
+    const authority = headCoachAuthority();
     assert.deepEqual(
       resolveProClubWeeklyTrainingWorkflow({
         actorUid: "hc-1",
@@ -233,13 +247,8 @@ describe("Pro Club Weekly Training V1", () => {
         authority,
         action: "SUBMIT",
       }),
-      {
-        allowed: false,
-        action: "SUBMIT",
-        reason: "SELF_WORK_MUST_PUBLISH",
-      },
+      { allowed: false, action: "SUBMIT", reason: "SELF_WORK_MUST_PUBLISH" },
     );
-
     assert.deepEqual(
       resolveProClubWeeklyTrainingWorkflow({
         actorUid: "hc-1",
@@ -257,7 +266,6 @@ describe("Pro Club Weekly Training V1", () => {
         authorityAction: "PUBLISH_OWN_WORK",
       },
     );
-
     assert.equal(
       resolveProClubWeeklyTrainingWorkflow({
         actorUid: "hc-1",
@@ -272,26 +280,20 @@ describe("Pro Club Weekly Training V1", () => {
   });
 
   it("only exact TD authority may co-author another person's plan", () => {
-    const selectedHeadCoachAuthority = resolveProClubTechnicalAuthority(
+    const hcSelected = resolveProClubTechnicalAuthority(
       { authorityMode: "AUTO", selectedAuthorityUid: "hc-1" },
       [td, headCoach],
     );
-
     assert.deepEqual(
       resolveProClubWeeklyTrainingWorkflow({
         actorUid: "td-1",
         actorRole: "TECHNICAL_DIRECTOR",
         authorUid: "hc-1",
         currentStatus: "DRAFT",
-        authority: selectedHeadCoachAuthority,
+        authority: hcSelected,
         action: "EDIT",
       }),
       { allowed: false, action: "EDIT", reason: "NOT_PERMITTED" },
-    );
-
-    const tdAuthority = resolveProClubTechnicalAuthority(
-      { authorityMode: "AUTO" },
-      [td, headCoach],
     );
     assert.equal(
       resolveProClubWeeklyTrainingWorkflow({
@@ -299,7 +301,7 @@ describe("Pro Club Weekly Training V1", () => {
         actorRole: "TECHNICAL_DIRECTOR",
         authorUid: "hc-1",
         currentStatus: "DRAFT",
-        authority: tdAuthority,
+        authority: tdAuthority(),
         action: "EDIT",
       }).allowed,
       true,
@@ -307,11 +309,7 @@ describe("Pro Club Weekly Training V1", () => {
   });
 
   it("author may edit DRAFT or NEEDS_REVISION, but terminal work is immutable", () => {
-    const authority = resolveProClubTechnicalAuthority(
-      { authorityMode: "AUTO" },
-      [td, headCoach],
-    );
-
+    const authority = tdAuthority();
     for (const status of ["DRAFT", "NEEDS_REVISION"] as const) {
       assert.equal(
         resolveProClubWeeklyTrainingWorkflow({
@@ -325,7 +323,6 @@ describe("Pro Club Weekly Training V1", () => {
         true,
       );
     }
-
     for (const status of ["APPROVED", "PUBLISHED"] as const) {
       assert.deepEqual(
         resolveProClubWeeklyTrainingWorkflow({
@@ -346,7 +343,6 @@ describe("Pro Club Weekly Training V1", () => {
       { authorityMode: "AUTO" },
       [td, { ...td, uid: "td-2" }, headCoach],
     );
-
     assert.deepEqual(
       resolveProClubWeeklyTrainingWorkflow({
         actorUid: "hc-1",
@@ -360,11 +356,8 @@ describe("Pro Club Weekly Training V1", () => {
     );
   });
 
-  it("builds immutable action-time provenance from an allowed workflow decision", () => {
-    const authority = resolveProClubTechnicalAuthority(
-      { authorityMode: "AUTO" },
-      [td, headCoach],
-    );
+  it("builds action-time provenance only for an allowed decision and offset-aware timestamp", () => {
+    const authority = tdAuthority();
     const decision = resolveProClubWeeklyTrainingWorkflow({
       actorUid: "td-1",
       actorRole: "TECHNICAL_DIRECTOR",
@@ -373,7 +366,6 @@ describe("Pro Club Weekly Training V1", () => {
       authority,
       action: "APPROVE",
     });
-
     assert.deepEqual(
       buildProClubWeeklyTrainingActionProvenance({
         actorUid: "td-1",
@@ -393,7 +385,6 @@ describe("Pro Club Weekly Training V1", () => {
         occurredAt: "2026-09-09T11:30:00+07:00",
       },
     );
-
     assert.equal(
       buildProClubWeeklyTrainingActionProvenance({
         actorUid: "td-1",
