@@ -116,6 +116,26 @@ test("rejects invalid domain input before transport", async () => {
   assert.equal(called, false);
 });
 
+test("rejects runtime Technical Director note smuggling before transport", async () => {
+  let called = false;
+  const hostileDraft = {
+    ...draft(),
+    technicalDirectorNote: "client must not persist this field",
+  } as ProClubWeeklyTrainingFreshDraftInput;
+
+  await assert.rejects(
+    saveProClubWeeklyTrainingFreshDraft(
+      { clubId: "club-a", actorUid: "coach-1", draft: hostileDraft },
+      async () => {
+        called = true;
+        return { data: null };
+      },
+    ),
+    (error: unknown) => errorCode(error) === "INVALID_ARGUMENT",
+  );
+  assert.equal(called, false);
+});
+
 test("normalizes callable auth, permission and precondition failures", async () => {
   const cases = [
     ["functions/unauthenticated", "AUTH_REQUIRED"],
