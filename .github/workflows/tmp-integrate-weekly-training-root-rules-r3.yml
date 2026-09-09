@@ -1,0 +1,103 @@
+name: Temporary Weekly Training Root Rules Integration R3
+
+on:
+  push:
+    branches:
+      - verify/weekly-training-root-rules-integration-r3
+
+permissions:
+  contents: write
+
+jobs:
+  integrate-and-verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout target integration branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/pro-club-weekly-training-draft-save-v1-root-rules
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify exact source baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "024dc984a16041e7435acff274bac20387144a92"
+          test "$(git rev-parse HEAD:firestore.rules)" = "062bdb624b1570ed4e15b9bd18db21ac530bd325"
+          test -z "$(git status --porcelain)"
+
+      - name: Apply deterministic verified remediation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show origin/verify/weekly-training-root-rules-integration-r2:scripts/verify/apply-weekly-training-root-rules-remediation-r2.py > /tmp/apply-remediation.py
+          python /tmp/apply-remediation.py
+          git diff --check
+          test "$(git diff --name-only)" = "firestore.rules"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix functions ci
+
+      - name: Contract test
+        run: node --import tsx --test tests/proClubWeeklyTrainingDraftSaveV1Contract.test.ts
+
+      - name: Real-root atomic create proof
+        run: >-
+          npx firebase-tools emulators:exec --only firestore
+          --project demo-futverse-pro-club-weekly-training-root-integration-r3
+          "node --import tsx --test tests/firestore.pro-club-weekly-training-atomic-create.rules.test.ts"
+
+      - name: Existing Weekly Training root regressions
+        run: >-
+          npx firebase-tools emulators:exec --only firestore
+          --project demo-futverse-pro-club-weekly-training-root-regression-r3
+          "node --import tsx --test tests/firestore.pro-club-weekly-training-foundation.rules.test.ts tests/firestore.pro-club-weekly-training-root.rules.test.ts"
+
+      - name: Pure regressions
+        run: |
+          node --import tsx --test tests/proClubWeeklyTraining.unit.test.ts
+          node --import tsx --test tests/proClubWeeklyTrainingPersistence.unit.test.ts
+
+      - name: TypeScript and builds
+        run: |
+          npx tsc --noEmit
+          npm --prefix functions run build
+          npm run build
+
+      - name: Final exact-scope gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test "$(git diff --name-only)" = "firestore.rules"
+          test "$(git rev-parse HEAD)" = "024dc984a16041e7435acff274bac20387144a92"
+          test "$(git rev-parse HEAD:firestore.rules)" = "062bdb624b1570ed4e15b9bd18db21ac530bd325"
+          echo 'PRODUCTION_DEPLOYED=NO'
+          echo 'PRODUCTION_HTTP_CALLED=NO'
+          echo 'PRODUCTION_DATA_WRITTEN=NO'
+          echo 'FORCE_PUSH=NO'
+
+      - name: Commit and push verified root Rules slice
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Jetsalit'
+          git config user.email '79343884+Jetsalit@users.noreply.github.com'
+          git add firestore.rules
+          git commit -m 'fix(pro-club): support atomic weekly training draft hierarchy'
+          git push origin HEAD:feat/pro-club-weekly-training-draft-save-v1-root-rules
