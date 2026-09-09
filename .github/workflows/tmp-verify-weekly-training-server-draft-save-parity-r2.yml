@@ -1,0 +1,83 @@
+name: Temporary Weekly Training Server Draft Save Parity R2
+
+on:
+  push:
+    branches:
+      - verify/weekly-training-server-draft-save-parity-r2
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact product head and scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_HEAD='cbd38ef123542e7be7fb49c185d688b46d64a9bd'
+          BASE='0fcd06911a8c6a35929bc2d0ae7ddf0ec5c868f2'
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_HEAD"
+          test "$(git merge-base "$BASE" "$PRODUCT_HEAD")" = "$BASE"
+          mapfile -t files < <(git diff --name-only "$BASE" "$PRODUCT_HEAD")
+          expected=(
+            'docs/PRO_CLUB_WEEKLY_TRAINING_SERVER_DRAFT_SAVE_V1_CONTRACT_FREEZE.md'
+            'functions/src/proClubWeeklyTrainingDraftSave/core.ts'
+            'functions/src/proClubWeeklyTrainingDraftSave/service.ts'
+            'tests/functions.proClubWeeklyTrainingDraftSave.maxShape.test.ts'
+            'tests/functions.proClubWeeklyTrainingDraftSave.parity.test.ts'
+          )
+          test "${#files[@]}" -eq "${#expected[@]}"
+          for i in "${!expected[@]}"; do test "${files[$i]}" = "${expected[$i]}"; done
+          git diff --check "$BASE" "$PRODUCT_HEAD"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix functions ci
+
+      - name: Functions build
+        run: npm --prefix functions run build
+
+      - name: Server validator parity tests
+        run: node --import tsx --test tests/functions.proClubWeeklyTrainingDraftSave.parity.test.ts
+
+      - name: Max shape and rollback Emulator proof
+        run: >-
+          npx firebase-tools emulators:exec --only firestore
+          --project demo-futverse-server-weekly-training-parity-r2
+          "node --import tsx --test tests/functions.proClubWeeklyTrainingDraftSave.maxShape.test.ts"
+
+      - name: Existing Weekly Training pure regressions
+        run: |
+          node --import tsx --test tests/proClubWeeklyTraining.unit.test.ts
+          node --import tsx --test tests/proClubWeeklyTrainingPersistence.unit.test.ts
+
+      - name: TypeScript and production build
+        run: |
+          npx tsc --noEmit
+          npm run build
+
+      - name: Safety boundary
+        run: |
+          echo 'PRODUCTION_DEPLOYED=NO'
+          echo 'PRODUCTION_CALLABLE_INVOKED=NO'
+          echo 'PRODUCTION_DATA_WRITTEN=NO'
+          echo 'BILLING_PLAN_CHANGED=NO'
+          echo 'FORCE_PUSH=NO'
+          echo 'DIRECT_MAIN_EDIT=NO'
