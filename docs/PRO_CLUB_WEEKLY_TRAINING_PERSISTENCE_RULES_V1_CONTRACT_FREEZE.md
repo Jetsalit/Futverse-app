@@ -6,11 +6,19 @@ Foundation only. This slice does **not** deploy Firestore Rules, call production
 
 `firestore.rules` remains unchanged in this foundation slice. Security behavior is proven first against an isolated Firestore Emulator rules fixture. Production-rules integration is a separate reviewed slice.
 
-## Canonical paths
+## Canonical normalized paths
 
-Weekly plan:
+Weekly plan metadata:
 
 `proClubs/{clubId}/weeklyTrainingPlans/{planId}`
+
+Session documents:
+
+`proClubs/{clubId}/weeklyTrainingPlans/{planId}/sessions/{sessionId}`
+
+Block documents:
+
+`proClubs/{clubId}/weeklyTrainingPlans/{planId}/sessions/{sessionId}/blocks/{blockId}`
 
 Current technical authority snapshot:
 
@@ -24,39 +32,48 @@ Canonical membership and staff evidence remain:
 
 Academy paths and repositories MUST NOT be reused for Pro Club weekly training.
 
+## Why persistence is normalized
+
+The domain model remains a convenient nested weekly-plan object, but authoritative Firestore persistence MUST NOT place arbitrary session/block arrays inside the plan document. Firestore Rules cannot safely iterate and validate arbitrary nested array elements. A client bypassing the UI could otherwise persist malformed authoritative data while still satisfying top-level authorization.
+
+V1 therefore normalizes plan metadata, sessions, and blocks into separately rule-validatable documents. The pure persistence builder deterministically maps a domain-valid plan to those documents before any future write adapter is connected.
+
 ## Identity and authority invariants
 
-1. `clubId`, `planId`, and actor UID are path/request identities. A client payload must not be trusted to grant authority.
+1. `clubId`, `planId`, `sessionId`, `blockId`, and actor UID are path/request identities. Client payloads do not grant authority.
 2. A Weekly Training write requires all of the following at the exact same `clubId`:
    - signed-in actor;
    - `users/{uid}.status` is `ACTIVE` or `Active`;
-   - canonical membership exists and has `status == ACTIVE`;
-   - canonical staff assignment exists and has `status == ACTIVE`;
-   - actor staff role is `HEAD_COACH` or `TECHNICAL_DIRECTOR` where the action requires that role;
-   - current technical authority is read only from `technicalGovernance/current`.
+   - canonical membership has `status == ACTIVE`;
+   - canonical staff assignment has `status == ACTIVE`;
+   - actor staff role is `HEAD_COACH` for the foundation write path;
+   - current technical authority is read only from `technicalGovernance/current`;
+   - the authority snapshot points to an ACTIVE canonical membership and ACTIVE staff assignment whose role exactly matches the snapshot.
 3. Staff assignment alone never grants tenant authority.
 4. Global `users.role`, Academy authority, and SUPERADMIN labels do not bypass Pro Club tenant authority.
 5. `technicalGovernance/current` is a trusted authority snapshot. V1 client create/update/delete is denied.
-6. Rules MUST NOT attempt to infer AUTO authority by listing the club staff collection.
+6. Rules MUST NOT infer AUTO authority by listing the club staff collection.
+7. Rules helpers must remain within Firestore document-access limits; repeated reads are not a reason to remove an authorization check.
 
 ## Foundation write boundary
 
-This foundation proves only the safest persistent write:
+This foundation proves only the safest persistence behavior:
 
-- `HEAD_COACH` may create their own `DRAFT` weekly plan.
-- The author may update content while the stored and requested status both remain `DRAFT`.
-- Cross-author edits are denied.
+- `HEAD_COACH` may create their own `DRAFT` plan metadata.
+- The same author may create/update session and block documents only while the parent plan remains their own `DRAFT`.
+- The author may update DRAFT plan metadata while stored/requested status remains `DRAFT`.
+- Cross-author writes are denied.
 - Cross-club evidence is denied.
 - Inactive account, membership, or staff evidence is denied.
 - Staff-only users without ACTIVE canonical Membership are denied.
-- Client transition away from `DRAFT` is denied in this foundation.
-- Client delete is denied.
+- Client transition away from `DRAFT` is denied.
+- Client delete remains denied in this foundation.
 
 Technical Director co-authoring and lifecycle transitions (`SUBMITTED`, `IN_REVIEW`, `NEEDS_REVISION`, `APPROVED`, `PUBLISHED`) remain intentionally closed until the atomic transition + historical provenance contract is connected.
 
-## Weekly plan V1 stored envelope
+## Plan metadata document
 
-A draft document contains only:
+A DRAFT plan metadata document contains only:
 
 - `schemaVersion: 1`
 - `authorUid`
@@ -66,44 +83,83 @@ A draft document contains only:
 - `mainObjective`
 - optional `secondaryObjective`
 - optional `headCoachNote`
-- `sessions`
 - `createdAt`
 - `createdBy`
 - `updatedAt`
 - `updatedBy`
 
-Path identity is canonical, so the document does not duplicate `clubId` or `planId`.
+The plan metadata document does **not** embed `sessions`, `clubId`, or `planId`.
 
-The domain parser in `src/lib/proClubWeeklyTraining.ts` remains authoritative for deep session/block shape validation before repository writes. Firestore Rules independently enforce tenant/actor authority, immutable creator identity, lifecycle state, allowed top-level keys, timestamps, and bounded top-level values. Deep arbitrary-array iteration is not treated as an authorization mechanism.
+## Session document
+
+A session document contains only:
+
+- `schemaVersion: 1`
+- `orderIndex`
+- `sessionDate`
+- `startTime`
+- `location`
+- `objective`
+- `phaseOfPlay`
+- `plannedLoad`
+- `durationMinutes`
+- `createdAt`
+- `createdBy`
+- `updatedAt`
+- `updatedBy`
+
+The deterministic V1 session ID is derived from its already-validated unique date/time slot: `YYYY-MM-DD-HHmm`.
+
+## Block document
+
+A block document contains only:
+
+- `schemaVersion: 1`
+- `orderIndex`
+- `blockType`
+- `title`
+- `durationMinutes`
+- optional `drillReference`
+- `coachingPoints` (1–10 bounded non-empty strings)
+- `createdAt`
+- `createdBy`
+- `updatedAt`
+- `updatedBy`
+
+The deterministic V1 block ID is `block-01`, `block-02`, ... according to validated block order.
+
+Rules validate each block document directly, including the bounded coaching-point list. Cross-document aggregate constraints such as the sum of all block minutes remain enforced by the domain parser before normalization and are not opened in root production rules in this foundation.
 
 ## Timestamp contract
 
-On create:
+For newly created plan/session/block documents:
 
 - `createdAt == request.time`
 - `updatedAt == request.time`
 - `createdBy == request.auth.uid`
 - `updatedBy == request.auth.uid`
 
-On DRAFT update:
+For DRAFT updates:
 
-- `createdAt`, `createdBy`, `authorUid`, and `schemaVersion` are immutable;
+- `createdAt`, `createdBy`, and `schemaVersion` are immutable;
+- plan `authorUid` is immutable;
 - `updatedAt == request.time`;
 - `updatedBy == request.auth.uid`.
 
 ## Read boundary
 
-Foundation read access requires ACTIVE canonical Membership in the exact club. Relationship evidence rules elsewhere remain unchanged; weekly technical work is not readable merely because an inactive historical relationship document exists.
+Foundation read access requires an ACTIVE account and ACTIVE canonical Membership in the exact club. Relationship evidence rules elsewhere remain unchanged; weekly technical work is not readable merely because an inactive historical relationship document exists.
 
 ## Repository boundary
 
-`src/lib/firestore/proClubWeeklyTrainingPersistence.ts` is a path/envelope foundation only. It must:
+`src/lib/firestore/proClubWeeklyTrainingPersistence.ts` is a pure normalization/path foundation only. It must:
 
 - construct Pro Club paths only;
 - reject padded/path-like identifiers;
-- build a path-derived DRAFT envelope from a domain-valid weekly plan;
+- accept only a domain-valid plan for the exact path tenant;
+- normalize plan metadata, sessions, and blocks into deterministic path/payload bundles;
 - never call Academy repositories;
-- contain no production HTTP or deployment behavior.
+- contain no Firebase write, production HTTP, or deployment behavior.
 
 ## Deferred
 
@@ -114,7 +170,8 @@ Deferred to later reviewed slices:
 - TD co-author writes;
 - submit/review/revision/approve/publish atomic transitions;
 - append-only historical action evidence;
-- production repository write adapter;
+- production repository write adapter/batch semantics;
+- aggregate transition consistency across normalized children;
 - editable UI wiring;
 - production rollout.
 
