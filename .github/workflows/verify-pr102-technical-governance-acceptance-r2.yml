@@ -1,0 +1,78 @@
+name: Verify PR102 Technical Governance Acceptance R2
+
+on:
+  pull_request:
+    branches:
+      - feat/pro-club-technical-governance-v1-contract
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact product head
+        uses: actions/checkout@v4
+        with:
+          ref: 962a73b0b688cb55ed47e2d9bf5fe3fbe7a8007c
+          fetch-depth: 0
+
+      - name: Prove exact product head and scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=c9f3079691e899c8f78efdd26e52f4a5727ec636
+          HEAD=962a73b0b688cb55ed47e2d9bf5fe3fbe7a8007c
+          test "$(git rev-parse HEAD)" = "$HEAD"
+          test "$(git merge-base "$BASE" "$HEAD")" = "$BASE"
+          test "$(git rev-list --count "$BASE..$HEAD")" = "4"
+          test "$(git rev-list --count "$HEAD..$BASE")" = "0"
+          ACTUAL="$(git diff --name-only "$BASE..$HEAD" | sort)"
+          EXPECTED="$(printf '%s\n' \
+            docs/PRO_CLUB_TECHNICAL_GOVERNANCE_V1_CONTRACT_FREEZE.md \
+            src/lib/proClubTechnicalGovernance.ts \
+            tests/proClubTechnicalGovernance.unit.test.ts | sort)"
+          test "$ACTUAL" = "$EXPECTED"
+          git diff --quiet "$BASE..$HEAD" -- \
+            firestore.rules firebase.json firebase.spark.json functions src/App.tsx src/components
+          test -z "$(git status --short)"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Functions dependencies
+        run: npm --prefix functions ci
+
+      - name: Focused technical governance and foundation tests
+        run: node --import tsx --test tests/proClubFoundation.test.ts tests/proClubTechnicalGovernance.unit.test.ts
+
+      - name: TypeScript gate
+        run: npm run lint
+
+      - name: Production build
+        run: npm run build
+
+      - name: Diff and clean-tree gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check c9f3079691e899c8f78efdd26e52f4a5727ec636..962a73b0b688cb55ed47e2d9bf5fe3fbe7a8007c
+          test -z "$(git status --short)"
+
+      - name: Confirm preservation boundary
+        run: |
+          echo 'FIRESTORE_RULES_CHANGED=NO'
+          echo 'FIREBASE_CONFIG_CHANGED=NO'
+          echo 'FUNCTIONS_CHANGED=NO'
+          echo 'RUNTIME_UI_CHANGED=NO'
+          echo 'PRODUCTION_DEPLOYED=NO'
+          echo 'PRODUCTION_HTTP_CALLED=NO'
+          echo 'PRODUCTION_DATA_WRITTEN=NO'
