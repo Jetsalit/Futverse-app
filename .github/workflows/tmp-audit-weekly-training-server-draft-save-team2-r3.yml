@@ -1,0 +1,77 @@
+name: Temporary Weekly Training Server Draft Save Team 2 R3
+
+on:
+  push:
+    branches:
+      - audit/weekly-training-server-draft-save-team2-r3
+
+jobs:
+  independent-review:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact product head and audit-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_HEAD='cbd38ef123542e7be7fb49c185d688b46d64a9bd'
+          BASE='0fcd06911a8c6a35929bc2d0ae7ddf0ec5c868f2'
+          test "$(git merge-base "$BASE" "$PRODUCT_HEAD")" = "$BASE"
+          test "$(git rev-parse HEAD~2)" = "$PRODUCT_HEAD"
+          mapfile -t audit_files < <(git diff --name-only "$PRODUCT_HEAD" HEAD)
+          expected=(
+            '.github/workflows/tmp-audit-weekly-training-server-draft-save-team2-r3.yml'
+            'tests/functions.proClubWeeklyTrainingDraftSave.team2.test.ts'
+          )
+          test "${#audit_files[@]}" -eq 2
+          for i in "${!expected[@]}"; do test "${audit_files[$i]}" = "${expected[$i]}"; done
+          git diff --check "$BASE" "$PRODUCT_HEAD"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix functions ci
+
+      - name: Functions build
+        run: npm --prefix functions run build
+
+      - name: Independent authorization and identity proof
+        run: >-
+          npx firebase-tools emulators:exec --only firestore
+          --project demo-futverse-server-weekly-training-team2-r3
+          "node --import tsx --test tests/functions.proClubWeeklyTrainingDraftSave.team2.test.ts"
+
+      - name: Independent max shape and rollback proof
+        run: >-
+          npx firebase-tools emulators:exec --only firestore
+          --project demo-futverse-server-weekly-training-team2-max-r3
+          "node --import tsx --test tests/functions.proClubWeeklyTrainingDraftSave.maxShape.test.ts"
+
+      - name: Independent parity proof
+        run: node --import tsx --test tests/functions.proClubWeeklyTrainingDraftSave.parity.test.ts
+
+      - name: TypeScript and safety boundary
+        run: |
+          npx tsc --noEmit
+          echo 'PRODUCTION_DEPLOYED=NO'
+          echo 'PRODUCTION_CALLABLE_INVOKED=NO'
+          echo 'PRODUCTION_DATA_WRITTEN=NO'
+          echo 'BILLING_PLAN_CHANGED=NO'
+          echo 'FORCE_PUSH=NO'
+          echo 'DIRECT_MAIN_EDIT=NO'
