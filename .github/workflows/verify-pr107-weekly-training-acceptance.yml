@@ -1,0 +1,79 @@
+name: Verify PR107 Weekly Training Acceptance
+
+on:
+  pull_request:
+    branches:
+      - feat/pro-club-weekly-training-v1-contract
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact product head
+        uses: actions/checkout@v4
+        with:
+          ref: e7027259a43076ce27e2a003c4ed7ee5e20a0dee
+          fetch-depth: 0
+
+      - name: Prove exact product head and scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=e588a91bbad5fbd43d9b90dba718372d181478fa
+          HEAD=e7027259a43076ce27e2a003c4ed7ee5e20a0dee
+          test "$(git rev-parse HEAD)" = "$HEAD"
+          test "$(git merge-base "$BASE" "$HEAD")" = "$BASE"
+          test "$(git rev-list --count "$BASE..$HEAD")" = "1"
+          test "$(git rev-list --count "$HEAD..$BASE")" = "0"
+          ACTUAL="$(git diff --name-only "$BASE..$HEAD" | sort)"
+          EXPECTED="$(printf '%s\n' \
+            docs/PRO_CLUB_WEEKLY_TRAINING_V1_CONTRACT_FREEZE.md \
+            src/lib/proClubWeeklyTraining.ts \
+            tests/proClubWeeklyTraining.unit.test.ts | sort)"
+          test "$ACTUAL" = "$EXPECTED"
+          git diff --quiet "$BASE..$HEAD" -- \
+            firestore.rules firebase.json firebase.spark.json functions src/App.tsx src/components src/lib/firestore
+          test -z "$(git status --short)"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Functions dependencies
+        run: npm --prefix functions ci
+
+      - name: Focused Pro Club weekly training tests
+        run: node --import tsx --test tests/proClubFoundation.test.ts tests/proClubTechnicalGovernance.unit.test.ts tests/proClubWeeklyTraining.unit.test.ts
+
+      - name: TypeScript gate
+        run: npm run lint
+
+      - name: Production build
+        run: npm run build
+
+      - name: Diff and clean-tree gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check e588a91bbad5fbd43d9b90dba718372d181478fa..e7027259a43076ce27e2a003c4ed7ee5e20a0dee
+          test -z "$(git status --short)"
+
+      - name: Confirm preservation boundary
+        run: |
+          echo 'FIRESTORE_RULES_CHANGED=NO'
+          echo 'FIREBASE_CONFIG_CHANGED=NO'
+          echo 'FUNCTIONS_CHANGED=NO'
+          echo 'RUNTIME_UI_CHANGED=NO'
+          echo 'FIRESTORE_REPOSITORY_CHANGED=NO'
+          echo 'PRODUCTION_DEPLOYED=NO'
+          echo 'PRODUCTION_HTTP_CALLED=NO'
+          echo 'PRODUCTION_DATA_WRITTEN=NO'
