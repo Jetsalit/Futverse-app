@@ -215,6 +215,14 @@ import {
   isCanonicalRequesterAccountActive,
   RequesterAccountStatusReadError,
 } from "./proClubStaffCandidateResolution/requesterAccountStatus.ts";
+import {
+  createWeeklyTrainingDraftSaveService,
+  type WeeklyTrainingDraftSaveService,
+} from "./proClubWeeklyTrainingDraftSave/service.ts";
+import {
+  executeSaveProClubWeeklyTrainingDraftCallable,
+  type SafeWeeklyTrainingDraftSaveCallableLogger,
+} from "./proClubWeeklyTrainingDraftSave/callableHandler.ts";
 
 const safeResolutionCallableLogger: SafeCallableLogger = {
   warn(message, meta) {
@@ -225,7 +233,17 @@ const safeResolutionCallableLogger: SafeCallableLogger = {
   },
 };
 
+const safeWeeklyTrainingDraftSaveCallableLogger: SafeWeeklyTrainingDraftSaveCallableLogger = {
+  warn(message, meta) {
+    logWarn(message, meta);
+  },
+  error(message, meta) {
+    logError(message, meta);
+  },
+};
+
 let cachedResolutionService: ProClubStaffCandidateResolutionService | null = null;
+let cachedWeeklyTrainingDraftSaveService: WeeklyTrainingDraftSaveService | null = null;
 
 function getResolutionService(): ProClubStaffCandidateResolutionService {
   if (!cachedResolutionService) {
@@ -238,6 +256,16 @@ function getResolutionService(): ProClubStaffCandidateResolutionService {
     });
   }
   return cachedResolutionService;
+}
+
+function getWeeklyTrainingDraftSaveService(): WeeklyTrainingDraftSaveService {
+  if (!cachedWeeklyTrainingDraftSaveService) {
+    const adminServices = initializeAdminServices();
+    cachedWeeklyTrainingDraftSaveService = createWeeklyTrainingDraftSaveService({
+      firestore: adminServices.firestore,
+    });
+  }
+  return cachedWeeklyTrainingDraftSaveService;
 }
 
 export const resolveProClubStaffCandidateV1 = onCall(
@@ -290,6 +318,37 @@ export const resolveProClubStaffCandidateV1 = onCall(
         service,
         enforceAppCheck: true,
         logger: safeResolutionCallableLogger,
+      },
+    );
+  },
+);
+
+export const saveProClubWeeklyTrainingDraftV1 = onCall(
+  {
+    region: "asia-southeast1",
+    enforceAppCheck: true,
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    concurrency: 20,
+    maxInstances: 10,
+  },
+  async (request) => {
+    return await executeSaveProClubWeeklyTrainingDraftCallable(
+      {
+        auth: request.auth ? { uid: request.auth.uid } : undefined,
+        app: request.app
+          ? {
+              appId: request.app.appId,
+              alreadyConsumed: request.app.alreadyConsumed,
+            }
+          : undefined,
+        data: request.data,
+      },
+      {
+        service: getWeeklyTrainingDraftSaveService(),
+        allowedAppIds: [FUTVERSE_PRODUCTION_WEB_APP_ID],
+        enforceAppCheck: true,
+        logger: safeWeeklyTrainingDraftSaveCallableLogger,
       },
     );
   },
