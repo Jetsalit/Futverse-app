@@ -54,6 +54,7 @@ V1 therefore normalizes plan metadata, sessions, and blocks into separately rule
 5. `technicalGovernance/current` is a trusted authority snapshot. V1 client create/update/delete is denied.
 6. Rules MUST NOT infer AUTO authority by listing the club staff collection.
 7. Rules helpers must remain within Firestore document-access limits; repeated reads are not a reason to remove an authorization check.
+8. Session and block document IDs are canonical identities, not labels. Rules must bind each ID to the payload it represents.
 
 ## Foundation write boundary
 
@@ -90,6 +91,8 @@ A DRAFT plan metadata document contains only:
 
 The plan metadata document does **not** embed `sessions`, `clubId`, or `planId`.
 
+`weekStartDate` must be a real strict calendar date, not merely a string that matches `YYYY-MM-DD`.
+
 ## Session document
 
 A session document contains only:
@@ -108,7 +111,16 @@ A session document contains only:
 - `updatedAt`
 - `updatedBy`
 
-The deterministic V1 session ID is derived from its already-validated unique date/time slot: `YYYY-MM-DD-HHmm`.
+The deterministic V1 session ID is exactly `YYYY-MM-DD-HHmm`, derived from the same `sessionDate` and `startTime` stored in the document.
+
+Rules must enforce all of the following:
+
+- `sessionDate` is a real strict calendar date;
+- `sessionDate` falls from `weekStartDate` through `weekStartDate + 6 days` inclusive;
+- `sessionId` exactly equals `sessionDate + '-' + startTime-without-colon`;
+- update cannot change `sessionDate` or `startTime` in place, because doing so would change canonical document identity.
+
+This prevents duplicate authoritative slots from being created under arbitrary IDs and prevents a document from retaining an ID that no longer represents its payload.
 
 ## Block document
 
@@ -126,7 +138,15 @@ A block document contains only:
 - `updatedAt`
 - `updatedBy`
 
-The deterministic V1 block ID is `block-01`, `block-02`, ... according to validated block order.
+The deterministic V1 block ID is coupled exactly to validated order:
+
+- `orderIndex: 0` -> `block-01`
+- ...
+- `orderIndex: 11` -> `block-12`
+
+No `block-00`, `block-13`, `block-99`, duplicate order index under a second canonical ID, or mismatched ID/order pair is valid.
+
+`drillReference` follows the same exact-document-identifier contract as `isValidDocumentIdentifier`: non-empty, no leading/trailing whitespace, no `/`, while internal spaces remain valid.
 
 Rules validate each block document directly, including the bounded coaching-point list. Cross-document aggregate constraints such as the sum of all block minutes remain enforced by the domain parser before normalization and are not opened in root production rules in this foundation.
 
@@ -143,6 +163,8 @@ For DRAFT updates:
 
 - `createdAt`, `createdBy`, and `schemaVersion` are immutable;
 - plan `authorUid` is immutable;
+- session `orderIndex`, `sessionDate`, and `startTime` are immutable;
+- block `orderIndex` is immutable;
 - `updatedAt == request.time`;
 - `updatedBy == request.auth.uid`.
 
