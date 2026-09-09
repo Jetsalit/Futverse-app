@@ -65,7 +65,12 @@ function recordOf(value: unknown): Record<string, unknown> | null {
 }
 
 function exactId(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0 && !value.includes("/");
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.trim() === value &&
+    !value.includes("/")
+  );
 }
 
 function boundedText(value: unknown, max: number, required = true): string | undefined {
@@ -176,7 +181,13 @@ export function validateWeeklyTrainingDraft(value: unknown): ValidatedWeeklyTrai
   const allowed = new Set(["clubId", "authorUid", "weekStartDate", "squadLabel", "mainObjective", "secondaryObjective", "headCoachNote", "technicalDirectorNote", "sessions"]);
   if (Object.keys(rec).some((key) => !allowed.has(key))) throw new WeeklyTrainingDraftSaveError("INVALID_ARGUMENT", "Non-canonical plan field.");
   if (!exactId(rec.clubId) || !strictDate(rec.weekStartDate)) throw new WeeklyTrainingDraftSaveError("INVALID_ARGUMENT", "Invalid plan identity/date.");
-  if (rec.technicalDirectorNote !== undefined && rec.technicalDirectorNote !== "") throw new WeeklyTrainingDraftSaveError("INVALID_ARGUMENT", "Technical Director note persistence is closed.");
+  const technicalDirectorNote = boundedText(rec.technicalDirectorNote, 2000, false);
+  if (rec.technicalDirectorNote !== undefined && technicalDirectorNote === undefined) {
+    throw new WeeklyTrainingDraftSaveError("INVALID_ARGUMENT", "Invalid Technical Director note.");
+  }
+  if (technicalDirectorNote) {
+    throw new WeeklyTrainingDraftSaveError("INVALID_ARGUMENT", "Technical Director note persistence is closed.");
+  }
   const squadLabel = boundedText(rec.squadLabel, 100);
   const mainObjective = boundedText(rec.mainObjective, 500);
   const secondaryObjective = boundedText(rec.secondaryObjective, 500, false);
