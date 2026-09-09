@@ -44,43 +44,38 @@ service cloud.firestore {
         && staff.staffRole == authority.authorityRole;
     }
 
-    function weeklyPlanKeysAreValid(data) {
+    function validAuditCreate(data) {
+      return data.createdBy == request.auth.uid
+        && data.updatedBy == request.auth.uid
+        && data.createdAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function validAuditUpdate(data, previous) {
+      return data.createdBy == previous.createdBy
+        && data.createdAt == previous.createdAt
+        && data.updatedBy == request.auth.uid
+        && data.updatedAt == request.time;
+    }
+
+    function validPlanKeys(data) {
       return data.keys().hasOnly([
-          'schemaVersion',
-          'authorUid',
-          'status',
-          'weekStartDate',
-          'squadLabel',
-          'mainObjective',
-          'secondaryObjective',
-          'headCoachNote',
-          'sessions',
-          'createdAt',
-          'createdBy',
-          'updatedAt',
-          'updatedBy'
+          'schemaVersion', 'authorUid', 'status', 'weekStartDate', 'squadLabel',
+          'mainObjective', 'secondaryObjective', 'headCoachNote',
+          'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
         ])
         && data.keys().hasAll([
-          'schemaVersion',
-          'authorUid',
-          'status',
-          'weekStartDate',
-          'squadLabel',
-          'mainObjective',
-          'sessions',
-          'createdAt',
-          'createdBy',
-          'updatedAt',
-          'updatedBy'
+          'schemaVersion', 'authorUid', 'status', 'weekStartDate', 'squadLabel',
+          'mainObjective', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
         ]);
     }
 
-    function weeklyPlanTopLevelValuesAreValid(data) {
+    function validPlanValues(data) {
       return data.schemaVersion == 1
         && data.authorUid is string
         && data.status == 'DRAFT'
         && data.weekStartDate is string
-        && data.weekStartDate.size() == 10
+        && data.weekStartDate.matches('^\\d{4}-\\d{2}-\\d{2}$')
         && data.squadLabel is string
         && data.squadLabel.size() > 0
         && data.squadLabel.size() <= 100
@@ -90,26 +85,20 @@ service cloud.firestore {
         && (!data.keys().hasAny(['secondaryObjective'])
           || (data.secondaryObjective is string && data.secondaryObjective.size() <= 500))
         && (!data.keys().hasAny(['headCoachNote'])
-          || (data.headCoachNote is string && data.headCoachNote.size() <= 2000))
-        && data.sessions is list
-        && data.sessions.size() >= 1
-        && data.sessions.size() <= 14;
+          || (data.headCoachNote is string && data.headCoachNote.size() <= 2000));
     }
 
-    function validDraftCreate(clubId) {
+    function validDraftPlanCreate(clubId) {
       return activeAccount()
         && activeHeadCoach(clubId, request.auth.uid)
         && currentAuthorityIsValid(clubId)
-        && weeklyPlanKeysAreValid(request.resource.data)
-        && weeklyPlanTopLevelValuesAreValid(request.resource.data)
+        && validPlanKeys(request.resource.data)
+        && validPlanValues(request.resource.data)
         && request.resource.data.authorUid == request.auth.uid
-        && request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.updatedBy == request.auth.uid
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time;
+        && validAuditCreate(request.resource.data);
     }
 
-    function validDraftUpdate(clubId) {
+    function validDraftPlanUpdate(clubId) {
       return activeAccount()
         && activeHeadCoach(clubId, request.auth.uid)
         && currentAuthorityIsValid(clubId)
@@ -117,13 +106,149 @@ service cloud.firestore {
         && request.resource.data.status == 'DRAFT'
         && resource.data.authorUid == request.auth.uid
         && request.resource.data.authorUid == request.auth.uid
-        && weeklyPlanKeysAreValid(request.resource.data)
-        && weeklyPlanTopLevelValuesAreValid(request.resource.data)
+        && validPlanKeys(request.resource.data)
+        && validPlanValues(request.resource.data)
         && request.resource.data.schemaVersion == resource.data.schemaVersion
-        && request.resource.data.createdBy == resource.data.createdBy
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.updatedBy == request.auth.uid
-        && request.resource.data.updatedAt == request.time;
+        && validAuditUpdate(request.resource.data, resource.data);
+    }
+
+    function parentDraftOwnedByActor(clubId, planId) {
+      let plan = get(/databases/$(database)/documents/proClubs/$(clubId)/weeklyTrainingPlans/$(planId)).data;
+      return activeAccount()
+        && activeHeadCoach(clubId, request.auth.uid)
+        && currentAuthorityIsValid(clubId)
+        && plan.schemaVersion == 1
+        && plan.status == 'DRAFT'
+        && plan.authorUid == request.auth.uid;
+    }
+
+    function validSessionKeys(data) {
+      return data.keys().hasOnly([
+          'schemaVersion', 'orderIndex', 'sessionDate', 'startTime', 'location',
+          'objective', 'phaseOfPlay', 'plannedLoad', 'durationMinutes',
+          'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+        ])
+        && data.keys().hasAll([
+          'schemaVersion', 'orderIndex', 'sessionDate', 'startTime', 'location',
+          'objective', 'phaseOfPlay', 'plannedLoad', 'durationMinutes',
+          'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+        ]);
+    }
+
+    function validSessionValues(data) {
+      return data.schemaVersion == 1
+        && data.orderIndex is int
+        && data.orderIndex >= 0
+        && data.orderIndex <= 13
+        && data.sessionDate is string
+        && data.sessionDate.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && data.startTime is string
+        && data.startTime.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+        && data.location is string
+        && data.location.size() > 0
+        && data.location.size() <= 200
+        && data.objective is string
+        && data.objective.size() > 0
+        && data.objective.size() <= 500
+        && data.phaseOfPlay in ['GENERAL', 'IN_POSSESSION', 'OUT_OF_POSSESSION', 'TRANSITION_TO_ATTACK', 'TRANSITION_TO_DEFEND', 'SET_PIECES']
+        && data.plannedLoad in ['LOW', 'MODERATE', 'HIGH']
+        && data.durationMinutes is int
+        && data.durationMinutes >= 15
+        && data.durationMinutes <= 360;
+    }
+
+    function validSessionCreate(clubId, planId, sessionId) {
+      return sessionId.matches('^\\d{4}-\\d{2}-\\d{2}-\\d{4}$')
+        && parentDraftOwnedByActor(clubId, planId)
+        && validSessionKeys(request.resource.data)
+        && validSessionValues(request.resource.data)
+        && validAuditCreate(request.resource.data);
+    }
+
+    function validSessionUpdate(clubId, planId, sessionId) {
+      return sessionId.matches('^\\d{4}-\\d{2}-\\d{2}-\\d{4}$')
+        && parentDraftOwnedByActor(clubId, planId)
+        && validSessionKeys(request.resource.data)
+        && validSessionValues(request.resource.data)
+        && request.resource.data.schemaVersion == resource.data.schemaVersion
+        && request.resource.data.orderIndex == resource.data.orderIndex
+        && validAuditUpdate(request.resource.data, resource.data);
+    }
+
+    function validPoint(point) {
+      return point is string && point.size() > 0 && point.size() <= 300;
+    }
+
+    function validCoachingPoints(points) {
+      return points is list
+        && points.size() >= 1
+        && points.size() <= 10
+        && validPoint(points[0])
+        && (points.size() < 2 || validPoint(points[1]))
+        && (points.size() < 3 || validPoint(points[2]))
+        && (points.size() < 4 || validPoint(points[3]))
+        && (points.size() < 5 || validPoint(points[4]))
+        && (points.size() < 6 || validPoint(points[5]))
+        && (points.size() < 7 || validPoint(points[6]))
+        && (points.size() < 8 || validPoint(points[7]))
+        && (points.size() < 9 || validPoint(points[8]))
+        && (points.size() < 10 || validPoint(points[9]));
+    }
+
+    function validBlockKeys(data) {
+      return data.keys().hasOnly([
+          'schemaVersion', 'orderIndex', 'blockType', 'title', 'durationMinutes',
+          'drillReference', 'coachingPoints',
+          'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+        ])
+        && data.keys().hasAll([
+          'schemaVersion', 'orderIndex', 'blockType', 'title', 'durationMinutes',
+          'coachingPoints', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+        ]);
+    }
+
+    function validBlockValues(data) {
+      return data.schemaVersion == 1
+        && data.orderIndex is int
+        && data.orderIndex >= 0
+        && data.orderIndex <= 11
+        && data.blockType in ['WARM_UP', 'TECHNICAL', 'TACTICAL', 'GAME', 'CONDITIONING', 'COOL_DOWN', 'OTHER']
+        && data.title is string
+        && data.title.size() > 0
+        && data.title.size() <= 200
+        && data.durationMinutes is int
+        && data.durationMinutes >= 1
+        && data.durationMinutes <= 180
+        && (!data.keys().hasAny(['drillReference'])
+          || (data.drillReference is string
+            && data.drillReference.size() > 0
+            && data.drillReference.size() <= 200
+            && data.drillReference.matches('^[^/ ]+$')))
+        && validCoachingPoints(data.coachingPoints);
+    }
+
+    function sessionExists(clubId, planId, sessionId) {
+      return exists(/databases/$(database)/documents/proClubs/$(clubId)/weeklyTrainingPlans/$(planId)/sessions/$(sessionId));
+    }
+
+    function validBlockCreate(clubId, planId, sessionId, blockId) {
+      return blockId.matches('^block-[0-9]{2}$')
+        && parentDraftOwnedByActor(clubId, planId)
+        && sessionExists(clubId, planId, sessionId)
+        && validBlockKeys(request.resource.data)
+        && validBlockValues(request.resource.data)
+        && validAuditCreate(request.resource.data);
+    }
+
+    function validBlockUpdate(clubId, planId, sessionId, blockId) {
+      return blockId.matches('^block-[0-9]{2}$')
+        && parentDraftOwnedByActor(clubId, planId)
+        && sessionExists(clubId, planId, sessionId)
+        && validBlockKeys(request.resource.data)
+        && validBlockValues(request.resource.data)
+        && request.resource.data.schemaVersion == resource.data.schemaVersion
+        && request.resource.data.orderIndex == resource.data.orderIndex
+        && validAuditUpdate(request.resource.data, resource.data);
     }
 
     match /proClubs/{clubId}/technicalGovernance/current {
@@ -134,12 +259,24 @@ service cloud.firestore {
     }
 
     match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
-      allow get: if activeAccount()
-        && activeMember(clubId, request.auth.uid);
-      allow list: if false;
-      allow create: if validDraftCreate(clubId);
-      allow update: if validDraftUpdate(clubId);
+      allow get, list: if activeAccount() && activeMember(clubId, request.auth.uid);
+      allow create: if validDraftPlanCreate(clubId);
+      allow update: if validDraftPlanUpdate(clubId);
       allow delete: if false;
+
+      match /sessions/{sessionId} {
+        allow get, list: if activeAccount() && activeMember(clubId, request.auth.uid);
+        allow create: if validSessionCreate(clubId, planId, sessionId);
+        allow update: if validSessionUpdate(clubId, planId, sessionId);
+        allow delete: if false;
+
+        match /blocks/{blockId} {
+          allow get, list: if activeAccount() && activeMember(clubId, request.auth.uid);
+          allow create: if validBlockCreate(clubId, planId, sessionId, blockId);
+          allow update: if validBlockUpdate(clubId, planId, sessionId, blockId);
+          allow delete: if false;
+        }
+      }
     }
 
     match /{document=**} {
