@@ -1,0 +1,363 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function activeAccount() {
+      return signedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status in ['ACTIVE', 'Active'];
+    }
+
+    function activeMember(clubId, uid) {
+      return get(/databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)).data.status == 'ACTIVE';
+    }
+
+    function activeStaff(clubId, uid) {
+      return get(/databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)).data.status == 'ACTIVE';
+    }
+
+    function activeHeadCoach(clubId, uid) {
+      let membership = get(/databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)).data;
+      let staff = get(/databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)).data;
+      return membership.status == 'ACTIVE'
+        && staff.status == 'ACTIVE'
+        && staff.staffRole == 'HEAD_COACH';
+    }
+
+    function currentAuthorityIsValid(clubId) {
+      let authority = get(/databases/$(database)/documents/proClubs/$(clubId)/technicalGovernance/current).data;
+      let membership = get(/databases/$(database)/documents/proClubs/$(clubId)/members/$(authority.authorityUid)).data;
+      let staff = get(/databases/$(database)/documents/proClubs/$(clubId)/staff/$(authority.authorityUid)).data;
+      return authority.schemaVersion == 1
+        && authority.status == 'ACTIVE'
+        && authority.authorityUid is string
+        && authority.authorityRole in ['TECHNICAL_DIRECTOR', 'HEAD_COACH']
+        && membership.status == 'ACTIVE'
+        && staff.status == 'ACTIVE'
+        && staff.staffRole == authority.authorityRole;
+    }
+
+    function validAuditCreate(data) {
+      return data.createdBy == request.auth.uid
+        && data.updatedBy == request.auth.uid
+        && data.createdAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function validAuditUpdate(data, previous) {
+      return data.createdBy == previous.createdBy
+        && data.createdAt == previous.createdAt
+        && data.updatedBy == request.auth.uid
+        && data.updatedAt == request.time;
+    }
+
+    function strictDate(value) {
+      let parsed = timestamp.date(int(value[0:4]), int(value[5:7]), int(value[8:10]));
+      return value is string
+        && value.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && parsed.year() == int(value[0:4])
+        && parsed.month() == int(value[5:7])
+        && parsed.day() == int(value[8:10]);
+    }
+
+    function dateTimestamp(value) {
+      return timestamp.date(int(value[0:4]), int(value[5:7]), int(value[8:10]));
+    }
+
+    function normalizedText(value, maxLength) {
+      return value is string
+        && value.size() > 0
+        && value.size() <= maxLength
+        && value.trim() == value;
+    }
+
+    function validPlanKeys(data) {
+      return data.keys().hasOnly([
+          'schemaVersion', 'authorUid', 'status', 'weekStartDate', 'squadLabel',
+          'mainObjective', 'secondaryObjective', 'headCoachNote',
+          'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+        ])
+        && data.keys().hasAll([
+          'schemaVersion', 'authorUid', 'status', 'weekStartDate', 'squadLabel',
+          'mainObjective', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+        ]);
+    }
+
+    function validPlanValues(data) {
+      return data.schemaVersion == 1
+        && data.authorUid is string
+        && data.status == 'DRAFT'
+        && strictDate(data.weekStartDate)
+        && normalizedText(data.squadLabel, 100)
+        && normalizedText(data.mainObjective, 500)
+        && (!data.keys().hasAny(['secondaryObjective']) || normalizedText(data.secondaryObjective, 500))
+        && (!data.keys().hasAny(['headCoachNote']) || normalizedText(data.headCoachNote, 2000));
+    }
+
+    function validDraftPlanCreate(clubId) {
+      return activeAccount()
+        && activeHeadCoach(clubId, request.auth.uid)
+        && currentAuthorityIsValid(clubId)
+        && validPlanKeys(request.resource.data)
+        && validPlanValues(request.resource.data)
+        && request.resource.data.authorUid == request.auth.uid
+        && validAuditCreate(request.resource.data);
+    }
+
+    function validDraftPlanUpdate(clubId) {
+      return activeAccount()
+        && activeHeadCoach(clubId, request.auth.uid)
+        && currentAuthorityIsValid(clubId)
+        && resource.data.status == 'DRAFT'
+        && request.resource.data.status == 'DRAFT'
+        && resource.data.authorUid == request.auth.uid
+        && request.resource.data.authorUid == request.auth.uid
+        && validPlanKeys(request.resource.data)
+        && validPlanValues(request.resource.data)
+        && request.resource.data.schemaVersion == resource.data.schemaVersion
+        && request.resource.data.weekStartDate == resource.data.weekStartDate
+        && validAuditUpdate(request.resource.data, resource.data);
+    }
+
+    function planPath(clubId, planId) {
+      return /databases/$(database)/documents/proClubs/$(clubId)/weeklyTrainingPlans/$(planId);
+    }
+
+    function sessionPath(clubId, planId, sessionId) {
+      return /databases/$(database)/documents/proClubs/$(clubId)/weeklyTrainingPlans/$(planId)/sessions/$(sessionId);
+    }
+
+    // Fresh atomic hierarchy path. Full tenant/role/governance authorization is
+    // independently enforced by the plan CREATE rule in the same batch.
+    function freshPlanCreatedByActorAfter(clubId, planId) {
+      let path = planPath(clubId, planId);
+      let plan = getAfter(path).data;
+      return !exists(path)
+        && existsAfter(path)
+        && plan.schemaVersion == 1
+        && plan.status == 'DRAFT'
+        && plan.authorUid == request.auth.uid;
+    }
+
+    function freshSessionExistsAfter(clubId, planId, sessionId) {
+      let path = sessionPath(clubId, planId, sessionId);
+      return !exists(path) && existsAfter(path);
+    }
+
+    // Existing sequential behavior remains available as fallback.
+    function parentDraftOwnedByActor(clubId, planId) {
+      let plan = get(planPath(clubId, planId)).data;
+      return activeAccount()
+        && activeHeadCoach(clubId, request.auth.uid)
+        && currentAuthorityIsValid(clubId)
+        && plan.schemaVersion == 1
+        && plan.status == 'DRAFT'
+        && plan.authorUid == request.auth.uid;
+    }
+
+    function validSessionKeys(data) {
+      return data.keys().hasOnly([
+          'schemaVersion', 'orderIndex', 'sessionDate', 'startTime', 'location',
+          'objective', 'phaseOfPlay', 'plannedLoad', 'durationMinutes',
+          'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+        ])
+        && data.keys().hasAll([
+          'schemaVersion', 'orderIndex', 'sessionDate', 'startTime', 'location',
+          'objective', 'phaseOfPlay', 'plannedLoad', 'durationMinutes',
+          'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+        ]);
+    }
+
+    function validSessionValues(data) {
+      return data.schemaVersion == 1
+        && data.orderIndex is int
+        && data.orderIndex >= 0
+        && data.orderIndex <= 13
+        && strictDate(data.sessionDate)
+        && data.startTime is string
+        && data.startTime.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+        && normalizedText(data.location, 200)
+        && normalizedText(data.objective, 500)
+        && data.phaseOfPlay in ['GENERAL', 'IN_POSSESSION', 'OUT_OF_POSSESSION', 'TRANSITION_TO_ATTACK', 'TRANSITION_TO_DEFEND', 'SET_PIECES']
+        && data.plannedLoad in ['LOW', 'MODERATE', 'HIGH']
+        && data.durationMinutes is int
+        && data.durationMinutes >= 15
+        && data.durationMinutes <= 360;
+    }
+
+    function sessionIdMatches(sessionId, data) {
+      return sessionId == data.sessionDate + '-' + data.startTime.replace(':', '');
+    }
+
+    function sessionInsideWeek(data, plan) {
+      let sessionDate = dateTimestamp(data.sessionDate);
+      let weekStart = dateTimestamp(plan.weekStartDate);
+      return strictDate(plan.weekStartDate)
+        && strictDate(data.sessionDate)
+        && sessionDate >= weekStart
+        && sessionDate <= weekStart + duration.value(6, 'd');
+    }
+
+    function validFreshAtomicSessionCreate(clubId, planId, sessionId) {
+      let plan = getAfter(planPath(clubId, planId)).data;
+      return freshPlanCreatedByActorAfter(clubId, planId)
+        && validSessionKeys(request.resource.data)
+        && validSessionValues(request.resource.data)
+        && sessionIdMatches(sessionId, request.resource.data)
+        && sessionInsideWeek(request.resource.data, plan)
+        && validAuditCreate(request.resource.data);
+    }
+
+    function validSequentialSessionCreate(clubId, planId, sessionId) {
+      let plan = get(planPath(clubId, planId)).data;
+      return parentDraftOwnedByActor(clubId, planId)
+        && validSessionKeys(request.resource.data)
+        && validSessionValues(request.resource.data)
+        && sessionIdMatches(sessionId, request.resource.data)
+        && sessionInsideWeek(request.resource.data, plan)
+        && validAuditCreate(request.resource.data);
+    }
+
+    function validSessionUpdate(clubId, planId, sessionId) {
+      let plan = get(planPath(clubId, planId)).data;
+      return parentDraftOwnedByActor(clubId, planId)
+        && validSessionKeys(request.resource.data)
+        && validSessionValues(request.resource.data)
+        && sessionIdMatches(sessionId, request.resource.data)
+        && sessionInsideWeek(request.resource.data, plan)
+        && request.resource.data.schemaVersion == resource.data.schemaVersion
+        && request.resource.data.orderIndex == resource.data.orderIndex
+        && request.resource.data.sessionDate == resource.data.sessionDate
+        && request.resource.data.startTime == resource.data.startTime
+        && validAuditUpdate(request.resource.data, resource.data);
+    }
+
+    function validPoint(point) {
+      return normalizedText(point, 300);
+    }
+
+    function validPoints(points) {
+      return points is list
+        && points.size() >= 1
+        && points.size() <= 10
+        && validPoint(points[0])
+        && (points.size() < 2 || validPoint(points[1]))
+        && (points.size() < 3 || validPoint(points[2]))
+        && (points.size() < 4 || validPoint(points[3]))
+        && (points.size() < 5 || validPoint(points[4]))
+        && (points.size() < 6 || validPoint(points[5]))
+        && (points.size() < 7 || validPoint(points[6]))
+        && (points.size() < 8 || validPoint(points[7]))
+        && (points.size() < 9 || validPoint(points[8]))
+        && (points.size() < 10 || validPoint(points[9]));
+    }
+
+    function validBlockKeys(data) {
+      return data.keys().hasOnly([
+          'schemaVersion', 'orderIndex', 'blockType', 'title', 'durationMinutes',
+          'drillReference', 'coachingPoints', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+        ])
+        && data.keys().hasAll([
+          'schemaVersion', 'orderIndex', 'blockType', 'title', 'durationMinutes',
+          'coachingPoints', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+        ]);
+    }
+
+    function exactIdentifier(value) {
+      return value is string && value.size() > 0 && value.trim() == value && !value.matches('.*[/].*');
+    }
+
+    function validBlockValues(data) {
+      return data.schemaVersion == 1
+        && data.orderIndex is int
+        && data.orderIndex >= 0
+        && data.orderIndex <= 11
+        && data.blockType in ['WARM_UP', 'TECHNICAL', 'TACTICAL', 'GAME', 'CONDITIONING', 'COOL_DOWN', 'OTHER']
+        && normalizedText(data.title, 200)
+        && data.durationMinutes is int
+        && data.durationMinutes >= 1
+        && data.durationMinutes <= 180
+        && (!data.keys().hasAny(['drillReference']) || exactIdentifier(data.drillReference))
+        && validPoints(data.coachingPoints);
+    }
+
+    function blockIdMatches(blockId, orderIndex) {
+      return (orderIndex == 0 && blockId == 'block-01')
+        || (orderIndex == 1 && blockId == 'block-02')
+        || (orderIndex == 2 && blockId == 'block-03')
+        || (orderIndex == 3 && blockId == 'block-04')
+        || (orderIndex == 4 && blockId == 'block-05')
+        || (orderIndex == 5 && blockId == 'block-06')
+        || (orderIndex == 6 && blockId == 'block-07')
+        || (orderIndex == 7 && blockId == 'block-08')
+        || (orderIndex == 8 && blockId == 'block-09')
+        || (orderIndex == 9 && blockId == 'block-10')
+        || (orderIndex == 10 && blockId == 'block-11')
+        || (orderIndex == 11 && blockId == 'block-12');
+    }
+
+    function validFreshAtomicBlockCreate(clubId, planId, sessionId, blockId) {
+      return freshPlanCreatedByActorAfter(clubId, planId)
+        && freshSessionExistsAfter(clubId, planId, sessionId)
+        && validBlockKeys(request.resource.data)
+        && validBlockValues(request.resource.data)
+        && blockIdMatches(blockId, request.resource.data.orderIndex)
+        && validAuditCreate(request.resource.data);
+    }
+
+    function validSequentialBlockCreate(clubId, planId, sessionId, blockId) {
+      return parentDraftOwnedByActor(clubId, planId)
+        && exists(sessionPath(clubId, planId, sessionId))
+        && validBlockKeys(request.resource.data)
+        && validBlockValues(request.resource.data)
+        && blockIdMatches(blockId, request.resource.data.orderIndex)
+        && validAuditCreate(request.resource.data);
+    }
+
+    function validBlockUpdate(clubId, planId, sessionId, blockId) {
+      return parentDraftOwnedByActor(clubId, planId)
+        && exists(sessionPath(clubId, planId, sessionId))
+        && validBlockKeys(request.resource.data)
+        && validBlockValues(request.resource.data)
+        && blockIdMatches(blockId, request.resource.data.orderIndex)
+        && request.resource.data.schemaVersion == resource.data.schemaVersion
+        && request.resource.data.orderIndex == resource.data.orderIndex
+        && validAuditUpdate(request.resource.data, resource.data);
+    }
+
+    match /proClubs/{clubId}/technicalGovernance/current {
+      allow get: if activeAccount() && activeMember(clubId, request.auth.uid) && activeStaff(clubId, request.auth.uid);
+      allow list, create, update, delete: if false;
+    }
+
+    match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
+      allow get, list: if activeAccount() && activeMember(clubId, request.auth.uid);
+      allow create: if validDraftPlanCreate(clubId);
+      allow update: if validDraftPlanUpdate(clubId);
+      allow delete: if false;
+
+      match /sessions/{sessionId} {
+        allow get, list: if activeAccount() && activeMember(clubId, request.auth.uid);
+        allow create: if validFreshAtomicSessionCreate(clubId, planId, sessionId)
+          || validSequentialSessionCreate(clubId, planId, sessionId);
+        allow update: if validSessionUpdate(clubId, planId, sessionId);
+        allow delete: if false;
+
+        match /blocks/{blockId} {
+          allow get, list: if activeAccount() && activeMember(clubId, request.auth.uid);
+          allow create: if validFreshAtomicBlockCreate(clubId, planId, sessionId, blockId)
+            || validSequentialBlockCreate(clubId, planId, sessionId, blockId);
+          allow update: if validBlockUpdate(clubId, planId, sessionId, blockId);
+          allow delete: if false;
+        }
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
