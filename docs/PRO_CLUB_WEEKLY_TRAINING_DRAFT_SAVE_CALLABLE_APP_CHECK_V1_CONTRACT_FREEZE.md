@@ -20,7 +20,11 @@ Expose the accepted server-mediated Fresh DRAFT Save service through one Firebas
 - Authoritative actor identity is `request.auth.uid` only.
 - Payload `authorUid` is non-authoritative and must never replace authenticated identity.
 - Missing authentication fails closed with `HttpsError("unauthenticated")` before service execution.
-- Missing/invalid App Check fails closed. The platform-level `onCall({ enforceAppCheck: true })` gate is authoritative; the testable callable handler also requires verified app context.
+- Missing/invalid App Check fails closed. The platform-level `onCall({ enforceAppCheck: true })` gate is authoritative for token verification.
+- A verified App Check token is not sufficient by itself: the decoded `request.app.appId` must also match the canonical FutVerse production app allowlist before service execution.
+- The callable uses the same canonical `FUTVERSE_PRODUCTION_WEB_APP_ID` already used by privileged Pro Club production App Check verification.
+- A valid App Check token from a sibling staging, mobile, debug, or otherwise unauthorized Firebase app in the same project must fail closed before service execution.
+- An empty or malformed callable app allowlist is an internal configuration failure and must fail closed before service execution.
 
 ## Service boundary
 
@@ -57,7 +61,7 @@ Return the service result unchanged:
 - `documentCount`
 - `createdAt`
 
-No token, raw auth claims, App Check token, or submitted training payload may be echoed in logs or response metadata.
+No token, raw auth claims, App Check token, submitted training payload, or unauthorized app identifier may be echoed in logs or response metadata.
 
 ## Explicitly closed in this slice
 
@@ -77,12 +81,13 @@ Before PR/merge:
 
 1. exact post-PR-#120 main ancestry;
 2. exact callable slice scope;
-3. callable handler tests for App Check, auth, success, domain error mapping, unexpected internal failure;
+3. callable handler tests for App Check, authorized production app ID, sibling-app rejection, auth, success, domain error mapping, unexpected internal failure;
 4. Functions TypeScript build;
 5. existing Weekly Training max-shape/rollback regression;
 6. root TypeScript and app production build;
 7. independent Team 2 security review;
-8. no production deploy/call/write.
+8. Codex review feedback addressed or explicitly accepted with no unresolved blocker;
+9. no production deploy/call/write.
 
 ## Safety flags
 
