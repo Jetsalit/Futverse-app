@@ -92,9 +92,21 @@ const TECHNICAL_WORK_TRANSITIONS: Readonly<
   PUBLISHED: [],
 };
 
+const TECHNICAL_GOVERNANCE_CONFIG_FIELDS = new Set([
+  "authorityMode",
+  "selectedAuthorityUid",
+]);
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
+}
+
+function hasOnlyFields(
+  value: Record<string, unknown>,
+  allowedFields: ReadonlySet<string>,
+): boolean {
+  return Object.keys(value).every((field) => allowedFields.has(field));
 }
 
 function isTechnicalAuthorityRole(
@@ -173,8 +185,12 @@ export function resolveProClubTechnicalAuthority(
   candidateValues: readonly unknown[],
 ): ProClubTechnicalAuthorityResolution {
   const config = asRecord(configValue);
-  if (!config || !isTechnicalAuthorityMode(config.authorityMode)) {
-    return invalidConfig("A valid technical authority mode is required.");
+  if (
+    !config ||
+    !hasOnlyFields(config, TECHNICAL_GOVERNANCE_CONFIG_FIELDS) ||
+    !isTechnicalAuthorityMode(config.authorityMode)
+  ) {
+    return invalidConfig("A canonical technical governance config is required.");
   }
 
   if (!Array.isArray(candidateValues)) {
