@@ -69,6 +69,7 @@ This foundation proves only the safest persistence behavior:
 - Staff-only users without ACTIVE canonical Membership are denied.
 - Client transition away from `DRAFT` is denied.
 - Client delete remains denied in this foundation.
+- A plan carrying a non-empty `technicalDirectorNote` is rejected by the persistence builder in this foundation. The domain model may represent the field, but this Head Coach DRAFT-only persistence slice MUST NOT silently discard it. TD-authored/co-authored note persistence opens only with the reviewed TD co-author workflow.
 
 Technical Director co-authoring and lifecycle transitions (`SUBMITTED`, `IN_REVIEW`, `NEEDS_REVISION`, `APPROVED`, `PUBLISHED`) remain intentionally closed until the atomic transition + historical provenance contract is connected.
 
@@ -89,7 +90,7 @@ A DRAFT plan metadata document contains only:
 - `updatedAt`
 - `updatedBy`
 
-The plan metadata document does **not** embed `sessions`, `clubId`, or `planId`.
+The plan metadata document does **not** embed `sessions`, `clubId`, `planId`, or `technicalDirectorNote`.
 
 `weekStartDate` must be a real strict calendar date, not merely a string that matches `YYYY-MM-DD`.
 
@@ -179,6 +180,7 @@ Foundation read access requires an ACTIVE account and ACTIVE canonical Membershi
 - construct Pro Club paths only;
 - reject padded/path-like identifiers;
 - accept only a domain-valid plan for the exact path tenant;
+- reject non-empty `technicalDirectorNote` while TD co-author persistence is deferred, rather than dropping accepted domain data;
 - normalize plan metadata, sessions, and blocks into deterministic path/payload bundles;
 - never call Academy repositories;
 - contain no Firebase write, production HTTP, or deployment behavior.
@@ -189,7 +191,7 @@ Deferred to later reviewed slices:
 
 - integration into root `firestore.rules`;
 - canonical governance snapshot writer/control-plane;
-- TD co-author writes;
+- TD co-author writes and `technicalDirectorNote` persistence;
 - submit/review/revision/approve/publish atomic transitions;
 - append-only historical action evidence;
 - production repository write adapter/batch semantics;
