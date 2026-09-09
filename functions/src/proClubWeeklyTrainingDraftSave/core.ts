@@ -72,7 +72,7 @@ function boundedText(value: unknown, max: number, required = true): string | und
   if (value === undefined && !required) return undefined;
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
-  if ((required && trimmed.length === 0) || trimmed.length > max || trimmed !== value) return undefined;
+  if ((required && trimmed.length === 0) || trimmed.length > max) return undefined;
   return trimmed;
 }
 
