@@ -44,7 +44,7 @@ test("Weekly Training DRAFT Save V1 keeps existing hierarchy mutation out of sco
 test("Weekly Training DRAFT Save V1 keeps lifecycle and TD co-author writes closed", () => {
   assert.match(normalized, /submit\/review\/revision\/approve\/publish transitions/i);
   assert.match(normalized, /Technical Director co-author writes/i);
-  assert.match(normalized, /technicalDirectorNote persistence/i);
+  assert.match(normalized, /technicalDirectorNote while TD co-author persistence remains closed/i);
 });
 
 test("Weekly Training DRAFT Save V1 locks production safety boundary", () => {
