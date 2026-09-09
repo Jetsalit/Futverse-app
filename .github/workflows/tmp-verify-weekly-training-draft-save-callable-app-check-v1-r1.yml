@@ -1,0 +1,84 @@
+name: Temporary Weekly Training Callable App Check V1 R1
+
+on:
+  push:
+    branches:
+      - verify/weekly-training-draft-save-callable-app-check-v1-r1
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact product head and scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='90a92a8132b47a4c1800d024ca49146ed77923ce'
+          PRODUCT_HEAD='92c87a63a00790066a4648d7fe14e2f9bc633029'
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_HEAD"
+          test "$(git merge-base "$BASE" "$PRODUCT_HEAD")" = "$BASE"
+          mapfile -t files < <(git diff --name-only "$BASE" "$PRODUCT_HEAD")
+          expected=(
+            'docs/PRO_CLUB_WEEKLY_TRAINING_DRAFT_SAVE_CALLABLE_APP_CHECK_V1_CONTRACT_FREEZE.md'
+            'functions/src/index.ts'
+            'functions/src/proClubWeeklyTrainingDraftSave/callableHandler.ts'
+            'tests/functions.proClubWeeklyTrainingDraftSave.callable.test.ts'
+          )
+          test "${#files[@]}" -eq "${#expected[@]}"
+          for i in "${!expected[@]}"; do test "${files[$i]}" = "${expected[$i]}"; done
+          git diff --check "$BASE" "$PRODUCT_HEAD"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix functions ci
+
+      - name: Functions build
+        run: npm --prefix functions run build
+
+      - name: Callable boundary tests
+        run: node --import tsx --test tests/functions.proClubWeeklyTrainingDraftSave.callable.test.ts
+
+      - name: Weekly Training server max-shape and rollback proof
+        run: npx firebase-tools emulators:exec --only firestore --project demo-futverse-weekly-training-callable-r1 "node --import tsx --test tests/functions.proClubWeeklyTrainingDraftSave.maxShape.test.ts"
+
+      - name: Weekly Training parity and pure regressions
+        run: |
+          node --import tsx --test tests/functions.proClubWeeklyTrainingDraftSave.parity.test.ts
+          node --import tsx --test tests/proClubWeeklyTraining.unit.test.ts
+          node --import tsx --test tests/proClubWeeklyTrainingPersistence.unit.test.ts
+
+      - name: Root TypeScript and production build
+        run: |
+          npx tsc --noEmit
+          npm run build
+
+      - name: Safety boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = '92c87a63a00790066a4648d7fe14e2f9bc633029'
+          echo 'PRODUCTION_DEPLOYED=NO'
+          echo 'PRODUCTION_CALLABLE_INVOKED=NO'
+          echo 'PRODUCTION_DATA_WRITTEN=NO'
+          echo 'BILLING_PLAN_CHANGED=NO'
