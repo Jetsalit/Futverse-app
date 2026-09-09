@@ -79,6 +79,13 @@ service cloud.firestore {
       );
     }
 
+    function validNormalizedText(value, maxLength) {
+      return value is string
+        && value.size() > 0
+        && value.size() <= maxLength
+        && value.trim() == value;
+    }
+
     function validPlanKeys(data) {
       return data.keys().hasOnly([
           'schemaVersion', 'authorUid', 'status', 'weekStartDate', 'squadLabel',
@@ -96,16 +103,12 @@ service cloud.firestore {
         && data.authorUid is string
         && data.status == 'DRAFT'
         && isStrictCalendarDate(data.weekStartDate)
-        && data.squadLabel is string
-        && data.squadLabel.size() > 0
-        && data.squadLabel.size() <= 100
-        && data.mainObjective is string
-        && data.mainObjective.size() > 0
-        && data.mainObjective.size() <= 500
+        && validNormalizedText(data.squadLabel, 100)
+        && validNormalizedText(data.mainObjective, 500)
         && (!data.keys().hasAny(['secondaryObjective'])
-          || (data.secondaryObjective is string && data.secondaryObjective.size() <= 500))
+          || validNormalizedText(data.secondaryObjective, 500))
         && (!data.keys().hasAny(['headCoachNote'])
-          || (data.headCoachNote is string && data.headCoachNote.size() <= 2000));
+          || validNormalizedText(data.headCoachNote, 2000));
     }
 
     function validDraftPlanCreate(clubId) {
@@ -129,6 +132,7 @@ service cloud.firestore {
         && validPlanKeys(request.resource.data)
         && validPlanValues(request.resource.data)
         && request.resource.data.schemaVersion == resource.data.schemaVersion
+        && request.resource.data.weekStartDate == resource.data.weekStartDate
         && validAuditUpdate(request.resource.data, resource.data);
     }
 
@@ -167,12 +171,8 @@ service cloud.firestore {
         && isStrictCalendarDate(data.sessionDate)
         && data.startTime is string
         && data.startTime.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
-        && data.location is string
-        && data.location.size() > 0
-        && data.location.size() <= 200
-        && data.objective is string
-        && data.objective.size() > 0
-        && data.objective.size() <= 500
+        && validNormalizedText(data.location, 200)
+        && validNormalizedText(data.objective, 500)
         && data.phaseOfPlay in ['GENERAL', 'IN_POSSESSION', 'OUT_OF_POSSESSION', 'TRANSITION_TO_ATTACK', 'TRANSITION_TO_DEFEND', 'SET_PIECES']
         && data.plannedLoad in ['LOW', 'MODERATE', 'HIGH']
         && data.durationMinutes is int
@@ -217,7 +217,7 @@ service cloud.firestore {
     }
 
     function validPoint(point) {
-      return point is string && point.size() > 0 && point.size() <= 300;
+      return validNormalizedText(point, 300);
     }
 
     function validCoachingPoints(points) {
@@ -261,9 +261,7 @@ service cloud.firestore {
         && data.orderIndex >= 0
         && data.orderIndex <= 11
         && data.blockType in ['WARM_UP', 'TECHNICAL', 'TACTICAL', 'GAME', 'CONDITIONING', 'COOL_DOWN', 'OTHER']
-        && data.title is string
-        && data.title.size() > 0
-        && data.title.size() <= 200
+        && validNormalizedText(data.title, 200)
         && data.durationMinutes is int
         && data.durationMinutes >= 1
         && data.durationMinutes <= 180
