@@ -126,10 +126,14 @@ function blockData(actorUid = HC): DocumentData {
   };
 }
 
-async function createDraftHierarchy(db: Firestore): Promise<void> {
+async function createPlan(db: Firestore): Promise<void> {
   await assertSucceeds(
     setDoc(doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), planData()),
   );
+}
+
+async function createDraftHierarchy(db: Firestore): Promise<void> {
+  await createPlan(db);
   await assertSucceeds(
     setDoc(
       doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600`),
@@ -260,17 +264,63 @@ test("session writes require an existing own DRAFT parent plan", async () => {
   );
 
   await assertFails(setDoc(sessionRef, sessionData()));
-  await assertSucceeds(
-    setDoc(doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), planData()),
-  );
+  await createPlan(db);
   await assertSucceeds(setDoc(sessionRef, sessionData()));
+});
+
+test("session ID is bound to payload date/time and immutable on update", async () => {
+  const db = authedDb(HC);
+  await createPlan(db);
+
+  await assertFails(
+    setDoc(
+      doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-09-0900`),
+      sessionData(),
+    ),
+  );
+
+  const canonicalRef = doc(
+    db,
+    `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600`,
+  );
+  await assertSucceeds(setDoc(canonicalRef, sessionData()));
+  await assertFails(
+    updateDoc(canonicalRef, {
+      sessionDate: "2026-09-09",
+      startTime: "09:00",
+      updatedAt: serverTimestamp(),
+      updatedBy: HC,
+    }),
+  );
+});
+
+test("session date must be a real calendar date inside the parent plan week", async () => {
+  const db = authedDb(HC);
+  await createPlan(db);
+
+  await assertFails(
+    setDoc(
+      doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-31-1600`),
+      { ...sessionData(), sessionDate: "2026-09-31" },
+    ),
+  );
+  await assertFails(
+    setDoc(
+      doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-14-1600`),
+      { ...sessionData(), sessionDate: "2026-09-14" },
+    ),
+  );
+  await assertSucceeds(
+    setDoc(
+      doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-13-1600`),
+      { ...sessionData(), sessionDate: "2026-09-13" },
+    ),
+  );
 });
 
 test("block writes require existing session and validate coaching points deeply", async () => {
   const db = authedDb(HC);
-  await assertSucceeds(
-    setDoc(doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), planData()),
-  );
+  await createPlan(db);
 
   const blockRef = doc(
     db,
@@ -302,6 +352,59 @@ test("block writes require existing session and validate coaching points deeply"
         `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600/blocks/block-02`,
       ),
       { ...blockData(), orderIndex: 1, coachingPoints: ["Good", 42] },
+    ),
+  );
+});
+
+test("block ID is canonically coupled to orderIndex and cannot exceed block-12", async () => {
+  const db = authedDb(HC);
+  await createPlan(db);
+  await assertSucceeds(
+    setDoc(
+      doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600`),
+      sessionData(),
+    ),
+  );
+
+  await assertFails(
+    setDoc(
+      doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600/blocks/block-99`),
+      blockData(),
+    ),
+  );
+  await assertFails(
+    setDoc(
+      doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600/blocks/block-02`),
+      blockData(),
+    ),
+  );
+  await assertSucceeds(
+    setDoc(
+      doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600/blocks/block-12`),
+      { ...blockData(), orderIndex: 11 },
+    ),
+  );
+});
+
+test("drillReference accepts shared exact document identifiers including internal spaces", async () => {
+  const db = authedDb(HC);
+  await createPlan(db);
+  await assertSucceeds(
+    setDoc(
+      doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600`),
+      sessionData(),
+    ),
+  );
+  await assertSucceeds(
+    setDoc(
+      doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600/blocks/block-01`),
+      { ...blockData(), drillReference: "drill 1" },
+    ),
+  );
+  await assertFails(
+    setDoc(
+      doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600/blocks/block-02`),
+      { ...blockData(), orderIndex: 1, drillReference: " drills/1 " },
     ),
   );
 });
