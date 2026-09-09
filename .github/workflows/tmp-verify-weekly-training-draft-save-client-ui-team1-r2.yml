@@ -1,0 +1,89 @@
+name: Temporary Weekly Training Client UI Team1 R2
+
+on:
+  push:
+    branches:
+      - verify/weekly-training-draft-save-client-ui-team1-r2
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify exact product head and scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='bf4f22446753cb9cdc56909f6acacc4790b5d201'
+          PRODUCT_HEAD='bf29dc6b8e7a678fc5eaf9990d9653692ac464af'
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_HEAD"
+          test "$(git merge-base "$BASE" "$PRODUCT_HEAD")" = "$BASE"
+          mapfile -t product_files < <(git diff --name-only "$BASE" "$PRODUCT_HEAD")
+          expected_product=(
+            'docs/PRO_CLUB_WEEKLY_TRAINING_DRAFT_SAVE_CLIENT_UI_V1_CONTRACT_FREEZE.md'
+            'src/components/pro-club/operations/ProClubOperationsDashboard.tsx'
+            'src/components/pro-club/operations/ProClubRoleWorkspace.tsx'
+            'src/components/pro-club/operations/WeeklyTrainingDraftComposer.tsx'
+            'src/components/pro-club/operations/weeklyTrainingDraftComposerModel.ts'
+            'src/lib/proClubWeeklyTrainingDraftSaveClient.ts'
+            'tests/proClubWeeklyTrainingDraftComposerModel.unit.test.ts'
+            'tests/proClubWeeklyTrainingDraftSaveClient.unit.test.ts'
+            'tests/proClubWeeklyTrainingDraftUiWiring.test.ts'
+          )
+          test "${#product_files[@]}" -eq "${#expected_product[@]}"
+          for i in "${!expected_product[@]}"; do test "${product_files[$i]}" = "${expected_product[$i]}"; done
+          mapfile -t verify_files < <(git diff --name-only "$PRODUCT_HEAD" HEAD)
+          test "${#verify_files[@]}" -eq 1
+          test "${verify_files[0]}" = '.github/workflows/tmp-verify-weekly-training-draft-save-client-ui-team1-r2.yml'
+          git diff --check "$BASE" "$PRODUCT_HEAD"
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix functions ci
+      - name: New client and UI tests
+        run: |
+          node --import tsx --test tests/proClubWeeklyTrainingDraftSaveClient.unit.test.ts
+          node --import tsx --test tests/proClubWeeklyTrainingDraftComposerModel.unit.test.ts
+          node --import tsx --test tests/proClubWeeklyTrainingDraftUiWiring.test.ts
+      - name: Existing Weekly Training callable and domain regressions
+        run: |
+          npm --prefix functions run build
+          node --import tsx --test tests/functions.proClubWeeklyTrainingDraftSave.callable.test.ts
+          node --import tsx --test tests/functions.proClubWeeklyTrainingDraftSave.parity.test.ts
+          node --import tsx --test tests/proClubWeeklyTraining.unit.test.ts
+          node --import tsx --test tests/proClubWeeklyTrainingPersistence.unit.test.ts
+      - name: Weekly Training max-shape and rollback regression
+        run: npx firebase-tools emulators:exec --only firestore --project demo-futverse-weekly-training-client-ui-team1-r2 "node --import tsx --test tests/functions.proClubWeeklyTrainingDraftSave.maxShape.test.ts"
+      - name: Root TypeScript and production build
+        run: |
+          npx tsc --noEmit
+          npm run build
+      - name: Production safety boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 'bf29dc6b8e7a678fc5eaf9990d9653692ac464af'
+          test -z "$(git diff --name-only 'bf4f22446753cb9cdc56909f6acacc4790b5d201' 'bf29dc6b8e7a678fc5eaf9990d9653692ac464af' | grep -E '^(functions/|firestore\.rules$|src/lib/firebase\.ts$|src/config/runtimeCapabilities\.ts$)' || true)"
+          echo 'PRODUCTION_DEPLOYED=NO'
+          echo 'PRODUCTION_CALLABLE_INVOKED=NO'
+          echo 'PRODUCTION_DATA_WRITTEN=NO'
+          echo 'BILLING_PLAN_CHANGED=NO'
+          echo 'FIRESTORE_RULES_CHANGED=NO'
+          echo 'FUNCTIONS_CHANGED=NO'
+          echo 'RUNTIME_CAPABILITY_CHANGED=NO'
