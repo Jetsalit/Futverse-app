@@ -9,6 +9,7 @@ import {
   type RulesTestEnvironment,
 } from "@firebase/rules-unit-testing";
 import {
+  deleteDoc,
   doc,
   getDoc,
   serverTimestamp,
@@ -77,7 +78,7 @@ async function seedBaseline(): Promise<void> {
   ]);
 }
 
-function draftData(authorUid = HC): DocumentData {
+function planData(authorUid = HC): DocumentData {
   return {
     schemaVersion: 1,
     authorUid,
@@ -85,12 +86,65 @@ function draftData(authorUid = HC): DocumentData {
     weekStartDate: "2026-09-07",
     squadLabel: "First Team",
     mainObjective: "Build through pressure",
-    sessions: [{ sessionDate: "2026-09-08" }],
     createdAt: serverTimestamp(),
     createdBy: authorUid,
     updatedAt: serverTimestamp(),
     updatedBy: authorUid,
   };
+}
+
+function sessionData(actorUid = HC): DocumentData {
+  return {
+    schemaVersion: 1,
+    orderIndex: 0,
+    sessionDate: "2026-09-08",
+    startTime: "16:00",
+    location: "Training Ground A",
+    objective: "Progress through first and second line",
+    phaseOfPlay: "IN_POSSESSION",
+    plannedLoad: "MODERATE",
+    durationMinutes: 90,
+    createdAt: serverTimestamp(),
+    createdBy: actorUid,
+    updatedAt: serverTimestamp(),
+    updatedBy: actorUid,
+  };
+}
+
+function blockData(actorUid = HC): DocumentData {
+  return {
+    schemaVersion: 1,
+    orderIndex: 0,
+    blockType: "TACTICAL",
+    title: "Build-up 8v6",
+    durationMinutes: 45,
+    coachingPoints: ["Create the third-man option"],
+    createdAt: serverTimestamp(),
+    createdBy: actorUid,
+    updatedAt: serverTimestamp(),
+    updatedBy: actorUid,
+  };
+}
+
+async function createDraftHierarchy(db: Firestore): Promise<void> {
+  await assertSucceeds(
+    setDoc(doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), planData()),
+  );
+  await assertSucceeds(
+    setDoc(
+      doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600`),
+      sessionData(),
+    ),
+  );
+  await assertSucceeds(
+    setDoc(
+      doc(
+        db,
+        `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600/blocks/block-01`,
+      ),
+      blockData(),
+    ),
+  );
 }
 
 before(async () => {
@@ -123,43 +177,44 @@ after(async () => {
   await testEnv.cleanup();
 });
 
-test("ACTIVE Head Coach with ACTIVE membership/staff and valid authority snapshot can create own DRAFT", async () => {
-  await assertSucceeds(
-    setDoc(doc(authedDb(HC), `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), draftData()),
+test("ACTIVE Head Coach can create normalized own DRAFT plan/session/block hierarchy", async () => {
+  await createDraftHierarchy(authedDb(HC));
+});
+
+test("plan metadata rejects embedded sessions so nested data cannot bypass document rules", async () => {
+  await assertFails(
+    setDoc(doc(authedDb(HC), `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), {
+      ...planData(),
+      sessions: [{ unsafe: true }],
+    }),
   );
 });
 
 test("Head Coach cannot create another author's DRAFT", async () => {
   await assertFails(
-    setDoc(doc(authedDb(HC), `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), draftData(TD)),
+    setDoc(doc(authedDb(HC), `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), planData(TD)),
   );
 });
 
-test("Assistant Coach cannot create a weekly DRAFT from staff role alone", async () => {
+test("Assistant Coach and staff-only Head Coach cannot create weekly work", async () => {
   await assertFails(
-    setDoc(doc(authedDb(ASSISTANT), `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), draftData(ASSISTANT)),
+    setDoc(doc(authedDb(ASSISTANT), `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), planData(ASSISTANT)),
   );
-});
-
-test("staff-only Head Coach without canonical Membership is denied", async () => {
   await assertFails(
-    setDoc(doc(authedDb(STAFF_ONLY), `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), draftData(STAFF_ONLY)),
+    setDoc(doc(authedDb(STAFF_ONLY), `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), planData(STAFF_ONLY)),
   );
 });
 
-test("inactive account is denied even with ACTIVE membership and staff documents", async () => {
+test("inactive account and global SUPERADMIN label get no write bypass", async () => {
   await assertFails(
-    setDoc(doc(authedDb(INACTIVE_HC), `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), draftData(INACTIVE_HC)),
+    setDoc(doc(authedDb(INACTIVE_HC), `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), planData(INACTIVE_HC)),
   );
-});
-
-test("global SUPERADMIN label gives no Pro Club weekly-training bypass", async () => {
   await assertFails(
-    setDoc(doc(authedDb(OUTSIDER), `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), draftData(OUTSIDER)),
+    setDoc(doc(authedDb(OUTSIDER), `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), planData(OUTSIDER)),
   );
 });
 
-test("DRAFT create fails closed when current authority snapshot points to a role mismatch", async () => {
+test("DRAFT create fails closed when current authority snapshot role mismatches canonical staff", async () => {
   await seed([[`proClubs/${CLUB_A}/technicalGovernance/current`, {
     schemaVersion: 1,
     status: "ACTIVE",
@@ -168,7 +223,7 @@ test("DRAFT create fails closed when current authority snapshot points to a role
   }]]);
 
   await assertFails(
-    setDoc(doc(authedDb(HC), `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), draftData()),
+    setDoc(doc(authedDb(HC), `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), planData()),
   );
 });
 
@@ -177,6 +232,7 @@ test("client cannot create update or delete canonical current technical authorit
   const authorityRef = doc(db, `proClubs/${CLUB_A}/technicalGovernance/current`);
 
   await assertFails(updateDoc(authorityRef, { authorityUid: HC }));
+  await assertFails(deleteDoc(authorityRef));
   await assertFails(
     setDoc(doc(db, `proClubs/${CLUB_A}/technicalGovernance/new-current`), {
       schemaVersion: 1,
@@ -196,50 +252,122 @@ test("active staff can read current authority while outsider cannot", async () =
   );
 });
 
-test("active member can read weekly technical work but outsider cannot", async () => {
-  await seed([[`proClubs/${CLUB_A}/weeklyTrainingPlans/seeded`, {
-    ...draftData(),
-    createdAt: new Date("2026-09-09T05:00:00Z"),
-    updatedAt: new Date("2026-09-09T05:00:00Z"),
-  }]]);
+test("session writes require an existing own DRAFT parent plan", async () => {
+  const db = authedDb(HC);
+  const sessionRef = doc(
+    db,
+    `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600`,
+  );
 
-  await assertSucceeds(getDoc(doc(authedDb(HC), `proClubs/${CLUB_A}/weeklyTrainingPlans/seeded`)));
-  await assertSucceeds(getDoc(doc(authedDb(TD), `proClubs/${CLUB_A}/weeklyTrainingPlans/seeded`)));
-  await assertFails(getDoc(doc(authedDb(OUTSIDER), `proClubs/${CLUB_A}/weeklyTrainingPlans/seeded`)));
+  await assertFails(setDoc(sessionRef, sessionData()));
+  await assertSucceeds(
+    setDoc(doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), planData()),
+  );
+  await assertSucceeds(setDoc(sessionRef, sessionData()));
 });
 
-test("author can edit content while status remains DRAFT", async () => {
-  const ref = doc(authedDb(HC), `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`);
-  await assertSucceeds(setDoc(ref, draftData()));
+test("block writes require existing session and validate coaching points deeply", async () => {
+  const db = authedDb(HC);
   await assertSucceeds(
-    updateDoc(ref, {
+    setDoc(doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), planData()),
+  );
+
+  const blockRef = doc(
+    db,
+    `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600/blocks/block-01`,
+  );
+  await assertFails(setDoc(blockRef, blockData()));
+
+  await assertSucceeds(
+    setDoc(
+      doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600`),
+      sessionData(),
+    ),
+  );
+  await assertSucceeds(setDoc(blockRef, blockData()));
+
+  await assertFails(
+    setDoc(
+      doc(
+        db,
+        `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600/blocks/block-02`,
+      ),
+      { ...blockData(), orderIndex: 1, coachingPoints: [] },
+    ),
+  );
+  await assertFails(
+    setDoc(
+      doc(
+        db,
+        `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600/blocks/block-02`,
+      ),
+      { ...blockData(), orderIndex: 1, coachingPoints: ["Good", 42] },
+    ),
+  );
+});
+
+test("author can edit normalized DRAFT metadata/session/block while immutable fields stay protected", async () => {
+  const db = authedDb(HC);
+  await createDraftHierarchy(db);
+
+  await assertSucceeds(
+    updateDoc(doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), {
       mainObjective: "Updated objective",
       updatedAt: serverTimestamp(),
       updatedBy: HC,
     }),
   );
+  await assertSucceeds(
+    updateDoc(
+      doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600`),
+      { objective: "Updated session objective", updatedAt: serverTimestamp(), updatedBy: HC },
+    ),
+  );
+  await assertSucceeds(
+    updateDoc(
+      doc(
+        db,
+        `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600/blocks/block-01`,
+      ),
+      { title: "Updated block", updatedAt: serverTimestamp(), updatedBy: HC },
+    ),
+  );
+
+  await assertFails(
+    updateDoc(
+      doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600`),
+      { orderIndex: 2, updatedAt: serverTimestamp(), updatedBy: HC },
+    ),
+  );
 });
 
-test("foundation denies client lifecycle transition and delete", async () => {
-  const ref = doc(authedDb(HC), `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`);
-  await assertSucceeds(setDoc(ref, draftData()));
+test("foundation denies lifecycle transition and deletes", async () => {
+  const db = authedDb(HC);
+  await createDraftHierarchy(db);
+
   await assertFails(
-    updateDoc(ref, {
+    updateDoc(doc(db, `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), {
       status: "SUBMITTED",
       updatedAt: serverTimestamp(),
       updatedBy: HC,
     }),
   );
+  await assertFails(
+    deleteDoc(
+      doc(
+        db,
+        `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1/sessions/2026-09-08-1600/blocks/block-01`,
+      ),
+    ),
+  );
 });
 
 test("cross-club authority evidence cannot authorize a club missing its own valid current authority", async () => {
   await testEnv.withSecurityRulesDisabled(async (context) => {
-    // Remove Club A's current authority while Club B still has a valid one for the same HC.
-    const { deleteDoc } = await import("firebase/firestore");
     await deleteDoc(doc(context.firestore(), `proClubs/${CLUB_A}/technicalGovernance/current`));
   });
 
   await assertFails(
-    setDoc(doc(authedDb(HC), `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), draftData()),
+    setDoc(doc(authedDb(HC), `proClubs/${CLUB_A}/weeklyTrainingPlans/plan-1`), planData()),
   );
 });
