@@ -1,0 +1,47 @@
+name: PR119 Final Max Shape R1
+
+on:
+  push:
+    branches:
+      - audit/pr119-final-max-shape-r1
+
+permissions:
+  contents: read
+
+jobs:
+  max-shape-proof:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact audit branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact product parent and audit-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "fd653d3000c0a8fb31c4b953399f519f9dc1b897"
+          test "$(git diff --name-only HEAD^..HEAD | sort)" = ".github/workflows/tmp-pr119-final-max-shape-r1.yml
+tests/firestore.pro-club-weekly-training-max-shape.rules.test.ts"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run maximum-shape real-root atomic proof
+        run: >-
+          npx firebase-tools emulators:exec --only firestore
+          --project demo-futverse-pr119-final-max-shape-r1
+          "node --import tsx --test tests/firestore.pro-club-weekly-training-max-shape.rules.test.ts"
