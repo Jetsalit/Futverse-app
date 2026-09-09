@@ -1,0 +1,91 @@
+name: Verify PR105 Pro Club Operations Shell
+
+on:
+  pull_request:
+    branches:
+      - feat/pro-club-operations-shell-v1
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact product head
+        uses: actions/checkout@v4
+        with:
+          ref: fe1dd27a59a40745615a223a85be24352f82a191
+          fetch-depth: 0
+
+      - name: Prove exact product head and scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=14b054286a1678f39094361bf1c7dd0d948290df
+          HEAD=fe1dd27a59a40745615a223a85be24352f82a191
+          test "$(git rev-parse HEAD)" = "$HEAD"
+          test "$(git merge-base "$BASE" "$HEAD")" = "$BASE"
+          test "$(git rev-list --count "$BASE..$HEAD")" = "7"
+          test "$(git rev-list --count "$HEAD..$BASE")" = "0"
+          ACTUAL="$(git diff --name-only "$BASE..$HEAD" | sort)"
+          EXPECTED="$(printf '%s\n' \
+            docs/PRO_CLUB_OPERATIONS_SHELL_V1_CONTRACT_FREEZE.md \
+            src/components/pro-club/ProClubPortal.tsx \
+            src/components/pro-club/operations/ProClubOperationsDashboard.tsx \
+            src/components/pro-club/operations/ProClubRoleWorkspace.tsx \
+            src/config/proClubOperationsCapabilities.ts \
+            tests/proClubOperationsCapabilities.unit.test.ts | sort)"
+          test "$ACTUAL" = "$EXPECTED"
+          git diff --quiet "$BASE..$HEAD" -- \
+            firestore.rules firebase.json firebase.spark.json functions src/App.tsx
+          test -z "$(git status --short)"
+
+      - name: Prove operations components have no Firestore or Academy repository path
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -R -nE 'firebase/firestore|academies/|getAcademyCollection|useAcademy' src/components/pro-club/operations; then
+            echo 'Forbidden Pro Club Operations dependency found.' >&2
+            exit 1
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Functions dependencies
+        run: npm --prefix functions ci
+
+      - name: Focused Pro Club model and operations tests
+        run: node --import tsx --test tests/proClubFoundation.test.ts tests/proClubTechnicalGovernance.unit.test.ts tests/proClubOperationsCapabilities.unit.test.ts
+
+      - name: TypeScript gate
+        run: npm run lint
+
+      - name: Production build
+        run: npm run build
+
+      - name: Diff and clean-tree gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check 14b054286a1678f39094361bf1c7dd0d948290df..fe1dd27a59a40745615a223a85be24352f82a191
+          test -z "$(git status --short)"
+
+      - name: Confirm preservation boundary
+        run: |
+          echo 'OPERATIONS_PREVIEW=DEV_ONLY'
+          echo 'FIRESTORE_RULES_CHANGED=NO'
+          echo 'FIREBASE_CONFIG_CHANGED=NO'
+          echo 'FUNCTIONS_CHANGED=NO'
+          echo 'APP_AUTHORITY_GATE_CHANGED=NO'
+          echo 'PRODUCTION_DEPLOYED=NO'
+          echo 'PRODUCTION_HTTP_CALLED=NO'
+          echo 'PRODUCTION_DATA_WRITTEN=NO'
