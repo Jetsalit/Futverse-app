@@ -6,7 +6,7 @@ import {
   WeeklyTrainingDraftSaveError,
 } from "../functions/src/proClubWeeklyTrainingDraftSave/core.ts";
 
-function canonicalDraft() {
+function canonicalDraft(): Record<string, unknown> {
   return {
     clubId: "club-a",
     authorUid: "ignored-payload-author",
@@ -50,8 +50,10 @@ test("server validator rejects whitespace-padded clubId like canonical domain id
 
 test("server validator rejects whitespace-padded drillReference like canonical document identity validation", () => {
   const draft = canonicalDraft();
-  draft.sessions[0].blocks[0] = {
-    ...draft.sessions[0].blocks[0],
+  const sessions = draft.sessions as Array<Record<string, unknown>>;
+  const blocks = sessions[0].blocks as Array<Record<string, unknown>>;
+  blocks[0] = {
+    ...blocks[0],
     drillReference: " drill-123 ",
   };
   expectInvalid(draft);
