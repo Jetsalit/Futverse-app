@@ -97,6 +97,12 @@ describe("Pro Club Weekly Training V1", () => {
     assert.equal(parseProClubWeeklyTrainingDraft(badBlock).state, "INVALID");
   });
 
+  it("rejects empty coaching points", () => {
+    const plan = validPlan();
+    plan.sessions[0].blocks[0].coachingPoints = [];
+    assert.equal(parseProClubWeeklyTrainingDraft(plan).state, "INVALID");
+  });
+
   it("rejects impossible dates, out-of-week sessions, duplicate slots and block overflow", () => {
     const impossible = validPlan();
     impossible.weekStartDate = "2026-02-30";
