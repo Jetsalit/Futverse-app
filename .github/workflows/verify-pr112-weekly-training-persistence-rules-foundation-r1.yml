@@ -1,0 +1,82 @@
+name: Verify PR112 Weekly Training Persistence Rules Foundation R1
+
+on:
+  pull_request:
+    branches:
+      - feat/pro-club-weekly-training-persistence-rules-v1
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact product head
+        uses: actions/checkout@v4
+        with:
+          ref: ab3e8f2fa239221f60babf4f9765d558a79005d5
+          fetch-depth: 0
+
+      - name: Prove stacked baseline and exact scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=bd2c54152c238e40b6a2539e52e6257b62b724a0
+          HEAD=ab3e8f2fa239221f60babf4f9765d558a79005d5
+          test "$(git rev-parse HEAD)" = "$HEAD"
+          test "$(git merge-base "$BASE" "$HEAD")" = "$BASE"
+          ACTUAL="$(git diff --name-only "$BASE..$HEAD" | sort)"
+          EXPECTED="$(printf '%s\n' \
+            docs/PRO_CLUB_WEEKLY_TRAINING_PERSISTENCE_RULES_V1_CONTRACT_FREEZE.md \
+            src/lib/firestore/proClubWeeklyTrainingPersistence.ts \
+            tests/proClubWeeklyTrainingPersistence.unit.test.ts \
+            tests/fixtures/firestore.pro-club-weekly-training.foundation.rules \
+            tests/firestore.pro-club-weekly-training-foundation.rules.test.ts | sort)"
+          test "$ACTUAL" = "$EXPECTED"
+          git diff --quiet "$BASE..$HEAD" -- \
+            firestore.rules firebase.json firebase.spark.json functions src/App.tsx src/components package.json package-lock.json
+          test -z "$(git status --short)"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Functions dependencies
+        run: npm --prefix functions ci
+
+      - name: Pure Weekly Training persistence tests
+        run: node --import tsx --test tests/proClubWeeklyTraining.unit.test.ts tests/proClubWeeklyTrainingPersistence.unit.test.ts
+
+      - name: Firestore Emulator rules foundation tests
+        run: npx firebase emulators:exec --project demo-futverse-pro-club-weekly-training-foundation --only firestore "node --import tsx --test --test-concurrency=1 tests/firestore.pro-club-weekly-training-foundation.rules.test.ts"
+
+      - name: TypeScript gate
+        run: npm run lint
+
+      - name: Production build
+        run: npm run build
+
+      - name: Diff and clean-tree gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check bd2c54152c238e40b6a2539e52e6257b62b724a0..ab3e8f2fa239221f60babf4f9765d558a79005d5
+          test -z "$(git status --short)"
+
+      - name: Confirm preservation boundary
+        run: |
+          echo 'ROOT_FIRESTORE_RULES_CHANGED=NO'
+          echo 'FIREBASE_CONFIG_CHANGED=NO'
+          echo 'FUNCTIONS_CHANGED=NO'
+          echo 'RUNTIME_UI_CHANGED=NO'
+          echo 'ACADEMY_REPOSITORY_CHANGED=NO'
+          echo 'PRODUCTION_DEPLOYED=NO'
+          echo 'PRODUCTION_HTTP_CALLED=NO'
+          echo 'PRODUCTION_DATA_WRITTEN=NO'
