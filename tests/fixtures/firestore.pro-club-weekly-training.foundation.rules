@@ -1,0 +1,149 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function activeAccount() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status in ['ACTIVE', 'Active'];
+    }
+
+    function activeMember(clubId, uid) {
+      return exists(/databases/$(database)/documents/proClubs/$(clubId)/members/$(uid))
+        && get(/databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)).data.status == 'ACTIVE';
+    }
+
+    function activeStaff(clubId, uid) {
+      return exists(/databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid))
+        && get(/databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)).data.status == 'ACTIVE';
+    }
+
+    function activeHeadCoach(clubId, uid) {
+      return activeMember(clubId, uid)
+        && activeStaff(clubId, uid)
+        && get(/databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)).data.staffRole == 'HEAD_COACH';
+    }
+
+    function currentAuthorityPath(clubId) {
+      return /databases/$(database)/documents/proClubs/$(clubId)/technicalGovernance/current;
+    }
+
+    function currentAuthorityIsValid(clubId) {
+      return exists(currentAuthorityPath(clubId))
+        && get(currentAuthorityPath(clubId)).data.schemaVersion == 1
+        && get(currentAuthorityPath(clubId)).data.status == 'ACTIVE'
+        && get(currentAuthorityPath(clubId)).data.authorityUid is string
+        && get(currentAuthorityPath(clubId)).data.authorityRole in ['TECHNICAL_DIRECTOR', 'HEAD_COACH']
+        && activeMember(clubId, get(currentAuthorityPath(clubId)).data.authorityUid)
+        && activeStaff(clubId, get(currentAuthorityPath(clubId)).data.authorityUid)
+        && get(/databases/$(database)/documents/proClubs/$(clubId)/staff/$(get(currentAuthorityPath(clubId)).data.authorityUid)).data.staffRole
+          == get(currentAuthorityPath(clubId)).data.authorityRole;
+    }
+
+    function weeklyPlanKeysAreValid(data) {
+      return data.keys().hasOnly([
+          'schemaVersion',
+          'authorUid',
+          'status',
+          'weekStartDate',
+          'squadLabel',
+          'mainObjective',
+          'secondaryObjective',
+          'headCoachNote',
+          'sessions',
+          'createdAt',
+          'createdBy',
+          'updatedAt',
+          'updatedBy'
+        ])
+        && data.keys().hasAll([
+          'schemaVersion',
+          'authorUid',
+          'status',
+          'weekStartDate',
+          'squadLabel',
+          'mainObjective',
+          'sessions',
+          'createdAt',
+          'createdBy',
+          'updatedAt',
+          'updatedBy'
+        ]);
+    }
+
+    function weeklyPlanTopLevelValuesAreValid(data) {
+      return data.schemaVersion == 1
+        && data.authorUid is string
+        && data.status == 'DRAFT'
+        && data.weekStartDate is string
+        && data.weekStartDate.size() == 10
+        && data.squadLabel is string
+        && data.squadLabel.size() > 0
+        && data.squadLabel.size() <= 100
+        && data.mainObjective is string
+        && data.mainObjective.size() > 0
+        && data.mainObjective.size() <= 500
+        && (!data.keys().hasAny(['secondaryObjective'])
+          || (data.secondaryObjective is string && data.secondaryObjective.size() <= 500))
+        && (!data.keys().hasAny(['headCoachNote'])
+          || (data.headCoachNote is string && data.headCoachNote.size() <= 2000))
+        && data.sessions is list
+        && data.sessions.size() >= 1
+        && data.sessions.size() <= 14;
+    }
+
+    function validDraftCreate(clubId) {
+      return activeAccount()
+        && activeHeadCoach(clubId, request.auth.uid)
+        && currentAuthorityIsValid(clubId)
+        && weeklyPlanKeysAreValid(request.resource.data)
+        && weeklyPlanTopLevelValuesAreValid(request.resource.data)
+        && request.resource.data.authorUid == request.auth.uid
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function validDraftUpdate(clubId) {
+      return activeAccount()
+        && activeHeadCoach(clubId, request.auth.uid)
+        && currentAuthorityIsValid(clubId)
+        && resource.data.status == 'DRAFT'
+        && request.resource.data.status == 'DRAFT'
+        && resource.data.authorUid == request.auth.uid
+        && request.resource.data.authorUid == request.auth.uid
+        && weeklyPlanKeysAreValid(request.resource.data)
+        && weeklyPlanTopLevelValuesAreValid(request.resource.data)
+        && request.resource.data.schemaVersion == resource.data.schemaVersion
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    match /proClubs/{clubId}/technicalGovernance/current {
+      allow get: if activeAccount()
+        && activeMember(clubId, request.auth.uid)
+        && activeStaff(clubId, request.auth.uid);
+      allow list, create, update, delete: if false;
+    }
+
+    match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
+      allow get: if activeAccount()
+        && activeMember(clubId, request.auth.uid);
+      allow list: if false;
+      allow create: if validDraftCreate(clubId);
+      allow update: if validDraftUpdate(clubId);
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
