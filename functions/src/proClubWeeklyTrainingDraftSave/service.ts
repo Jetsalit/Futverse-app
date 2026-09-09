@@ -1,4 +1,4 @@
-import { Timestamp, type Firestore } from "firebase-admin/firestore";
+import type { Firestore } from "firebase-admin/firestore";
 import {
   validateWeeklyTrainingDraft,
   WeeklyTrainingDraftSaveError,
@@ -47,7 +47,6 @@ export class WeeklyTrainingDraftSaveService {
     const draft = validateWeeklyTrainingDraft(input.draft);
     const { firestore } = this.dependencies;
     const now = this.dependencies.trustedClock ? this.dependencies.trustedClock() : new Date();
-    const timestamp = Timestamp.fromDate(now);
 
     const clubRef = firestore.collection("proClubs").doc(draft.clubId);
     const actorUserRef = firestore.collection("users").doc(actorUid);
@@ -122,9 +121,9 @@ export class WeeklyTrainingDraftSaveService {
         mainObjective: draft.mainObjective,
         ...(draft.secondaryObjective ? { secondaryObjective: draft.secondaryObjective } : {}),
         ...(draft.headCoachNote ? { headCoachNote: draft.headCoachNote } : {}),
-        createdAt: timestamp,
+        createdAt: now,
         createdBy: actorUid,
-        updatedAt: timestamp,
+        updatedAt: now,
         updatedBy: actorUid,
       };
 
@@ -144,9 +143,9 @@ export class WeeklyTrainingDraftSaveService {
           phaseOfPlay: session.phaseOfPlay,
           plannedLoad: session.plannedLoad,
           durationMinutes: session.durationMinutes,
-          createdAt: timestamp,
+          createdAt: now,
           createdBy: actorUid,
-          updatedAt: timestamp,
+          updatedAt: now,
           updatedBy: actorUid,
         });
         documentCount += 1;
@@ -161,9 +160,9 @@ export class WeeklyTrainingDraftSaveService {
             durationMinutes: block.durationMinutes,
             ...(block.drillReference ? { drillReference: block.drillReference } : {}),
             coachingPoints: block.coachingPoints,
-            createdAt: timestamp,
+            createdAt: now,
             createdBy: actorUid,
-            updatedAt: timestamp,
+            updatedAt: now,
             updatedBy: actorUid,
           });
           documentCount += 1;
