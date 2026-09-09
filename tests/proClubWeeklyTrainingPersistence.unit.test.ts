@@ -132,4 +132,17 @@ describe("Pro Club Weekly Training persistence foundation", () => {
       { state: "INVALID", reason: "INVALID_PLAN" },
     );
   });
+
+  it("rejects Technical Director notes until TD co-author persistence is opened", () => {
+    const plan = { ...validPlan(), technicalDirectorNote: "Adjust the MD-2 load." };
+
+    assert.deepEqual(
+      buildProClubWeeklyTrainingDraftWrite({
+        clubId: "club-1",
+        planId: "plan-1",
+        plan,
+      }),
+      { state: "INVALID", reason: "INVALID_PLAN" },
+    );
+  });
 });
