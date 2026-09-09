@@ -58,6 +58,27 @@ service cloud.firestore {
         && data.updatedAt == request.time;
     }
 
+    function isStrictCalendarDate(value) {
+      let parsed = timestamp.date(
+        int(value[0:4]),
+        int(value[5:7]),
+        int(value[8:10])
+      );
+      return value is string
+        && value.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && parsed.year() == int(value[0:4])
+        && parsed.month() == int(value[5:7])
+        && parsed.day() == int(value[8:10]);
+    }
+
+    function dateTimestamp(value) {
+      return timestamp.date(
+        int(value[0:4]),
+        int(value[5:7]),
+        int(value[8:10])
+      );
+    }
+
     function validPlanKeys(data) {
       return data.keys().hasOnly([
           'schemaVersion', 'authorUid', 'status', 'weekStartDate', 'squadLabel',
@@ -74,8 +95,7 @@ service cloud.firestore {
       return data.schemaVersion == 1
         && data.authorUid is string
         && data.status == 'DRAFT'
-        && data.weekStartDate is string
-        && data.weekStartDate.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && isStrictCalendarDate(data.weekStartDate)
         && data.squadLabel is string
         && data.squadLabel.size() > 0
         && data.squadLabel.size() <= 100
@@ -122,6 +142,10 @@ service cloud.firestore {
         && plan.authorUid == request.auth.uid;
     }
 
+    function parentPlan(clubId, planId) {
+      return get(/databases/$(database)/documents/proClubs/$(clubId)/weeklyTrainingPlans/$(planId)).data;
+    }
+
     function validSessionKeys(data) {
       return data.keys().hasOnly([
           'schemaVersion', 'orderIndex', 'sessionDate', 'startTime', 'location',
@@ -140,8 +164,7 @@ service cloud.firestore {
         && data.orderIndex is int
         && data.orderIndex >= 0
         && data.orderIndex <= 13
-        && data.sessionDate is string
-        && data.sessionDate.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && isStrictCalendarDate(data.sessionDate)
         && data.startTime is string
         && data.startTime.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
         && data.location is string
@@ -157,21 +180,39 @@ service cloud.firestore {
         && data.durationMinutes <= 360;
     }
 
+    function sessionIdMatchesPayload(sessionId, data) {
+      return sessionId == data.sessionDate + '-' + data.startTime.replace(':', '');
+    }
+
+    function sessionDateInsideParentWeek(clubId, planId, data) {
+      let plan = parentPlan(clubId, planId);
+      let sessionDate = dateTimestamp(data.sessionDate);
+      let weekStart = dateTimestamp(plan.weekStartDate);
+      return isStrictCalendarDate(plan.weekStartDate)
+        && isStrictCalendarDate(data.sessionDate)
+        && sessionDate >= weekStart
+        && sessionDate <= weekStart + duration.value(6, 'd');
+    }
+
     function validSessionCreate(clubId, planId, sessionId) {
-      return sessionId.matches('^\\d{4}-\\d{2}-\\d{2}-\\d{4}$')
-        && parentDraftOwnedByActor(clubId, planId)
+      return parentDraftOwnedByActor(clubId, planId)
         && validSessionKeys(request.resource.data)
         && validSessionValues(request.resource.data)
+        && sessionIdMatchesPayload(sessionId, request.resource.data)
+        && sessionDateInsideParentWeek(clubId, planId, request.resource.data)
         && validAuditCreate(request.resource.data);
     }
 
     function validSessionUpdate(clubId, planId, sessionId) {
-      return sessionId.matches('^\\d{4}-\\d{2}-\\d{2}-\\d{4}$')
-        && parentDraftOwnedByActor(clubId, planId)
+      return parentDraftOwnedByActor(clubId, planId)
         && validSessionKeys(request.resource.data)
         && validSessionValues(request.resource.data)
+        && sessionIdMatchesPayload(sessionId, request.resource.data)
+        && sessionDateInsideParentWeek(clubId, planId, request.resource.data)
         && request.resource.data.schemaVersion == resource.data.schemaVersion
         && request.resource.data.orderIndex == resource.data.orderIndex
+        && request.resource.data.sessionDate == resource.data.sessionDate
+        && request.resource.data.startTime == resource.data.startTime
         && validAuditUpdate(request.resource.data, resource.data);
     }
 
@@ -207,6 +248,13 @@ service cloud.firestore {
         ]);
     }
 
+    function validExactDocumentIdentifier(value) {
+      return value is string
+        && value.size() > 0
+        && value.trim() == value
+        && !value.matches('.*[/].*');
+    }
+
     function validBlockValues(data) {
       return data.schemaVersion == 1
         && data.orderIndex is int
@@ -220,11 +268,23 @@ service cloud.firestore {
         && data.durationMinutes >= 1
         && data.durationMinutes <= 180
         && (!data.keys().hasAny(['drillReference'])
-          || (data.drillReference is string
-            && data.drillReference.size() > 0
-            && data.drillReference.size() <= 200
-            && data.drillReference.matches('^[^/ ]+$')))
+          || validExactDocumentIdentifier(data.drillReference))
         && validCoachingPoints(data.coachingPoints);
+    }
+
+    function blockIdMatchesOrder(blockId, orderIndex) {
+      return (orderIndex == 0 && blockId == 'block-01')
+        || (orderIndex == 1 && blockId == 'block-02')
+        || (orderIndex == 2 && blockId == 'block-03')
+        || (orderIndex == 3 && blockId == 'block-04')
+        || (orderIndex == 4 && blockId == 'block-05')
+        || (orderIndex == 5 && blockId == 'block-06')
+        || (orderIndex == 6 && blockId == 'block-07')
+        || (orderIndex == 7 && blockId == 'block-08')
+        || (orderIndex == 8 && blockId == 'block-09')
+        || (orderIndex == 9 && blockId == 'block-10')
+        || (orderIndex == 10 && blockId == 'block-11')
+        || (orderIndex == 11 && blockId == 'block-12');
     }
 
     function sessionExists(clubId, planId, sessionId) {
@@ -232,20 +292,20 @@ service cloud.firestore {
     }
 
     function validBlockCreate(clubId, planId, sessionId, blockId) {
-      return blockId.matches('^block-[0-9]{2}$')
-        && parentDraftOwnedByActor(clubId, planId)
+      return parentDraftOwnedByActor(clubId, planId)
         && sessionExists(clubId, planId, sessionId)
         && validBlockKeys(request.resource.data)
         && validBlockValues(request.resource.data)
+        && blockIdMatchesOrder(blockId, request.resource.data.orderIndex)
         && validAuditCreate(request.resource.data);
     }
 
     function validBlockUpdate(clubId, planId, sessionId, blockId) {
-      return blockId.matches('^block-[0-9]{2}$')
-        && parentDraftOwnedByActor(clubId, planId)
+      return parentDraftOwnedByActor(clubId, planId)
         && sessionExists(clubId, planId, sessionId)
         && validBlockKeys(request.resource.data)
         && validBlockValues(request.resource.data)
+        && blockIdMatchesOrder(blockId, request.resource.data.orderIndex)
         && request.resource.data.schemaVersion == resource.data.schemaVersion
         && request.resource.data.orderIndex == resource.data.orderIndex
         && validAuditUpdate(request.resource.data, resource.data);
