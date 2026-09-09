@@ -8,6 +8,8 @@ import {
   WeeklyTrainingDraftSaveError,
 } from "../functions/src/proClubWeeklyTrainingDraftSave/core.ts";
 
+const PRODUCTION_APP_ID = "1:504089427500:web:3cc2c8b1283316bdee9b89";
+
 function completedResult() {
   return {
     status: "COMPLETED" as const,
@@ -45,6 +47,7 @@ test("rejects missing App Check before service execution", async () => {
             return completedResult();
           },
         },
+        allowedAppIds: [PRODUCTION_APP_ID],
       },
     ),
     (error: unknown) => callableErrorCode(error) === "failed-precondition",
@@ -52,12 +55,13 @@ test("rejects missing App Check before service execution", async () => {
   assert.equal(called, false);
 });
 
-test("rejects unauthenticated caller before service execution", async () => {
+test("rejects valid App Check context from a sibling app before service execution", async () => {
   let called = false;
   await assert.rejects(
     executeSaveProClubWeeklyTrainingDraftCallable(
       {
-        app: { appId: "1:test:web:app" },
+        auth: { uid: "coach-1" },
+        app: { appId: "1:504089427500:web:staging-sibling-app" },
         data: { clubId: "club-a" },
       },
       {
@@ -67,6 +71,54 @@ test("rejects unauthenticated caller before service execution", async () => {
             return completedResult();
           },
         },
+        allowedAppIds: [PRODUCTION_APP_ID],
+      },
+    ),
+    (error: unknown) => callableErrorCode(error) === "failed-precondition",
+  );
+  assert.equal(called, false);
+});
+
+test("fails closed when callable App Check allowlist is empty", async () => {
+  let called = false;
+  await assert.rejects(
+    executeSaveProClubWeeklyTrainingDraftCallable(
+      {
+        auth: { uid: "coach-1" },
+        app: { appId: PRODUCTION_APP_ID },
+        data: { clubId: "club-a" },
+      },
+      {
+        service: {
+          async saveFreshDraft() {
+            called = true;
+            return completedResult();
+          },
+        },
+        allowedAppIds: [],
+      },
+    ),
+    (error: unknown) => callableErrorCode(error) === "internal",
+  );
+  assert.equal(called, false);
+});
+
+test("rejects unauthenticated caller before service execution", async () => {
+  let called = false;
+  await assert.rejects(
+    executeSaveProClubWeeklyTrainingDraftCallable(
+      {
+        app: { appId: PRODUCTION_APP_ID },
+        data: { clubId: "club-a" },
+      },
+      {
+        service: {
+          async saveFreshDraft() {
+            called = true;
+            return completedResult();
+          },
+        },
+        allowedAppIds: [PRODUCTION_APP_ID],
       },
     ),
     (error: unknown) => callableErrorCode(error) === "unauthenticated",
@@ -79,7 +131,7 @@ test("uses authenticated uid as authoritative actor and returns service result u
   const result = await executeSaveProClubWeeklyTrainingDraftCallable(
     {
       auth: { uid: "coach-authenticated" },
-      app: { appId: "1:test:web:app" },
+      app: { appId: PRODUCTION_APP_ID },
       data: {
         clubId: "club-a",
         authorUid: "spoofed-author",
@@ -92,6 +144,7 @@ test("uses authenticated uid as authoritative actor and returns service result u
           return completedResult();
         },
       },
+      allowedAppIds: [PRODUCTION_APP_ID],
     },
   );
 
@@ -115,7 +168,7 @@ for (const [domainCode, callableCode] of [
       executeSaveProClubWeeklyTrainingDraftCallable(
         {
           auth: { uid: "coach-1" },
-          app: { appId: "1:test:web:app" },
+          app: { appId: PRODUCTION_APP_ID },
           data: {},
         },
         {
@@ -124,6 +177,7 @@ for (const [domainCode, callableCode] of [
               throw new WeeklyTrainingDraftSaveError(domainCode, "domain failure");
             },
           },
+          allowedAppIds: [PRODUCTION_APP_ID],
         },
       ),
       (error: unknown) => callableErrorCode(error) === callableCode,
@@ -136,7 +190,7 @@ test("maps unexpected failures to internal without leaking original message", as
     executeSaveProClubWeeklyTrainingDraftCallable(
       {
         auth: { uid: "coach-1" },
-        app: { appId: "1:test:web:app" },
+        app: { appId: PRODUCTION_APP_ID },
         data: {},
       },
       {
@@ -145,6 +199,7 @@ test("maps unexpected failures to internal without leaking original message", as
             throw new Error("sensitive backend details");
           },
         },
+        allowedAppIds: [PRODUCTION_APP_ID],
       },
     ),
     (error: unknown) =>
