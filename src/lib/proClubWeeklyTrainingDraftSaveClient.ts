@@ -63,6 +63,13 @@ function isCanonicalServerTimestamp(value: unknown): value is string {
   return !Number.isNaN(timestamp) && new Date(timestamp).toISOString() === value;
 }
 
+function containsClosedTechnicalDirectorNote(value: unknown): boolean {
+  const record = asRecord(value);
+  if (!record || !("technicalDirectorNote" in record)) return false;
+  const note = record.technicalDirectorNote;
+  return typeof note !== "string" || note.trim().length > 0;
+}
+
 function normalizeCallableError(error: unknown): ProClubWeeklyTrainingDraftSaveClientError {
   if (error instanceof ProClubWeeklyTrainingDraftSaveClientError) return error;
 
@@ -112,7 +119,8 @@ export async function saveProClubWeeklyTrainingFreshDraft(
 ): Promise<ProClubWeeklyTrainingDraftSaveResult> {
   if (
     !isValidDocumentIdentifier(input.clubId) ||
-    !isValidDocumentIdentifier(input.actorUid)
+    !isValidDocumentIdentifier(input.actorUid) ||
+    containsClosedTechnicalDirectorNote(input.draft)
   ) {
     throw new ProClubWeeklyTrainingDraftSaveClientError("INVALID_ARGUMENT");
   }
