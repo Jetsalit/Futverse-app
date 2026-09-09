@@ -27,6 +27,7 @@ export interface SafeWeeklyTrainingDraftSaveCallableLogger {
 
 export interface ExecuteWeeklyTrainingDraftSaveCallableOptions {
   service: Pick<WeeklyTrainingDraftSaveService, "saveFreshDraft">;
+  allowedAppIds: readonly string[];
   enforceAppCheck?: boolean;
   logger?: SafeWeeklyTrainingDraftSaveCallableLogger;
 }
@@ -35,20 +36,35 @@ export async function executeSaveProClubWeeklyTrainingDraftCallable(
   context: WeeklyTrainingDraftSaveCallableContext,
   options: ExecuteWeeklyTrainingDraftSaveCallableOptions,
 ): Promise<SaveWeeklyTrainingDraftResult> {
-  const { service, enforceAppCheck = true, logger } = options;
+  const { service, allowedAppIds, enforceAppCheck = true, logger } = options;
+
+  const canonicalAllowedAppIds = new Set(allowedAppIds);
+  if (
+    canonicalAllowedAppIds.size === 0 ||
+    [...canonicalAllowedAppIds].some(
+      (value) =>
+        typeof value !== "string" ||
+        value.trim().length === 0 ||
+        value.trim() !== value,
+    )
+  ) {
+    logger?.error("Weekly Training DRAFT save App Check allowlist misconfigured");
+    throw new HttpsError("internal", "An internal error occurred.");
+  }
 
   if (enforceAppCheck) {
     if (
       !context.app ||
       typeof context.app.appId !== "string" ||
-      context.app.appId.trim().length === 0
+      context.app.appId.trim().length === 0 ||
+      !canonicalAllowedAppIds.has(context.app.appId)
     ) {
-      logger?.warn("Weekly Training DRAFT save rejected: App Check missing or invalid", {
+      logger?.warn("Weekly Training DRAFT save rejected: App Check missing or unauthorized", {
         hasApp: Boolean(context.app),
       });
       throw new HttpsError(
         "failed-precondition",
-        "The function must be called from an App Check verified app.",
+        "The function must be called from an App Check verified authorized app.",
       );
     }
   }
