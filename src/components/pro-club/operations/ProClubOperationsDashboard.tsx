@@ -58,26 +58,26 @@ export default function ProClubOperationsDashboard({
               {item}
             </div>
           ))}
-          <p className="pt-3 text-xs leading-5 text-slate-600">Navigation is intentionally non-interactive in this shell slice.</p>
+          <p className="pt-3 text-xs leading-5 text-slate-600">Navigation is intentionally non-interactive in this preview. The Head Coach workspace below is the reviewed entry point for fresh Weekly Training DRAFT creation.</p>
         </nav>
 
         <div className="space-y-7">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-300">Overview</p>
             <h3 className="mt-2 text-xl font-black">Authoritative data only</h3>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">No fixture counts or production-like football records are rendered. Each module stays empty until its own Pro Club data contract and adapter are reviewed.</p>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">Weekly Training fresh-DRAFT creation now uses the trusted callable boundary for an active Head Coach. Other football modules remain empty until their own Pro Club contracts and adapters are reviewed.</p>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <EmptyModule icon={<Users size={20} />} title="Squad" description="First-team roster foundation is not connected yet." />
-            <EmptyModule icon={<ClipboardList size={20} />} title="Weekly Training" description="The next vertical slice will define the Head Coach / Technical Director weekly-plan workflow." />
+            <EmptyModule icon={<ClipboardList size={20} />} title="Weekly Training" description="Fresh Head Coach DRAFT creation is connected in the role workspace through the reviewed server-mediated callable. Production web saving remains gated." />
             <EmptyModule icon={<Activity size={20} />} title="Department Reports" description="Will aggregate real submitted work instead of asking staff to enter reports twice." />
             <EmptyModule icon={<HeartPulse size={20} />} title="Availability" description="Only football availability states will be broadly visible; clinical detail remains restricted." />
             <EmptyModule icon={<CalendarDays size={20} />} title="Competition Calendar" description="No Academy match repository is reused for Pro Club data." />
-            <EmptyModule icon={<ShieldCheck size={20} />} title="Authority" description="Club access continues to come from the existing exact Membership + staff authority bridge." />
+            <EmptyModule icon={<ShieldCheck size={20} />} title="Authority" description="Club access continues to come from the existing exact Membership + staff authority bridge; server checks remain final for writes." />
           </div>
 
-          <ProClubRoleWorkspace staffRole={authority.staffRole} />
+          <ProClubRoleWorkspace authority={authority} />
         </div>
       </div>
     </section>
