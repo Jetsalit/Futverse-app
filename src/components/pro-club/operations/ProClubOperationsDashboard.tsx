@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Activity, CalendarDays, ClipboardList, HeartPulse, ShieldCheck, Users } from "lucide-react";
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
 import { staffRoleLabels } from "../../../lib/proClubOnboarding";
@@ -8,7 +9,7 @@ function EmptyModule({
   title,
   description,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   title: string;
   description: string;
 }) {
