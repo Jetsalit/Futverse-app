@@ -95,6 +95,8 @@ The selected UID:
 - must match explicit role mode when mode is not AUTO;
 - never grants tenant membership or platform authority.
 
+The governance config has an exact field boundary. Only `authorityMode` and optional `selectedAuthorityUid` are accepted. Any unexpected field, including a misspelled selection field, must fail closed instead of being ignored or falling back to AUTO behavior.
+
 ## 5. Fail-Closed Requirements
 
 The resolver must never guess when inputs are ambiguous or malformed.
@@ -102,6 +104,7 @@ The resolver must never guess when inputs are ambiguous or malformed.
 It must fail closed for:
 
 - malformed governance mode;
+- unexpected governance config field;
 - malformed candidate shape;
 - duplicate candidate UID;
 - padded/path-like UID;
