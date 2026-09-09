@@ -8,6 +8,7 @@ import {
 export interface WeeklyTrainingDraftSaveServiceDependencies {
   firestore: Firestore;
   trustedClock?: () => Date;
+  planIdFactory?: () => string;
 }
 
 export interface SaveWeeklyTrainingDraftInput {
@@ -53,7 +54,13 @@ export class WeeklyTrainingDraftSaveService {
     const actorMemberRef = clubRef.collection("members").doc(actorUid);
     const actorStaffRef = clubRef.collection("staff").doc(actorUid);
     const governanceRef = clubRef.collection("technicalGovernance").doc("current");
-    const planRef = clubRef.collection("weeklyTrainingPlans").doc();
+    const generatedPlanId = this.dependencies.planIdFactory?.();
+    if (generatedPlanId !== undefined && !exactId(generatedPlanId)) {
+      throw new WeeklyTrainingDraftSaveError("FAILED_PRECONDITION", "Invalid server-generated plan ID.");
+    }
+    const planRef = generatedPlanId
+      ? clubRef.collection("weeklyTrainingPlans").doc(generatedPlanId)
+      : clubRef.collection("weeklyTrainingPlans").doc();
 
     return await firestore.runTransaction(async (transaction) => {
       const [userSnap, clubSnap, memberSnap, staffSnap, governanceSnap] = await Promise.all([
