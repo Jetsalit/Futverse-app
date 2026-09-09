@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Connect the accepted `saveProClubWeeklyTrainingDraftV1` callable to the Pro Club Head Coach workspace without introducing a browser-side Firestore write path or changing production rollout state.
+Connect the accepted `saveProClubWeeklyTrainingDraftV1` callable to the Pro Club Head Coach workspace and make fresh-DRAFT creation safe under real retry conditions, including the case where the server transaction commits but the first callable response is lost.
 
 ## Exact baseline
 
@@ -10,86 +10,121 @@ Connect the accepted `saveProClubWeeklyTrainingDraftV1` callable to the Pro Club
 - PR #120 server-mediated fresh-DRAFT save foundation is already merged.
 - PR #121 callable + App Check + production app-ID binding is already merged.
 
-## Client transport boundary
+## Write transport boundary
 
-- The only write transport for this slice is Firebase callable `saveProClubWeeklyTrainingDraftV1` in `asia-southeast1`.
-- The browser client must not write Weekly Training plan/session/block documents directly to Firestore.
+- The only browser write transport is Firebase callable `saveProClubWeeklyTrainingDraftV1` in `asia-southeast1`.
+- The browser must not write Weekly Training plan/session/block documents directly to Firestore.
 - There is no direct-write fallback when the callable is unavailable or fails.
 - `FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE` must be checked before the default browser callable is constructed or invoked.
-- The existing runtime capability remains authoritative: function-backed Pro Club browser actions are DEV/emulator-only in this slice and production web remains fail-closed.
-- This slice must not modify `src/lib/firebase.ts`, `src/config/runtimeCapabilities.ts`, Firebase Functions, Firestore Rules, Firebase config, billing, or deployment configuration.
+- The existing production capability gate is unchanged: function-backed Pro Club browser actions remain DEV/emulator-only and production web remains fail-closed.
+- This slice does not change `src/lib/firebase.ts`, `src/config/runtimeCapabilities.ts`, `firestore.rules`, Firebase config, billing, or deployment configuration.
 
 ## Authority binding
 
 - The UI receives a resolved `ProClubOrganizationAuthority` from the existing Pro Club workspace authority bridge.
 - `clubId` is bound to `authority.organizationId` and is not user-editable.
 - client `authorUid` is bound to `authority.userId` and is not user-editable.
-- The UI save surface is enabled only for `staffRole === "HEAD_COACH"` with active resolved workspace authority.
-- Technical Director fresh-DRAFT writes remain closed in this slice.
-- Server authority remains canonical. Client role/UI state never authorizes persistence.
+- The UI fresh-save surface is enabled only for `staffRole === "HEAD_COACH"` with active resolved workspace authority.
+- The callable binds server actor identity only from `request.auth.uid`.
+- The trusted service rechecks canonical active account, Pro Club, Membership, Head Coach staff assignment, technical governance and authority evidence on every execution.
+- Technical Director fresh-DRAFT writes remain closed.
+
+## Idempotency contract
+
+One logical fresh-DRAFT save has one stable UUID v4 `requestId`.
+
+- The browser generates `requestId` once immediately before the first transport attempt.
+- The callable accepts only the exact envelope `{ requestId, draft }`.
+- The trusted service validates `requestId` again.
+- The service computes a SHA-256 fingerprint over the authenticated actor plus the canonical validated draft.
+- The transaction reads `proClubs/{clubId}/weeklyTrainingDraftSaveReceipts/{requestId}`.
+- On a first save, the complete plan/session/block hierarchy and the idempotency receipt are created in the same Admin Firestore transaction.
+- The receipt records request identity, authenticated actor, club, canonical request fingerprint, resulting `planId`, hierarchy `documentCount`, and trusted creation time.
+- The receipt collection is server-control metadata. No client Firestore Rules grant access to it.
+- A retry with the same `requestId`, same authenticated actor and same canonical payload returns the existing receipt/result and does not create another hierarchy.
+- A retry with the same `requestId` but a different actor, tenant, payload, malformed receipt, missing plan, or inconsistent plan state fails closed with `FAILED_PRECONDITION`.
+- Concurrent invocations with the same request identity converge through the same receipt transaction conflict and must resolve to one committed hierarchy.
+- A different `requestId` is a distinct logical fresh save.
+
+The maximum football hierarchy remains 183 documents:
+- 1 plan;
+- up to 14 sessions;
+- up to 168 blocks.
+
+A maximum fresh save therefore performs 184 atomic writes total when the server-only idempotency receipt is included. This remains below the Firestore transaction write ceiling.
+
+## Ambiguous client result handling
+
+`NETWORK` and `INVALID_RESPONSE` are treated as ambiguous because the server may have committed successfully even though the browser did not receive a verifiable response.
+
+When the result is ambiguous:
+- the draft remains in memory;
+- the same `requestId` is retained;
+- all draft fields are locked so the payload cannot drift;
+- the UI offers `Retry same save`;
+- retry submits the same request identity and unchanged payload;
+- success is shown only after the server returns the verified receipt-backed `COMPLETED` result.
+
+For explicit precondition/auth/permission/validation failures, the pending request identity is cleared because the response is definitive and no ambiguous committed state should be assumed.
 
 ## Fresh DRAFT only
 
 This slice supports creating a new Weekly Training DRAFT only.
 
 Explicitly closed:
-- edit/reconcile an existing DRAFT;
+- edit/reconcile an existing DRAFT as a football workflow operation;
 - overwrite or upsert by client-supplied plan ID;
 - delete;
 - submit/review/approve/publish lifecycle transitions;
 - Technical Director co-author persistence;
 - Technical Director note persistence.
 
-The complete accepted shape remains available:
+The accepted domain shape remains:
 - 1–14 sessions per plan;
 - 1–12 blocks per session;
-- canonical domain field limits and duplicate-slot rules from `src/lib/proClubWeeklyTraining.ts`.
+- canonical field limits and duplicate-slot rules from `src/lib/proClubWeeklyTraining.ts` / trusted server parity validator.
 
 ## Client validation
 
 Before transport, the client must:
-1. bind canonical club and authenticated workspace actor context;
-2. run the existing `parseProClubWeeklyTrainingDraft` domain parser;
-3. reject invalid canonical data before network invocation;
-4. never add a non-empty Technical Director note.
+1. validate canonical UUID v4 request identity;
+2. bind canonical club and workspace actor context;
+3. run the existing `parseProClubWeeklyTrainingDraft` domain parser;
+4. reject invalid canonical data before network invocation;
+5. reject runtime Technical Director note smuggling before transport.
 
-Callable errors are normalized to safe client codes. Raw backend errors, auth tokens, App Check tokens, or submitted payloads must not be logged or rendered.
+Callable errors are normalized to safe client codes. Raw backend errors, auth tokens, App Check tokens, request fingerprints, or submitted payloads must not be logged or rendered.
 
 ## Completion boundary
 
 The UI may report success only after the callable returns a validated result containing:
 - `status === "COMPLETED"`;
+- the exact submitted `requestId`;
 - the expected `clubId`;
-- a canonical non-empty server-generated `planId`;
-- `documentCount` exactly equal to `1 + sessions + blocks` for the submitted draft;
-- a valid server `createdAt` timestamp.
+- a canonical non-empty server `planId`;
+- hierarchy `documentCount` exactly equal to `1 + sessions + blocks`;
+- a canonical server `createdAt` ISO timestamp.
 
-Any malformed or mismatched response fails closed as an invalid response and must not be presented as a saved DRAFT.
-
-## UI behavior
-
-- Head Coach sees a real Weekly Training fresh-DRAFT composer in the Pro Club operations workspace.
-- Club and actor identity are displayed as bound context, not editable inputs.
-- Sessions and blocks can be added/removed up to domain maximums without imposing a smaller product cap.
-- Duplicate submission is disabled while a save is pending.
-- Validation/callable failure preserves the working form and shows a safe error.
-- Production web shows a disabled/unavailable state while the existing Spark-first runtime gate remains closed.
-- Technical Director retains a non-writing deferred shell.
+Any malformed or mismatched response is ambiguous/fail-closed and must not be presented as a saved DRAFT.
 
 ## Acceptance gates
 
-Before PR/merge:
+Before merge:
 1. exact ancestry from `bf4f22446753cb9cdc56909f6acacc4790b5d201`;
-2. exact reviewed client/UI slice scope;
-3. no Firestore Weekly Training writer/fallback introduced;
-4. client adapter unit tests for authority binding, domain validation, callable error mapping, response validation, and document-count integrity;
-5. UI/model tests for full 14-session / 12-block envelope controls and completion-only success semantics;
-6. root TypeScript passes;
-7. production Vite build passes;
-8. existing Weekly Training domain/persistence/callable regressions pass;
-9. independent Team 2 security/regression review;
-10. Codex review with no unresolved P1/P2 blocker;
-11. no production deploy/call/write/billing change.
+2. exact reviewed scope, including the necessary trusted service/callable idempotency changes;
+3. no Firestore Rules, runtime-capability, Firebase config or production deployment change;
+4. no browser Firestore Weekly Training writer/fallback;
+5. client tests for request identity, authority binding, pre-network validation, response validation and ambiguity classification;
+6. callable tests for exact envelope, authenticated actor and existing App Check allowlist boundary;
+7. emulator proof that same request + same payload returns the same plan and only one hierarchy exists;
+8. emulator proof that same request + changed payload fails closed;
+9. emulator proof that rollback also removes the idempotency receipt;
+10. full 14×12 / 183-document football hierarchy remains supported;
+11. root TypeScript and production Vite build pass;
+12. existing Weekly Training domain/callable/parity regressions pass;
+13. independent Team 2 adversarial review;
+14. Codex exact-current-head re-review with no unresolved P1/P2 blocker;
+15. no production deploy/call/write/billing change.
 
 ## Safety flags
 
@@ -98,7 +133,6 @@ Before PR/merge:
 - `PRODUCTION_DATA_WRITTEN=NO`
 - `BILLING_PLAN_CHANGED=NO`
 - `FIRESTORE_RULES_CHANGED=NO`
-- `FUNCTIONS_CHANGED=NO`
 - `RUNTIME_CAPABILITY_CHANGED=NO`
 - `FORCE_PUSH=NO`
 - `DIRECT_MAIN_EDIT=NO`
