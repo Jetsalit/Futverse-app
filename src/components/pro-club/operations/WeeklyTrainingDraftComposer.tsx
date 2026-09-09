@@ -3,6 +3,8 @@ import { CalendarDays, CheckCircle2, Plus, Save, Trash2 } from "lucide-react";
 import { FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE } from "../../../config/runtimeCapabilities";
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
 import {
+  createWeeklyTrainingDraftSaveRequestId,
+  isAmbiguousWeeklyTrainingDraftSaveError,
   saveProClubWeeklyTrainingFreshDraft,
   weeklyTrainingDraftSaveClientErrorMessage,
   type ProClubWeeklyTrainingFreshDraftInput,
@@ -86,7 +88,10 @@ export default function WeeklyTrainingDraftComposer({
   const [draft, setDraft] = useState<ProClubWeeklyTrainingFreshDraftInput>(freshDraft);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
+  const [ambiguousSave, setAmbiguousSave] = useState(false);
   const [saved, setSaved] = useState<{
+    requestId: string;
     planId: string;
     documentCount: number;
     createdAt: string;
@@ -121,20 +126,38 @@ export default function WeeklyTrainingDraftComposer({
 
   async function handleSave() {
     if (saving || saved || !authorityAllowed || !runtimeAllowed) return;
+
+    let requestId = pendingRequestId;
+    if (!requestId) {
+      try {
+        requestId = createWeeklyTrainingDraftSaveRequestId();
+      } catch (cause) {
+        setError(weeklyTrainingDraftSaveClientErrorMessage(cause));
+        return;
+      }
+    }
+
+    setPendingRequestId(requestId);
     setSaving(true);
     setError("");
     try {
       const result = await saveProClubWeeklyTrainingFreshDraft({
+        requestId,
         clubId: authority.organizationId,
         actorUid: authority.userId,
         draft,
       });
       setSaved({
+        requestId: result.requestId,
         planId: result.planId,
         documentCount: result.documentCount,
         createdAt: result.createdAt,
       });
+      setAmbiguousSave(false);
     } catch (cause) {
+      const ambiguous = isAmbiguousWeeklyTrainingDraftSaveError(cause);
+      setAmbiguousSave(ambiguous);
+      if (!ambiguous) setPendingRequestId(null);
       setError(weeklyTrainingDraftSaveClientErrorMessage(cause));
     } finally {
       setSaving(false);
@@ -191,17 +214,29 @@ export default function WeeklyTrainingDraftComposer({
         </p>
       )}
 
+      {ambiguousSave && pendingRequestId && !saved && (
+        <div role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+          <p className="font-bold">Save result is uncertain — draft locked for safe reconciliation</p>
+          <p className="mt-2 leading-6 text-amber-100/80">
+            Do not change this draft. Retry the same save; FutVerse will reuse the same request identity
+            and the server will return the already-created plan if the first transaction committed.
+          </p>
+          <p className="mt-2 break-all text-xs text-amber-200/70">Request: {pendingRequestId}</p>
+        </div>
+      )}
+
       {saved && (
         <div role="status" className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-100">
           <div className="flex items-center gap-2 font-bold"><CheckCircle2 size={18} /> DRAFT save completed and verified</div>
           <p className="mt-2 break-all">Plan: {saved.planId}</p>
+          <p className="mt-1 break-all text-xs text-emerald-200/80">Request: {saved.requestId}</p>
           <p className="mt-1 text-xs text-emerald-200/80">{saved.documentCount} documents · {saved.createdAt}</p>
           <p className="mt-2 text-xs text-emerald-200/80">This fresh-DRAFT form is locked after success to prevent an accidental duplicate save.</p>
         </div>
       )}
       {error && <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-100">{error}</p>}
 
-      <fieldset disabled={saving || Boolean(saved)} className="space-y-5 disabled:opacity-80">
+      <fieldset disabled={saving || Boolean(saved) || ambiguousSave} className="space-y-5 disabled:opacity-80">
         <div className="grid gap-4 md:grid-cols-2">
           <label className={labelClass}>
             Week start date
@@ -268,8 +303,8 @@ export default function WeeklyTrainingDraftComposer({
       </fieldset>
 
       <div className="flex flex-wrap items-center gap-3">
-        <button type="button" onClick={() => void handleSave()} disabled={saving || Boolean(saved) || !authorityAllowed || !runtimeAllowed} className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-4 py-2.5 text-sm font-black text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"><Save size={17} /> {saving ? "Saving DRAFT…" : saved ? "DRAFT saved" : "Save fresh DRAFT"}</button>
-        <p className="text-xs leading-5 text-slate-500">Server-side authorization and one atomic Admin transaction remain the final write boundary.</p>
+        <button type="button" onClick={() => void handleSave()} disabled={saving || Boolean(saved) || !authorityAllowed || !runtimeAllowed} className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-4 py-2.5 text-sm font-black text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"><Save size={17} /> {saving ? "Saving DRAFT…" : saved ? "DRAFT saved" : ambiguousSave ? "Retry same save" : "Save fresh DRAFT"}</button>
+        <p className="text-xs leading-5 text-slate-500">Server-side authorization, idempotency receipt and one atomic Admin transaction remain the final write boundary.</p>
       </div>
     </section>
   );
