@@ -1,8 +1,5 @@
 import type { ProClubStaffRole } from "../types/ProClub";
-import {
-  isProClubStaffRole,
-  isValidDocumentIdentifier,
-} from "./proClubModel";
+import { isProClubStaffRole, isValidDocumentIdentifier } from "./proClubModel";
 import {
   canTransitionProClubTechnicalWorkStatus,
   isProClubTechnicalWorkStatus,
@@ -83,14 +80,22 @@ export type ProClubWeeklyTrainingWorkflowDenialReason =
   | "NOT_PERMITTED"
   | "SELF_WORK_MUST_PUBLISH";
 
+export interface ProClubWeeklyTrainingBoundContext {
+  actorUid: string;
+  actorRole: ProClubStaffRole;
+  authorUid: string;
+  technicalAuthorityUid: string;
+  technicalAuthorityRole: ProClubTechnicalAuthorityRole;
+}
+
 export type ProClubWeeklyTrainingWorkflowDecision =
-  | {
+  | ({
       allowed: true;
       action: ProClubWeeklyTrainingWorkflowAction;
       fromStatus: ProClubTechnicalWorkStatus;
       toStatus: ProClubTechnicalWorkStatus;
       authorityAction: ProClubTechnicalAuthorityAction;
-    }
+    } & ProClubWeeklyTrainingBoundContext)
   | {
       allowed: false;
       action: ProClubWeeklyTrainingWorkflowAction | null;
@@ -100,6 +105,7 @@ export type ProClubWeeklyTrainingWorkflowDecision =
 export interface ProClubWeeklyTrainingActionProvenance {
   actorUid: string;
   actorRole: ProClubStaffRole;
+  authorUid: string;
   action: ProClubWeeklyTrainingWorkflowAction;
   fromStatus: ProClubTechnicalWorkStatus;
   toStatus: ProClubTechnicalWorkStatus;
@@ -153,18 +159,11 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
-function hasOnlyFields(
-  record: Record<string, unknown>,
-  allowed: ReadonlySet<string>,
-): boolean {
+function hasOnlyFields(record: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
   return Object.keys(record).every((key) => allowed.has(key));
 }
 
-function readBoundedText(
-  value: unknown,
-  maxLength: number,
-  required: boolean,
-): string | null {
+function readBoundedText(value: unknown, maxLength: number, required: boolean): string | null {
   if (value === undefined && !required) return "";
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -174,9 +173,7 @@ function readBoundedText(
 }
 
 function isStrictDate(value: unknown): value is string {
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return false;
-  }
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const [year, month, day] = value.split("-").map(Number);
   const timestamp = Date.UTC(year, month - 1, day);
   const date = new Date(timestamp);
@@ -194,16 +191,12 @@ function dateOnlyTimestamp(value: string): number {
 
 function isSessionDateInWeek(sessionDate: string, weekStartDate: string): boolean {
   const deltaDays =
-    (dateOnlyTimestamp(sessionDate) - dateOnlyTimestamp(weekStartDate)) /
-    86_400_000;
+    (dateOnlyTimestamp(sessionDate) - dateOnlyTimestamp(weekStartDate)) / 86_400_000;
   return Number.isInteger(deltaDays) && deltaDays >= 0 && deltaDays <= 6;
 }
 
 function isStrictTime(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value)
-  );
+  return typeof value === "string" && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
 function isPhaseOfPlay(value: unknown): value is ProClubTrainingPhaseOfPlay {
@@ -233,24 +226,11 @@ function isBlockType(value: unknown): value is ProClubTrainingBlockType {
   );
 }
 
-function isBoundedInteger(
-  value: unknown,
-  minimum: number,
-  maximum: number,
-): value is number {
-  return (
-    typeof value === "number" &&
-    Number.isInteger(value) &&
-    value >= minimum &&
-    value <= maximum
-  );
+function isBoundedInteger(value: unknown, minimum: number, maximum: number): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= minimum && value <= maximum;
 }
 
-function parseBlock(
-  value: unknown,
-  path: string,
-  errors: string[],
-): ProClubTrainingBlockDraft | null {
+function parseBlock(value: unknown, path: string, errors: string[]): ProClubTrainingBlockDraft | null {
   const record = asRecord(value);
   if (!record || !hasOnlyFields(record, BLOCK_FIELDS)) {
     errors.push(`${path} must contain only canonical training-block fields.`);
@@ -279,11 +259,8 @@ function parseBlock(
   } else {
     record.coachingPoints.forEach((point, index) => {
       const parsed = readBoundedText(point, 300, true);
-      if (parsed === null) {
-        errors.push(`${path}.coachingPoints[${index}] is invalid.`);
-      } else {
-        coachingPoints.push(parsed);
-      }
+      if (parsed === null) errors.push(`${path}.coachingPoints[${index}] is invalid.`);
+      else coachingPoints.push(parsed);
     });
   }
 
@@ -323,11 +300,8 @@ function parseSession(
   const location = readBoundedText(record.location, 200, true);
   const objective = readBoundedText(record.objective, 500, true);
 
-  if (!isStrictDate(record.sessionDate)) {
-    errors.push(`${path}.sessionDate must be a strict calendar date.`);
-  } else if (!isSessionDateInWeek(record.sessionDate, weekStartDate)) {
-    errors.push(`${path}.sessionDate must fall inside the plan week.`);
-  }
+  if (!isStrictDate(record.sessionDate)) errors.push(`${path}.sessionDate must be a strict calendar date.`);
+  else if (!isSessionDateInWeek(record.sessionDate, weekStartDate)) errors.push(`${path}.sessionDate must fall inside the plan week.`);
   if (!isStrictTime(record.startTime)) errors.push(`${path}.startTime is invalid.`);
   if (location === null) errors.push(`${path}.location is invalid.`);
   if (objective === null) errors.push(`${path}.objective is invalid.`);
@@ -347,12 +321,8 @@ function parseSession(
     });
   }
 
-  if (
-    isBoundedInteger(record.durationMinutes, 15, 360) &&
-    blocks.length > 0 &&
-    blocks.reduce((sum, block) => sum + block.durationMinutes, 0) >
-      record.durationMinutes
-  ) {
+  const blockDuration = blocks.reduce((sum, block) => sum + block.durationMinutes, 0);
+  if (isBoundedInteger(record.durationMinutes, 15, 360) && blocks.length > 0 && blockDuration > record.durationMinutes) {
     errors.push(`${path} block duration total cannot exceed session duration.`);
   }
 
@@ -369,8 +339,7 @@ function parseSession(
     record.blocks.length < 1 ||
     record.blocks.length > 12 ||
     blocks.length !== record.blocks.length ||
-    blocks.reduce((sum, block) => sum + block.durationMinutes, 0) >
-      record.durationMinutes
+    blockDuration > record.durationMinutes
   ) {
     return null;
   }
@@ -387,38 +356,22 @@ function parseSession(
   };
 }
 
-export function parseProClubWeeklyTrainingDraft(
-  value: unknown,
-): ProClubWeeklyTrainingParseResult {
+export function parseProClubWeeklyTrainingDraft(value: unknown): ProClubWeeklyTrainingParseResult {
   const errors: string[] = [];
   const record = asRecord(value);
-
   if (!record || !hasOnlyFields(record, PLAN_FIELDS)) {
-    return {
-      state: "INVALID",
-      errors: ["Weekly training plan must contain only canonical plan fields."],
-    };
+    return { state: "INVALID", errors: ["Weekly training plan must contain only canonical plan fields."] };
   }
 
-  if (!isValidDocumentIdentifier(record.clubId)) {
-    errors.push("clubId must be an exact document identifier.");
-  }
-  if (!isValidDocumentIdentifier(record.authorUid)) {
-    errors.push("authorUid must be an exact document identifier.");
-  }
-  if (!isStrictDate(record.weekStartDate)) {
-    errors.push("weekStartDate must be a strict calendar date.");
-  }
+  if (!isValidDocumentIdentifier(record.clubId)) errors.push("clubId must be an exact document identifier.");
+  if (!isValidDocumentIdentifier(record.authorUid)) errors.push("authorUid must be an exact document identifier.");
+  if (!isStrictDate(record.weekStartDate)) errors.push("weekStartDate must be a strict calendar date.");
 
   const squadLabel = readBoundedText(record.squadLabel, 100, true);
   const mainObjective = readBoundedText(record.mainObjective, 500, true);
   const secondaryObjective = readBoundedText(record.secondaryObjective, 500, false);
   const headCoachNote = readBoundedText(record.headCoachNote, 2_000, false);
-  const technicalDirectorNote = readBoundedText(
-    record.technicalDirectorNote,
-    2_000,
-    false,
-  );
+  const technicalDirectorNote = readBoundedText(record.technicalDirectorNote, 2_000, false);
 
   if (squadLabel === null) errors.push("squadLabel is invalid.");
   if (mainObjective === null) errors.push("mainObjective is invalid.");
@@ -432,12 +385,7 @@ export function parseProClubWeeklyTrainingDraft(
   } else if (isStrictDate(record.weekStartDate)) {
     const seenSlots = new Set<string>();
     record.sessions.forEach((session, index) => {
-      const parsed = parseSession(
-        session,
-        record.weekStartDate as string,
-        `sessions[${index}]`,
-        errors,
-      );
+      const parsed = parseSession(session, record.weekStartDate as string, `sessions[${index}]`, errors);
       if (!parsed) return;
       const slot = `${parsed.sessionDate}T${parsed.startTime}`;
       if (seenSlots.has(slot)) {
@@ -472,14 +420,9 @@ export function canCreateProClubWeeklyTrainingPlan(input: {
   actorRole: unknown;
   authority: ProClubTechnicalAuthorityResolution;
 }): boolean {
-  if (
-    !isValidDocumentIdentifier(input.actorUid) ||
-    !isProClubStaffRole(input.actorRole) ||
-    input.authority.state !== "FOUND"
-  ) {
+  if (!isValidDocumentIdentifier(input.actorUid) || !isProClubStaffRole(input.actorRole) || input.authority.state !== "FOUND") {
     return false;
   }
-
   return resolveProClubTechnicalCapabilities({
     actorUid: input.actorUid,
     actorRole: input.actorRole,
@@ -487,13 +430,8 @@ export function canCreateProClubWeeklyTrainingPlan(input: {
   }).canCreateTrainingPlan;
 }
 
-function isWorkflowAction(
-  value: unknown,
-): value is ProClubWeeklyTrainingWorkflowAction {
-  return (
-    typeof value === "string" &&
-    WORKFLOW_ACTIONS.has(value as ProClubWeeklyTrainingWorkflowAction)
-  );
+function isWorkflowAction(value: unknown): value is ProClubWeeklyTrainingWorkflowAction {
+  return typeof value === "string" && WORKFLOW_ACTIONS.has(value as ProClubWeeklyTrainingWorkflowAction);
 }
 
 function denied(
@@ -504,18 +442,13 @@ function denied(
 }
 
 function allowed(
+  context: ProClubWeeklyTrainingBoundContext,
   action: ProClubWeeklyTrainingWorkflowAction,
   fromStatus: ProClubTechnicalWorkStatus,
   toStatus: ProClubTechnicalWorkStatus,
   authorityAction: ProClubTechnicalAuthorityAction,
 ): ProClubWeeklyTrainingWorkflowDecision {
-  return {
-    allowed: true,
-    action,
-    fromStatus,
-    toStatus,
-    authorityAction,
-  };
+  return { allowed: true, ...context, action, fromStatus, toStatus, authorityAction };
 }
 
 export function resolveProClubWeeklyTrainingWorkflow(input: {
@@ -536,11 +469,15 @@ export function resolveProClubWeeklyTrainingWorkflow(input: {
   ) {
     return denied(action, "INVALID_INPUT");
   }
+  if (input.authority.state !== "FOUND") return denied(action, "AUTHORITY_UNRESOLVED");
 
-  if (input.authority.state !== "FOUND") {
-    return denied(action, "AUTHORITY_UNRESOLVED");
-  }
-
+  const context: ProClubWeeklyTrainingBoundContext = {
+    actorUid: input.actorUid,
+    actorRole: input.actorRole,
+    authorUid: input.authorUid,
+    technicalAuthorityUid: input.authority.authorityUid,
+    technicalAuthorityRole: input.authority.authorityRole,
+  };
   const capabilities = resolveProClubTechnicalCapabilities({
     actorUid: input.actorUid,
     actorRole: input.actorRole,
@@ -553,34 +490,23 @@ export function resolveProClubWeeklyTrainingWorkflow(input: {
   });
   const actorIsAuthor = input.actorUid === input.authorUid;
   const actorIsExactAuthority =
-    input.authority.authorityUid === input.actorUid &&
-    input.authority.authorityRole === input.actorRole;
+    input.authority.authorityUid === input.actorUid && input.authority.authorityRole === input.actorRole;
 
   if (action === "EDIT") {
     const authorMayEdit =
       actorIsAuthor &&
       capabilities.canEditTrainingPlan &&
-      (input.currentStatus === "DRAFT" ||
-        input.currentStatus === "NEEDS_REVISION");
-
+      (input.currentStatus === "DRAFT" || input.currentStatus === "NEEDS_REVISION");
     const authorityTdMayCoAuthor =
       !actorIsAuthor &&
       actorIsExactAuthority &&
       input.actorRole === "TECHNICAL_DIRECTOR" &&
       capabilities.canCoAuthorTrainingPlan &&
-      (input.currentStatus === "DRAFT" ||
-        input.currentStatus === "SUBMITTED" ||
-        input.currentStatus === "IN_REVIEW");
+      (input.currentStatus === "DRAFT" || input.currentStatus === "SUBMITTED" || input.currentStatus === "IN_REVIEW");
 
     if (authorMayEdit || authorityTdMayCoAuthor) {
-      return allowed(
-        action,
-        input.currentStatus,
-        input.currentStatus,
-        authorityAction,
-      );
+      return allowed(context, action, input.currentStatus, input.currentStatus, authorityAction);
     }
-
     return denied(
       action,
       input.currentStatus === "APPROVED" || input.currentStatus === "PUBLISHED"
@@ -590,39 +516,22 @@ export function resolveProClubWeeklyTrainingWorkflow(input: {
   }
 
   if (action === "SUBMIT") {
-    if (!actorIsAuthor || !capabilities.canSubmitTechnicalWork) {
-      return denied(action, "NOT_PERMITTED");
-    }
-    if (authorityAction === "PUBLISH_OWN_WORK") {
-      return denied(action, "SELF_WORK_MUST_PUBLISH");
-    }
-    if (
-      !canTransitionProClubTechnicalWorkStatus(
-        input.currentStatus,
-        "SUBMITTED",
-      )
-    ) {
+    if (!actorIsAuthor || !capabilities.canSubmitTechnicalWork) return denied(action, "NOT_PERMITTED");
+    if (authorityAction === "PUBLISH_OWN_WORK") return denied(action, "SELF_WORK_MUST_PUBLISH");
+    if (!canTransitionProClubTechnicalWorkStatus(input.currentStatus, "SUBMITTED")) {
       return denied(action, "INVALID_STATUS_FOR_ACTION");
     }
-    return allowed(action, input.currentStatus, "SUBMITTED", authorityAction);
+    return allowed(context, action, input.currentStatus, "SUBMITTED", authorityAction);
   }
 
   if (action === "PUBLISH") {
-    if (
-      authorityAction !== "PUBLISH_OWN_WORK" ||
-      !capabilities.canPublishOwnTechnicalWork
-    ) {
+    if (authorityAction !== "PUBLISH_OWN_WORK" || !capabilities.canPublishOwnTechnicalWork) {
       return denied(action, "NOT_PERMITTED");
     }
-    if (
-      !canTransitionProClubTechnicalWorkStatus(
-        input.currentStatus,
-        "PUBLISHED",
-      )
-    ) {
+    if (!canTransitionProClubTechnicalWorkStatus(input.currentStatus, "PUBLISHED")) {
       return denied(action, "INVALID_STATUS_FOR_ACTION");
     }
-    return allowed(action, input.currentStatus, "PUBLISHED", authorityAction);
+    return allowed(context, action, input.currentStatus, "PUBLISHED", authorityAction);
   }
 
   if (
@@ -640,58 +549,47 @@ export function resolveProClubWeeklyTrainingWorkflow(input: {
         ? "NEEDS_REVISION"
         : "APPROVED";
 
-  if (
-    action === "APPROVE" &&
-    !capabilities.canApproveSubmittedWork
-  ) {
-    return denied(action, "NOT_PERMITTED");
-  }
-
-  if (
-    !canTransitionProClubTechnicalWorkStatus(
-      input.currentStatus,
-      targetStatus,
-    )
-  ) {
+  if (action === "APPROVE" && !capabilities.canApproveSubmittedWork) return denied(action, "NOT_PERMITTED");
+  if (!canTransitionProClubTechnicalWorkStatus(input.currentStatus, targetStatus)) {
     return denied(action, "INVALID_STATUS_FOR_ACTION");
   }
-
-  return allowed(action, input.currentStatus, targetStatus, authorityAction);
+  return allowed(context, action, input.currentStatus, targetStatus, authorityAction);
 }
 
 function isOffsetAwareIsoTimestamp(value: unknown): value is string {
   if (typeof value !== "string") return false;
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)) {
-    return false;
+  const match = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{3}))?(Z|([+-])(\d{2}):(\d{2}))$/,
+  );
+  if (!match) return false;
+
+  const [, year, month, day, hour, minute, second, , zone, , offsetHour, offsetMinute] = match;
+  if (!isStrictDate(`${year}-${month}-${day}`)) return false;
+  if (!isBoundedInteger(Number(hour), 0, 23)) return false;
+  if (!isBoundedInteger(Number(minute), 0, 59)) return false;
+  if (!isBoundedInteger(Number(second), 0, 59)) return false;
+  if (zone !== "Z") {
+    if (!isBoundedInteger(Number(offsetHour), 0, 23)) return false;
+    if (!isBoundedInteger(Number(offsetMinute), 0, 59)) return false;
   }
-  return Number.isFinite(Date.parse(value));
+  return true;
 }
 
 export function buildProClubWeeklyTrainingActionProvenance(input: {
-  actorUid: unknown;
-  actorRole: unknown;
-  authority: ProClubTechnicalAuthorityResolution;
   decision: ProClubWeeklyTrainingWorkflowDecision;
   occurredAt: unknown;
 }): ProClubWeeklyTrainingActionProvenance | null {
-  if (
-    !input.decision.allowed ||
-    !isValidDocumentIdentifier(input.actorUid) ||
-    !isProClubStaffRole(input.actorRole) ||
-    input.authority.state !== "FOUND" ||
-    !isOffsetAwareIsoTimestamp(input.occurredAt)
-  ) {
-    return null;
-  }
+  if (!input.decision.allowed || !isOffsetAwareIsoTimestamp(input.occurredAt)) return null;
 
   return {
-    actorUid: input.actorUid,
-    actorRole: input.actorRole,
+    actorUid: input.decision.actorUid,
+    actorRole: input.decision.actorRole,
+    authorUid: input.decision.authorUid,
     action: input.decision.action,
     fromStatus: input.decision.fromStatus,
     toStatus: input.decision.toStatus,
-    technicalAuthorityUid: input.authority.authorityUid,
-    technicalAuthorityRole: input.authority.authorityRole,
+    technicalAuthorityUid: input.decision.technicalAuthorityUid,
+    technicalAuthorityRole: input.decision.technicalAuthorityRole,
     occurredAt: input.occurredAt,
   };
 }
