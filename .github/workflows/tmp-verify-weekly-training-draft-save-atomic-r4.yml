@@ -1,0 +1,65 @@
+name: Temporary Weekly Training Draft Save Atomic R4
+
+on:
+  push:
+    branches:
+      - verify/weekly-training-draft-save-atomic-r4
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: verify/weekly-training-draft-save-atomic-r4
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix functions ci
+
+      - name: Contract tests
+        run: node --import tsx --test tests/proClubWeeklyTrainingDraftSaveV1Contract.test.ts
+
+      - name: Isolated atomic remediation proof
+        run: npx firebase-tools emulators:exec --only firestore --project demo-futverse-pro-club-weekly-training-atomic-remediation "node --import tsx --test tests/firestore.pro-club-weekly-training-atomic-remediation.rules.test.ts"
+
+      - name: Existing Weekly Training pure regressions
+        run: |
+          node --import tsx --test tests/proClubWeeklyTraining.unit.test.ts
+          node --import tsx --test tests/proClubWeeklyTrainingPersistence.unit.test.ts
+
+      - name: Existing Weekly Training rules regressions
+        run: npx firebase-tools emulators:exec --only firestore --project demo-futverse-pro-club-weekly-training-root "node --import tsx --test tests/firestore.pro-club-weekly-training-foundation.rules.test.ts tests/firestore.pro-club-weekly-training-root.rules.test.ts"
+
+      - name: TypeScript
+        run: npx tsc --noEmit
+
+      - name: Functions build
+        run: npm --prefix functions run build
+
+      - name: Production build
+        run: npm run build
+
+      - name: Exact scope and preservation
+        shell: bash
+        run: |
+          git diff --check 0fcd06911a8c6a35929bc2d0ae7ddf0ec5c868f2...024dc984a16041e7435acff274bac20387144a92
+          FILES="$(git diff --name-only 0fcd06911a8c6a35929bc2d0ae7ddf0ec5c868f2...024dc984a16041e7435acff274bac20387144a92)"
+          EXPECTED=$'docs/PRO_CLUB_WEEKLY_TRAINING_DRAFT_SAVE_V1_CONTRACT_FREEZE.md\ntests/firestore.pro-club-weekly-training-atomic-create.rules.test.ts\ntests/firestore.pro-club-weekly-training-atomic-remediation.rules.test.ts\ntests/fixtures/firestore.pro-club-weekly-training.atomic-create-remediation.rules\ntests/proClubWeeklyTrainingDraftSaveV1Contract.test.ts'
+          test "$FILES" = "$EXPECTED"
+          test "$(git rev-parse 024dc984a16041e7435acff274bac20387144a92^{parent}^{parent}^{parent}^{parent}^{parent}^{parent}^{parent})" = "0fcd06911a8c6a35929bc2d0ae7ddf0ec5c868f2"
