@@ -346,6 +346,7 @@ export const saveProClubWeeklyTrainingDraftV1 = onCall(
       },
       {
         service: getWeeklyTrainingDraftSaveService(),
+        allowedAppIds: [FUTVERSE_PRODUCTION_WEB_APP_ID],
         enforceAppCheck: true,
         logger: safeWeeklyTrainingDraftSaveCallableLogger,
       },
