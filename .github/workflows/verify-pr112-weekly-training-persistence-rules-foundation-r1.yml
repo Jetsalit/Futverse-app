@@ -39,6 +39,12 @@ jobs:
             firestore.rules firebase.json firebase.spark.json functions src/App.tsx src/components package.json package-lock.json
           test -z "$(git status --short)"
 
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
