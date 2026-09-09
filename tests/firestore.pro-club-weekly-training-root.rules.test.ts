@@ -190,6 +190,35 @@ test("root rules allow the canonical Head Coach DRAFT hierarchy and active-membe
   );
 });
 
+test("root rules allow valid normalized DRAFT updates without exhausting the rule budget", async () => {
+  const db = authedDb(HC);
+  await createDraftHierarchy(db);
+
+  await assertSucceeds(
+    updateDoc(planRef(db), {
+      mainObjective: "Play through pressure with third-player support",
+      updatedAt: serverTimestamp(),
+      updatedBy: HC,
+    }),
+  );
+  await assertSucceeds(
+    updateDoc(sessionRef(db), {
+      location: "Training Ground B",
+      objective: "Progress through two pressing lines",
+      updatedAt: serverTimestamp(),
+      updatedBy: HC,
+    }),
+  );
+  await assertSucceeds(
+    updateDoc(blockRef(db), {
+      title: "Build-up 8v6 progression",
+      coachingPoints: ["Create the third-man option", "Secure rest defence"],
+      updatedAt: serverTimestamp(),
+      updatedBy: HC,
+    }),
+  );
+});
+
 test("root rules deny inactive, staff-only, and global SUPERADMIN write bypasses", async () => {
   await assertFails(setDoc(planRef(authedDb(INACTIVE_HC)), planData(INACTIVE_HC)));
   await assertFails(setDoc(planRef(authedDb(STAFF_ONLY)), planData(STAFF_ONLY)));
