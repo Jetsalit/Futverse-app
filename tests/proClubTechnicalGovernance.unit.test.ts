@@ -84,6 +84,30 @@ describe("Pro Club Technical Governance V1", () => {
     );
   });
 
+  it("rejects unexpected governance config fields instead of silently falling back", () => {
+    assert.equal(
+      resolveProClubTechnicalAuthority(
+        {
+          authorityMode: "AUTO",
+          selectedAuthorityUID: "hc-1",
+        },
+        [td, headCoach],
+      ).state,
+      "INVALID_CONFIG",
+    );
+    assert.equal(
+      resolveProClubTechnicalAuthority(
+        {
+          authorityMode: "AUTO",
+          selectedAuthorityUid: "hc-1",
+          extraField: true,
+        },
+        [td, headCoach],
+      ).state,
+      "INVALID_CONFIG",
+    );
+  });
+
   it("explicit role mode requires an ACTIVE candidate of that role", () => {
     assert.deepEqual(
       resolveProClubTechnicalAuthority(
