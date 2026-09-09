@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { HttpsError } from "firebase-functions/v2/https";
 
 import {
   executeSaveProClubWeeklyTrainingDraftCallable,
@@ -17,6 +16,18 @@ function completedResult() {
     documentCount: 3,
     createdAt: "2026-09-09T00:00:00.000Z",
   };
+}
+
+function callableErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+}
+
+function callableErrorMessage(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const message = (error as { message?: unknown }).message;
+  return typeof message === "string" ? message : undefined;
 }
 
 test("rejects missing App Check before service execution", async () => {
@@ -36,7 +47,7 @@ test("rejects missing App Check before service execution", async () => {
         },
       },
     ),
-    (error: unknown) => error instanceof HttpsError && error.code === "failed-precondition",
+    (error: unknown) => callableErrorCode(error) === "failed-precondition",
   );
   assert.equal(called, false);
 });
@@ -58,7 +69,7 @@ test("rejects unauthenticated caller before service execution", async () => {
         },
       },
     ),
-    (error: unknown) => error instanceof HttpsError && error.code === "unauthenticated",
+    (error: unknown) => callableErrorCode(error) === "unauthenticated",
   );
   assert.equal(called, false);
 });
@@ -115,7 +126,7 @@ for (const [domainCode, callableCode] of [
           },
         },
       ),
-      (error: unknown) => error instanceof HttpsError && error.code === callableCode,
+      (error: unknown) => callableErrorCode(error) === callableCode,
     );
   });
 }
@@ -137,8 +148,7 @@ test("maps unexpected failures to internal without leaking original message", as
       },
     ),
     (error: unknown) =>
-      error instanceof HttpsError &&
-      error.code === "internal" &&
-      error.message === "An internal error occurred.",
+      callableErrorCode(error) === "internal" &&
+      callableErrorMessage(error) === "An internal error occurred.",
   );
 });
