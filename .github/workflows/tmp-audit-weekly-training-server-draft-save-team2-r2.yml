@@ -1,0 +1,64 @@
+name: Temporary Weekly Training Server Draft Save Team 2 R2
+
+on:
+  push:
+    branches:
+      - audit/weekly-training-server-draft-save-team2-r2
+
+permissions:
+  contents: read
+
+jobs:
+  independent-review:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact product head and audit-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_HEAD='7c23293860b39f6936b07e6d43d1485adf6213d4'
+          test "$(git merge-base "$PRODUCT_HEAD" HEAD)" = "$PRODUCT_HEAD"
+          files="$(git diff --name-only "$PRODUCT_HEAD"..HEAD)"
+          test "$(printf '%s\n' "$files" | wc -l)" -eq 2
+          printf '%s\n' "$files" | grep -qx '.github/workflows/tmp-audit-weekly-training-server-draft-save-team2-r2.yml'
+          printf '%s\n' "$files" | grep -qx 'tests/functions.proClubWeeklyTrainingDraftSave.team2.test.ts'
+          git diff --check "$PRODUCT_HEAD"..HEAD
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix functions ci
+
+      - name: Functions build
+        run: npm --prefix functions run build
+
+      - name: Independent adversarial and max-shape proof
+        run: >-
+          npx firebase-tools emulators:exec --only firestore
+          --project demo-futverse-weekly-training-server-team2-r2
+          "node --import tsx --test tests/functions.proClubWeeklyTrainingDraftSave.team2.test.ts tests/functions.proClubWeeklyTrainingDraftSave.maxShape.test.ts"
+
+      - name: Safety boundary
+        run: |
+          echo 'TEAM2_ACCEPTANCE=PASS'
+          echo 'PRODUCTION_DEPLOYED=NO'
+          echo 'PRODUCTION_CALLABLE_INVOKED=NO'
+          echo 'PRODUCTION_DATA_WRITTEN=NO'
+          echo 'BILLING_PLAN_CHANGED=NO'
