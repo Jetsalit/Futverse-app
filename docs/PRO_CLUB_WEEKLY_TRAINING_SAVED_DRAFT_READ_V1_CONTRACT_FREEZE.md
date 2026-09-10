@@ -27,6 +27,22 @@ Canonical hierarchy documents use `schemaVersion == 2`:
 
 The trusted server computes cardinality directly from the already validated draft inside the same atomic transaction that creates the hierarchy. Client payload cardinality is never trusted.
 
+## Idempotent retry integrity
+
+A retry using the same actor/request ID MUST NOT return `COMPLETED` merely because the server-only request receipt still exists.
+
+Before returning the original result, the trusted server revalidates the deterministic hierarchy bound to that receipt against the same validated request:
+
+- receipt identity, actor, club, request fingerprint, document count, timestamp, and plan ID remain canonical;
+- plan schema, football payload, `sessionCount`, author/status, and fresh-save audit metadata still match the original request;
+- the sessions collection is bounded to `expected session count + 1` and must contain exactly the deterministic session IDs from the request;
+- each persisted session must match schema v2, order, football payload, `blockCount`, and fresh-save audit metadata;
+- each blocks collection is bounded to `expected block count + 1` and must contain exactly the deterministic block IDs from the request;
+- each persisted block must match schema v2, order, football payload, coaching points, optional drill reference, and fresh-save audit metadata;
+- missing, extra, altered, malformed, or audit-drift hierarchy state fails closed as `FAILED_PRECONDITION`.
+
+This extra integrity read path runs only for an idempotent retry. The normal fresh-save path retains the existing atomic write behavior and document count.
+
 ## Runtime audience
 
 V1 UI is exposed only when the resolved Pro Club authority is all of:
@@ -107,6 +123,7 @@ The UI shows generic safe failure copy and does not expose raw Firebase error pa
 - A selected plan is re-bound to the same club and author before detail children are accepted.
 - Switching organization/actor invalidates visible state and in-flight request generation.
 - Oversized session results are rejected before block fan-out.
+- Idempotent retries fail closed if the receipt-bound hierarchy no longer exactly matches the original validated request.
 
 ## Explicitly out of scope
 
