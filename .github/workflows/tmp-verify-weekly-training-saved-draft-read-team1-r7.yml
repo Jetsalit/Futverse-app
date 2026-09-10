@@ -1,0 +1,54 @@
+name: tmp-verify-weekly-training-saved-draft-read-team1-r7
+on:
+  push:
+    branches: [verify/weekly-training-saved-draft-read-team1-r7]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - run: npm ci
+      - run: npm --prefix functions ci
+      - name: Provenance and exact product scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          P=0fbe62a4d5e43ade23350501fdbc3329ca634326
+          B=380050170ad6780c6854925bb6a44d2424fe265b
+          test "$(git rev-parse HEAD^)" = "$P"
+          test "$(git merge-base "$B" "$P")" = "$B"
+          git diff --check "$B" "$P"
+          mapfile -t files < <(git diff --name-only "$B" "$P" | sort)
+          expected=(docs/PRO_CLUB_WEEKLY_TRAINING_SAVED_DRAFT_READ_V1_CONTRACT_FREEZE.md src/components/pro-club/operations/ProClubRoleWorkspace.tsx src/components/pro-club/operations/WeeklyTrainingSavedDrafts.tsx src/lib/firestore/proClubWeeklyTrainingSavedDraftReadAdapter.ts src/lib/proClubWeeklyTrainingSavedDraftReadModel.ts tests/proClubWeeklyTrainingSavedDraftReadAdapter.unit.test.ts tests/proClubWeeklyTrainingSavedDraftReadModel.unit.test.ts tests/proClubWeeklyTrainingSavedDraftUiWiring.test.ts)
+          mapfile -t exp < <(printf '%s\n' "${expected[@]}" | sort)
+          test "${#files[@]}" -eq 8
+          diff -u <(printf '%s\n' "${exp[@]}") <(printf '%s\n' "${files[@]}")
+      - name: Saved DRAFT read model tests
+        run: node --import tsx --test tests/proClubWeeklyTrainingSavedDraftReadModel.unit.test.ts
+      - name: Saved DRAFT read adapter tests
+        run: node --import tsx --test tests/proClubWeeklyTrainingSavedDraftReadAdapter.unit.test.ts
+      - name: Saved DRAFT UI wiring tests
+        run: node --import tsx --test tests/proClubWeeklyTrainingSavedDraftUiWiring.test.ts
+      - name: Existing Weekly Training regressions
+        run: node --import tsx --test --test-concurrency=1 tests/proClubWeeklyTrainingDraftComposerModel.unit.test.ts tests/proClubWeeklyTrainingDraftSaveClient.unit.test.ts tests/proClubWeeklyTrainingDraftUiWiring.test.ts tests/proClubWeeklyTrainingStorageBounds.unit.test.ts
+      - name: Weekly Training Firestore Rules regression
+        run: npx firebase emulators:exec --project demo-futverse-pro-club-weekly-training-root --only firestore "node --import tsx --test tests/firestore.pro-club-weekly-training-root.rules.test.ts"
+      - name: TypeScript
+        run: npm run lint
+      - name: Production build
+        run: npm run build
+      - name: Safety boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git diff --name-only 380050170ad6780c6854925bb6a44d2424fe265b 0fbe62a4d5e43ade23350501fdbc3329ca634326 | grep -E '^(firestore\.rules|firebase\.json|\.firebaserc|functions/src/|src/config/runtimeCapabilities\.ts)$' || true)"
+          echo PRODUCTION_DEPLOYED=NO
+          echo PRODUCTION_CALLABLE_INVOKED=NO
+          echo PRODUCTION_DATA_WRITTEN=NO
+          echo BILLING_PLAN_CHANGED=NO
