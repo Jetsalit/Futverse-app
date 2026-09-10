@@ -1,0 +1,67 @@
+name: Temporary Weekly Training Drill Storage Bound Team2 R7
+on:
+  push:
+    branches:
+      - audit/weekly-training-drill-storage-bound-team2-r7
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify exact product head and audit-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='bf4f22446753cb9cdc56909f6acacc4790b5d201'
+          PRODUCT_HEAD='b7bd1a24faf5b6c382183c761b6205ae705fa257'
+          test "$(git merge-base "$BASE" "$PRODUCT_HEAD")" = "$BASE"
+          test "$(git rev-parse HEAD^^)" = "$PRODUCT_HEAD"
+          mapfile -t delta < <(git diff --name-only "$PRODUCT_HEAD" HEAD)
+          test "${#delta[@]}" -eq 2
+          test "${delta[0]}" = '.github/workflows/tmp-audit-weekly-training-drill-storage-bound-team2-r7.yml'
+          test "${delta[1]}" = 'tests/proClubWeeklyTrainingDraftSave.team2.storageBound.test.ts'
+          git diff --check "$BASE" HEAD
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix functions ci
+      - name: Functions build
+        run: npm --prefix functions run build
+      - name: Independent Team2 storage-bound adversarial tests
+        run: node --import tsx --test tests/proClubWeeklyTrainingDraftSave.team2.storageBound.test.ts
+      - name: Product storage-bound and client UI tests
+        run: |
+          node --import tsx --test tests/proClubWeeklyTrainingStorageBounds.unit.test.ts
+          node --import tsx --test tests/proClubWeeklyTrainingDraftSaveClient.unit.test.ts
+          node --import tsx --test tests/proClubWeeklyTrainingDraftUiWiring.test.ts
+          node --import tsx --test tests/functions.proClubWeeklyTrainingDraftSave.parity.test.ts
+          node --import tsx --test tests/functions.proClubWeeklyTrainingDraftSave.callable.test.ts
+      - name: Cross-tenant idempotency max-shape rollback proof
+        run: npx firebase-tools emulators:exec --only firestore --project demo-futverse-weekly-training-storage-team2-r7 "node --import tsx --test --test-concurrency=1 tests/functions.proClubWeeklyTrainingDraftSave.maxShape.test.ts"
+      - name: Existing Weekly Training regressions
+        run: |
+          node --import tsx --test tests/proClubWeeklyTraining.unit.test.ts
+          node --import tsx --test tests/proClubWeeklyTrainingPersistence.unit.test.ts
+      - name: Root TypeScript and production build
+        run: |
+          npx tsc --noEmit
+          npm run build
+      - name: Safety boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only 'bf4f22446753cb9cdc56909f6acacc4790b5d201' 'b7bd1a24faf5b6c382183c761b6205ae705fa257' | grep -Ec '^(firestore.rules|src/config/runtimeCapabilities.ts|src/lib/firebase.ts|functions/src/index.ts)$')" -eq 0
+          echo 'PRODUCTION_DEPLOYED=NO'
+          echo 'PRODUCTION_CALLABLE_INVOKED=NO'
+          echo 'PRODUCTION_DATA_WRITTEN=NO'
+          echo 'BILLING_PLAN_CHANGED=NO'
