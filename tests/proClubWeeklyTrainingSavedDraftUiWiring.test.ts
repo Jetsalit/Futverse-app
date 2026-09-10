@@ -2,19 +2,41 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
+import {
+  isWeeklyTrainingSavedDraftReadAvailable,
+  PRODUCTION_WEEKLY_TRAINING_SAVED_DRAFT_INDEX_VERIFIED,
+} from "../src/config/runtimeCapabilities";
+
 const files = {
   adapter: "src/lib/firestore/proClubWeeklyTrainingSavedDraftReadAdapter.ts",
   model: "src/lib/proClubWeeklyTrainingSavedDraftReadModel.ts",
   component: "src/components/pro-club/operations/WeeklyTrainingSavedDrafts.tsx",
   workspace: "src/components/pro-club/operations/ProClubRoleWorkspace.tsx",
+  capability: "src/config/runtimeCapabilities.ts",
   rules: "firestore.rules",
   firebase: "firebase.json",
+  spark: "firebase.spark.json",
   indexes: "firestore.indexes.json",
 };
 
 async function source(path: string): Promise<string> {
   return await readFile(path, "utf8");
 }
+
+test("saved-DRAFT production capability is fail-closed until reviewed index evidence exists", () => {
+  assert.equal(PRODUCTION_WEEKLY_TRAINING_SAVED_DRAFT_INDEX_VERIFIED, false);
+  assert.equal(isWeeklyTrainingSavedDraftReadAvailable({ dev: false, productionIndexVerified: false }), false);
+  assert.equal(isWeeklyTrainingSavedDraftReadAvailable({ dev: true, productionIndexVerified: false }), true);
+  assert.equal(isWeeklyTrainingSavedDraftReadAvailable({ dev: false, productionIndexVerified: true }), true);
+});
+
+test("saved-DRAFT production capability cannot be enabled by a Vite environment variable", async () => {
+  const capability = await source(files.capability);
+  assert.match(capability, /PRODUCTION_WEEKLY_TRAINING_SAVED_DRAFT_INDEX_VERIFIED = false as const/);
+  assert.match(capability, /productionIndexVerified:\s*PRODUCTION_WEEKLY_TRAINING_SAVED_DRAFT_INDEX_VERIFIED/);
+  assert.doesNotMatch(capability, /VITE_.*SAVED.*DRAFT/i);
+  assert.doesNotMatch(capability, /process\.env.*SAVED/i);
+});
 
 test("saved-DRAFT adapter is read-only, tenant-bound, page-bounded and preserves Firestore query order", async () => {
   const adapter = await source(files.adapter);
@@ -49,7 +71,7 @@ test("read model enforces immutable audit parity and exact persisted payload par
   assert.match(model, /parseProClubWeeklyTrainingDraft/);
 });
 
-test("Head Coach UI supports refresh plus bounded load-more without edit capability", async () => {
+test("Head Coach UI gates production saved-DRAFT mounting until the index capability is verified", async () => {
   const component = await source(files.component);
   const workspace = await source(files.workspace);
   assert.match(component, /authority\.staffRole === "HEAD_COACH"/);
@@ -60,7 +82,16 @@ test("Head Coach UI supports refresh plus bounded load-more without edit capabil
   assert.match(component, /Refresh saved drafts/);
   assert.doesNotMatch(component, /\bEdit\b/);
   assert.doesNotMatch(component, /\bSave\b/);
-  assert.match(workspace, /WeeklyTrainingSavedDrafts authority=\{authority\}/);
+  assert.match(workspace, /WEEKLY_TRAINING_SAVED_DRAFT_READ_AVAILABLE \? \(/);
+  assert.match(workspace, /<WeeklyTrainingSavedDrafts authority=\{authority\} \/>/);
+  assert.match(workspace, /<SavedDraftReadPending \/>/);
+  assert.match(workspace, /Saved DRAFT history pending production index verification/);
+});
+
+test("Spark hosting-only release cannot deploy the index and therefore must rely on the fail-closed capability", async () => {
+  const spark = JSON.parse(await source(files.spark));
+  assert.deepEqual(Object.keys(spark).sort(), ["hosting"]);
+  assert.equal(PRODUCTION_WEEKLY_TRAINING_SAVED_DRAFT_INDEX_VERIFIED, false);
 });
 
 test("authority changes cancel stale reads and reset all list/detail loading state", async () => {
