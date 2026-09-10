@@ -50,6 +50,14 @@ test("Head Coach workspace exposes read-only saved drafts without opening Techni
   assert.match(workspace, /authority\.staffRole === "TECHNICAL_DIRECTOR"/);
 });
 
+test("authority changes cancel stale reads and reset loading state", async () => {
+  const component = await source(files.component);
+  assert.match(component, /requestGeneration\.current \+= 1;/);
+  assert.match(component, /setLoadingList\(false\);/);
+  assert.match(component, /setLoadingDetail\(false\);/);
+  assert.match(component, /\[allowed, authority\.organizationId, authority\.userId, loadList\]/);
+});
+
 test("existing root Rules retain the Weekly Training active-member read boundary", async () => {
   const rules = await source(files.rules);
   assert.match(rules, /match \/proClubs\/\{clubId\}\/weeklyTrainingPlans\/\{planId\}/);
