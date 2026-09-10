@@ -7,6 +7,7 @@ const files = {
   composer: "src/components/pro-club/operations/WeeklyTrainingDraftComposer.tsx",
   workspace: "src/components/pro-club/operations/ProClubRoleWorkspace.tsx",
   dashboard: "src/components/pro-club/operations/ProClubOperationsDashboard.tsx",
+  storageBounds: "src/lib/proClubWeeklyTrainingStorageBounds.ts",
 };
 
 async function source(path: string): Promise<string> {
@@ -50,6 +51,17 @@ test("Head Coach composer binds authority and does not expose Technical Director
   ]) {
     assert.doesNotMatch(composer, forbidden);
   }
+});
+
+test("drill reference UI enforces the shared UTF-8 byte budget instead of character-only validation", async () => {
+  const composer = await source(files.composer);
+  const bounds = await source(files.storageBounds);
+  assert.match(bounds, /PRO_CLUB_TRAINING_DRILL_REFERENCE_MAX_UTF8_BYTES = 1_500/);
+  assert.match(bounds, /TextEncoder/);
+  assert.match(composer, /PRO_CLUB_TRAINING_DRILL_REFERENCE_MAX_UTF8_BYTES/);
+  assert.match(composer, /proClubTrainingUtf8ByteLength\(value\)/);
+  assert.match(composer, /maxLength=\{PRO_CLUB_TRAINING_DRILL_REFERENCE_MAX_UTF8_BYTES\}/);
+  assert.match(composer, /UTF-8 bytes/);
 });
 
 test("role workspace passes the canonical authority object to the composer", async () => {
