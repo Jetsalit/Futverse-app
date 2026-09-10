@@ -75,6 +75,21 @@ function exactId(value: unknown): value is string {
   );
 }
 
+function wellFormedUnicode(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      if (index + 1 >= value.length) return false;
+      const low = value.charCodeAt(index + 1);
+      if (low < 0xdc00 || low > 0xdfff) return false;
+      index += 1;
+      continue;
+    }
+    if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) return false;
+  }
+  return true;
+}
+
 function utf8ByteLength(value: string): number {
   return Buffer.byteLength(value, "utf8");
 }
@@ -82,6 +97,7 @@ function utf8ByteLength(value: string): number {
 function storageSafeDrillReference(value: unknown): value is string {
   return (
     exactId(value) &&
+    wellFormedUnicode(value) &&
     value !== "." &&
     value !== ".." &&
     !/^__.*__$/.test(value) &&
