@@ -36,6 +36,16 @@ Schema-v2 Weekly Training DRAFT hierarchy is a fresh-save snapshot. Until a sepa
 
 Any actor or timestamp drift fails closed. The read path and idempotent retry path enforce the same snapshot-integrity contract so the system cannot report a hierarchy as valid in one path and corrupted in another.
 
+## Optional plan-field absence semantics
+
+Trusted fresh-save omits optional plan text fields when no value exists. Therefore persisted schema-v2 snapshots MUST preserve exact presence semantics:
+
+- absent `secondaryObjective` means the field is not stored at all;
+- absent `headCoachNote` means the field is not stored at all;
+- if either field is present, it must be a non-empty canonical string with no leading/trailing whitespace and within its existing length bound;
+- present empty strings, whitespace-only strings, `null`, or values that require normalization are corrupted persisted state and fail closed;
+- read validation and idempotent retry must agree on the same absence/presence contract.
+
 ## Idempotent retry integrity
 
 A retry using the same actor/request ID MUST NOT return `COMPLETED` merely because the server-only request receipt still exists.
@@ -43,7 +53,7 @@ A retry using the same actor/request ID MUST NOT return `COMPLETED` merely becau
 Before returning the original result, the trusted server revalidates the deterministic receipt-bound hierarchy against the same validated request:
 
 - receipt identity, actor, club, request fingerprint, document count, timestamp, and plan ID remain canonical;
-- plan schema, football payload, `sessionCount`, author/status, and fresh-save audit metadata still match the original request;
+- plan schema, football payload, `sessionCount`, author/status, optional-field presence, and fresh-save audit metadata still match the original request;
 - sessions read is bounded to `expected session count + 1` and must contain exactly the deterministic session IDs from the request;
 - each session must match schema v2, order, football payload, `blockCount`, and fresh-save audit metadata;
 - each blocks read is bounded to `expected block count + 1` and must contain exactly the deterministic block IDs from the request;
@@ -96,6 +106,7 @@ The domain parser remains responsible for domain validity, but schema-v2 saved d
 
 This includes, at minimum:
 
+- plan required text plus exact optional-field presence/absence;
 - session `sessionDate`, `startTime`, `location`, `objective`, `phaseOfPlay`, `plannedLoad`, `durationMinutes`;
 - block `blockType`, `title`, `durationMinutes`, optional `drillReference`, and every `coachingPoints` item.
 
@@ -126,6 +137,7 @@ The pure read model additionally requires:
 - canonical field sets only;
 - immutable fresh-save audit parity;
 - exact raw-to-canonical payload parity;
+- exact optional plan-field presence/absence;
 - valid Firestore document identities;
 - deterministic session IDs (`YYYY-MM-DD-HHmm`);
 - deterministic contiguous block IDs (`block-01` ... `block-12`);
