@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Connect the accepted `saveProClubWeeklyTrainingDraftV1` callable to the Pro Club Head Coach workspace and make fresh-DRAFT creation safe under real retry conditions, including the case where the server transaction commits but the first callable response is lost.
+Connect the accepted `saveProClubWeeklyTrainingDraftV1` callable to the Pro Club Head Coach workspace and make fresh-DRAFT creation safe under real retry conditions, including lost responses, concurrent retries, cross-tenant request reuse, and storage-bound validation failures.
 
 ## Exact baseline
 
@@ -57,6 +57,26 @@ The maximum football hierarchy remains 183 documents:
 
 A maximum fresh save therefore performs 184 atomic writes total when the server-only idempotency receipt is included. This remains below the Firestore transaction write ceiling.
 
+## Drill-reference storage-bound contract
+
+`drillReference` represents one Firestore document-ID segment and therefore has a storage boundary, not merely a UI character limit.
+
+Canonical rules:
+- exact non-empty string with no leading/trailing whitespace;
+- no `/` path separator;
+- not `.` or `..`;
+- not a reserved `__.*__` identifier;
+- maximum **1,500 UTF-8 bytes**.
+
+The 1,500-byte boundary must be enforced consistently:
+- shared browser/domain validation uses `TextEncoder` byte length;
+- Head Coach UI prevents edits/pastes that exceed the same UTF-8 byte budget and shows current byte usage;
+- trusted Functions validation independently rechecks the same 1,500-byte storage contract using server UTF-8 byte length before any Firestore transaction write.
+
+`maxLength` in the UI is only a convenience guard and must not be treated as the authoritative storage check because JavaScript character/code-unit length is not UTF-8 byte length. Multibyte Unicode inputs must be covered explicitly.
+
+A storage-unsafe `drillReference` is a definitive validation failure and must surface as `INVALID_ARGUMENT` / editable validation feedback before the write transport or transaction boundary. It must not be misclassified as ambiguous `NETWORK`, and must not lock the draft into an impossible retry loop.
+
 ## Ambiguous client result handling
 
 `NETWORK` and `INVALID_RESPONSE` are treated as ambiguous because the server may have committed successfully even though the browser did not receive a verifiable response.
@@ -69,7 +89,7 @@ When the result is ambiguous:
 - retry submits the same request identity and unchanged payload;
 - success is shown only after the server returns the verified receipt-backed `COMPLETED` result.
 
-For explicit precondition/auth/permission/validation failures, the pending request identity is cleared because the response is definitive and no ambiguous committed state should be assumed.
+For explicit precondition/auth/permission/validation failures, including storage-bound validation failures, the pending request identity is cleared because the response is definitive and no ambiguous committed state should be assumed.
 
 ## Fresh DRAFT only
 
@@ -93,9 +113,10 @@ The accepted domain shape remains:
 Before transport, the client must:
 1. validate canonical UUID v4 request identity;
 2. bind canonical club and workspace actor context;
-3. run the existing `parseProClubWeeklyTrainingDraft` domain parser;
-4. reject invalid canonical data before network invocation;
-5. reject runtime Technical Director note smuggling before transport.
+3. run `parseProClubWeeklyTrainingDraft`;
+4. reject storage-unsafe `drillReference` values, including ASCII and Unicode byte overflow, before network invocation;
+5. reject invalid canonical data before network invocation;
+6. reject runtime Technical Director note smuggling before transport.
 
 Callable errors are normalized to safe client codes. Raw backend errors, auth tokens, App Check tokens, request fingerprints, or submitted payloads must not be logged or rendered.
 
@@ -115,23 +136,27 @@ Any malformed or mismatched response is ambiguous/fail-closed and must not be pr
 
 Before merge:
 1. exact ancestry from `bf4f22446753cb9cdc56909f6acacc4790b5d201`;
-2. exact reviewed scope, including the necessary trusted service/callable idempotency changes;
+2. exact reviewed scope, including trusted service/core and shared domain validation changes required by Codex remediation;
 3. no Firestore Rules, runtime-capability, Firebase config or production deployment change;
 4. no browser Firestore Weekly Training writer/fallback;
 5. client tests for request identity, authority binding, pre-network validation, response validation and ambiguity classification;
-6. callable tests for exact envelope, authenticated actor and existing App Check allowlist boundary;
-7. emulator proof that same request + same payload returns the same plan and only one hierarchy exists;
-8. emulator proof that same actor + same request ID cannot cross from Club A to Club B;
-9. emulator proof that concurrent cross-tenant attempts with the same actor/request commit at most one tenant;
-10. emulator proof that same request + changed payload fails closed;
-11. emulator proof that rollback also removes the actor-global idempotency receipt;
-12. Rules-emulator proof that client read/write of the top-level request registry is denied;
-13. full 14×12 / 183-document football hierarchy remains supported;
-14. root TypeScript and production Vite build pass;
-15. existing Weekly Training domain/callable/parity regressions pass;
-16. independent Team 2 adversarial review;
-17. Codex exact-current-head re-review with no unresolved P1/P2 blocker;
-18. no production deploy/call/write/billing change.
+6. storage-bound tests proving ASCII 1,500 bytes accepted / 1,501 rejected;
+7. storage-bound tests proving multibyte Unicode exactly 1,500 bytes accepted / overflow rejected;
+8. shared/domain and trusted-server storage-bound parity;
+9. UI wiring proof that byte length, not `maxLength` alone, controls drill-reference input;
+10. callable tests for exact envelope, authenticated actor and existing App Check allowlist boundary;
+11. emulator proof that same request + same payload returns the same plan and only one hierarchy exists;
+12. emulator proof that same actor + same request ID cannot cross from Club A to Club B;
+13. emulator proof that concurrent cross-tenant attempts with the same actor/request commit at most one tenant;
+14. emulator proof that same request + changed payload fails closed;
+15. emulator proof that rollback also removes the actor-global idempotency receipt;
+16. Rules-emulator proof that client read/write of the top-level request registry is denied;
+17. full 14×12 / 183-document football hierarchy remains supported;
+18. root TypeScript and production Vite build pass;
+19. existing Weekly Training domain/callable/parity regressions pass;
+20. independent Team 2 adversarial review;
+21. Codex exact-current-head re-review with no unresolved P1/P2 blocker;
+22. no production deploy/call/write/billing change.
 
 ## Safety flags
 
