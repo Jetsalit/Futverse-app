@@ -1,0 +1,60 @@
+name: tmp-audit-weekly-training-saved-draft-audit-pagination-team2-r4
+on:
+  push:
+    branches: [audit/weekly-training-saved-draft-audit-pagination-team2-r4]
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - run: npm ci
+      - run: npm --prefix functions ci
+      - name: Exact product head and audit-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          P=b9a7a00ddc19398d8e41779570e854a5f68257ac
+          B=380050170ad6780c6854925bb6a44d2424fe265b
+          test "$(git merge-base "$B" "$P")" = "$B"
+          git diff --check "$B" "$P"
+          test "$(git rev-parse HEAD~2)" = "$P"
+          mapfile -t audit_delta < <(git diff --name-only "$P" HEAD | sort)
+          expected=(.github/workflows/tmp-audit-weekly-training-saved-draft-audit-pagination-team2-r4.yml tests/audit.weeklyTrainingSavedDraftAuditPagination.team2.test.ts)
+          mapfile -t exp < <(printf '%s\n' "${expected[@]}" | sort)
+          diff -u <(printf '%s\n' "${exp[@]}") <(printf '%s\n' "${audit_delta[@]}")
+      - name: Independent audit parity and pagination adversarial tests
+        run: node --import tsx --test --test-concurrency=1 tests/audit.weeklyTrainingSavedDraftAuditPagination.team2.test.ts
+      - name: Product saved-DRAFT tests
+        run: node --import tsx --test --test-concurrency=1 tests/proClubWeeklyTrainingSavedDraftReadModel.unit.test.ts tests/proClubWeeklyTrainingSavedDraftReadAdapter.unit.test.ts tests/proClubWeeklyTrainingSavedDraftUiWiring.test.ts tests/proClubWeeklyTrainingPersistence.unit.test.ts
+      - name: Existing client regressions
+        run: node --import tsx --test --test-concurrency=1 tests/proClubWeeklyTrainingDraftComposerModel.unit.test.ts tests/proClubWeeklyTrainingDraftSaveClient.unit.test.ts tests/proClubWeeklyTrainingDraftUiWiring.test.ts tests/proClubWeeklyTrainingStorageBounds.unit.test.ts
+      - name: Server validator and callable regressions
+        run: node --import tsx --test --test-concurrency=1 tests/functions.proClubWeeklyTrainingDraftSave.parity.test.ts tests/functions.proClubWeeklyTrainingDraftSave.callable.test.ts
+      - name: Trusted server integrity max-shape and rollback Emulator
+        run: npx firebase emulators:exec --project demo-futverse-weekly-training-audit-pagination-team2-r4 --only firestore "node --import tsx --test --test-concurrency=1 tests/functions.proClubWeeklyTrainingDraftSave.integrityMetadata.test.ts tests/functions.proClubWeeklyTrainingDraftSave.maxShape.test.ts"
+      - name: Firestore Rules regression
+        run: npx firebase emulators:exec --project demo-futverse-pro-club-weekly-training-root --only firestore "node --import tsx --test tests/firestore.pro-club-weekly-training-root.rules.test.ts"
+      - name: Functions build
+        run: npm --prefix functions run build
+      - name: TypeScript
+        run: npm run lint
+      - name: Production build
+        run: npm run build
+      - name: Independent safety boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          B=380050170ad6780c6854925bb6a44d2424fe265b
+          P=b9a7a00ddc19398d8e41779570e854a5f68257ac
+          test -z "$(git diff --name-only "$B" "$P" | grep -E '^(firestore\.rules|\.firebaserc|functions/src/index\.ts|src/config/runtimeCapabilities\.ts)$' || true)"
+          node -e "const f=require('./firebase.json'); if(f.firestore?.rules!=='firestore.rules'||f.firestore?.indexes!=='firestore.indexes.json') process.exit(1); const i=JSON.parse(require('fs').readFileSync('firestore.indexes.json','utf8')); if(!Array.isArray(i.indexes)||i.indexes.length<1) process.exit(1);"
+          echo PRODUCTION_DEPLOYED=NO
+          echo PRODUCTION_CALLABLE_INVOKED=NO
+          echo PRODUCTION_DATA_WRITTEN=NO
+          echo BILLING_PLAN_CHANGED=NO
