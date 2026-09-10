@@ -19,7 +19,6 @@ import {
   buildWeeklyTrainingSavedDraftDetail,
   buildWeeklyTrainingSavedDraftSessionCardinality,
   buildWeeklyTrainingSavedDraftSummary,
-  sortWeeklyTrainingSavedDraftSummaries,
   type WeeklyTrainingSavedDraftAuditBinding,
   type WeeklyTrainingSavedDraftDetail,
   type WeeklyTrainingSavedDraftDocument,
@@ -198,13 +197,13 @@ export async function listHeadCoachWeeklyTrainingSavedDrafts(
     }
     summaries.push(parsed.value);
   }
-  const ordered = sortWeeklyTrainingSavedDraftSummaries(summaries);
-  const last = ordered.at(-1);
+
+  const last = summaries.at(-1);
   const nextCursor = documents.length > WEEKLY_TRAINING_SAVED_DRAFT_PAGE_SIZE && last
     ? { updatedAt: last.updatedAtOrder, planId: last.planId }
     : null;
 
-  return { state: "FOUND", value: { items: ordered, nextCursor } };
+  return { state: "FOUND", value: { items: summaries, nextCursor } };
 }
 
 export async function getHeadCoachWeeklyTrainingSavedDraftDetail(
