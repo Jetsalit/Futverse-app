@@ -1,0 +1,101 @@
+name: PR131 Pro Club Support Read Foundation Acceptance R1
+
+on:
+  pull_request:
+    branches:
+      - feat/pro-club-superadmin-support-read-v1-foundation
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact product head
+        uses: actions/checkout@v4
+        with:
+          ref: c4305442ce19c7fe470eb50975e3a252618df2aa
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Functions dependencies
+        run: npm --prefix functions ci
+
+      - name: Exact provenance and final scope gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=afe640e3f67a46be4de7f3b1b41afa3170b54099
+          HEAD=c4305442ce19c7fe470eb50975e3a252618df2aa
+          test "$(git rev-parse HEAD)" = "$HEAD"
+          test "$(git merge-base "$BASE" "$HEAD")" = "$BASE"
+          test "$(git rev-list --count "$HEAD..$BASE")" = "0"
+          mapfile -t files < <(git diff --name-only "$BASE..$HEAD")
+          test "${#files[@]}" = "5"
+          printf '%s\n' "${files[@]}" | sort > /tmp/actual
+          printf '%s\n' \
+            firestore.rules \
+            src/lib/firestore/proClubSupportReadAdapter.ts \
+            tests/firestore.pro-club-superadmin-support-read.rules.test.ts \
+            tests/firestore.pro-club.rules.test.ts \
+            tests/proClubSuperAdminSupportReadAdapter.unit.test.ts \
+            | sort > /tmp/expected
+          diff -u /tmp/expected /tmp/actual
+          test -z "$(git diff --name-only "$BASE..$HEAD" | grep '^\.github/' || true)"
+          git diff --check "$BASE..$HEAD"
+
+      - name: Contract regression
+        run: node --import tsx --test tests/proClubSuperAdminSupportModeV1Contract.test.ts
+
+      - name: Support read adapter unit tests
+        run: node --import tsx --test tests/proClubSuperAdminSupportReadAdapter.unit.test.ts
+
+      - name: Support read Firestore rules tests
+        run: firebase emulators:exec --project demo-futverse-pro-club-support-read-v1 --only firestore "node --import tsx --test --test-concurrency=1 tests/firestore.pro-club-superadmin-support-read.rules.test.ts"
+
+      - name: Existing Pro Club emulator regression
+        run: npm run test:pro-club-emulator-regression
+
+      - name: Functions build
+        run: npm --prefix functions run build
+
+      - name: TypeScript
+        run: npm run lint
+
+      - name: Production build
+        run: npm run build
+
+      - name: Static authority and safety boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=afe640e3f67a46be4de7f3b1b41afa3170b54099
+          HEAD=c4305442ce19c7fe470eb50975e3a252618df2aa
+          test "$(git show "$HEAD:firestore.rules" | grep -c 'PRO_CLUB_SUPERADMIN_SUPPORT_READ_V1')" = "1"
+          if git diff "$BASE..$HEAD" -- firestore.rules | grep -E '^\+.*allow .*\b(create|update|delete|write)\b'; then
+            echo 'Unexpected added write permission in support-read slice.' >&2
+            exit 1
+          fi
+          test -z "$(git diff --name-only "$BASE..$HEAD" | grep -E '^(functions/|firebase\.json$|firebase\.spark\.json$|firestore\.indexes\.json$|package\.json$)' || true)"
+          test -z "$(git status --porcelain)"
+          echo 'PR131_SUPPORT_READ_FOUNDATION_ACCEPTANCE=PASS'
+          echo 'DOMAIN_MUTATION_AUTHORITY=NONE'
+          echo 'PRODUCTION_DEPLOYED=NO'
+          echo 'PRODUCTION_HTTP_CALLED=NO'
+          echo 'PRODUCTION_DATA_READ_WRITE=NO'
