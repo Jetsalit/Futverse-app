@@ -89,6 +89,36 @@ test("saved-DRAFT summary binds exact club, author and immutable fresh-save audi
   assert.deepEqual(result.value.updatedAtOrder, BASE_STAMP);
 });
 
+test("summary accepts present non-empty optional plan snapshot fields exactly", () => {
+  const result = buildWeeklyTrainingSavedDraftSummary({
+    clubId: "club-a",
+    actorUid: "hc-a",
+    document: plan({ secondaryObjective: "Improve third-man support", headCoachNote: "Keep distances compact" }),
+  });
+  assert.equal(result.state, "VALID");
+  if (result.state !== "VALID") return;
+  assert.equal(result.value.secondaryObjective, "Improve third-man support");
+  assert.equal(result.value.headCoachNote, "Keep distances compact");
+});
+
+test("summary rejects persisted empty or non-canonical optional plan fields", () => {
+  for (const overrides of [
+    { secondaryObjective: "" },
+    { headCoachNote: "" },
+    { secondaryObjective: "   " },
+    { headCoachNote: "\t" },
+    { secondaryObjective: " Improve third-man support" },
+    { headCoachNote: "Keep distances compact " },
+    { secondaryObjective: null },
+    { headCoachNote: null },
+  ]) {
+    assert.equal(
+      buildWeeklyTrainingSavedDraftSummary({ clubId: "club-a", actorUid: "hc-a", document: plan(overrides) }).state,
+      "INVALID",
+    );
+  }
+});
+
 test("summary fails closed for binding, lifecycle, field, cardinality and audit drift", () => {
   for (const document of [
     plan({ authorUid: "hc-b" }),
