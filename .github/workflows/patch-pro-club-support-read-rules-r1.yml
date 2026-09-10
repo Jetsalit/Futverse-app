@@ -1,0 +1,97 @@
+name: Patch Pro Club Support Read Rules R1
+
+on:
+  pull_request:
+    branches:
+      - feat/pro-club-superadmin-support-read-v1-foundation
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.action == 'opened'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact target branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/pro-club-superadmin-support-read-v1-foundation
+          fetch-depth: 0
+
+      - name: Exact target-head gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "b8119bd1b939608a86ccbe6572b32c462f585e4d"
+          test -z "$(git status --porcelain)"
+
+      - name: Apply single anchored rules insertion
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('firestore.rules')
+          text = p.read_text(encoding='utf-8')
+          anchor = "    match /proPlayers/{proPlayerId} {"
+          if text.count(anchor) != 1:
+              raise SystemExit('ANCHOR_COUNT_NOT_ONE')
+          marker = 'PRO_CLUB_SUPERADMIN_SUPPORT_READ_V1'
+          if marker in text:
+              raise SystemExit('MARKER_ALREADY_PRESENT')
+          block = r'''    // PRO_CLUB_SUPERADMIN_SUPPORT_READ_V1
+    // Exact-target diagnostic reads only. This overlap grants no create,
+    // update, delete, tenant membership, staff, or technical authority.
+    match /proClubs/{clubId} {
+      allow get: if isSuperAdmin();
+
+      match /members/{uid} {
+        allow get: if isSuperAdmin();
+      }
+
+      match /staff/{uid} {
+        allow get: if isSuperAdmin();
+      }
+
+      match /technicalGovernance/current {
+        allow get: if isSuperAdmin();
+      }
+
+      match /weeklyTrainingPlans/{planId} {
+        allow get, list: if isSuperAdmin();
+
+        match /sessions/{sessionId} {
+          allow get, list: if isSuperAdmin();
+
+          match /blocks/{blockId} {
+            allow get, list: if isSuperAdmin();
+          }
+        }
+      }
+    }
+
+'''
+          p.write_text(text.replace(anchor, block + anchor, 1), encoding='utf-8')
+
+      - name: Static write-boundary gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git diff -- firestore.rules
+          test "$(git diff --name-only | wc -l)" = "1"
+          test "$(git diff --name-only)" = "firestore.rules"
+          if git diff -- firestore.rules | grep -E '^\+.*allow .*\b(create|update|delete|write)\b'; then
+            echo 'Unexpected write permission introduced' >&2
+            exit 1
+          fi
+
+      - name: Commit and fast-forward push target branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add firestore.rules
+          git commit -m 'feat(pro-club): add SuperAdmin support read-only rule envelope'
+          git push origin HEAD:feat/pro-club-superadmin-support-read-v1-foundation
