@@ -111,7 +111,11 @@ test("support actor cannot become Technical Authority Resolver candidate", () =>
   );
   assert.match(
     technicalGovernance,
-    /candidate\.staffRole === "HEAD_COACH"/,
+    /config\.authorityMode === "HEAD_COACH"/,
+  );
+  assert.match(
+    technicalGovernance,
+    /resolveSingleRole\(\s*"HEAD_COACH"/,
   );
   assert.match(
     contract,
