@@ -1,0 +1,60 @@
+name: tmp-audit-weekly-training-saved-draft-retry-integrity-team2-r3
+on:
+  push:
+    branches: [audit/weekly-training-saved-draft-retry-integrity-team2-r3]
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - run: npm ci
+      - run: npm --prefix functions ci
+      - name: Exact product head and audit-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          P=1f46a4e3017706d80b74950e1acb682580b3ba87
+          test "$(git merge-base "$P" HEAD)" = "$P"
+          mapfile -t audit_delta < <(git diff --name-only "$P" HEAD | sort)
+          expected=(
+            .github/workflows/tmp-audit-weekly-training-saved-draft-retry-integrity-team2-r3.yml
+            tests/audit.weeklyTrainingSavedDraftRetryIntegrity.team2.test.ts
+          )
+          mapfile -t exp < <(printf '%s\n' "${expected[@]}" | sort)
+          test "${#audit_delta[@]}" -eq 2
+          diff -u <(printf '%s\n' "${exp[@]}") <(printf '%s\n' "${audit_delta[@]}")
+      - name: Independent retry-integrity adversarial Emulator audit
+        run: npx firebase emulators:exec --project demo-futverse-weekly-training-retry-team2-r3 --only firestore "node --import tsx --test --test-concurrency=1 tests/audit.weeklyTrainingSavedDraftRetryIntegrity.team2.test.ts"
+      - name: Product saved-DRAFT and persistence tests
+        run: node --import tsx --test --test-concurrency=1 tests/proClubWeeklyTrainingSavedDraftReadModel.unit.test.ts tests/proClubWeeklyTrainingSavedDraftReadAdapter.unit.test.ts tests/proClubWeeklyTrainingSavedDraftUiWiring.test.ts tests/proClubWeeklyTrainingPersistence.unit.test.ts
+      - name: Existing client regressions
+        run: node --import tsx --test --test-concurrency=1 tests/proClubWeeklyTrainingDraftComposerModel.unit.test.ts tests/proClubWeeklyTrainingDraftSaveClient.unit.test.ts tests/proClubWeeklyTrainingDraftUiWiring.test.ts tests/proClubWeeklyTrainingStorageBounds.unit.test.ts
+      - name: Server validator and callable regressions
+        run: node --import tsx --test --test-concurrency=1 tests/functions.proClubWeeklyTrainingDraftSave.parity.test.ts tests/functions.proClubWeeklyTrainingDraftSave.callable.test.ts
+      - name: Trusted server product integrity max-shape and rollback Emulator
+        run: npx firebase emulators:exec --project demo-futverse-weekly-training-retry-product-r3 --only firestore "node --import tsx --test --test-concurrency=1 tests/functions.proClubWeeklyTrainingDraftSave.integrityMetadata.test.ts tests/functions.proClubWeeklyTrainingDraftSave.maxShape.test.ts"
+      - name: Firestore Rules regression
+        run: npx firebase emulators:exec --project demo-futverse-pro-club-weekly-training-root --only firestore "node --import tsx --test tests/firestore.pro-club-weekly-training-root.rules.test.ts"
+      - name: Functions build
+        run: npm --prefix functions run build
+      - name: TypeScript
+        run: npm run lint
+      - name: Production build
+        run: npm run build
+      - name: Independent safety boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          B=380050170ad6780c6854925bb6a44d2424fe265b
+          P=1f46a4e3017706d80b74950e1acb682580b3ba87
+          test -z "$(git diff --name-only "$B" "$P" | grep -E '^(firestore\.rules|firebase\.json|\.firebaserc|functions/src/index\.ts|src/config/runtimeCapabilities\.ts)$' || true)"
+          echo PRODUCTION_DEPLOYED=NO
+          echo PRODUCTION_CALLABLE_INVOKED=NO
+          echo PRODUCTION_DATA_WRITTEN=NO
+          echo BILLING_PLAN_CHANGED=NO
