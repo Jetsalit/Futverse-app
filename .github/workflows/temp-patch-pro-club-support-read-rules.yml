@@ -1,4 +1,4 @@
-name: TEMP Patch Pro Club Support Read Rules
+name: TEMP Align Pro Club Support Read Regression
 
 on:
   push:
@@ -26,66 +26,59 @@ jobs:
           test "$(git rev-parse HEAD)" = "${{ github.sha }}"
           test -z "$(git status --porcelain)"
 
-      - name: Apply single anchored rules insertion
+      - name: Replace only legacy test 3 expectation
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          p = Path("firestore.rules")
+          p = Path("tests/firestore.pro-club.rules.test.ts")
           text = p.read_text(encoding="utf-8")
-          anchor = "    match /proPlayers/{proPlayerId} {"
-          marker = "PRO_CLUB_SUPERADMIN_SUPPORT_READ_V1"
-          if text.count(anchor) != 1:
-              raise SystemExit("ANCHOR_COUNT_NOT_ONE")
-          if marker in text:
-              raise SystemExit("MARKER_ALREADY_PRESENT")
+          start_marker = 'test(\n  "3. global SUPERADMIN without Pro Club membership gets no bypass",'
+          end_marker = '\n\ntest(\n  "4. Academy ADMIN without Pro Club membership gets no fallback",'
+          if text.count(start_marker) != 1 or text.count(end_marker) != 1:
+              raise SystemExit("LEGACY_TEST_ANCHOR_COUNT_NOT_ONE")
+          start = text.index(start_marker)
+          end = text.index(end_marker, start)
           lines = [
-              "    // PRO_CLUB_SUPERADMIN_SUPPORT_READ_V1",
-              "    // Exact-target diagnostic reads only. This overlap grants no create,",
-              "    // update, delete, tenant membership, staff, or technical authority.",
-              "    match /proClubs/{clubId} {",
-              "      allow get: if isSuperAdmin();",
-              "",
-              "      match /members/{uid} {",
-              "        allow get: if isSuperAdmin();",
-              "      }",
-              "",
-              "      match /staff/{uid} {",
-              "        allow get: if isSuperAdmin();",
-              "      }",
-              "",
-              "      match /technicalGovernance/current {",
-              "        allow get: if isSuperAdmin();",
-              "      }",
-              "",
-              "      match /weeklyTrainingPlans/{planId} {",
-              "        allow get, list: if isSuperAdmin();",
-              "",
-              "        match /sessions/{sessionId} {",
-              "          allow get, list: if isSuperAdmin();",
-              "",
-              "          match /blocks/{blockId} {",
-              "            allow get, list: if isSuperAdmin();",
-              "          }",
-              "        }",
-              "      }",
-              "    }",
-              "",
+              'test(',
+              '  "3. ACTIVE global SUPERADMIN gets exact Pro Club support read without tenant discovery",',
+              '  async () => {',
+              '    const db = authedDb(GLOBAL_SUPERADMIN);',
+              '',
+              '    const clubSnapshot = await assertSucceeds(',
+              '      getDoc(',
+              '        doc(',
+              '          db,',
+              '          "proClubs",',
+              '          CLUB_A,',
+              '        ),',
+              '      ),',
+              '    );',
+              '',
+              '    assert.equal(clubSnapshot.data()?.name, "Club A");',
+              '',
+              '    await assertFails(',
+              '      getDocs(',
+              '        collection(',
+              '          db,',
+              '          "proClubs",',
+              '        ),',
+              '      ),',
+              '    );',
+              '  },',
+              ');',
           ]
-          block = "\n".join(lines) + "\n"
-          p.write_text(text.replace(anchor, block + anchor, 1), encoding="utf-8")
+          replacement = "\n".join(lines)
+          p.write_text(text[:start] + replacement + text[end:], encoding="utf-8")
           PY
 
-      - name: Static mutation-boundary gate
+      - name: Exact changed-file gate
         shell: bash
         run: |
           set -euo pipefail
           git diff --check
-          test "$(git diff --name-only)" = "firestore.rules"
-          if git diff -- firestore.rules | grep -E '^\+.*allow .*\b(create|update|delete|write)\b'; then
-            echo 'Unexpected write permission introduced' >&2
-            exit 1
-          fi
+          test "$(git diff --name-only)" = "tests/firestore.pro-club.rules.test.ts"
+          git diff -- tests/firestore.pro-club.rules.test.ts
 
       - name: Commit fast-forward to product branch
         shell: bash
@@ -93,6 +86,6 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add firestore.rules
-          git commit -m 'feat(pro-club): add SuperAdmin support read-only rule envelope'
+          git add tests/firestore.pro-club.rules.test.ts
+          git commit -m 'test(pro-club): align SuperAdmin exact support read expectation'
           git push origin HEAD:feat/pro-club-superadmin-support-read-v1-foundation
