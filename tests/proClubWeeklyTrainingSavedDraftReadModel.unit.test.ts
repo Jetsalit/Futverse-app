@@ -4,7 +4,6 @@ import { test } from "node:test";
 import {
   buildWeeklyTrainingSavedDraftDetail,
   buildWeeklyTrainingSavedDraftSummary,
-  sortWeeklyTrainingSavedDraftSummaries,
 } from "../src/lib/proClubWeeklyTrainingSavedDraftReadModel";
 
 const stamp = (seconds: number, nanoseconds = 0) => ({ seconds, nanoseconds });
@@ -72,6 +71,15 @@ function block(orderIndex = 0, overrides: Record<string, unknown> = {}) {
   };
 }
 
+function detailWith(sessionOverrides: Record<string, unknown> = {}, blockOverrides: Record<string, unknown> = {}) {
+  return buildWeeklyTrainingSavedDraftDetail({
+    clubId: "club-a",
+    actorUid: "hc-a",
+    planDocument: plan(),
+    sessions: [{ document: session(0, sessionOverrides), blocks: [block(0, blockOverrides)] }],
+  });
+}
+
 test("saved-DRAFT summary binds exact club, author and immutable fresh-save audit", () => {
   const result = buildWeeklyTrainingSavedDraftSummary({ clubId: "club-a", actorUid: "hc-a", document: plan() });
   assert.equal(result.state, "VALID");
@@ -93,29 +101,47 @@ test("summary fails closed for binding, lifecycle, field, cardinality and audit 
     plan({ updatedBy: "hc-b" }),
     plan({ updatedAt: stamp(BASE_STAMP.seconds, BASE_STAMP.nanoseconds + 1) }),
     plan({ squadLabel: "x".repeat(101) }),
+    plan({ squadLabel: " First Team" }),
+    plan({ mainObjective: "Build through pressure " }),
   ]) {
     assert.equal(buildWeeklyTrainingSavedDraftSummary({ clubId: "club-a", actorUid: "hc-a", document }).state, "INVALID");
   }
 });
 
 test("detail reconstructs canonical football draft only when child audit matches plan snapshot", () => {
-  const result = buildWeeklyTrainingSavedDraftDetail({
-    clubId: "club-a",
-    actorUid: "hc-a",
-    planDocument: plan(),
-    sessions: [{ document: session(), blocks: [block()] }],
-  });
-  assert.equal(result.state, "VALID");
+  assert.equal(detailWith().state, "VALID");
 });
 
 test("detail rejects child actor or timestamp audit divergence", () => {
-  for (const sessions of [
-    [{ document: session(0, { updatedBy: "hc-b" }), blocks: [block()] }],
-    [{ document: session(0, { updatedAt: stamp(BASE_STAMP.seconds, BASE_STAMP.nanoseconds + 1) }), blocks: [block()] }],
-    [{ document: session(), blocks: [block(0, { createdBy: "hc-b" })] }],
-    [{ document: session(), blocks: [block(0, { updatedAt: stamp(BASE_STAMP.seconds, BASE_STAMP.nanoseconds + 1) })] }],
+  for (const result of [
+    detailWith({ updatedBy: "hc-b" }),
+    detailWith({ updatedAt: stamp(BASE_STAMP.seconds, BASE_STAMP.nanoseconds + 1) }),
+    detailWith({}, { createdBy: "hc-b" }),
+    detailWith({}, { updatedAt: stamp(BASE_STAMP.seconds, BASE_STAMP.nanoseconds + 1) }),
   ]) {
-    assert.equal(buildWeeklyTrainingSavedDraftDetail({ clubId: "club-a", actorUid: "hc-a", planDocument: plan(), sessions }).state, "INVALID");
+    assert.equal(result.state, "INVALID");
+  }
+});
+
+test("detail rejects parser-normalizable persisted session text", () => {
+  for (const overrides of [
+    { location: " Training Ground A" },
+    { location: "Training Ground A " },
+    { objective: " Progress through two pressing lines" },
+    { objective: "Progress through two pressing lines " },
+  ]) {
+    assert.equal(detailWith(overrides).state, "INVALID");
+  }
+});
+
+test("detail rejects parser-normalizable persisted block text and coaching points", () => {
+  for (const overrides of [
+    { title: " Build-up block 1" },
+    { title: "Build-up block 1 " },
+    { coachingPoints: [" Create the third-player option"] },
+    { coachingPoints: ["Create the third-player option "] },
+  ]) {
+    assert.equal(detailWith({}, overrides).state, "INVALID");
   }
 });
 
@@ -130,12 +156,14 @@ test("detail rejects reordered and non-deterministic child hierarchy", () => {
   assert.equal(buildWeeklyTrainingSavedDraftDetail({ clubId: "club-a", actorUid: "hc-a", planDocument: plan(), sessions: [{ document: session(), blocks: [{ ...block(), id: "block-02" }] }] }).state, "INVALID");
 });
 
-test("summary ordering preserves Firestore nanosecond precision and plan-id tie-break", () => {
-  const olderStamp = stamp(1_757_280_100, 100_000);
-  const newerStamp = stamp(1_757_280_100, 900_000);
-  const older = buildWeeklyTrainingSavedDraftSummary({ clubId: "club-a", actorUid: "hc-a", document: { ...plan({ createdAt: olderStamp, updatedAt: olderStamp }), id: "plan-z" } });
-  const newer = buildWeeklyTrainingSavedDraftSummary({ clubId: "club-a", actorUid: "hc-a", document: { ...plan({ createdAt: newerStamp, updatedAt: newerStamp }), id: "plan-a" } });
-  assert.equal(older.state, "VALID"); assert.equal(newer.state, "VALID");
-  if (older.state !== "VALID" || newer.state !== "VALID") return;
-  assert.deepEqual(sortWeeklyTrainingSavedDraftSummaries([older.value, newer.value]).map((item) => item.planId), ["plan-a", "plan-z"]);
+test("summary preserves exact Firestore timestamp precision for cursor use", () => {
+  const exact = stamp(1_757_280_100, 987_654_321);
+  const result = buildWeeklyTrainingSavedDraftSummary({
+    clubId: "club-a",
+    actorUid: "hc-a",
+    document: plan({ createdAt: exact, updatedAt: exact }),
+  });
+  assert.equal(result.state, "VALID");
+  if (result.state !== "VALID") return;
+  assert.deepEqual(result.value.updatedAtOrder, exact);
 });
