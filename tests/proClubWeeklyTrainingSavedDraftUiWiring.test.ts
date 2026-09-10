@@ -50,9 +50,9 @@ test("Head Coach workspace exposes read-only saved drafts without opening Techni
   assert.match(workspace, /authority\.staffRole === "TECHNICAL_DIRECTOR"/);
 });
 
-test("existing root Rules retain active-member read boundary and no new rules file is required", async () => {
+test("existing root Rules retain the Weekly Training active-member read boundary", async () => {
   const rules = await source(files.rules);
-  assert.match(rules, /match \/weeklyTrainingPlans\/\{planId\}/);
+  assert.match(rules, /match \/proClubs\/\{clubId\}\/weeklyTrainingPlans\/\{planId\}/);
   assert.match(rules, /allow get, list: if currentUserIsActive\(\)/);
-  assert.match(rules, /hasActiveProClubMembership\(clubId\)/);
+  assert.match(rules, /proClubWeeklyTrainingActiveMemberV1\(clubId, request\.auth\.uid\)/);
 });
