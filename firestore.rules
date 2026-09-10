@@ -2871,6 +2871,37 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
       }
     }
 
+    // PRO_CLUB_SUPERADMIN_SUPPORT_READ_V1
+    // Exact-target diagnostic reads only. This overlap grants no create,
+    // update, delete, tenant membership, staff, or technical authority.
+    match /proClubs/{clubId} {
+      allow get: if isSuperAdmin();
+
+      match /members/{uid} {
+        allow get: if isSuperAdmin();
+      }
+
+      match /staff/{uid} {
+        allow get: if isSuperAdmin();
+      }
+
+      match /technicalGovernance/current {
+        allow get: if isSuperAdmin();
+      }
+
+      match /weeklyTrainingPlans/{planId} {
+        allow get, list: if isSuperAdmin();
+
+        match /sessions/{sessionId} {
+          allow get, list: if isSuperAdmin();
+
+          match /blocks/{blockId} {
+            allow get, list: if isSuperAdmin();
+          }
+        }
+      }
+    }
+
     match /proPlayers/{proPlayerId} {
       allow read: if isSignedIn();
       allow create, update: if isAdmin() && hasNoStoredDocumentId();
