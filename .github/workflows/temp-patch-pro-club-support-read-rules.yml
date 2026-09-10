@@ -27,50 +27,54 @@ jobs:
           test -z "$(git status --porcelain)"
 
       - name: Apply single anchored rules insertion
-        shell: python
+        shell: bash
         run: |
+          python - <<'PY'
           from pathlib import Path
-          p = Path('firestore.rules')
-          text = p.read_text(encoding='utf-8')
+          p = Path("firestore.rules")
+          text = p.read_text(encoding="utf-8")
           anchor = "    match /proPlayers/{proPlayerId} {"
-          marker = 'PRO_CLUB_SUPERADMIN_SUPPORT_READ_V1'
+          marker = "PRO_CLUB_SUPERADMIN_SUPPORT_READ_V1"
           if text.count(anchor) != 1:
-              raise SystemExit('ANCHOR_COUNT_NOT_ONE')
+              raise SystemExit("ANCHOR_COUNT_NOT_ONE")
           if marker in text:
-              raise SystemExit('MARKER_ALREADY_PRESENT')
-          block = r'''    // PRO_CLUB_SUPERADMIN_SUPPORT_READ_V1
-    // Exact-target diagnostic reads only. This overlap grants no create,
-    // update, delete, tenant membership, staff, or technical authority.
-    match /proClubs/{clubId} {
-      allow get: if isSuperAdmin();
-
-      match /members/{uid} {
-        allow get: if isSuperAdmin();
-      }
-
-      match /staff/{uid} {
-        allow get: if isSuperAdmin();
-      }
-
-      match /technicalGovernance/current {
-        allow get: if isSuperAdmin();
-      }
-
-      match /weeklyTrainingPlans/{planId} {
-        allow get, list: if isSuperAdmin();
-
-        match /sessions/{sessionId} {
-          allow get, list: if isSuperAdmin();
-
-          match /blocks/{blockId} {
-            allow get, list: if isSuperAdmin();
-          }
-        }
-      }
-    }
-
-'''
-          p.write_text(text.replace(anchor, block + anchor, 1), encoding='utf-8')
+              raise SystemExit("MARKER_ALREADY_PRESENT")
+          lines = [
+              "    // PRO_CLUB_SUPERADMIN_SUPPORT_READ_V1",
+              "    // Exact-target diagnostic reads only. This overlap grants no create,",
+              "    // update, delete, tenant membership, staff, or technical authority.",
+              "    match /proClubs/{clubId} {",
+              "      allow get: if isSuperAdmin();",
+              "",
+              "      match /members/{uid} {",
+              "        allow get: if isSuperAdmin();",
+              "      }",
+              "",
+              "      match /staff/{uid} {",
+              "        allow get: if isSuperAdmin();",
+              "      }",
+              "",
+              "      match /technicalGovernance/current {",
+              "        allow get: if isSuperAdmin();",
+              "      }",
+              "",
+              "      match /weeklyTrainingPlans/{planId} {",
+              "        allow get, list: if isSuperAdmin();",
+              "",
+              "        match /sessions/{sessionId} {",
+              "          allow get, list: if isSuperAdmin();",
+              "",
+              "          match /blocks/{blockId} {",
+              "            allow get, list: if isSuperAdmin();",
+              "          }",
+              "        }",
+              "      }",
+              "    }",
+              "",
+          ]
+          block = "\n".join(lines) + "\n"
+          p.write_text(text.replace(anchor, block + anchor, 1), encoding="utf-8")
+          PY
 
       - name: Static mutation-boundary gate
         shell: bash
