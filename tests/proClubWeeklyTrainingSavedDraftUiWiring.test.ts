@@ -16,7 +16,7 @@ async function source(path: string): Promise<string> {
   return await readFile(path, "utf8");
 }
 
-test("saved-DRAFT adapter is read-only, tenant-bound, page-bounded and cursor ordered", async () => {
+test("saved-DRAFT adapter is read-only, tenant-bound, page-bounded and preserves Firestore query order", async () => {
   const adapter = await source(files.adapter);
   assert.match(adapter, /WEEKLY_TRAINING_SAVED_DRAFT_PAGE_SIZE = 20/);
   assert.match(adapter, /where\("authorUid", "==", actorUid\)/);
@@ -25,6 +25,9 @@ test("saved-DRAFT adapter is read-only, tenant-bound, page-bounded and cursor or
   assert.match(adapter, /orderBy\(documentId\(\), "desc"\)/);
   assert.match(adapter, /startAfter\(/);
   assert.match(adapter, /WEEKLY_TRAINING_SAVED_DRAFT_PAGE_SIZE \+ 1/);
+  assert.match(adapter, /const last = summaries\.at\(-1\)/);
+  assert.doesNotMatch(adapter, /localeCompare/);
+  assert.doesNotMatch(adapter, /sortWeeklyTrainingSavedDraftSummaries/);
   assert.match(adapter, /planSummary\.value\.sessionCount \+ 1/);
   assert.match(adapter, /expectedBlockCount \+ 1/);
   for (const forbidden of [/\bsetDoc\b/, /\baddDoc\b/, /\bupdateDoc\b/, /\bdeleteDoc\b/, /\bwriteBatch\b/, /httpsCallable/]) {
@@ -32,12 +35,15 @@ test("saved-DRAFT adapter is read-only, tenant-bound, page-bounded and cursor or
   }
 });
 
-test("read model enforces immutable fresh-save audit parity across hierarchy", async () => {
+test("read model enforces immutable audit parity and exact persisted payload parity", async () => {
   const model = await source(files.model);
   assert.match(model, /value\.createdBy !== value\.updatedBy/);
   assert.match(model, /sameTimestampOrder\(createdAt\.order, updatedAt\.order\)/);
   assert.match(model, /actorUid: summaryResult\.value\.authorUid/);
   assert.match(model, /timestamp: summaryResult\.value\.createdAtOrder/);
+  assert.match(model, /sessionPayloadMatchesPersisted/);
+  assert.match(model, /blockPayloadMatchesPersisted/);
+  assert.match(model, /sameStringArray/);
   assert.match(model, /parseSession\(entry\.document, expectedAudit\)/);
   assert.match(model, /parseBlock\(document, expectedAudit\)/);
   assert.match(model, /parseProClubWeeklyTrainingDraft/);
