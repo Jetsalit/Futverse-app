@@ -64,7 +64,7 @@ This extra integrity read path runs only for an idempotent retry. The normal fre
 
 ## Runtime audience
 
-V1 UI is exposed only when the resolved Pro Club authority is all of:
+V1 read UI is eligible only when the resolved Pro Club authority is all of:
 
 - organization type `PRO_CLUB`;
 - organization status `ACTIVE`;
@@ -72,7 +72,7 @@ V1 UI is exposed only when the resolved Pro Club authority is all of:
 - canonical membership authority resolved active;
 - effective staff role `HEAD_COACH`.
 
-The list is constrained to DRAFT plan documents authored by the current resolved Head Coach UID. The UI never accepts a free-form club ID or actor UID.
+In addition, production mounting requires the explicit saved-DRAFT index capability described below. The list is constrained to DRAFT plan documents authored by the current resolved Head Coach UID. The UI never accepts a free-form club ID or actor UID.
 
 ## Canonical read paths
 
@@ -121,7 +121,23 @@ The paginated history query requires a declared composite index for collection `
 3. `updatedAt DESCENDING`
 4. `__name__ DESCENDING`
 
-The index is version-controlled in `firestore.indexes.json`, and `firebase.json` references that file. This PR does **not** deploy the index. A future production deployment gate must deploy/verify the index before relying on this query in production.
+The index is version-controlled in `firestore.indexes.json`, and `firebase.json` references that file.
+
+## Production index activation gate
+
+The approved Spark production release remains Hosting-only by design. `firebase.spark.json` MUST NOT be expanded to deploy Firestore resources merely to make this feature work.
+
+Therefore Saved-DRAFT history is fail-closed in production until a separate, explicitly authorized production index operation has completed. The activation sequence is:
+
+1. merge/review the index definition without enabling production Saved-DRAFT history;
+2. under a separate production authorization, deploy the reviewed `firestore.indexes.json` to the pinned project `futverse-d7872`;
+3. verify that the exact composite index reports ready/serving and that a read-only production query verification succeeds;
+4. only after steps 2–3 succeed, make a separate reviewed source change setting `PRODUCTION_WEEKLY_TRAINING_SAVED_DRAFT_INDEX_VERIFIED` to `true`;
+5. only then may the normal Hosting-only release publish a production build that mounts `WeeklyTrainingSavedDrafts`.
+
+The capability is intentionally source-controlled and cannot be enabled by a Vite/runtime environment variable. In DEV/emulator it remains available for testing. When the production capability is false, the Head Coach workspace renders an informational pending card and does not mount or execute the saved-DRAFT history query.
+
+This PR does **not** deploy the index and keeps `PRODUCTION_WEEKLY_TRAINING_SAVED_DRAFT_INDEX_VERIFIED == false`.
 
 ## Detail semantics
 
@@ -172,6 +188,8 @@ The UI shows generic safe failure copy and does not expose raw Firebase error pa
 - Idempotent retries fail closed if receipt-bound hierarchy no longer exactly matches the original validated request.
 - History queries are bounded and cursor-paginated using authoritative Firestore order.
 - Browser list validation is order-preserving and does not implement a second document-key comparator.
+- Production Saved-DRAFT history remains unavailable until the reviewed index has been deployed and independently verified.
+- Spark Hosting-only deployment cannot bypass the source-controlled index capability.
 
 ## Explicitly out of scope
 
@@ -183,6 +201,8 @@ The UI shows generic safe failure copy and does not expose raw Firebase error pa
 - today's-session derivation/launcher;
 - new Firestore Rules;
 - new callable/function entrypoints;
+- production index deployment;
+- production capability activation;
 - production deployment or production data mutation.
 
 ## Production safety
@@ -191,7 +211,9 @@ The UI shows generic safe failure copy and does not expose raw Firebase error pa
 `FIRESTORE_INDEX_CONFIG_CHANGED=YES_BRANCH_ONLY`
 `FIREBASE_CONFIG_CHANGED=YES_BRANCH_ONLY`
 `FUNCTIONS_ENTRYPOINT_CHANGED=NO`
-`RUNTIME_CAPABILITY_CHANGED=NO`
+`RUNTIME_CAPABILITY_CHANGED=YES_BRANCH_ONLY_FAIL_CLOSED`
+`PRODUCTION_SAVED_DRAFT_READ_ENABLED=NO`
+`PRODUCTION_INDEX_DEPLOYED=NO`
 `PRODUCTION_DEPLOYED=NO`
 `PRODUCTION_CALLABLE_INVOKED=NO`
 `PRODUCTION_DATA_WRITTEN=NO`
