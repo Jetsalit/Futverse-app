@@ -1,0 +1,89 @@
+name: PR141 Pro Club Player Squad Persistence Contract Acceptance R1
+
+on:
+  push:
+    branches:
+      - verify/pr141-pro-club-player-squad-persistence-contract-r1
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact product head
+        uses: actions/checkout@v4
+        with:
+          ref: 194a3b8f588d6a6f45219b71dee7898fd535f25e
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Functions dependencies
+        run: npm --prefix functions ci
+
+      - name: Exact provenance and scope gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=a7bacbebf6567a25651ebf392e799d2133276fff
+          HEAD=194a3b8f588d6a6f45219b71dee7898fd535f25e
+          test "$(git rev-parse HEAD)" = "$HEAD"
+          test "$(git merge-base "$BASE" "$HEAD")" = "$BASE"
+          test "$(git rev-list --count "$BASE..$HEAD")" = "2"
+          test "$(git rev-list --count "$HEAD..$BASE")" = "0"
+          mapfile -t files < <(git diff --name-only "$BASE..$HEAD")
+          test "${#files[@]}" = "2"
+          printf '%s\n' "${files[@]}" | sort > /tmp/actual
+          printf '%s\n' \
+            docs/PRO_CLUB_PLAYER_SQUAD_V1_PERSISTENCE_ARCHITECTURE_FREEZE.md \
+            tests/proClubPlayerSquadV1PersistenceContract.test.ts \
+            | sort > /tmp/expected
+          diff -u /tmp/expected /tmp/actual
+          git diff --check "$BASE..$HEAD"
+
+      - name: Persistence architecture contract tests
+        run: node --import tsx --test tests/proClubPlayerSquadV1PersistenceContract.test.ts
+
+      - name: Parent Player Squad pure domain regression
+        run: node --import tsx --test tests/proClubPlayerSquad.unit.test.ts
+
+      - name: Parent Player Squad contract regression
+        run: node --import tsx --test tests/proClubPlayerSquadV1Contract.test.ts
+
+      - name: Player Identity foundation regression
+        run: node --import tsx --test tests/playerIdentityFoundation.test.ts tests/playerIdentityRepository.test.ts
+
+      - name: Player Profile regression
+        run: node --import tsx --test tests/playerProfileReadModel.test.ts
+
+      - name: Pro Club foundation regression
+        run: node --import tsx --test tests/proClubFoundation.test.ts
+
+      - name: Functions build
+        run: npm --prefix functions run build
+
+      - name: TypeScript
+        run: npx tsc --noEmit
+
+      - name: Production build
+        run: npm run build
+
+      - name: Safety boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=a7bacbebf6567a25651ebf392e799d2133276fff
+          HEAD=194a3b8f588d6a6f45219b71dee7898fd535f25e
+          test -z "$(git diff --name-only "$BASE..$HEAD" | grep -E '^(firestore\.rules|functions/|src/|firebase|package\.json)' || true)"
+          grep -Fq '`RUNTIME_PERSISTENCE_IMPLEMENTATION=NOT_AUTHORIZED`' docs/PRO_CLUB_PLAYER_SQUAD_V1_PERSISTENCE_ARCHITECTURE_FREEZE.md
+          grep -Fq '`PRODUCTION_DEPLOY_AUTHORIZATION=NOT_GRANTED`' docs/PRO_CLUB_PLAYER_SQUAD_V1_PERSISTENCE_ARCHITECTURE_FREEZE.md
+          grep -Fq '`MERGE_AUTHORIZATION=NOT_GRANTED`' docs/PRO_CLUB_PLAYER_SQUAD_V1_PERSISTENCE_ARCHITECTURE_FREEZE.md
