@@ -135,7 +135,9 @@ Therefore Saved-DRAFT history is fail-closed in production until a separate, exp
 4. only after steps 2–3 succeed, make a separate reviewed source change setting `PRODUCTION_WEEKLY_TRAINING_SAVED_DRAFT_INDEX_VERIFIED` to `true`;
 5. only then may the normal Hosting-only release publish a production build that mounts `WeeklyTrainingSavedDrafts`.
 
-The capability is intentionally source-controlled and cannot be enabled by a Vite/runtime environment variable. In DEV/emulator it remains available for testing. When the production capability is false, the Head Coach workspace renders an informational pending card and does not mount or execute the saved-DRAFT history query.
+The production capability is source-controlled and cannot be enabled by a Vite/runtime environment variable. The local/emulator exception MUST be tied to Vite dev-server runtime (`import.meta.hot`) rather than `import.meta.env.DEV`, `MODE`, `NODE_ENV`, or any build-time environment. Consequently **every `vite build` must remain fail-closed**, including `NODE_ENV=development npm run build` and builds using a non-default mode. Only a module actually served by the Vite dev server may use the local/emulator exception.
+
+When the production capability is false, the Head Coach workspace renders an informational pending card and does not mount or execute the saved-DRAFT history query.
 
 This PR does **not** deploy the index and keeps `PRODUCTION_WEEKLY_TRAINING_SAVED_DRAFT_INDEX_VERIFIED == false`.
 
@@ -190,6 +192,7 @@ The UI shows generic safe failure copy and does not expose raw Firebase error pa
 - Browser list validation is order-preserving and does not implement a second document-key comparator.
 - Production Saved-DRAFT history remains unavailable until the reviewed index has been deployed and independently verified.
 - Spark Hosting-only deployment cannot bypass the source-controlled index capability.
+- No build-time environment, including `NODE_ENV=development`, may convert the dev-server-only exception into an enabled production bundle.
 
 ## Explicitly out of scope
 
