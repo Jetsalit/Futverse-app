@@ -1,0 +1,39 @@
+name: tmp-debug-weekly-training-saved-draft-read-r1
+
+on:
+  push:
+    branches:
+      - debug/weekly-training-saved-draft-read-r1
+
+jobs:
+  isolate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Read model tests
+        id: model
+        continue-on-error: true
+        run: node --import tsx --test tests/proClubWeeklyTrainingSavedDraftReadModel.unit.test.ts
+      - name: Read adapter tests
+        id: adapter
+        continue-on-error: true
+        run: node --import tsx --test tests/proClubWeeklyTrainingSavedDraftReadAdapter.unit.test.ts
+      - name: UI wiring tests
+        id: ui
+        continue-on-error: true
+        run: node --import tsx --test tests/proClubWeeklyTrainingSavedDraftUiWiring.test.ts
+      - name: Report isolated conclusions
+        if: always()
+        run: |
+          echo MODEL=${{ steps.model.outcome }}
+          echo ADAPTER=${{ steps.adapter.outcome }}
+          echo UI=${{ steps.ui.outcome }}
+          test "${{ steps.model.outcome }}" = success
+          test "${{ steps.adapter.outcome }}" = success
+          test "${{ steps.ui.outcome }}" = success
