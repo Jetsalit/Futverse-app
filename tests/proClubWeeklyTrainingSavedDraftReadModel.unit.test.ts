@@ -138,4 +138,4 @@ test("summary ordering preserves Firestore nanosecond precision and plan-id tie-
   assert.equal(older.state, "VALID"); assert.equal(newer.state, "VALID");
   if (older.state !== "VALID" || newer.state !== "VALID") return;
   assert.deepEqual(sortWeeklyTrainingSavedDraftSummaries([older.value, newer.value]).map((item) => item.planId), ["plan-a", "plan-z"]);
-}
+});
