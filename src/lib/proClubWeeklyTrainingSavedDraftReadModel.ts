@@ -79,12 +79,15 @@ function hasOnlyFields(value: Record<string, unknown>, fields: ReadonlySet<strin
   return Object.keys(value).every((key) => fields.has(key));
 }
 
-function exactText(value: unknown, maxLength: number, required = true): string | null {
-  if (value === undefined && !required) return "";
+function exactText(value: unknown, maxLength: number): string | null {
   if (typeof value !== "string" || value.trim() !== value) return null;
-  if (required && value.length === 0) return null;
-  if (value.length > maxLength) return null;
+  if (value.length === 0 || value.length > maxLength) return null;
   return value;
+}
+
+function optionalExactText(value: unknown, maxLength: number): string | undefined | null {
+  if (value === undefined) return undefined;
+  return exactText(value, maxLength);
 }
 
 function strictDate(value: unknown): value is string {
@@ -196,8 +199,8 @@ function parsePlanSummary(input: {
   if (!strictDate(raw.weekStartDate)) return invalid("Saved-DRAFT week start is invalid.");
   const squadLabel = exactText(raw.squadLabel, 100);
   const mainObjective = exactText(raw.mainObjective, 500);
-  const secondaryObjective = exactText(raw.secondaryObjective, 500, false);
-  const headCoachNote = exactText(raw.headCoachNote, 2_000, false);
+  const secondaryObjective = optionalExactText(raw.secondaryObjective, 500);
+  const headCoachNote = optionalExactText(raw.headCoachNote, 2_000);
   const sessionCount = boundedCount(raw.sessionCount, 1, 14);
   if (squadLabel === null || mainObjective === null || secondaryObjective === null || headCoachNote === null || sessionCount === null) {
     return invalid("Saved-DRAFT plan content or hierarchy cardinality is invalid.");
@@ -220,8 +223,8 @@ function parsePlanSummary(input: {
       weekStartDate: raw.weekStartDate,
       squadLabel,
       mainObjective,
-      ...(secondaryObjective ? { secondaryObjective } : {}),
-      ...(headCoachNote ? { headCoachNote } : {}),
+      ...(secondaryObjective !== undefined ? { secondaryObjective } : {}),
+      ...(headCoachNote !== undefined ? { headCoachNote } : {}),
       sessionCount,
       createdAt: auditValue.createdAt,
       updatedAt: auditValue.updatedAt,
@@ -417,8 +420,8 @@ export function buildWeeklyTrainingSavedDraftDetail(input: {
     weekStartDate: summary.weekStartDate,
     squadLabel: summary.squadLabel,
     mainObjective: summary.mainObjective,
-    ...(summary.secondaryObjective ? { secondaryObjective: summary.secondaryObjective } : {}),
-    ...(summary.headCoachNote ? { headCoachNote: summary.headCoachNote } : {}),
+    ...(summary.secondaryObjective !== undefined ? { secondaryObjective: summary.secondaryObjective } : {}),
+    ...(summary.headCoachNote !== undefined ? { headCoachNote: summary.headCoachNote } : {}),
     sessions: orderedSessions.map((session) => session.value),
   };
   const parsedDraft = parseProClubWeeklyTrainingDraft(reconstructed);
