@@ -48,7 +48,7 @@ Before returning the original result, the trusted server revalidates the determi
 - each session must match schema v2, order, football payload, `blockCount`, and fresh-save audit metadata;
 - each blocks read is bounded to `expected block count + 1` and must contain exactly the deterministic block IDs from the request;
 - each block must match schema v2, order, football payload, coaching points, optional drill reference, and fresh-save audit metadata;
-- missing, extra, altered, malformed, or audit-drift hierarchy state fails closed as `FAILED_PRECONDITION`.
+- missing, extra, altered, malformed, normalized-drift, or audit-drift hierarchy state fails closed as `FAILED_PRECONDITION`.
 
 This extra integrity read path runs only for an idempotent retry. The normal fresh-save path retains the existing atomic write behavior and document count.
 
@@ -81,14 +81,25 @@ V1 uses:
 - page size: 20 visible DRAFTs;
 - sentinel: query limit 21 to detect a next page;
 - filters: exact `authorUid` and `status == DRAFT`;
-- server ordering: `updatedAt DESC`, then Firestore document ID DESC;
-- cursor: exact `(updatedAt.seconds, updatedAt.nanoseconds, planId)` from the last visible item;
+- authoritative server ordering: `updatedAt DESC`, then Firestore document ID DESC;
+- cursor: exact `(updatedAt.seconds, updatedAt.nanoseconds, planId)` from the twentieth query document when a sentinel exists;
 - next page: `startAfter` the exact cursor;
 - UI action: explicit `Load more saved drafts`;
 - refresh: resets cursor and reloads the first page;
 - append: de-duplicates by `planId` to avoid duplicate display after retries/races.
 
-Every visible plan still passes strict schema-v2 validation before rendering. The server query ordering and client comparator use the same full-precision timestamp + plan-ID ordering.
+The browser MUST preserve the Firestore query order. It MUST NOT re-sort page results with locale-sensitive or independently implemented document-key comparison before deriving the cursor. Every visible plan still passes strict schema-v2 validation before rendering, but validation must be order-preserving.
+
+## Exact persisted payload parity
+
+The domain parser remains responsible for domain validity, but schema-v2 saved documents must also be canonical persisted snapshots. Read-time validation MUST compare parsed canonical output back to the raw stored values for every persisted football field.
+
+This includes, at minimum:
+
+- session `sessionDate`, `startTime`, `location`, `objective`, `phaseOfPlay`, `plannedLoad`, `durationMinutes`;
+- block `blockType`, `title`, `durationMinutes`, optional `drillReference`, and every `coachingPoints` item.
+
+A value that would only become valid after trimming or other parser normalization is corrupted persisted state and must fail closed as `INVALID_DATA`. The detail-read path and idempotent-retry path must therefore agree on canonical payload integrity.
 
 ## Firestore index contract
 
@@ -107,13 +118,14 @@ An exact detail request is accepted only for a plan ID selected from the Head Co
 
 The adapter reads sessions with a hard query limit of `sessionCount + 1`. If the returned count is not exactly `sessionCount`, it fails closed before any block fan-out.
 
-Every session is validated, including fresh-save audit parity, before block reads. Blocks are read with a hard query limit of `blockCount + 1`; each returned block collection must match trusted cardinality and audit parity exactly.
+Every session is validated, including fresh-save audit parity and exact persisted payload parity, before block reads. Blocks are read with a hard query limit of `blockCount + 1`; each returned block collection must match trusted cardinality, canonical payload, and audit parity exactly.
 
 The pure read model additionally requires:
 
 - schema version `2` at every hierarchy level;
 - canonical field sets only;
 - immutable fresh-save audit parity;
+- exact raw-to-canonical payload parity;
 - valid Firestore document identities;
 - deterministic session IDs (`YYYY-MM-DD-HHmm`);
 - deterministic contiguous block IDs (`block-01` ... `block-12`);
@@ -121,7 +133,7 @@ The pure read model additionally requires:
 - exact trusted session/block cardinality;
 - complete reconstruction through `parseProClubWeeklyTrainingDraft`.
 
-Malformed, oversized, truncated, partial, or audit-divergent hierarchy data fails closed as `INVALID_DATA`; the UI must not render a partial football plan as valid.
+Malformed, oversized, truncated, partial, normalized-drift, or audit-divergent hierarchy data fails closed as `INVALID_DATA`; the UI must not render a partial or silently normalized football plan as valid.
 
 ## Failure states
 
@@ -146,7 +158,8 @@ The UI shows generic safe failure copy and does not expose raw Firebase error pa
 - Switching organization/actor invalidates visible state and in-flight request generation.
 - Oversized session results are rejected before block fan-out.
 - Idempotent retries fail closed if receipt-bound hierarchy no longer exactly matches the original validated request.
-- History queries are bounded and cursor-paginated.
+- History queries are bounded and cursor-paginated using authoritative Firestore order.
+- Browser list validation is order-preserving and does not implement a second document-key comparator.
 
 ## Explicitly out of scope
 
