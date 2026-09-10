@@ -1,0 +1,51 @@
+name: tmp-debug-weekly-training-saved-draft-read-r3
+
+on:
+  push:
+    branches:
+      - debug/weekly-training-saved-draft-read-r3
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Provenance
+        run: |
+          test "$(git rev-parse HEAD^)" = "0dbdd659aca99f04d28f3d731dcf3ba76873e812"
+      - name: Model only
+        id: model
+        continue-on-error: true
+        run: node --import tsx --test tests/proClubWeeklyTrainingSavedDraftReadModel.unit.test.ts
+      - name: Adapter only
+        id: adapter
+        continue-on-error: true
+        run: node --import tsx --test tests/proClubWeeklyTrainingSavedDraftReadAdapter.unit.test.ts
+      - name: UI only
+        id: ui
+        continue-on-error: true
+        run: node --import tsx --test tests/proClubWeeklyTrainingSavedDraftUiWiring.test.ts
+      - name: Combined default concurrency
+        id: combined
+        continue-on-error: true
+        run: node --import tsx --test tests/proClubWeeklyTrainingSavedDraftReadModel.unit.test.ts tests/proClubWeeklyTrainingSavedDraftReadAdapter.unit.test.ts tests/proClubWeeklyTrainingSavedDraftUiWiring.test.ts
+      - name: Combined serialized
+        id: serial
+        continue-on-error: true
+        run: node --import tsx --test --test-concurrency=1 tests/proClubWeeklyTrainingSavedDraftReadModel.unit.test.ts tests/proClubWeeklyTrainingSavedDraftReadAdapter.unit.test.ts tests/proClubWeeklyTrainingSavedDraftUiWiring.test.ts
+      - name: Conclusions
+        if: always()
+        run: |
+          echo MODEL=${{ steps.model.outcome }}
+          echo ADAPTER=${{ steps.adapter.outcome }}
+          echo UI=${{ steps.ui.outcome }}
+          echo COMBINED=${{ steps.combined.outcome }}
+          echo SERIAL=${{ steps.serial.outcome }}
