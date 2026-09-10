@@ -14,7 +14,7 @@ async function source(path: string): Promise<string> {
   return await readFile(path, "utf8");
 }
 
-test("saved-DRAFT adapter is read-only and tenant/author constrained", async () => {
+test("saved-DRAFT adapter is read-only, tenant/author constrained, and read-bounded", async () => {
   const adapter = await source(files.adapter);
   assert.match(adapter, /getDocFromServer/);
   assert.match(adapter, /getDocsFromServer/);
@@ -22,18 +22,23 @@ test("saved-DRAFT adapter is read-only and tenant/author constrained", async () 
   assert.match(adapter, /status/);
   assert.match(adapter, /DRAFT/);
   assert.match(adapter, /\["proClubs",\s*clubId,\s*"weeklyTrainingPlans"\]/);
+  assert.match(adapter, /planSummary\.value\.sessionCount \+ 1/);
+  assert.match(adapter, /expectedBlockCount \+ 1/);
+  assert.match(adapter, /sessionDocuments\.length !== planSummary\.value\.sessionCount/);
   for (const forbidden of [/\bsetDoc\b/, /\baddDoc\b/, /\bupdateDoc\b/, /\bdeleteDoc\b/, /\bwriteBatch\b/, /httpsCallable/]) {
     assert.doesNotMatch(adapter, forbidden);
   }
 });
 
-test("read model reconstructs through the canonical weekly-training parser and rejects partial hierarchy", async () => {
+test("read model reconstructs through the canonical parser and enforces trusted hierarchy cardinality", async () => {
   const model = await source(files.model);
   assert.match(model, /parseProClubWeeklyTrainingDraft/);
-  assert.match(model, /input\.sessions\.length < 1/);
+  assert.match(model, /input\.sessions\.length !== summaryResult\.value\.sessionCount/);
+  assert.match(model, /entry\.blocks\.length !== session\.blockCount/);
   assert.match(model, /block-\$\{String/);
   assert.match(model, /replace\(":", ""\)/);
-  assert.match(model, /updatedAt.*createdAt/s);
+  assert.match(model, /compareTimestampOrder\(updatedAt\.order, createdAt\.order\) < 0/);
+  assert.match(model, /compareTimestampOrder\(b\.updatedAtOrder, a\.updatedAtOrder\)/);
 });
 
 test("Head Coach workspace exposes read-only saved drafts without opening Technical Director workflow", async () => {
