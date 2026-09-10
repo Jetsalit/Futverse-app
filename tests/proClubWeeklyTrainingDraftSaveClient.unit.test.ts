@@ -52,6 +52,24 @@ test("rejects malformed request identity and invalid domain input before transpo
   assert.equal(called, false);
 });
 
+test("rejects oversized ASCII and Unicode drill references before transport", async () => {
+  let called = false;
+  const caller: WeeklyTrainingDraftSaveCallableCaller = async (submitted) => { called = true; return { data: completedResponse(submitted) }; };
+  for (const drillReference of ["a".repeat(1_501), "ก".repeat(501)]) {
+    const hostileBlock: ProClubTrainingBlockDraft = { ...block(), drillReference };
+    await assert.rejects(
+      saveProClubWeeklyTrainingFreshDraft({
+        requestId: REQUEST_ID,
+        clubId: "club-a",
+        actorUid: "coach-1",
+        draft: draft([session("2026-09-07", "10:00", [hostileBlock])]),
+      }, caller),
+      (e: unknown) => errorCode(e) === "INVALID_ARGUMENT",
+    );
+  }
+  assert.equal(called, false);
+});
+
 test("rejects runtime Technical Director note smuggling before transport", async () => {
   let called = false;
   const hostileDraft = { ...draft(), technicalDirectorNote: "client must not persist this field" } as ProClubWeeklyTrainingFreshDraftInput;
