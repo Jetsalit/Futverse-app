@@ -57,12 +57,16 @@ export const FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE =
   isFunctionBackedProClubWebAvailable({ dev: readViteDevServerRuntime() });
 
 /**
- * IMPORTANT: keep false until an explicitly authorized production operation
- * has deployed `firestore.indexes.json` to project `futverse-d7872`, the target
- * index reports READY, and a read-only production verification has succeeded.
- * Enabling it is a separate reviewed source change; never derive it from env.
+ * Production activation evidence:
+ * - reviewed composite index deployed to project `futverse-d7872`;
+ * - index `CICAgOjXh4EK` verified READY with the exact reviewed field/order contract;
+ * - independent read-only production StructuredQuery verification succeeded;
+ * - no production documents were created, updated, or deleted by verification.
+ *
+ * This remains source-controlled and must never be derived from environment
+ * variables. Any future rollback must be a reviewed source change.
  */
-export const PRODUCTION_WEEKLY_TRAINING_SAVED_DRAFT_INDEX_VERIFIED = false as const;
+export const PRODUCTION_WEEKLY_TRAINING_SAVED_DRAFT_INDEX_VERIFIED = true as const;
 
 export const WEEKLY_TRAINING_SAVED_DRAFT_READ_AVAILABLE =
   isWeeklyTrainingSavedDraftReadAvailable({
