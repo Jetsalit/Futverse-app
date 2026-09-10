@@ -32,6 +32,12 @@ export interface ExecuteWeeklyTrainingDraftSaveCallableOptions {
   logger?: SafeWeeklyTrainingDraftSaveCallableLogger;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
 export async function executeSaveProClubWeeklyTrainingDraftCallable(
   context: WeeklyTrainingDraftSaveCallableContext,
   options: ExecuteWeeklyTrainingDraftSaveCallableOptions,
@@ -81,10 +87,21 @@ export async function executeSaveProClubWeeklyTrainingDraftCallable(
     );
   }
 
+  const envelope = asRecord(context.data);
+  if (
+    !envelope ||
+    Object.keys(envelope).some((key) => key !== "requestId" && key !== "draft") ||
+    !("requestId" in envelope) ||
+    !("draft" in envelope)
+  ) {
+    throw new HttpsError("invalid-argument", "Invalid Weekly Training save request envelope.");
+  }
+
   try {
     return await service.saveFreshDraft({
       actorUid: context.auth.uid,
-      draft: context.data,
+      requestId: envelope.requestId,
+      draft: envelope.draft,
     });
   } catch (error) {
     if (error instanceof WeeklyTrainingDraftSaveError) {

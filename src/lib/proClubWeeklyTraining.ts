@@ -1,6 +1,9 @@
 import type { ProClubStaffRole } from "../types/ProClub";
 import { isProClubStaffRole, isValidDocumentIdentifier } from "./proClubModel";
 import {
+  isStorageSafeProClubTrainingDrillReference,
+} from "./proClubWeeklyTrainingStorageBounds";
+import {
   canTransitionProClubTechnicalWorkStatus,
   isProClubTechnicalWorkStatus,
   resolveProClubTechnicalAuthorityAction,
@@ -246,8 +249,8 @@ function parseBlock(value: unknown, path: string, errors: string[]): ProClubTrai
 
   let drillReference: string | undefined;
   if (record.drillReference !== undefined) {
-    if (!isValidDocumentIdentifier(record.drillReference)) {
-      errors.push(`${path}.drillReference must be an exact document identifier.`);
+    if (!isStorageSafeProClubTrainingDrillReference(record.drillReference)) {
+      errors.push(`${path}.drillReference must be a storage-safe Firestore document identifier.`);
     } else {
       drillReference = record.drillReference;
     }

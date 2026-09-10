@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Firestore } from "firebase-admin/firestore";
 import {
   validateWeeklyTrainingDraft,
@@ -13,22 +14,82 @@ export interface WeeklyTrainingDraftSaveServiceDependencies {
 
 export interface SaveWeeklyTrainingDraftInput {
   actorUid: unknown;
+  requestId: unknown;
   draft: unknown;
 }
 
 export interface SaveWeeklyTrainingDraftResult {
   status: "COMPLETED";
+  requestId: string;
   clubId: string;
   planId: string;
   documentCount: number;
   createdAt: string;
 }
 
+const WEEKLY_TRAINING_DRAFT_SAVE_OPERATION =
+  "PRO_CLUB_WEEKLY_TRAINING_DRAFT_SAVE" as const;
+const WEEKLY_TRAINING_DRAFT_SAVE_REQUESTS =
+  "weeklyTrainingDraftSaveRequests" as const;
+
 function exactId(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0 && !value.includes("/");
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.trim() === value &&
+    !value.includes("/")
+  );
 }
 
-function sessionId(session: ValidatedWeeklyTrainingDraft["sessions"][number]): string {
+export function isCanonicalWeeklyTrainingDraftSaveRequestId(
+  value: unknown,
+): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+      value,
+    )
+  );
+}
+
+function requestFingerprint(
+  actorUid: string,
+  draft: ValidatedWeeklyTrainingDraft,
+): string {
+  return createHash("sha256")
+    .update(JSON.stringify({ actorUid, draft }))
+    .digest("hex");
+}
+
+function requestReceiptDocumentId(actorUid: string, requestId: string): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        WEEKLY_TRAINING_DRAFT_SAVE_OPERATION,
+        actorUid,
+        requestId,
+      ]),
+    )
+    .digest("hex");
+}
+
+function expectedDocumentCount(draft: ValidatedWeeklyTrainingDraft): number {
+  return (
+    1 +
+    draft.sessions.length +
+    draft.sessions.reduce((sum, session) => sum + session.blocks.length, 0)
+  );
+}
+
+function isCanonicalIsoTimestamp(value: unknown): value is string {
+  if (typeof value !== "string" || value.trim() !== value) return false;
+  const timestamp = Date.parse(value);
+  return !Number.isNaN(timestamp) && new Date(timestamp).toISOString() === value;
+}
+
+function sessionId(
+  session: ValidatedWeeklyTrainingDraft["sessions"][number],
+): string {
   return `${session.sessionDate}-${session.startTime.replace(":", "")}`;
 }
 
@@ -39,37 +100,64 @@ function blockId(index: number): string {
 export class WeeklyTrainingDraftSaveService {
   constructor(private readonly dependencies: WeeklyTrainingDraftSaveServiceDependencies) {}
 
-  async saveFreshDraft(input: SaveWeeklyTrainingDraftInput): Promise<SaveWeeklyTrainingDraftResult> {
+  async saveFreshDraft(
+    input: SaveWeeklyTrainingDraftInput,
+  ): Promise<SaveWeeklyTrainingDraftResult> {
     const actorUid = input.actorUid;
     if (!exactId(actorUid)) {
-      throw new WeeklyTrainingDraftSaveError("PERMISSION_DENIED", "Authenticated actor required.");
+      throw new WeeklyTrainingDraftSaveError(
+        "PERMISSION_DENIED",
+        "Authenticated actor required.",
+      );
     }
+    if (!isCanonicalWeeklyTrainingDraftSaveRequestId(input.requestId)) {
+      throw new WeeklyTrainingDraftSaveError(
+        "INVALID_ARGUMENT",
+        "Canonical save request ID required.",
+      );
+    }
+    const requestId = input.requestId;
 
     const draft = validateWeeklyTrainingDraft(input.draft);
+    const fingerprint = requestFingerprint(actorUid, draft);
+    const hierarchyDocumentCount = expectedDocumentCount(draft);
     const { firestore } = this.dependencies;
-    const now = this.dependencies.trustedClock ? this.dependencies.trustedClock() : new Date();
+    const now = this.dependencies.trustedClock
+      ? this.dependencies.trustedClock()
+      : new Date();
+    const createdAtIso = now.toISOString();
 
     const clubRef = firestore.collection("proClubs").doc(draft.clubId);
     const actorUserRef = firestore.collection("users").doc(actorUid);
     const actorMemberRef = clubRef.collection("members").doc(actorUid);
     const actorStaffRef = clubRef.collection("staff").doc(actorUid);
     const governanceRef = clubRef.collection("technicalGovernance").doc("current");
+
+    const receiptRef = firestore
+      .collection(WEEKLY_TRAINING_DRAFT_SAVE_REQUESTS)
+      .doc(requestReceiptDocumentId(actorUid, requestId));
+
     const generatedPlanId = this.dependencies.planIdFactory?.();
     if (generatedPlanId !== undefined && !exactId(generatedPlanId)) {
-      throw new WeeklyTrainingDraftSaveError("FAILED_PRECONDITION", "Invalid server-generated plan ID.");
+      throw new WeeklyTrainingDraftSaveError(
+        "FAILED_PRECONDITION",
+        "Invalid server-generated plan ID.",
+      );
     }
-    const planRef = generatedPlanId
+    const freshPlanRef = generatedPlanId
       ? clubRef.collection("weeklyTrainingPlans").doc(generatedPlanId)
       : clubRef.collection("weeklyTrainingPlans").doc();
 
     return await firestore.runTransaction(async (transaction) => {
-      const [userSnap, clubSnap, memberSnap, staffSnap, governanceSnap] = await Promise.all([
-        transaction.get(actorUserRef),
-        transaction.get(clubRef),
-        transaction.get(actorMemberRef),
-        transaction.get(actorStaffRef),
-        transaction.get(governanceRef),
-      ]);
+      const [userSnap, clubSnap, memberSnap, staffSnap, governanceSnap, receiptSnap] =
+        await Promise.all([
+          transaction.get(actorUserRef),
+          transaction.get(clubRef),
+          transaction.get(actorMemberRef),
+          transaction.get(actorStaffRef),
+          transaction.get(governanceRef),
+          transaction.get(receiptRef),
+        ]);
 
       const user = userSnap.data();
       const club = clubSnap.data();
@@ -99,12 +187,38 @@ export class WeeklyTrainingDraftSaveService {
         throw new WeeklyTrainingDraftSaveError("FAILED_PRECONDITION", "Valid technical governance required.");
       }
 
+      const receipt = receiptSnap.data();
+      const existingPlanId = receiptSnap.exists ? receipt?.planId : undefined;
+
+      if (
+        receiptSnap.exists &&
+        (receipt?.schemaVersion !== 1 ||
+          receipt?.operationType !== WEEKLY_TRAINING_DRAFT_SAVE_OPERATION ||
+          receipt?.requestId !== requestId ||
+          receipt?.actorUid !== actorUid ||
+          receipt?.clubId !== draft.clubId ||
+          receipt?.requestFingerprint !== fingerprint ||
+          receipt?.documentCount !== hierarchyDocumentCount ||
+          !isCanonicalIsoTimestamp(receipt?.createdAtIso) ||
+          !exactId(existingPlanId))
+      ) {
+        throw new WeeklyTrainingDraftSaveError(
+          "FAILED_PRECONDITION",
+          "Save request ID is already bound to different or invalid state.",
+        );
+      }
+
       const authorityUid = governance.authorityUid as string;
       const authorityMemberRef = clubRef.collection("members").doc(authorityUid);
       const authorityStaffRef = clubRef.collection("staff").doc(authorityUid);
-      const [authorityMemberSnap, authorityStaffSnap] = await Promise.all([
+      const existingPlanRef = receiptSnap.exists
+        ? clubRef.collection("weeklyTrainingPlans").doc(existingPlanId as string)
+        : null;
+
+      const [authorityMemberSnap, authorityStaffSnap, existingPlanSnap] = await Promise.all([
         transaction.get(authorityMemberRef),
         transaction.get(authorityStaffRef),
+        existingPlanRef ? transaction.get(existingPlanRef) : Promise.resolve(null),
       ]);
       const authorityMember = authorityMemberSnap.data();
       const authorityStaff = authorityStaffSnap.data();
@@ -117,6 +231,31 @@ export class WeeklyTrainingDraftSaveService {
         authorityStaff?.staffRole !== governance.authorityRole
       ) {
         throw new WeeklyTrainingDraftSaveError("FAILED_PRECONDITION", "Technical authority evidence is invalid.");
+      }
+
+      if (receiptSnap.exists) {
+        const persistedCreatedAt = receipt?.createdAtIso;
+        if (
+          !isCanonicalIsoTimestamp(persistedCreatedAt) ||
+          !existingPlanSnap ||
+          !existingPlanSnap.exists ||
+          existingPlanSnap.data()?.authorUid !== actorUid ||
+          existingPlanSnap.data()?.status !== "DRAFT"
+        ) {
+          throw new WeeklyTrainingDraftSaveError(
+            "FAILED_PRECONDITION",
+            "Save request ID is already bound to different or invalid state.",
+          );
+        }
+
+        return {
+          status: "COMPLETED" as const,
+          requestId,
+          clubId: draft.clubId,
+          planId: existingPlanId as string,
+          documentCount: hierarchyDocumentCount,
+          createdAt: persistedCreatedAt,
+        };
       }
 
       const planPayload = {
@@ -134,12 +273,12 @@ export class WeeklyTrainingDraftSaveService {
         updatedBy: actorUid,
       };
 
-      transaction.create(planRef, planPayload);
+      transaction.create(freshPlanRef, planPayload);
       let documentCount = 1;
 
       draft.sessions.forEach((session, sessionIndex) => {
         const sid = sessionId(session);
-        const sessionRef = planRef.collection("sessions").doc(sid);
+        const sessionRef = freshPlanRef.collection("sessions").doc(sid);
         transaction.create(sessionRef, {
           schemaVersion: 1,
           orderIndex: sessionIndex,
@@ -176,12 +315,33 @@ export class WeeklyTrainingDraftSaveService {
         });
       });
 
+      if (documentCount !== hierarchyDocumentCount) {
+        throw new WeeklyTrainingDraftSaveError(
+          "FAILED_PRECONDITION",
+          "Weekly Training document count is inconsistent.",
+        );
+      }
+
+      transaction.create(receiptRef, {
+        schemaVersion: 1,
+        operationType: WEEKLY_TRAINING_DRAFT_SAVE_OPERATION,
+        requestId,
+        actorUid,
+        clubId: draft.clubId,
+        requestFingerprint: fingerprint,
+        planId: freshPlanRef.id,
+        documentCount,
+        createdAt: now,
+        createdAtIso,
+      });
+
       return {
         status: "COMPLETED" as const,
+        requestId,
         clubId: draft.clubId,
-        planId: planRef.id,
+        planId: freshPlanRef.id,
         documentCount,
-        createdAt: now.toISOString(),
+        createdAt: createdAtIso,
       };
     });
   }
