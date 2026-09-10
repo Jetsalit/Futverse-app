@@ -52,10 +52,10 @@ test("rejects malformed request identity and invalid domain input before transpo
   assert.equal(called, false);
 });
 
-test("rejects oversized ASCII and Unicode drill references before transport", async () => {
+test("rejects oversized or ill-formed Unicode drill references before transport", async () => {
   let called = false;
   const caller: WeeklyTrainingDraftSaveCallableCaller = async (submitted) => { called = true; return { data: completedResponse(submitted) }; };
-  for (const drillReference of ["a".repeat(1_501), "ก".repeat(501)]) {
+  for (const drillReference of ["a".repeat(1_501), "ก".repeat(501), "😀".repeat(376), "\ud800", "\udc00", "\ud800x", "x\udc00"]) {
     const hostileBlock: ProClubTrainingBlockDraft = { ...block(), drillReference };
     await assert.rejects(
       saveProClubWeeklyTrainingFreshDraft({
@@ -68,6 +68,22 @@ test("rejects oversized ASCII and Unicode drill references before transport", as
     );
   }
   assert.equal(called, false);
+});
+
+test("accepts a well-formed surrogate pair drill reference", async () => {
+  let called = false;
+  const caller: WeeklyTrainingDraftSaveCallableCaller = async (submitted) => {
+    called = true;
+    return { data: completedResponse(submitted) };
+  };
+  const emojiBlock: ProClubTrainingBlockDraft = { ...block(), drillReference: "😀" };
+  await saveProClubWeeklyTrainingFreshDraft({
+    requestId: REQUEST_ID,
+    clubId: "club-a",
+    actorUid: "coach-1",
+    draft: draft([session("2026-09-07", "10:00", [emojiBlock])]),
+  }, caller);
+  assert.equal(called, true);
 });
 
 test("rejects runtime Technical Director note smuggling before transport", async () => {
