@@ -69,6 +69,16 @@ test("trusted server drill-reference contract is 1500 UTF-8 bytes", () => {
   expectInvalid(withDrillReference("ก".repeat(501)));
 });
 
+test("trusted server rejects ill-formed UTF-16 before UTF-8 byte measurement", () => {
+  for (const value of ["\ud800", "\udc00", "\ud800x", "x\udc00"]) {
+    expectInvalid(withDrillReference(value));
+  }
+  assert.equal(
+    validateWeeklyTrainingDraft(withDrillReference("😀")).sessions[0].blocks[0].drillReference,
+    "😀",
+  );
+});
+
 test("trusted server rejects reserved Firestore document ID forms", () => {
   for (const value of [".", "..", "__reserved__", "path/segment"]) {
     expectInvalid(withDrillReference(value));
