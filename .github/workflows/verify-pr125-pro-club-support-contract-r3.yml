@@ -1,0 +1,76 @@
+name: PR125 Pro Club Support Contract Acceptance R3
+
+on:
+  pull_request:
+    branches:
+      - feat/pro-club-superadmin-support-mode-v1-contract
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact product head
+        uses: actions/checkout@v4
+        with:
+          ref: afe640e3f67a46be4de7f3b1b41afa3170b54099
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Functions dependencies
+        run: npm --prefix functions ci
+
+      - name: Exact provenance and scope gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=a983681bc89e93eb8759f583158d314ed772fb7d
+          HEAD=afe640e3f67a46be4de7f3b1b41afa3170b54099
+          test "$(git rev-parse HEAD)" = "$HEAD"
+          test "$(git merge-base "$BASE" "$HEAD")" = "$BASE"
+          mapfile -t files < <(git diff --name-only "$BASE..$HEAD")
+          test "${#files[@]}" = "2"
+          printf '%s\n' "${files[@]}" | sort > /tmp/actual
+          printf '%s\n' docs/PRO_CLUB_SUPERADMIN_SUPPORT_MODE_V1_CONTRACT_FREEZE.md tests/proClubSuperAdminSupportModeV1Contract.test.ts | sort > /tmp/expected
+          diff -u /tmp/expected /tmp/actual
+          git diff --check "$BASE..$HEAD"
+
+      - name: Contract tests
+        run: node --import tsx --test tests/proClubSuperAdminSupportModeV1Contract.test.ts
+
+      - name: Functions build
+        run: npm --prefix functions run build
+
+      - name: TypeScript
+        run: npm run lint
+
+      - name: Production build
+        run: npm run build
+
+      - name: Safety boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=a983681bc89e93eb8759f583158d314ed772fb7d
+          HEAD=afe640e3f67a46be4de7f3b1b41afa3170b54099
+          forbidden='^(src/|functions/|firestore\.rules$|firestore\.indexes\.json$|firebase\.json$|firebase\.spark\.json$|package\.json$)'
+          if git diff --name-only "$BASE..$HEAD" | grep -E "$forbidden"; then
+            echo 'Forbidden product/runtime path changed.' >&2
+            exit 1
+          fi
+          test -z "$(git status --porcelain)"
+          echo 'PR125_CONTRACT_ACCEPTANCE_R3=PASS'
+          echo 'PRODUCTION_DEPLOYED=NO'
+          echo 'PRODUCTION_HTTP_CALLED=NO'
+          echo 'PRODUCTION_DATA_READ_WRITE=NO'
