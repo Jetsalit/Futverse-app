@@ -5,10 +5,10 @@ import {
   type ProClubTrainingSessionDraft,
 } from "../proClubWeeklyTraining";
 
-export const PRO_CLUB_WEEKLY_TRAINING_SCHEMA_VERSION = 1 as const;
+export const PRO_CLUB_WEEKLY_TRAINING_SCHEMA_VERSION = 2 as const;
 
 export interface ProClubWeeklyTrainingDraftPlanPayload {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly authorUid: string;
   readonly status: "DRAFT";
   readonly weekStartDate: string;
@@ -16,10 +16,11 @@ export interface ProClubWeeklyTrainingDraftPlanPayload {
   readonly mainObjective: string;
   readonly secondaryObjective?: string;
   readonly headCoachNote?: string;
+  readonly sessionCount: number;
 }
 
 export interface ProClubWeeklyTrainingDraftSessionPayload {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly orderIndex: number;
   readonly sessionDate: string;
   readonly startTime: string;
@@ -28,10 +29,11 @@ export interface ProClubWeeklyTrainingDraftSessionPayload {
   readonly phaseOfPlay: ProClubTrainingSessionDraft["phaseOfPlay"];
   readonly plannedLoad: ProClubTrainingSessionDraft["plannedLoad"];
   readonly durationMinutes: number;
+  readonly blockCount: number;
 }
 
 export interface ProClubWeeklyTrainingDraftBlockPayload {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly orderIndex: number;
   readonly blockType: ProClubTrainingBlockDraft["blockType"];
   readonly title: string;
@@ -186,6 +188,7 @@ export function buildProClubWeeklyTrainingDraftWrite(input: {
         phaseOfPlay: session.phaseOfPlay,
         plannedLoad: session.plannedLoad,
         durationMinutes: session.durationMinutes,
+        blockCount: blocks.length,
       },
       blocks,
     } satisfies ProClubWeeklyTrainingDraftSessionWrite;
@@ -208,6 +211,7 @@ export function buildProClubWeeklyTrainingDraftWrite(input: {
           ? { secondaryObjective: plan.secondaryObjective }
           : {}),
         ...(plan.headCoachNote ? { headCoachNote: plan.headCoachNote } : {}),
+        sessionCount: sessions.length,
       },
       sessions,
     },

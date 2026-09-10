@@ -31,6 +31,7 @@ const WEEKLY_TRAINING_DRAFT_SAVE_OPERATION =
   "PRO_CLUB_WEEKLY_TRAINING_DRAFT_SAVE" as const;
 const WEEKLY_TRAINING_DRAFT_SAVE_REQUESTS =
   "weeklyTrainingDraftSaveRequests" as const;
+const WEEKLY_TRAINING_DRAFT_HIERARCHY_SCHEMA_VERSION = 2 as const;
 
 function exactId(value: unknown): value is string {
   return (
@@ -95,6 +96,197 @@ function sessionId(
 
 function blockId(index: number): string {
   return `block-${String(index + 1).padStart(2, "0")}`;
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function sameStoredKeys(
+  value: Record<string, unknown>,
+  expectedKeys: readonly string[],
+): boolean {
+  const actual = Object.keys(value).sort();
+  const expected = [...expectedKeys].sort();
+  return (
+    actual.length === expected.length &&
+    actual.every((key, index) => key === expected[index])
+  );
+}
+
+function sameOptionalString(value: unknown, expected: string | undefined): boolean {
+  return expected === undefined ? value === undefined : value === expected;
+}
+
+function sameStringArray(value: unknown, expected: readonly string[]): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length === expected.length &&
+    value.every((item, index) => item === expected[index])
+  );
+}
+
+function timestampParts(
+  value: unknown,
+): { readonly seconds: number; readonly nanoseconds: number } | null {
+  if (!value || typeof value !== "object") return null;
+  const seconds = (value as { seconds?: unknown }).seconds;
+  const nanoseconds = (value as { nanoseconds?: unknown }).nanoseconds;
+  if (!Number.isSafeInteger(seconds) || !Number.isInteger(nanoseconds)) return null;
+  if ((nanoseconds as number) < 0 || (nanoseconds as number) > 999_999_999) return null;
+  return { seconds: seconds as number, nanoseconds: nanoseconds as number };
+}
+
+function sameTimestamp(left: unknown, right: unknown): boolean {
+  const a = timestampParts(left);
+  const b = timestampParts(right);
+  return (
+    a !== null &&
+    b !== null &&
+    a.seconds === b.seconds &&
+    a.nanoseconds === b.nanoseconds
+  );
+}
+
+function timestampMatchesIso(value: unknown, iso: string): boolean {
+  const parts = timestampParts(value);
+  if (!parts) return false;
+  const millis = parts.seconds * 1_000 + Math.floor(parts.nanoseconds / 1_000_000);
+  return Number.isSafeInteger(millis) && new Date(millis).toISOString() === iso;
+}
+
+function freshAuditMatches(
+  value: Record<string, unknown>,
+  actorUid: string,
+  receiptCreatedAt: unknown,
+): boolean {
+  return (
+    value.createdBy === actorUid &&
+    value.updatedBy === actorUid &&
+    sameTimestamp(value.createdAt, receiptCreatedAt) &&
+    sameTimestamp(value.updatedAt, receiptCreatedAt)
+  );
+}
+
+function persistedPlanMatchesDraft(
+  value: unknown,
+  actorUid: string,
+  receiptCreatedAt: unknown,
+  draft: ValidatedWeeklyTrainingDraft,
+): boolean {
+  const data = record(value);
+  if (!data) return false;
+  const keys = [
+    "schemaVersion",
+    "authorUid",
+    "status",
+    "weekStartDate",
+    "squadLabel",
+    "mainObjective",
+    ...(draft.secondaryObjective ? ["secondaryObjective"] : []),
+    ...(draft.headCoachNote ? ["headCoachNote"] : []),
+    "sessionCount",
+    "createdAt",
+    "createdBy",
+    "updatedAt",
+    "updatedBy",
+  ];
+  return (
+    sameStoredKeys(data, keys) &&
+    data.schemaVersion === WEEKLY_TRAINING_DRAFT_HIERARCHY_SCHEMA_VERSION &&
+    data.authorUid === actorUid &&
+    data.status === "DRAFT" &&
+    data.weekStartDate === draft.weekStartDate &&
+    data.squadLabel === draft.squadLabel &&
+    data.mainObjective === draft.mainObjective &&
+    sameOptionalString(data.secondaryObjective, draft.secondaryObjective) &&
+    sameOptionalString(data.headCoachNote, draft.headCoachNote) &&
+    data.sessionCount === draft.sessions.length &&
+    freshAuditMatches(data, actorUid, receiptCreatedAt)
+  );
+}
+
+function persistedSessionMatchesDraft(
+  value: unknown,
+  actorUid: string,
+  receiptCreatedAt: unknown,
+  session: ValidatedWeeklyTrainingDraft["sessions"][number],
+  sessionIndex: number,
+): boolean {
+  const data = record(value);
+  if (!data) return false;
+  return (
+    sameStoredKeys(data, [
+      "schemaVersion",
+      "orderIndex",
+      "sessionDate",
+      "startTime",
+      "location",
+      "objective",
+      "phaseOfPlay",
+      "plannedLoad",
+      "durationMinutes",
+      "blockCount",
+      "createdAt",
+      "createdBy",
+      "updatedAt",
+      "updatedBy",
+    ]) &&
+    data.schemaVersion === WEEKLY_TRAINING_DRAFT_HIERARCHY_SCHEMA_VERSION &&
+    data.orderIndex === sessionIndex &&
+    data.sessionDate === session.sessionDate &&
+    data.startTime === session.startTime &&
+    data.location === session.location &&
+    data.objective === session.objective &&
+    data.phaseOfPlay === session.phaseOfPlay &&
+    data.plannedLoad === session.plannedLoad &&
+    data.durationMinutes === session.durationMinutes &&
+    data.blockCount === session.blocks.length &&
+    freshAuditMatches(data, actorUid, receiptCreatedAt)
+  );
+}
+
+function persistedBlockMatchesDraft(
+  value: unknown,
+  actorUid: string,
+  receiptCreatedAt: unknown,
+  block: ValidatedWeeklyTrainingDraft["sessions"][number]["blocks"][number],
+  blockIndex: number,
+): boolean {
+  const data = record(value);
+  if (!data) return false;
+  const keys = [
+    "schemaVersion",
+    "orderIndex",
+    "blockType",
+    "title",
+    "durationMinutes",
+    ...(block.drillReference ? ["drillReference"] : []),
+    "coachingPoints",
+    "createdAt",
+    "createdBy",
+    "updatedAt",
+    "updatedBy",
+  ];
+  return (
+    sameStoredKeys(data, keys) &&
+    data.schemaVersion === WEEKLY_TRAINING_DRAFT_HIERARCHY_SCHEMA_VERSION &&
+    data.orderIndex === blockIndex &&
+    data.blockType === block.blockType &&
+    data.title === block.title &&
+    data.durationMinutes === block.durationMinutes &&
+    sameOptionalString(data.drillReference, block.drillReference) &&
+    sameStringArray(data.coachingPoints, block.coachingPoints) &&
+    freshAuditMatches(data, actorUid, receiptCreatedAt)
+  );
+}
+
+function invalidPersistedRequestState(): never {
+  throw new WeeklyTrainingDraftSaveError(
+    "FAILED_PRECONDITION",
+    "Save request ID is already bound to different or invalid state.",
+  );
 }
 
 export class WeeklyTrainingDraftSaveService {
@@ -200,12 +392,10 @@ export class WeeklyTrainingDraftSaveService {
           receipt?.requestFingerprint !== fingerprint ||
           receipt?.documentCount !== hierarchyDocumentCount ||
           !isCanonicalIsoTimestamp(receipt?.createdAtIso) ||
+          !timestampMatchesIso(receipt?.createdAt, receipt.createdAtIso) ||
           !exactId(existingPlanId))
       ) {
-        throw new WeeklyTrainingDraftSaveError(
-          "FAILED_PRECONDITION",
-          "Save request ID is already bound to different or invalid state.",
-        );
+        invalidPersistedRequestState();
       }
 
       const authorityUid = governance.authorityUid as string;
@@ -235,17 +425,78 @@ export class WeeklyTrainingDraftSaveService {
 
       if (receiptSnap.exists) {
         const persistedCreatedAt = receipt?.createdAtIso;
+        const receiptCreatedAt = receipt?.createdAt;
         if (
           !isCanonicalIsoTimestamp(persistedCreatedAt) ||
           !existingPlanSnap ||
           !existingPlanSnap.exists ||
-          existingPlanSnap.data()?.authorUid !== actorUid ||
-          existingPlanSnap.data()?.status !== "DRAFT"
+          !existingPlanRef ||
+          !persistedPlanMatchesDraft(existingPlanSnap.data(), actorUid, receiptCreatedAt, draft)
         ) {
-          throw new WeeklyTrainingDraftSaveError(
-            "FAILED_PRECONDITION",
-            "Save request ID is already bound to different or invalid state.",
+          invalidPersistedRequestState();
+        }
+
+        const persistedSessions = await transaction.get(
+          existingPlanRef.collection("sessions").limit(draft.sessions.length + 1),
+        );
+        if (persistedSessions.size !== draft.sessions.length) {
+          invalidPersistedRequestState();
+        }
+        const sessionById = new Map(
+          persistedSessions.docs.map((snapshot) => [snapshot.id, snapshot] as const),
+        );
+
+        for (const [sessionIndex, session] of draft.sessions.entries()) {
+          const persistedSession = sessionById.get(sessionId(session));
+          if (
+            !persistedSession ||
+            !persistedSessionMatchesDraft(
+              persistedSession.data(),
+              actorUid,
+              receiptCreatedAt,
+              session,
+              sessionIndex,
+            )
+          ) {
+            invalidPersistedRequestState();
+          }
+        }
+
+        const persistedBlocksBySession = await Promise.all(
+          draft.sessions.map((session) =>
+            transaction.get(
+              existingPlanRef
+                .collection("sessions")
+                .doc(sessionId(session))
+                .collection("blocks")
+                .limit(session.blocks.length + 1),
+            ),
+          ),
+        );
+
+        for (const [sessionIndex, session] of draft.sessions.entries()) {
+          const persistedBlocks = persistedBlocksBySession[sessionIndex];
+          if (!persistedBlocks || persistedBlocks.size !== session.blocks.length) {
+            invalidPersistedRequestState();
+          }
+          const blockById = new Map(
+            persistedBlocks.docs.map((snapshot) => [snapshot.id, snapshot] as const),
           );
+          for (const [blockIndex, block] of session.blocks.entries()) {
+            const persistedBlock = blockById.get(blockId(blockIndex));
+            if (
+              !persistedBlock ||
+              !persistedBlockMatchesDraft(
+                persistedBlock.data(),
+                actorUid,
+                receiptCreatedAt,
+                block,
+                blockIndex,
+              )
+            ) {
+              invalidPersistedRequestState();
+            }
+          }
         }
 
         return {
@@ -259,7 +510,7 @@ export class WeeklyTrainingDraftSaveService {
       }
 
       const planPayload = {
-        schemaVersion: 1,
+        schemaVersion: WEEKLY_TRAINING_DRAFT_HIERARCHY_SCHEMA_VERSION,
         authorUid: actorUid,
         status: "DRAFT",
         weekStartDate: draft.weekStartDate,
@@ -267,6 +518,7 @@ export class WeeklyTrainingDraftSaveService {
         mainObjective: draft.mainObjective,
         ...(draft.secondaryObjective ? { secondaryObjective: draft.secondaryObjective } : {}),
         ...(draft.headCoachNote ? { headCoachNote: draft.headCoachNote } : {}),
+        sessionCount: draft.sessions.length,
         createdAt: now,
         createdBy: actorUid,
         updatedAt: now,
@@ -280,7 +532,7 @@ export class WeeklyTrainingDraftSaveService {
         const sid = sessionId(session);
         const sessionRef = freshPlanRef.collection("sessions").doc(sid);
         transaction.create(sessionRef, {
-          schemaVersion: 1,
+          schemaVersion: WEEKLY_TRAINING_DRAFT_HIERARCHY_SCHEMA_VERSION,
           orderIndex: sessionIndex,
           sessionDate: session.sessionDate,
           startTime: session.startTime,
@@ -289,6 +541,7 @@ export class WeeklyTrainingDraftSaveService {
           phaseOfPlay: session.phaseOfPlay,
           plannedLoad: session.plannedLoad,
           durationMinutes: session.durationMinutes,
+          blockCount: session.blocks.length,
           createdAt: now,
           createdBy: actorUid,
           updatedAt: now,
@@ -299,7 +552,7 @@ export class WeeklyTrainingDraftSaveService {
         session.blocks.forEach((block, blockIndex) => {
           const blockRef = sessionRef.collection("blocks").doc(blockId(blockIndex));
           transaction.create(blockRef, {
-            schemaVersion: 1,
+            schemaVersion: WEEKLY_TRAINING_DRAFT_HIERARCHY_SCHEMA_VERSION,
             orderIndex: blockIndex,
             blockType: block.blockType,
             title: block.title,
