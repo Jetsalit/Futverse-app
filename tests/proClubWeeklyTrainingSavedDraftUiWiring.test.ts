@@ -30,12 +30,16 @@ test("saved-DRAFT production capability is fail-closed until reviewed index evid
   assert.equal(isWeeklyTrainingSavedDraftReadAvailable({ dev: false, productionIndexVerified: true }), true);
 });
 
-test("saved-DRAFT production capability cannot be enabled by a Vite environment variable", async () => {
+test("saved-DRAFT dev exception is serve-only and cannot be enabled by build environment or mode", async () => {
   const capability = await source(files.capability);
   assert.match(capability, /PRODUCTION_WEEKLY_TRAINING_SAVED_DRAFT_INDEX_VERIFIED = false as const/);
   assert.match(capability, /productionIndexVerified:\s*PRODUCTION_WEEKLY_TRAINING_SAVED_DRAFT_INDEX_VERIFIED/);
+  assert.match(capability, /import\.meta as ImportMeta[^]*readonly hot\?: unknown/);
+  assert.match(capability, /\.hot !== undefined/);
+  assert.doesNotMatch(capability, /import\.meta[^;]*\.env[^;]*DEV/);
+  assert.doesNotMatch(capability, /import\.meta[^;]*\.env[^;]*MODE/);
+  assert.doesNotMatch(capability, /process\.env/);
   assert.doesNotMatch(capability, /VITE_.*SAVED.*DRAFT/i);
-  assert.doesNotMatch(capability, /process\.env.*SAVED/i);
 });
 
 test("saved-DRAFT adapter is read-only, tenant-bound, page-bounded and preserves Firestore query order", async () => {
