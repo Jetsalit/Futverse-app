@@ -97,6 +97,24 @@ test("list page is tenant/actor bound, sentinel limited, and cursor-preserving",
   assert.equal(result.value.nextCursor?.planId, result.value.items.at(-1)?.planId);
 });
 
+test("list page preserves authoritative Firestore order and uses the twentieth query document as cursor", async () => {
+  const same = stamp(1_757_280_200, 123_456_789);
+  const ids = [
+    "zPlan", "aPlan", "ZPlan", "APlan", "mPlan", "MPlan", "xPlan", "XPlan", "bPlan", "BPlan",
+    "yPlan", "YPlan", "cPlan", "CPlan", "nPlan", "NPlan", "dPlan", "DPlan", "qPlan", "QPlan", "sentinelPlan",
+  ];
+  const docs = ids.map((id) => plan("hc-a", { createdAt: same, updatedAt: same }, id));
+  const ops: WeeklyTrainingSavedDraftReadOps = {
+    ...baseOps(),
+    async listPlanPage() { return docs; },
+  };
+  const result = await listHeadCoachWeeklyTrainingSavedDrafts("club-a", "hc-a", null, ops);
+  assert.equal(result.state, "FOUND");
+  if (result.state !== "FOUND") return;
+  assert.deepEqual(result.value.items.map((item) => item.planId), ids.slice(0, 20));
+  assert.deepEqual(result.value.nextCursor, { updatedAt: same, planId: ids[19] });
+});
+
 test("list page returns no cursor when the page is exhausted", async () => {
   const ops: WeeklyTrainingSavedDraftReadOps = { ...baseOps(), async listPlanPage() { return [plan()]; } };
   const result = await listHeadCoachWeeklyTrainingSavedDrafts("club-a", "hc-a", null, ops);
