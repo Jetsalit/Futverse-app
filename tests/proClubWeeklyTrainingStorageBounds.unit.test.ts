@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   PRO_CLUB_TRAINING_DRILL_REFERENCE_MAX_UTF8_BYTES,
   isStorageSafeProClubTrainingDrillReference,
+  isWellFormedProClubTrainingUnicode,
   proClubTrainingUtf8ByteLength,
 } from "../src/lib/proClubWeeklyTrainingStorageBounds.ts";
 import { parseProClubWeeklyTrainingDraft } from "../src/lib/proClubWeeklyTraining.ts";
@@ -50,15 +51,34 @@ test("UTF-8 byte bound rejects multibyte overflow independent of JS string lengt
   assert.equal(isStorageSafeProClubTrainingDrillReference(overflowThai), false);
 });
 
+test("well-formed Unicode contract rejects unpaired surrogates before UTF-8 measurement", () => {
+  const loneHigh = "\ud800";
+  const loneLow = "\udc00";
+  const highThenAscii = "\ud800x";
+  const validPair = "\ud83d\ude00";
+
+  assert.equal(isWellFormedProClubTrainingUnicode(loneHigh), false);
+  assert.equal(isWellFormedProClubTrainingUnicode(loneLow), false);
+  assert.equal(isWellFormedProClubTrainingUnicode(highThenAscii), false);
+  assert.equal(isWellFormedProClubTrainingUnicode(validPair), true);
+  assert.equal(isStorageSafeProClubTrainingDrillReference(loneHigh), false);
+  assert.equal(isStorageSafeProClubTrainingDrillReference(loneLow), false);
+  assert.equal(isStorageSafeProClubTrainingDrillReference(highThenAscii), false);
+  assert.equal(isStorageSafeProClubTrainingDrillReference(validPair), true);
+});
+
 test("Firestore-reserved document ID forms are rejected", () => {
   for (const value of [".", "..", "__reserved__", "path/segment", " padded "]) {
     assert.equal(isStorageSafeProClubTrainingDrillReference(value), false, value);
   }
 });
 
-test("Weekly Training domain parser enforces the same ASCII and Unicode byte boundary", () => {
+test("Weekly Training domain parser enforces byte and well-formed Unicode boundaries", () => {
   assert.equal(parseProClubWeeklyTrainingDraft(draftWithDrillReference("a".repeat(1_500))).state, "VALID");
   assert.equal(parseProClubWeeklyTrainingDraft(draftWithDrillReference("a".repeat(1_501))).state, "INVALID");
   assert.equal(parseProClubWeeklyTrainingDraft(draftWithDrillReference("ก".repeat(500))).state, "VALID");
   assert.equal(parseProClubWeeklyTrainingDraft(draftWithDrillReference("ก".repeat(501))).state, "INVALID");
+  assert.equal(parseProClubWeeklyTrainingDraft(draftWithDrillReference("\ud800")).state, "INVALID");
+  assert.equal(parseProClubWeeklyTrainingDraft(draftWithDrillReference("\udc00")).state, "INVALID");
+  assert.equal(parseProClubWeeklyTrainingDraft(draftWithDrillReference("😀")).state, "VALID");
 });
