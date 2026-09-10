@@ -16,6 +16,8 @@ export type BlockType =
   | "COOL_DOWN"
   | "OTHER";
 
+export const WEEKLY_TRAINING_DRILL_REFERENCE_MAX_UTF8_BYTES = 1_500;
+
 export interface ValidatedBlock {
   blockType: BlockType;
   title: string;
@@ -73,6 +75,20 @@ function exactId(value: unknown): value is string {
   );
 }
 
+function utf8ByteLength(value: string): number {
+  return Buffer.byteLength(value, "utf8");
+}
+
+function storageSafeDrillReference(value: unknown): value is string {
+  return (
+    exactId(value) &&
+    value !== "." &&
+    value !== ".." &&
+    !/^__.*__$/.test(value) &&
+    utf8ByteLength(value) <= WEEKLY_TRAINING_DRILL_REFERENCE_MAX_UTF8_BYTES
+  );
+}
+
 function boundedText(value: unknown, max: number, required = true): string | undefined {
   if (value === undefined && !required) return undefined;
   if (typeof value !== "string") return undefined;
@@ -124,7 +140,9 @@ function parseBlock(value: unknown): ValidatedBlock {
   }
   let drillReference: string | undefined;
   if (rec.drillReference !== undefined) {
-    if (!exactId(rec.drillReference)) throw new WeeklyTrainingDraftSaveError("INVALID_ARGUMENT", "Invalid drill reference.");
+    if (!storageSafeDrillReference(rec.drillReference)) {
+      throw new WeeklyTrainingDraftSaveError("INVALID_ARGUMENT", "Invalid or storage-unsafe drill reference.");
+    }
     drillReference = rec.drillReference;
   }
   if (!Array.isArray(rec.coachingPoints) || rec.coachingPoints.length < 1 || rec.coachingPoints.length > 10) {
