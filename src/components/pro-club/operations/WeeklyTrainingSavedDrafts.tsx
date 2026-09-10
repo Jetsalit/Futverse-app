@@ -158,6 +158,8 @@ export default function WeeklyTrainingSavedDrafts({
     setDrafts([]);
     setSelectedPlanId(null);
     setDetail(null);
+    setLoadingList(false);
+    setLoadingDetail(false);
     setMessage("");
     if (allowed) void loadList();
     return () => {
