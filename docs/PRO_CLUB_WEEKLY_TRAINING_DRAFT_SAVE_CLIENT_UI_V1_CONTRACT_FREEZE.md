@@ -37,13 +37,17 @@ One logical fresh-DRAFT save has one stable UUID v4 `requestId`.
 - The callable accepts only the exact envelope `{ requestId, draft }`.
 - The trusted service validates `requestId` again.
 - The service computes a SHA-256 fingerprint over the authenticated actor plus the canonical validated draft.
-- The transaction reads `proClubs/{clubId}/weeklyTrainingDraftSaveReceipts/{requestId}`.
-- On a first save, the complete plan/session/block hierarchy and the idempotency receipt are created in the same Admin Firestore transaction.
+- Request identity is **actor-global, not tenant-scoped**.
+- The server derives a top-level control-document key as SHA-256 over `[operationType, actorUid, requestId]` and reads `weeklyTrainingDraftSaveRequests/{derivedRequestKey}`.
+- Raw actor UID is therefore not required in the control-document path; the stored receipt still records and verifies `actorUid`, `requestId`, `clubId`, operation type and canonical payload fingerprint.
+- On a first save, the complete plan/session/block hierarchy and this actor-global idempotency receipt are created in the same Admin Firestore transaction.
 - The receipt records request identity, authenticated actor, club, canonical request fingerprint, resulting `planId`, hierarchy `documentCount`, and trusted creation time.
-- The receipt collection is server-control metadata. No client Firestore Rules grant access to it.
-- A retry with the same `requestId`, same authenticated actor and same canonical payload returns the existing receipt/result and does not create another hierarchy.
-- A retry with the same `requestId` but a different actor, tenant, payload, malformed receipt, missing plan, or inconsistent plan state fails closed with `FAILED_PRECONDITION`.
-- Concurrent invocations with the same request identity converge through the same receipt transaction conflict and must resolve to one committed hierarchy.
+- The top-level request-registry collection is server-control metadata. No client Firestore Rules grant access to it.
+- A retry with the same `requestId`, same authenticated actor, same club and same canonical payload returns the existing receipt/result and does not create another hierarchy.
+- The same actor cannot reuse one `requestId` in a second club, even when that actor is an active Head Coach in both clubs; changed tenant is rejected with `FAILED_PRECONDITION`.
+- A retry with the same request identity but a different actor, tenant, payload, malformed receipt, missing plan, or inconsistent plan state fails closed.
+- Concurrent same-actor/same-request invocations aimed at different clubs contend on the same actor-global registry document and at most one tenant can commit.
+- Concurrent identical retries converge through the same registry-document transaction conflict and resolve to one committed hierarchy.
 - A different `requestId` is a distinct logical fresh save.
 
 The maximum football hierarchy remains 183 documents:
@@ -117,14 +121,17 @@ Before merge:
 5. client tests for request identity, authority binding, pre-network validation, response validation and ambiguity classification;
 6. callable tests for exact envelope, authenticated actor and existing App Check allowlist boundary;
 7. emulator proof that same request + same payload returns the same plan and only one hierarchy exists;
-8. emulator proof that same request + changed payload fails closed;
-9. emulator proof that rollback also removes the idempotency receipt;
-10. full 14×12 / 183-document football hierarchy remains supported;
-11. root TypeScript and production Vite build pass;
-12. existing Weekly Training domain/callable/parity regressions pass;
-13. independent Team 2 adversarial review;
-14. Codex exact-current-head re-review with no unresolved P1/P2 blocker;
-15. no production deploy/call/write/billing change.
+8. emulator proof that same actor + same request ID cannot cross from Club A to Club B;
+9. emulator proof that concurrent cross-tenant attempts with the same actor/request commit at most one tenant;
+10. emulator proof that same request + changed payload fails closed;
+11. emulator proof that rollback also removes the actor-global idempotency receipt;
+12. Rules-emulator proof that client read/write of the top-level request registry is denied;
+13. full 14×12 / 183-document football hierarchy remains supported;
+14. root TypeScript and production Vite build pass;
+15. existing Weekly Training domain/callable/parity regressions pass;
+16. independent Team 2 adversarial review;
+17. Codex exact-current-head re-review with no unresolved P1/P2 blocker;
+18. no production deploy/call/write/billing change.
 
 ## Safety flags
 
