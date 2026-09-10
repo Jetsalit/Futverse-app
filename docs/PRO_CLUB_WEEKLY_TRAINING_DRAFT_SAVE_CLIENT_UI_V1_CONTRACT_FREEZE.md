@@ -63,19 +63,20 @@ A maximum fresh save therefore performs 184 atomic writes total when the server-
 
 Canonical rules:
 - exact non-empty string with no leading/trailing whitespace;
+- well-formed Unicode text: every UTF-16 high surrogate must be followed by a low surrogate, and lone low surrogates are rejected before UTF-8 encoding;
 - no `/` path separator;
 - not `.` or `..`;
 - not a reserved `__.*__` identifier;
-- maximum **1,500 UTF-8 bytes**.
+- maximum **1,500 UTF-8 bytes** after well-formed Unicode validation.
 
-The 1,500-byte boundary must be enforced consistently:
-- shared browser/domain validation uses `TextEncoder` byte length;
-- Head Coach UI prevents edits/pastes that exceed the same UTF-8 byte budget and shows current byte usage;
-- trusted Functions validation independently rechecks the same 1,500-byte storage contract using server UTF-8 byte length before any Firestore transaction write.
+The storage contract must be enforced consistently:
+- shared browser/domain validation first rejects unpaired UTF-16 surrogates, then uses `TextEncoder` byte length;
+- Head Coach UI uses the same byte budget, displays current byte usage, and prevents edits/pastes above the byte budget; UI convenience controls are not the security boundary;
+- trusted Functions validation independently rejects unpaired UTF-16 surrogates and then rechecks the same 1,500-byte limit with `Buffer.byteLength(value, "utf8")` before any Firestore transaction write.
 
-`maxLength` in the UI is only a convenience guard and must not be treated as the authoritative storage check because JavaScript character/code-unit length is not UTF-8 byte length. Multibyte Unicode inputs must be covered explicitly.
+`maxLength` in the UI is only a convenience guard and must not be treated as the authoritative storage check because JavaScript character/code-unit length is not UTF-8 byte length. Multibyte Unicode and surrogate-pair behavior must be covered explicitly.
 
-A storage-unsafe `drillReference` is a definitive validation failure and must surface as `INVALID_ARGUMENT` / editable validation feedback before the write transport or transaction boundary. It must not be misclassified as ambiguous `NETWORK`, and must not lock the draft into an impossible retry loop.
+A storage-unsafe or ill-formed-Unicode `drillReference` is a definitive validation failure and must surface as `INVALID_ARGUMENT` / editable validation feedback before the write transport or transaction boundary. It must not be misclassified as ambiguous `NETWORK`, and must not lock the draft into an impossible retry loop.
 
 ## Ambiguous client result handling
 
@@ -114,7 +115,7 @@ Before transport, the client must:
 1. validate canonical UUID v4 request identity;
 2. bind canonical club and workspace actor context;
 3. run `parseProClubWeeklyTrainingDraft`;
-4. reject storage-unsafe `drillReference` values, including ASCII and Unicode byte overflow, before network invocation;
+4. reject storage-unsafe `drillReference` values, including ASCII/Unicode byte overflow and unpaired UTF-16 surrogates, before network invocation;
 5. reject invalid canonical data before network invocation;
 6. reject runtime Technical Director note smuggling before transport.
 
@@ -142,21 +143,22 @@ Before merge:
 5. client tests for request identity, authority binding, pre-network validation, response validation and ambiguity classification;
 6. storage-bound tests proving ASCII 1,500 bytes accepted / 1,501 rejected;
 7. storage-bound tests proving multibyte Unicode exactly 1,500 bytes accepted / overflow rejected;
-8. shared/domain and trusted-server storage-bound parity;
-9. UI wiring proof that byte length, not `maxLength` alone, controls drill-reference input;
-10. callable tests for exact envelope, authenticated actor and existing App Check allowlist boundary;
-11. emulator proof that same request + same payload returns the same plan and only one hierarchy exists;
-12. emulator proof that same actor + same request ID cannot cross from Club A to Club B;
-13. emulator proof that concurrent cross-tenant attempts with the same actor/request commit at most one tenant;
-14. emulator proof that same request + changed payload fails closed;
-15. emulator proof that rollback also removes the actor-global idempotency receipt;
-16. Rules-emulator proof that client read/write of the top-level request registry is denied;
-17. full 14×12 / 183-document football hierarchy remains supported;
-18. root TypeScript and production Vite build pass;
-19. existing Weekly Training domain/callable/parity regressions pass;
-20. independent Team 2 adversarial review;
-21. Codex exact-current-head re-review with no unresolved P1/P2 blocker;
-22. no production deploy/call/write/billing change.
+8. tests proving lone high/low surrogates are rejected while valid surrogate pairs remain accepted;
+9. shared/domain and trusted-server storage-bound parity;
+10. UI wiring proof that byte length, not `maxLength` alone, controls drill-reference input;
+11. callable tests for exact envelope, authenticated actor and existing App Check allowlist boundary;
+12. emulator proof that same request + same payload returns the same plan and only one hierarchy exists;
+13. emulator proof that same actor + same request ID cannot cross from Club A to Club B;
+14. emulator proof that concurrent cross-tenant attempts with the same actor/request commit at most one tenant;
+15. emulator proof that same request + changed payload fails closed;
+16. emulator proof that rollback also removes the actor-global idempotency receipt;
+17. Rules-emulator proof that client read/write of the top-level request registry is denied;
+18. full 14×12 / 183-document football hierarchy remains supported;
+19. root TypeScript and production Vite build pass;
+20. existing Weekly Training domain/callable/parity regressions pass;
+21. independent Team 2 adversarial review;
+22. Codex exact-current-head re-review with no unresolved P1/P2 blocker;
+23. no production deploy/call/write/billing change.
 
 ## Safety flags
 
