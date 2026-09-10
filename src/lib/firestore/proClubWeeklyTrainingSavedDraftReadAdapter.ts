@@ -3,14 +3,17 @@ import {
   doc,
   getDocFromServer,
   getDocsFromServer,
+  limit,
   query,
   where,
+  type QueryConstraint,
 } from "firebase/firestore";
 
 import { db } from "../firebase";
 import { isValidDocumentIdentifier } from "../proClubModel";
 import {
   buildWeeklyTrainingSavedDraftDetail,
+  buildWeeklyTrainingSavedDraftSessionCardinality,
   buildWeeklyTrainingSavedDraftSummary,
   sortWeeklyTrainingSavedDraftSummaries,
   type WeeklyTrainingSavedDraftDetail,
@@ -30,6 +33,7 @@ export interface WeeklyTrainingSavedDraftReadOps {
   readonly listDocuments: (
     path: readonly string[],
     filters?: readonly { field: string; value: string }[],
+    maxDocuments?: number,
   ) => Promise<readonly WeeklyTrainingSavedDraftDocument[]>;
   readonly readDocument: (
     path: readonly string[],
@@ -63,15 +67,20 @@ function validPath(path: readonly string[]): boolean {
   return path.length > 0 && path.every(isValidDocumentIdentifier);
 }
 
+function validReadLimit(value: number | undefined): boolean {
+  return value === undefined || (Number.isInteger(value) && value >= 1 && value <= 100);
+}
+
 export const firestoreWeeklyTrainingSavedDraftReadOps: WeeklyTrainingSavedDraftReadOps = {
-  async listDocuments(path, filters = []) {
-    if (!validPath(path) || path.length % 2 === 0) {
-      throw new Error("Saved-DRAFT collection path is invalid.");
+  async listDocuments(path, filters = [], maxDocuments) {
+    if (!validPath(path) || path.length % 2 === 0 || !validReadLimit(maxDocuments)) {
+      throw new Error("Saved-DRAFT collection read contract is invalid.");
     }
     const [first, ...rest] = path;
     if (!first) throw new Error("Saved-DRAFT collection path is invalid.");
     const ref = collection(db, first, ...rest);
-    const constraints = filters.map((filter) => where(filter.field, "==", filter.value));
+    const constraints: QueryConstraint[] = filters.map((filter) => where(filter.field, "==", filter.value));
+    if (maxDocuments !== undefined) constraints.push(limit(maxDocuments));
     const snapshot = await getDocsFromServer(query(ref, ...constraints));
     return snapshot.docs.map((item) => ({ id: item.id, data: item.data() }));
   },
@@ -163,35 +172,68 @@ export async function getHeadCoachWeeklyTrainingSavedDraftDetail(
 
   let sessionDocuments: readonly WeeklyTrainingSavedDraftDocument[];
   try {
-    sessionDocuments = await ops.listDocuments([
-      "proClubs",
-      clubId,
-      "weeklyTrainingPlans",
-      planId,
-      "sessions",
-    ]);
+    sessionDocuments = await ops.listDocuments(
+      ["proClubs", clubId, "weeklyTrainingPlans", planId, "sessions"],
+      undefined,
+      planSummary.value.sessionCount + 1,
+    );
   } catch (error) {
     return failure(error);
   }
 
+  if (sessionDocuments.length !== planSummary.value.sessionCount) {
+    return invalid("Saved-DRAFT session hierarchy cardinality does not match trusted plan metadata.");
+  }
+
+  const sessionCardinalities = sessionDocuments.map((sessionDocument) =>
+    buildWeeklyTrainingSavedDraftSessionCardinality(sessionDocument),
+  );
+  if (sessionCardinalities.some((entry) => entry.state !== "VALID")) {
+    return invalid("Saved-DRAFT session metadata failed validation before child reads.");
+  }
+  const orderedCardinalities = sessionCardinalities
+    .map((entry) => {
+      if (entry.state !== "VALID") throw new Error("Unreachable saved-DRAFT session state.");
+      return entry.value;
+    })
+    .sort((a, b) => a.orderIndex - b.orderIndex);
+  if (orderedCardinalities.some((entry, index) => entry.orderIndex !== index)) {
+    return invalid("Saved-DRAFT session ordering is invalid before child reads.");
+  }
+  const cardinalityBySessionId = new Map(
+    orderedCardinalities.map((entry) => [entry.sessionId, entry.blockCount] as const),
+  );
+
   let sessions: readonly WeeklyTrainingSavedDraftSessionDocument[];
   try {
     sessions = await Promise.all(
-      sessionDocuments.map(async (sessionDocument) => ({
-        document: sessionDocument,
-        blocks: await ops.listDocuments([
-          "proClubs",
-          clubId,
-          "weeklyTrainingPlans",
-          planId,
-          "sessions",
-          sessionDocument.id,
-          "blocks",
-        ]),
-      })),
+      sessionDocuments.map(async (sessionDocument) => {
+        const expectedBlockCount = cardinalityBySessionId.get(sessionDocument.id);
+        if (expectedBlockCount === undefined) throw new Error("Validated session cardinality is missing.");
+        return {
+          document: sessionDocument,
+          blocks: await ops.listDocuments(
+            [
+              "proClubs",
+              clubId,
+              "weeklyTrainingPlans",
+              planId,
+              "sessions",
+              sessionDocument.id,
+              "blocks",
+            ],
+            undefined,
+            expectedBlockCount + 1,
+          ),
+        };
+      }),
     );
   } catch (error) {
     return failure(error);
+  }
+
+  if (sessions.some((entry) => entry.blocks.length !== cardinalityBySessionId.get(entry.document.id))) {
+    return invalid("Saved-DRAFT block hierarchy cardinality does not match trusted session metadata.");
   }
 
   const detail = buildWeeklyTrainingSavedDraftDetail({

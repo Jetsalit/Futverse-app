@@ -16,6 +16,17 @@ export interface WeeklyTrainingSavedDraftSessionDocument {
   readonly blocks: readonly WeeklyTrainingSavedDraftDocument[];
 }
 
+export interface WeeklyTrainingSavedDraftTimestampOrder {
+  readonly seconds: number;
+  readonly nanoseconds: number;
+}
+
+export interface WeeklyTrainingSavedDraftSessionCardinality {
+  readonly sessionId: string;
+  readonly orderIndex: number;
+  readonly blockCount: number;
+}
+
 export interface WeeklyTrainingSavedDraftSummary {
   readonly planId: string;
   readonly clubId: string;
@@ -25,8 +36,10 @@ export interface WeeklyTrainingSavedDraftSummary {
   readonly mainObjective: string;
   readonly secondaryObjective?: string;
   readonly headCoachNote?: string;
+  readonly sessionCount: number;
   readonly createdAt: string;
   readonly updatedAt: string;
+  readonly updatedAtOrder: WeeklyTrainingSavedDraftTimestampOrder;
 }
 
 export interface WeeklyTrainingSavedDraftDetail extends WeeklyTrainingSavedDraftSummary {
@@ -37,13 +50,14 @@ export type WeeklyTrainingSavedDraftModelResult<T> =
   | { readonly state: "VALID"; readonly value: T }
   | { readonly state: "INVALID"; readonly error: Error };
 
+const SAVED_DRAFT_HIERARCHY_SCHEMA_VERSION = 2 as const;
 const PLAN_FIELDS = new Set([
   "schemaVersion", "authorUid", "status", "weekStartDate", "squadLabel", "mainObjective",
-  "secondaryObjective", "headCoachNote", "createdAt", "createdBy", "updatedAt", "updatedBy",
+  "secondaryObjective", "headCoachNote", "sessionCount", "createdAt", "createdBy", "updatedAt", "updatedBy",
 ]);
 const SESSION_FIELDS = new Set([
   "schemaVersion", "orderIndex", "sessionDate", "startTime", "location", "objective",
-  "phaseOfPlay", "plannedLoad", "durationMinutes", "createdAt", "createdBy", "updatedAt", "updatedBy",
+  "phaseOfPlay", "plannedLoad", "durationMinutes", "blockCount", "createdAt", "createdBy", "updatedAt", "updatedBy",
 ]);
 const BLOCK_FIELDS = new Set([
   "schemaVersion", "orderIndex", "blockType", "title", "durationMinutes", "drillReference",
@@ -70,24 +84,45 @@ function strictDate(value: unknown): value is string {
   const date = new Date(Date.UTC(year, month - 1, day));
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
-function timestampIso(value: unknown): string | null {
+function boundedCount(value: unknown, min: number, max: number): number | null {
+  return Number.isInteger(value) && (value as number) >= min && (value as number) <= max
+    ? (value as number)
+    : null;
+}
+function timestampValue(value: unknown): { iso: string; order: WeeklyTrainingSavedDraftTimestampOrder } | null {
   const raw = record(value);
   if (!raw) return null;
   const seconds = raw.seconds;
   const nanoseconds = raw.nanoseconds;
-  if (!Number.isInteger(seconds) || !Number.isInteger(nanoseconds)) return null;
+  if (!Number.isSafeInteger(seconds) || !Number.isInteger(nanoseconds)) return null;
   if ((nanoseconds as number) < 0 || (nanoseconds as number) > 999_999_999) return null;
   const millis = (seconds as number) * 1_000 + Math.floor((nanoseconds as number) / 1_000_000);
   if (!Number.isSafeInteger(millis)) return null;
   const date = new Date(millis);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  if (Number.isNaN(date.getTime())) return null;
+  return {
+    iso: date.toISOString(),
+    order: { seconds: seconds as number, nanoseconds: nanoseconds as number },
+  };
 }
-function audit(value: Record<string, unknown>): { createdAt: string; updatedAt: string } | null {
+function compareTimestampOrder(
+  left: WeeklyTrainingSavedDraftTimestampOrder,
+  right: WeeklyTrainingSavedDraftTimestampOrder,
+): number {
+  if (left.seconds !== right.seconds) return left.seconds < right.seconds ? -1 : 1;
+  if (left.nanoseconds !== right.nanoseconds) return left.nanoseconds < right.nanoseconds ? -1 : 1;
+  return 0;
+}
+function audit(value: Record<string, unknown>): {
+  createdAt: string;
+  updatedAt: string;
+  updatedAtOrder: WeeklyTrainingSavedDraftTimestampOrder;
+} | null {
   if (!isValidDocumentIdentifier(value.createdBy) || !isValidDocumentIdentifier(value.updatedBy)) return null;
-  const createdAt = timestampIso(value.createdAt);
-  const updatedAt = timestampIso(value.updatedAt);
-  if (!createdAt || !updatedAt || Date.parse(updatedAt) < Date.parse(createdAt)) return null;
-  return { createdAt, updatedAt };
+  const createdAt = timestampValue(value.createdAt);
+  const updatedAt = timestampValue(value.updatedAt);
+  if (!createdAt || !updatedAt || compareTimestampOrder(updatedAt.order, createdAt.order) < 0) return null;
+  return { createdAt: createdAt.iso, updatedAt: updatedAt.iso, updatedAtOrder: updatedAt.order };
 }
 function invalid<T>(message: string): WeeklyTrainingSavedDraftModelResult<T> {
   return { state: "INVALID", error: new Error(message) };
@@ -104,7 +139,7 @@ function parsePlanSummary(input: {
   if (!isValidDocumentIdentifier(input.document.id)) return invalid("Invalid saved-DRAFT plan identity.");
   const raw = record(input.document.data);
   if (!raw || !hasOnlyFields(raw, PLAN_FIELDS)) return invalid("Saved-DRAFT plan contains non-canonical fields.");
-  if (raw.schemaVersion !== 1 || raw.status !== "DRAFT" || raw.authorUid !== input.actorUid) {
+  if (raw.schemaVersion !== SAVED_DRAFT_HIERARCHY_SCHEMA_VERSION || raw.status !== "DRAFT" || raw.authorUid !== input.actorUid) {
     return invalid("Saved-DRAFT plan binding is invalid.");
   }
   if (!strictDate(raw.weekStartDate)) return invalid("Saved-DRAFT week start is invalid.");
@@ -112,8 +147,9 @@ function parsePlanSummary(input: {
   const mainObjective = exactText(raw.mainObjective, 500);
   const secondaryObjective = exactText(raw.secondaryObjective, 500, false);
   const headCoachNote = exactText(raw.headCoachNote, 2_000, false);
-  if (squadLabel === null || mainObjective === null || secondaryObjective === null || headCoachNote === null) {
-    return invalid("Saved-DRAFT plan text is invalid.");
+  const sessionCount = boundedCount(raw.sessionCount, 1, 14);
+  if (squadLabel === null || mainObjective === null || secondaryObjective === null || headCoachNote === null || sessionCount === null) {
+    return invalid("Saved-DRAFT plan content or hierarchy cardinality is invalid.");
   }
   const auditValue = audit(raw);
   if (!auditValue) return invalid("Saved-DRAFT plan audit metadata is invalid.");
@@ -128,20 +164,25 @@ function parsePlanSummary(input: {
       mainObjective,
       ...(secondaryObjective ? { secondaryObjective } : {}),
       ...(headCoachNote ? { headCoachNote } : {}),
+      sessionCount,
       createdAt: auditValue.createdAt,
       updatedAt: auditValue.updatedAt,
+      updatedAtOrder: auditValue.updatedAtOrder,
     },
   };
 }
 
 function parseSession(document: WeeklyTrainingSavedDraftDocument): {
   orderIndex: number;
+  blockCount: number;
   value: Omit<ProClubTrainingSessionDraft, "blocks">;
 } | null {
   if (!isValidDocumentIdentifier(document.id)) return null;
   const raw = record(document.data);
-  if (!raw || !hasOnlyFields(raw, SESSION_FIELDS) || raw.schemaVersion !== 1 || !audit(raw)) return null;
+  if (!raw || !hasOnlyFields(raw, SESSION_FIELDS) || raw.schemaVersion !== SAVED_DRAFT_HIERARCHY_SCHEMA_VERSION || !audit(raw)) return null;
   if (!Number.isInteger(raw.orderIndex) || (raw.orderIndex as number) < 0 || (raw.orderIndex as number) > 13) return null;
+  const blockCount = boundedCount(raw.blockCount, 1, 12);
+  if (blockCount === null) return null;
   const candidate = {
     sessionDate: raw.sessionDate,
     startTime: raw.startTime,
@@ -165,7 +206,7 @@ function parseSession(document: WeeklyTrainingSavedDraftDocument): {
   if (!parsed) return null;
   if (document.id !== `${parsed.sessionDate}-${parsed.startTime.replace(":", "")}`) return null;
   const { blocks: _blocks, ...withoutBlocks } = parsed;
-  return { orderIndex: raw.orderIndex as number, value: withoutBlocks };
+  return { orderIndex: raw.orderIndex as number, blockCount, value: withoutBlocks };
 }
 
 function parseBlock(document: WeeklyTrainingSavedDraftDocument): {
@@ -174,7 +215,7 @@ function parseBlock(document: WeeklyTrainingSavedDraftDocument): {
 } | null {
   if (!isValidDocumentIdentifier(document.id)) return null;
   const raw = record(document.data);
-  if (!raw || !hasOnlyFields(raw, BLOCK_FIELDS) || raw.schemaVersion !== 1 || !audit(raw)) return null;
+  if (!raw || !hasOnlyFields(raw, BLOCK_FIELDS) || raw.schemaVersion !== SAVED_DRAFT_HIERARCHY_SCHEMA_VERSION || !audit(raw)) return null;
   if (!Number.isInteger(raw.orderIndex) || (raw.orderIndex as number) < 0 || (raw.orderIndex as number) > 11) return null;
   const candidate = {
     blockType: raw.blockType,
@@ -216,11 +257,26 @@ export function buildWeeklyTrainingSavedDraftSummary(input: {
   return parsePlanSummary(input);
 }
 
+export function buildWeeklyTrainingSavedDraftSessionCardinality(
+  document: WeeklyTrainingSavedDraftDocument,
+): WeeklyTrainingSavedDraftModelResult<WeeklyTrainingSavedDraftSessionCardinality> {
+  const parsed = parseSession(document);
+  if (!parsed) return invalid("Saved-DRAFT session metadata is invalid.");
+  return {
+    state: "VALID",
+    value: {
+      sessionId: document.id,
+      orderIndex: parsed.orderIndex,
+      blockCount: parsed.blockCount,
+    },
+  };
+}
+
 export function sortWeeklyTrainingSavedDraftSummaries(
   summaries: readonly WeeklyTrainingSavedDraftSummary[],
 ): readonly WeeklyTrainingSavedDraftSummary[] {
   return [...summaries].sort((a, b) => {
-    const byUpdated = Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
+    const byUpdated = compareTimestampOrder(b.updatedAtOrder, a.updatedAtOrder);
     return byUpdated !== 0 ? byUpdated : a.planId.localeCompare(b.planId);
   });
 }
@@ -235,12 +291,12 @@ export function buildWeeklyTrainingSavedDraftDetail(input: {
   if (summaryResult.state !== "VALID") {
     return summaryResult as WeeklyTrainingSavedDraftModelResult<WeeklyTrainingSavedDraftDetail>;
   }
-  if (input.sessions.length < 1 || input.sessions.length > 14) {
-    return invalid("Saved-DRAFT session hierarchy is incomplete or oversized.");
+  if (input.sessions.length !== summaryResult.value.sessionCount) {
+    return invalid("Saved-DRAFT session hierarchy cardinality does not match the trusted plan metadata.");
   }
   const parsedSessions = input.sessions.map((entry) => {
     const session = parseSession(entry.document);
-    if (!session || entry.blocks.length < 1 || entry.blocks.length > 12) return null;
+    if (!session || entry.blocks.length !== session.blockCount) return null;
     const blocks = entry.blocks.map(parseBlock);
     if (blocks.some((block) => block === null)) return null;
     const orderedBlocks = (blocks as Array<NonNullable<(typeof blocks)[number]>>).sort((a, b) => a.orderIndex - b.orderIndex);
@@ -248,7 +304,7 @@ export function buildWeeklyTrainingSavedDraftDetail(input: {
     return { orderIndex: session.orderIndex, value: { ...session.value, blocks: orderedBlocks.map((block) => block.value) } };
   });
   if (parsedSessions.some((session) => session === null)) {
-    return invalid("Saved-DRAFT child hierarchy contains invalid data.");
+    return invalid("Saved-DRAFT child hierarchy contains invalid or incomplete data.");
   }
   const orderedSessions = (parsedSessions as Array<NonNullable<(typeof parsedSessions)[number]>>).sort((a, b) => a.orderIndex - b.orderIndex);
   if (orderedSessions.some((session, index) => session.orderIndex !== index)) {

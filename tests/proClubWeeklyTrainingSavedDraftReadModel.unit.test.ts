@@ -13,12 +13,13 @@ function plan(overrides: Record<string, unknown> = {}) {
   return {
     id: "plan-a",
     data: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       authorUid: "hc-a",
       status: "DRAFT",
       weekStartDate: "2026-09-07",
       squadLabel: "First Team",
       mainObjective: "Build through pressure",
+      sessionCount: 1,
       createdAt: stamp(1_757_280_000),
       createdBy: "hc-a",
       updatedAt: stamp(1_757_280_100),
@@ -30,17 +31,18 @@ function plan(overrides: Record<string, unknown> = {}) {
 
 function session(orderIndex = 0, overrides: Record<string, unknown> = {}) {
   return {
-    id: "2026-09-08-1600",
+    id: orderIndex === 0 ? "2026-09-08-1600" : "2026-09-09-1600",
     data: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       orderIndex,
-      sessionDate: "2026-09-08",
+      sessionDate: orderIndex === 0 ? "2026-09-08" : "2026-09-09",
       startTime: "16:00",
       location: "Training Ground A",
       objective: "Progress through two pressing lines",
       phaseOfPlay: "IN_POSSESSION",
       plannedLoad: "MODERATE",
       durationMinutes: 90,
+      blockCount: 1,
       createdAt: stamp(1_757_280_000),
       createdBy: "hc-a",
       updatedAt: stamp(1_757_280_100),
@@ -54,11 +56,11 @@ function block(orderIndex = 0, overrides: Record<string, unknown> = {}) {
   return {
     id: `block-${String(orderIndex + 1).padStart(2, "0")}`,
     data: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       orderIndex,
       blockType: "TACTICAL",
-      title: "Build-up 8v6",
-      durationMinutes: 45,
+      title: `Build-up block ${orderIndex + 1}`,
+      durationMinutes: 30,
       coachingPoints: ["Create the third-player option"],
       createdAt: stamp(1_757_280_000),
       createdBy: "hc-a",
@@ -69,7 +71,7 @@ function block(orderIndex = 0, overrides: Record<string, unknown> = {}) {
   };
 }
 
-test("saved-DRAFT summary binds exact club, author and canonical persisted schema", () => {
+test("saved-DRAFT summary binds exact club, author and integrity-bearing schema", () => {
   const result = buildWeeklyTrainingSavedDraftSummary({
     clubId: "club-a",
     actorUid: "hc-a",
@@ -79,17 +81,20 @@ test("saved-DRAFT summary binds exact club, author and canonical persisted schem
   if (result.state !== "VALID") return;
   assert.equal(result.value.planId, "plan-a");
   assert.equal(result.value.authorUid, "hc-a");
-  assert.equal(result.value.squadLabel, "First Team");
+  assert.equal(result.value.sessionCount, 1);
   assert.match(result.value.updatedAt, /^\d{4}-\d{2}-\d{2}T/);
 });
 
-test("summary fails closed for another author, non-DRAFT, extra fields and bad timestamps", () => {
+test("summary fails closed for another author, lifecycle drift, extra fields, bad counts and bad timestamps", () => {
   for (const document of [
     plan({ authorUid: "hc-b" }),
     plan({ status: "SUBMITTED" }),
     plan({ injected: true }),
+    plan({ sessionCount: 0 }),
+    plan({ sessionCount: 15 }),
     plan({ updatedAt: { seconds: 1, nanoseconds: 1_000_000_000 } }),
     plan({ createdAt: stamp(200), updatedAt: stamp(100) }),
+    plan({ createdAt: stamp(100, 900_000), updatedAt: stamp(100, 800_000) }),
     plan({ squadLabel: "x".repeat(101) }),
   ]) {
     assert.equal(
@@ -110,14 +115,31 @@ test("detail reconstructs canonical football draft from persisted hierarchy", ()
   if (result.state !== "VALID") return;
   assert.equal(result.value.draft.sessions.length, 1);
   assert.equal(result.value.draft.sessions[0]?.blocks.length, 1);
-  assert.equal(result.value.draft.sessions[0]?.blocks[0]?.title, "Build-up 8v6");
 });
 
-test("detail rejects partial, reordered and non-deterministic child hierarchy", () => {
+test("detail rejects missing suffix children using trusted cardinality", () => {
   assert.equal(
-    buildWeeklyTrainingSavedDraftDetail({ clubId: "club-a", actorUid: "hc-a", planDocument: plan(), sessions: [] }).state,
+    buildWeeklyTrainingSavedDraftDetail({
+      clubId: "club-a",
+      actorUid: "hc-a",
+      planDocument: plan({ sessionCount: 2 }),
+      sessions: [{ document: session(), blocks: [block()] }],
+    }).state,
     "INVALID",
   );
+
+  assert.equal(
+    buildWeeklyTrainingSavedDraftDetail({
+      clubId: "club-a",
+      actorUid: "hc-a",
+      planDocument: plan(),
+      sessions: [{ document: session(0, { blockCount: 2 }), blocks: [block()] }],
+    }).state,
+    "INVALID",
+  );
+});
+
+test("detail rejects reordered and non-deterministic child hierarchy", () => {
   assert.equal(
     buildWeeklyTrainingSavedDraftDetail({
       clubId: "club-a",
@@ -147,15 +169,22 @@ test("detail rejects partial, reordered and non-deterministic child hierarchy", 
   );
 });
 
-test("summary ordering is deterministic by trusted updatedAt then planId", () => {
-  const a = buildWeeklyTrainingSavedDraftSummary({ clubId: "club-a", actorUid: "hc-a", document: plan() });
-  const b = buildWeeklyTrainingSavedDraftSummary({
+test("summary ordering preserves Firestore nanosecond precision", () => {
+  const older = buildWeeklyTrainingSavedDraftSummary({
     clubId: "club-a",
     actorUid: "hc-a",
-    document: { ...plan({ updatedAt: stamp(1_757_280_200) }), id: "plan-b" },
+    document: { ...plan({ updatedAt: stamp(1_757_280_100, 100_000) }), id: "plan-z" },
   });
-  assert.equal(a.state, "VALID");
-  assert.equal(b.state, "VALID");
-  if (a.state !== "VALID" || b.state !== "VALID") return;
-  assert.deepEqual(sortWeeklyTrainingSavedDraftSummaries([a.value, b.value]).map((item) => item.planId), ["plan-b", "plan-a"]);
+  const newer = buildWeeklyTrainingSavedDraftSummary({
+    clubId: "club-a",
+    actorUid: "hc-a",
+    document: { ...plan({ updatedAt: stamp(1_757_280_100, 900_000) }), id: "plan-a" },
+  });
+  assert.equal(older.state, "VALID");
+  assert.equal(newer.state, "VALID");
+  if (older.state !== "VALID" || newer.state !== "VALID") return;
+  assert.deepEqual(
+    sortWeeklyTrainingSavedDraftSummaries([older.value, newer.value]).map((item) => item.planId),
+    ["plan-a", "plan-z"],
+  );
 });

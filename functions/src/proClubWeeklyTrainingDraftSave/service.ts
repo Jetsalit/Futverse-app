@@ -31,6 +31,7 @@ const WEEKLY_TRAINING_DRAFT_SAVE_OPERATION =
   "PRO_CLUB_WEEKLY_TRAINING_DRAFT_SAVE" as const;
 const WEEKLY_TRAINING_DRAFT_SAVE_REQUESTS =
   "weeklyTrainingDraftSaveRequests" as const;
+const WEEKLY_TRAINING_DRAFT_HIERARCHY_SCHEMA_VERSION = 2 as const;
 
 function exactId(value: unknown): value is string {
   return (
@@ -235,12 +236,15 @@ export class WeeklyTrainingDraftSaveService {
 
       if (receiptSnap.exists) {
         const persistedCreatedAt = receipt?.createdAtIso;
+        const existingPlan = existingPlanSnap?.data();
         if (
           !isCanonicalIsoTimestamp(persistedCreatedAt) ||
           !existingPlanSnap ||
           !existingPlanSnap.exists ||
-          existingPlanSnap.data()?.authorUid !== actorUid ||
-          existingPlanSnap.data()?.status !== "DRAFT"
+          existingPlan?.schemaVersion !== WEEKLY_TRAINING_DRAFT_HIERARCHY_SCHEMA_VERSION ||
+          existingPlan?.authorUid !== actorUid ||
+          existingPlan?.status !== "DRAFT" ||
+          existingPlan?.sessionCount !== draft.sessions.length
         ) {
           throw new WeeklyTrainingDraftSaveError(
             "FAILED_PRECONDITION",
@@ -259,7 +263,7 @@ export class WeeklyTrainingDraftSaveService {
       }
 
       const planPayload = {
-        schemaVersion: 1,
+        schemaVersion: WEEKLY_TRAINING_DRAFT_HIERARCHY_SCHEMA_VERSION,
         authorUid: actorUid,
         status: "DRAFT",
         weekStartDate: draft.weekStartDate,
@@ -267,6 +271,7 @@ export class WeeklyTrainingDraftSaveService {
         mainObjective: draft.mainObjective,
         ...(draft.secondaryObjective ? { secondaryObjective: draft.secondaryObjective } : {}),
         ...(draft.headCoachNote ? { headCoachNote: draft.headCoachNote } : {}),
+        sessionCount: draft.sessions.length,
         createdAt: now,
         createdBy: actorUid,
         updatedAt: now,
@@ -280,7 +285,7 @@ export class WeeklyTrainingDraftSaveService {
         const sid = sessionId(session);
         const sessionRef = freshPlanRef.collection("sessions").doc(sid);
         transaction.create(sessionRef, {
-          schemaVersion: 1,
+          schemaVersion: WEEKLY_TRAINING_DRAFT_HIERARCHY_SCHEMA_VERSION,
           orderIndex: sessionIndex,
           sessionDate: session.sessionDate,
           startTime: session.startTime,
@@ -289,6 +294,7 @@ export class WeeklyTrainingDraftSaveService {
           phaseOfPlay: session.phaseOfPlay,
           plannedLoad: session.plannedLoad,
           durationMinutes: session.durationMinutes,
+          blockCount: session.blocks.length,
           createdAt: now,
           createdBy: actorUid,
           updatedAt: now,
@@ -299,7 +305,7 @@ export class WeeklyTrainingDraftSaveService {
         session.blocks.forEach((block, blockIndex) => {
           const blockRef = sessionRef.collection("blocks").doc(blockId(blockIndex));
           transaction.create(blockRef, {
-            schemaVersion: 1,
+            schemaVersion: WEEKLY_TRAINING_DRAFT_HIERARCHY_SCHEMA_VERSION,
             orderIndex: blockIndex,
             blockType: block.blockType,
             title: block.title,

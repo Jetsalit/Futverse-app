@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Expose persisted Weekly Training DRAFTs to the active Head Coach as a read-only list and detail view, using the canonical Firestore hierarchy already created by the reviewed server-mediated fresh-save flow.
+Expose persisted Weekly Training DRAFTs to the active Head Coach as a read-only list and detail view, using the trusted server-written Firestore hierarchy.
 
 This slice closes the immediate post-save visibility gap. It does **not** add edit/reconcile, delete, submit/review/approve/publish, Technical Director co-authoring, or any new write authority.
 
@@ -12,6 +12,20 @@ This slice closes the immediate post-save visibility gap. It does **not** add ed
 - Predecessor: PR #122 merged Weekly Training fresh-DRAFT client/UI save.
 - Existing Firestore Rules already allow active Pro Club members to read `weeklyTrainingPlans`, `sessions`, and `blocks`.
 - No Firestore Rules change is required by this slice.
+
+## Integrity remediation before production
+
+Codex review on PR #123 identified that read-time contiguity alone cannot prove a hierarchy is complete when trailing children are missing. Because the Weekly Training server path has not been deployed to production, this slice upgrades the persisted hierarchy contract before production rather than carrying an ambiguous legacy format forward.
+
+Canonical hierarchy documents use `schemaVersion == 2`:
+
+- plan stores trusted `sessionCount` (1–14);
+- each session stores trusted `blockCount` (1–12);
+- blocks remain deterministic `block-01` through `block-12`;
+- document count is unchanged: maximum 183 hierarchy documents;
+- request-receipt schema remains independent and unchanged.
+
+The trusted server computes cardinality directly from the already validated draft inside the same atomic transaction that creates the hierarchy. Client payload cardinality is never trusted.
 
 ## Runtime audience
 
@@ -27,17 +41,9 @@ The list is further constrained to DRAFT plan documents authored by the current 
 
 ## Canonical read paths
 
-Plan list / exact plan:
-
-`proClubs/{clubId}/weeklyTrainingPlans/{planId}`
-
-Sessions:
-
-`proClubs/{clubId}/weeklyTrainingPlans/{planId}/sessions/{sessionId}`
-
-Blocks:
-
-`proClubs/{clubId}/weeklyTrainingPlans/{planId}/sessions/{sessionId}/blocks/{blockId}`
+- `proClubs/{clubId}/weeklyTrainingPlans/{planId}`
+- `proClubs/{clubId}/weeklyTrainingPlans/{planId}/sessions/{sessionId}`
+- `proClubs/{clubId}/weeklyTrainingPlans/{planId}/sessions/{sessionId}/blocks/{blockId}`
 
 The request registry `weeklyTrainingDraftSaveRequests/{derivedKey}` is server-only idempotency state and is never read by this client slice.
 
@@ -47,41 +53,44 @@ The request registry `weeklyTrainingDraftSaveRequests/{derivedKey}` is server-on
 
 The Firestore adapter queries the bound club's `weeklyTrainingPlans` collection for the current canonical `authorUid` and `status == DRAFT`.
 
-Every returned plan must pass strict persisted-schema validation before display. The client then sorts valid DRAFT summaries by trusted `updatedAt` descending, with `planId` as a deterministic tie-breaker.
+Every returned plan must pass strict schema-v2 validation before display. Summaries are sorted by the full trusted Firestore timestamp tuple `(seconds, nanoseconds)` descending; `planId` is only a deterministic tie-breaker. ISO conversion is display-only and never used for integrity ordering.
 
 ### Detail
 
-An exact detail request is accepted only for a plan ID selected from the Head Coach's own saved-DRAFT list. The adapter still independently re-reads the plan and verifies `authorUid` equals the bound Head Coach UID before loading children.
+An exact detail request is accepted only for a plan ID selected from the Head Coach's own saved-DRAFT list. The adapter independently re-reads the plan and re-validates author/status before loading children.
 
-The adapter reads every session and every block under that plan. The pure read model requires:
+The adapter reads sessions with a hard query limit of `sessionCount + 1`. If the returned count is not exactly `sessionCount`, it fails closed before any block fan-out.
 
-- schema version `1` at every level;
-- canonical plan/session/block field sets only;
+Every session is then validated before block reads. Blocks are read with a hard query limit of `blockCount + 1`; each returned block collection must match the trusted `blockCount` exactly.
+
+The pure read model additionally requires:
+
+- schema version `2` at every hierarchy level;
+- canonical field sets only;
 - canonical Firestore audit fields;
 - valid Firestore document identities;
-- deterministic session document IDs (`YYYY-MM-DD-HHmm`);
-- deterministic contiguous block document IDs (`block-01` ... `block-12`);
+- deterministic session IDs (`YYYY-MM-DD-HHmm`);
+- deterministic contiguous block IDs (`block-01` ... `block-12`);
 - contiguous `orderIndex` values with no gaps or duplicates;
-- 1–14 sessions;
-- 1–12 blocks per session;
-- valid trusted timestamps;
+- exact trusted session/block cardinality;
+- valid trusted timestamps at full nanosecond precision;
 - canonical actor IDs in audit metadata;
 - complete reconstruction through `parseProClubWeeklyTrainingDraft`.
 
-Malformed or partial hierarchy data fails closed as `INVALID_DATA`; the UI must not render a partial football plan as if it were valid.
+Malformed, oversized, truncated, or partial hierarchy data fails closed as `INVALID_DATA`; the UI must not render a partial football plan as valid.
 
 ## Timestamp boundary
 
-Persisted `createdAt` / `updatedAt` values must expose Firestore-compatible integer `seconds` and `nanoseconds` values. Nanoseconds must be within `0..999,999,999`. `updatedAt` must not precede `createdAt`.
+Persisted `createdAt` / `updatedAt` values must expose Firestore-compatible integer `seconds` and `nanoseconds`. Nanoseconds must be within `0..999,999,999`.
 
-The read model converts only validated timestamp values to ISO strings for display. Raw timestamp objects are not exposed to the UI model.
+Integrity comparisons use the tuple directly. `updatedAt` must not precede `createdAt`, including sub-millisecond differences. ISO strings are generated only for display.
 
 ## Failure states
 
 Read operations normalize to:
 
 - `FOUND`
-- `MISSING` (detail only; also used when an exact plan is not authored by the bound Head Coach)
+- `MISSING`
 - `PERMISSION_DENIED`
 - `INVALID_DATA`
 - `ERROR`
@@ -96,7 +105,8 @@ The UI shows generic safe failure copy and does not expose raw Firebase error pa
 - No direct Firestore writes are added.
 - No write fallback exists in the read adapter or browser component.
 - A selected plan is re-bound to the same club and author before detail children are accepted.
-- Switching organization/actor invalidates the visible list/detail state and starts a new bounded read.
+- Switching organization/actor invalidates visible state and in-flight request generation.
+- Oversized session results are rejected before block fan-out.
 
 ## Explicitly out of scope
 
@@ -107,15 +117,14 @@ The UI shows generic safe failure copy and does not expose raw Firebase error pa
 - Technical Director co-authoring/review UI;
 - today's-session derivation/launcher;
 - new Firestore Rules;
-- new Functions/callables;
+- new callable/function entrypoints;
 - Firestore indexes/config changes;
 - production deployment or production data mutation.
 
 ## Production safety
 
 `FIRESTORE_RULES_CHANGED=NO`
-`FUNCTIONS_SOURCE_CHANGED=NO`
-`FUNCTIONS_INDEX_CHANGED=NO`
+`FUNCTIONS_ENTRYPOINT_CHANGED=NO`
 `FIREBASE_CONFIG_CHANGED=NO`
 `RUNTIME_CAPABILITY_CHANGED=NO`
 `PRODUCTION_DEPLOYED=NO`

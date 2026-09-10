@@ -7,26 +7,28 @@ import {
   type WeeklyTrainingSavedDraftReadOps,
 } from "../src/lib/firestore/proClubWeeklyTrainingSavedDraftReadAdapter";
 
-const stamp = (seconds: number) => ({ seconds, nanoseconds: 0 });
-const plan = (authorUid = "hc-a") => ({
+const stamp = (seconds: number, nanoseconds = 0) => ({ seconds, nanoseconds });
+const plan = (authorUid = "hc-a", overrides: Record<string, unknown> = {}) => ({
   id: "plan-a",
   data: {
-    schemaVersion: 1,
+    schemaVersion: 2,
     authorUid,
     status: "DRAFT",
     weekStartDate: "2026-09-07",
     squadLabel: "First Team",
     mainObjective: "Build through pressure",
+    sessionCount: 1,
     createdAt: stamp(1_757_280_000),
     createdBy: authorUid,
     updatedAt: stamp(1_757_280_100),
     updatedBy: authorUid,
+    ...overrides,
   },
 });
-const session = {
+const session = (overrides: Record<string, unknown> = {}) => ({
   id: "2026-09-08-1600",
   data: {
-    schemaVersion: 1,
+    schemaVersion: 2,
     orderIndex: 0,
     sessionDate: "2026-09-08",
     startTime: "16:00",
@@ -35,16 +37,18 @@ const session = {
     phaseOfPlay: "IN_POSSESSION",
     plannedLoad: "MODERATE",
     durationMinutes: 90,
+    blockCount: 1,
     createdAt: stamp(1_757_280_000),
     createdBy: "hc-a",
     updatedAt: stamp(1_757_280_100),
     updatedBy: "hc-a",
+    ...overrides,
   },
-};
+});
 const block = {
   id: "block-01",
   data: {
-    schemaVersion: 1,
+    schemaVersion: 2,
     orderIndex: 0,
     blockType: "TACTICAL",
     title: "Build-up 8v6",
@@ -58,10 +62,10 @@ const block = {
 };
 
 test("list query is tenant-bound and author/status constrained", async () => {
-  const calls: Array<{ path: readonly string[]; filters: unknown }> = [];
+  const calls: Array<{ path: readonly string[]; filters: unknown; maxDocuments?: number }> = [];
   const ops: WeeklyTrainingSavedDraftReadOps = {
-    async listDocuments(path, filters) {
-      calls.push({ path, filters });
+    async listDocuments(path, filters, maxDocuments) {
+      calls.push({ path, filters, maxDocuments });
       return [plan()];
     },
     async readDocument() {
@@ -76,6 +80,7 @@ test("list query is tenant-bound and author/status constrained", async () => {
     { field: "authorUid", value: "hc-a" },
     { field: "status", value: "DRAFT" },
   ]);
+  assert.equal(calls[0]?.maxDocuments, undefined);
 });
 
 test("detail rebinds plan author before reading child collections", async () => {
@@ -94,29 +99,63 @@ test("detail rebinds plan author before reading child collections", async () => 
   assert.equal(childReads, 0);
 });
 
-test("detail reads canonical sessions and blocks then returns validated hierarchy", async () => {
-  const paths: string[] = [];
+test("detail bounds session and block reads by trusted cardinality", async () => {
+  const calls: Array<{ path: string; maxDocuments?: number }> = [];
   const ops: WeeklyTrainingSavedDraftReadOps = {
     async readDocument(path) {
-      paths.push(path.join("/"));
+      calls.push({ path: path.join("/") });
       return plan();
     },
-    async listDocuments(path) {
-      paths.push(path.join("/"));
-      if (path.at(-1) === "sessions") return [session];
+    async listDocuments(path, _filters, maxDocuments) {
+      calls.push({ path: path.join("/"), maxDocuments });
+      if (path.at(-1) === "sessions") return [session()];
       if (path.at(-1) === "blocks") return [block];
       return [];
     },
   };
   const result = await getHeadCoachWeeklyTrainingSavedDraftDetail("club-a", "hc-a", "plan-a", ops);
   assert.equal(result.state, "FOUND");
-  if (result.state !== "FOUND") return;
-  assert.equal(result.value.draft.sessions[0]?.blocks[0]?.title, "Build-up 8v6");
-  assert.deepEqual(paths, [
-    "proClubs/club-a/weeklyTrainingPlans/plan-a",
-    "proClubs/club-a/weeklyTrainingPlans/plan-a/sessions",
-    "proClubs/club-a/weeklyTrainingPlans/plan-a/sessions/2026-09-08-1600/blocks",
+  assert.deepEqual(calls, [
+    { path: "proClubs/club-a/weeklyTrainingPlans/plan-a" },
+    { path: "proClubs/club-a/weeklyTrainingPlans/plan-a/sessions", maxDocuments: 2 },
+    { path: "proClubs/club-a/weeklyTrainingPlans/plan-a/sessions/2026-09-08-1600/blocks", maxDocuments: 2 },
   ]);
+});
+
+test("oversized session result fails before any block fan-out", async () => {
+  let blockReads = 0;
+  const sessions = Array.from({ length: 15 }, (_, index) => ({
+    ...session({ orderIndex: Math.min(index, 13) }),
+    id: `session-${index}`,
+  }));
+  const ops: WeeklyTrainingSavedDraftReadOps = {
+    async readDocument() {
+      return plan("hc-a", { sessionCount: 14 });
+    },
+    async listDocuments(path) {
+      if (path.at(-1) === "sessions") return sessions;
+      if (path.at(-1) === "blocks") blockReads += 1;
+      return [];
+    },
+  };
+  const result = await getHeadCoachWeeklyTrainingSavedDraftDetail("club-a", "hc-a", "plan-a", ops);
+  assert.equal(result.state, "INVALID_DATA");
+  assert.equal(blockReads, 0);
+});
+
+test("truncated block hierarchy fails closed against trusted blockCount", async () => {
+  const ops: WeeklyTrainingSavedDraftReadOps = {
+    async readDocument() {
+      return plan();
+    },
+    async listDocuments(path) {
+      if (path.at(-1) === "sessions") return [session({ blockCount: 2 })];
+      if (path.at(-1) === "blocks") return [block];
+      return [];
+    },
+  };
+  const result = await getHeadCoachWeeklyTrainingSavedDraftDetail("club-a", "hc-a", "plan-a", ops);
+  assert.equal(result.state, "INVALID_DATA");
 });
 
 test("permission-denied is normalized without exposing a partial result", async () => {
