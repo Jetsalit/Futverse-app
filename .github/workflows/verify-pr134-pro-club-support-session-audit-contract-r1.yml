@@ -1,6 +1,9 @@
 name: PR134 Pro Club Support Session Audit Contract Acceptance R1
 
 on:
+  push:
+    branches:
+      - verify/pr134-pro-club-support-session-audit-contract-r1
   pull_request:
     branches:
       - feat/pro-club-superadmin-support-session-audit-v1-contract
