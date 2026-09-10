@@ -17,6 +17,10 @@ import type {
   ProClubTrainingSessionDraft,
 } from "../../../lib/proClubWeeklyTraining";
 import {
+  PRO_CLUB_TRAINING_DRILL_REFERENCE_MAX_UTF8_BYTES,
+  proClubTrainingUtf8ByteLength,
+} from "../../../lib/proClubWeeklyTrainingStorageBounds";
+import {
   MAX_WEEKLY_TRAINING_BLOCKS_PER_SESSION,
   MAX_WEEKLY_TRAINING_SESSIONS,
   addTrainingBlock,
@@ -291,7 +295,25 @@ export default function WeeklyTrainingDraftComposer({
                     <label className={labelClass}>Type<select className={inputClass} value={block.blockType} onChange={(event) => updateBlock(sessionIndex, blockIndex, { ...block, blockType: event.target.value as ProClubTrainingBlockType })}>{blockTypeOptions.map((option) => <option key={option}>{option}</option>)}</select></label>
                     <label className={labelClass}>Block title<input className={inputClass} maxLength={200} value={block.title} onChange={(event) => updateBlock(sessionIndex, blockIndex, { ...block, title: event.target.value })} /></label>
                     <label className={labelClass}>Minutes<input type="number" min={1} max={180} className={inputClass} value={block.durationMinutes} onChange={(event) => updateBlock(sessionIndex, blockIndex, { ...block, durationMinutes: toInteger(event.target.value, block.durationMinutes) })} /></label>
-                    <label className={`${labelClass} lg:col-span-2`}>Drill reference (optional)<input className={inputClass} value={block.drillReference ?? ""} onChange={(event) => updateBlock(sessionIndex, blockIndex, { ...block, ...(event.target.value ? { drillReference: event.target.value } : { drillReference: undefined }) })} /></label>
+                    <label className={`${labelClass} lg:col-span-2`}>
+                      Drill reference (optional)
+                      <input
+                        className={inputClass}
+                        maxLength={PRO_CLUB_TRAINING_DRILL_REFERENCE_MAX_UTF8_BYTES}
+                        value={block.drillReference ?? ""}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          if (proClubTrainingUtf8ByteLength(value) > PRO_CLUB_TRAINING_DRILL_REFERENCE_MAX_UTF8_BYTES) return;
+                          updateBlock(sessionIndex, blockIndex, {
+                            ...block,
+                            ...(value ? { drillReference: value } : { drillReference: undefined }),
+                          });
+                        }}
+                      />
+                      <span className="mt-1 block normal-case tracking-normal text-[10px] font-medium text-slate-500">
+                        {proClubTrainingUtf8ByteLength(block.drillReference ?? "")}/{PRO_CLUB_TRAINING_DRILL_REFERENCE_MAX_UTF8_BYTES} UTF-8 bytes
+                      </span>
+                    </label>
                     <button type="button" disabled={session.blocks.length <= 1} onClick={() => updateSession(sessionIndex, removeTrainingBlock(session, blockIndex))} className="self-end rounded-xl border border-rose-500/30 px-3 py-2 text-xs font-bold text-rose-300 disabled:opacity-30">Remove block</button>
                     <label className={`${labelClass} lg:col-span-3`}>Coaching points (one per line)<textarea className={inputClass} rows={3} maxLength={3000} value={block.coachingPoints.join("\n")} onChange={(event) => updateBlock(sessionIndex, blockIndex, { ...block, coachingPoints: event.target.value.split("\n") })} /></label>
                   </div>
