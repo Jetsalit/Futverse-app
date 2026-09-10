@@ -382,20 +382,32 @@ test(
 
 
 test(
-  "3. global SUPERADMIN without Pro Club membership gets no bypass",
+  "3. ACTIVE global SUPERADMIN gets exact Pro Club support read without tenant discovery",
   async () => {
-    await assertFails(
+    const db = authedDb(GLOBAL_SUPERADMIN);
+
+    const clubSnapshot = await assertSucceeds(
       getDoc(
         doc(
-          authedDb(GLOBAL_SUPERADMIN),
+          db,
           "proClubs",
           CLUB_A,
         ),
       ),
     );
+
+    assert.equal(clubSnapshot.data()?.name, "Club A");
+
+    await assertFails(
+      getDocs(
+        collection(
+          db,
+          "proClubs",
+        ),
+      ),
+    );
   },
 );
-
 
 test(
   "4. Academy ADMIN without Pro Club membership gets no fallback",
