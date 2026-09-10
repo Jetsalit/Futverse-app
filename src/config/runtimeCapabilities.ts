@@ -18,9 +18,9 @@ export function isFunctionBackedProClubWebAvailable(
  *
  * Production availability must be backed by source-controlled evidence that
  * the index has been deployed to the pinned production project and verified
- * READY. This value deliberately cannot come from a Vite environment variable:
- * flipping it requires a reviewed source change after the separate production
- * index deployment/verification gate has succeeded.
+ * READY. This value deliberately cannot come from a Vite/Node environment
+ * variable: flipping it requires a reviewed source change after the separate
+ * production index deployment/verification gate has succeeded.
  */
 export function isWeeklyTrainingSavedDraftReadAvailable(
   evidence: WeeklyTrainingSavedDraftReadCapabilityEvidence,
@@ -28,27 +28,33 @@ export function isWeeklyTrainingSavedDraftReadAvailable(
   return evidence.dev === true || evidence.productionIndexVerified === true;
 }
 
-function readViteDevMode(): boolean {
-  const environment = (
+/**
+ * Vite injects `import.meta.hot` only while a module is served by the dev
+ * server. It is not a build-mode flag and is unavailable in deployable build
+ * output, even when a build process inherits NODE_ENV=development or uses a
+ * non-production Vite mode. Use this serve-only signal for local/emulator UI
+ * exceptions so every `vite build` remains fail-closed by construction.
+ */
+function readViteDevServerRuntime(): boolean {
+  return (
     import.meta as ImportMeta & {
-      env?: { readonly DEV?: boolean };
+      readonly hot?: unknown;
     }
-  ).env;
-
-  return environment?.DEV === true;
+  ).hot !== undefined;
 }
 
 /**
  * Spark-first hard boundary.
  *
- * Function-backed Pro Club browser operations are allowed only in Vite DEV
- * (for local/emulator development). Production builds are fail-closed and
- * cannot be re-enabled by an environment variable while FutVerse remains on
- * Spark. A future post-revenue server rollout requires a reviewed source
- * change rather than an accidental production environment toggle.
+ * Function-backed Pro Club browser operations are allowed only while served by
+ * the Vite dev server (for local/emulator development). Every production build
+ * is fail-closed and cannot be re-enabled by NODE_ENV, Vite mode, or another
+ * environment variable while FutVerse remains on Spark. A future post-revenue
+ * server rollout requires a reviewed source change rather than an accidental
+ * production environment toggle.
  */
 export const FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE =
-  isFunctionBackedProClubWebAvailable({ dev: readViteDevMode() });
+  isFunctionBackedProClubWebAvailable({ dev: readViteDevServerRuntime() });
 
 /**
  * IMPORTANT: keep false until an explicitly authorized production operation
@@ -60,7 +66,7 @@ export const PRODUCTION_WEEKLY_TRAINING_SAVED_DRAFT_INDEX_VERIFIED = false as co
 
 export const WEEKLY_TRAINING_SAVED_DRAFT_READ_AVAILABLE =
   isWeeklyTrainingSavedDraftReadAvailable({
-    dev: readViteDevMode(),
+    dev: readViteDevServerRuntime(),
     productionIndexVerified:
       PRODUCTION_WEEKLY_TRAINING_SAVED_DRAFT_INDEX_VERIFIED,
   });
