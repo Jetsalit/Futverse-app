@@ -23,16 +23,17 @@ async function source(path: string): Promise<string> {
   return await readFile(path, "utf8");
 }
 
-test("saved-DRAFT production capability is fail-closed until reviewed index evidence exists", () => {
-  assert.equal(PRODUCTION_WEEKLY_TRAINING_SAVED_DRAFT_INDEX_VERIFIED, false);
+test("saved-DRAFT production capability activates only from reviewed index evidence", () => {
+  assert.equal(PRODUCTION_WEEKLY_TRAINING_SAVED_DRAFT_INDEX_VERIFIED, true);
   assert.equal(isWeeklyTrainingSavedDraftReadAvailable({ dev: false, productionIndexVerified: false }), false);
   assert.equal(isWeeklyTrainingSavedDraftReadAvailable({ dev: true, productionIndexVerified: false }), true);
   assert.equal(isWeeklyTrainingSavedDraftReadAvailable({ dev: false, productionIndexVerified: true }), true);
 });
 
-test("saved-DRAFT dev exception is serve-only and cannot be enabled by build environment or mode", async () => {
+test("saved-DRAFT dev exception remains serve-only and production activation has no environment escape hatch", async () => {
   const capability = await source(files.capability);
-  assert.match(capability, /PRODUCTION_WEEKLY_TRAINING_SAVED_DRAFT_INDEX_VERIFIED = false as const/);
+  assert.match(capability, /PRODUCTION_WEEKLY_TRAINING_SAVED_DRAFT_INDEX_VERIFIED = true as const/);
+  assert.match(capability, /index `CICAgOjXh4EK` verified READY/);
   assert.match(capability, /productionIndexVerified:\s*PRODUCTION_WEEKLY_TRAINING_SAVED_DRAFT_INDEX_VERIFIED/);
   assert.match(capability, /import\.meta as ImportMeta[^]*readonly hot\?: unknown/);
   assert.match(capability, /\.hot !== undefined/);
@@ -75,7 +76,7 @@ test("read model enforces immutable audit parity and exact persisted payload par
   assert.match(model, /parseProClubWeeklyTrainingDraft/);
 });
 
-test("Head Coach UI gates production saved-DRAFT mounting until the index capability is verified", async () => {
+test("Head Coach UI remains capability-gated and mounts saved-DRAFT history when production evidence is verified", async () => {
   const component = await source(files.component);
   const workspace = await source(files.workspace);
   assert.match(component, /authority\.staffRole === "HEAD_COACH"/);
@@ -92,10 +93,10 @@ test("Head Coach UI gates production saved-DRAFT mounting until the index capabi
   assert.match(workspace, /Saved DRAFT history pending production index verification/);
 });
 
-test("Spark hosting-only release cannot deploy the index and therefore must rely on the fail-closed capability", async () => {
+test("Spark hosting-only release cannot deploy the index and relies only on reviewed source-controlled activation", async () => {
   const spark = JSON.parse(await source(files.spark));
   assert.deepEqual(Object.keys(spark).sort(), ["hosting"]);
-  assert.equal(PRODUCTION_WEEKLY_TRAINING_SAVED_DRAFT_INDEX_VERIFIED, false);
+  assert.equal(PRODUCTION_WEEKLY_TRAINING_SAVED_DRAFT_INDEX_VERIFIED, true);
 });
 
 test("authority changes cancel stale reads and reset all list/detail loading state", async () => {
