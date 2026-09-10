@@ -74,9 +74,11 @@ function record(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
 }
+
 function hasOnlyFields(value: Record<string, unknown>, fields: ReadonlySet<string>): boolean {
   return Object.keys(value).every((key) => fields.has(key));
 }
+
 function exactText(value: unknown, maxLength: number, required = true): string | null {
   if (value === undefined && !required) return "";
   if (typeof value !== "string" || value.trim() !== value) return null;
@@ -84,17 +86,20 @@ function exactText(value: unknown, maxLength: number, required = true): string |
   if (value.length > maxLength) return null;
   return value;
 }
+
 function strictDate(value: unknown): value is string {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const [year, month, day] = value.split("-").map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
+
 function boundedCount(value: unknown, min: number, max: number): number | null {
   return Number.isInteger(value) && (value as number) >= min && (value as number) <= max
     ? (value as number)
     : null;
 }
+
 function timestampValue(value: unknown): { iso: string; order: WeeklyTrainingSavedDraftTimestampOrder } | null {
   const raw = record(value);
   if (!raw) return null;
@@ -111,6 +116,7 @@ function timestampValue(value: unknown): { iso: string; order: WeeklyTrainingSav
     order: { seconds: seconds as number, nanoseconds: nanoseconds as number },
   };
 }
+
 export function compareWeeklyTrainingSavedDraftTimestampOrder(
   left: WeeklyTrainingSavedDraftTimestampOrder,
   right: WeeklyTrainingSavedDraftTimestampOrder,
@@ -119,12 +125,26 @@ export function compareWeeklyTrainingSavedDraftTimestampOrder(
   if (left.nanoseconds !== right.nanoseconds) return left.nanoseconds < right.nanoseconds ? -1 : 1;
   return 0;
 }
+
 function sameTimestampOrder(
   left: WeeklyTrainingSavedDraftTimestampOrder,
   right: WeeklyTrainingSavedDraftTimestampOrder,
 ): boolean {
   return compareWeeklyTrainingSavedDraftTimestampOrder(left, right) === 0;
 }
+
+function sameOptionalString(value: unknown, expected: string | undefined): boolean {
+  return expected === undefined ? value === undefined : value === expected;
+}
+
+function sameStringArray(value: unknown, expected: readonly string[]): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length === expected.length &&
+    value.every((item, index) => item === expected[index])
+  );
+}
+
 function freshAudit(
   value: Record<string, unknown>,
   expected?: WeeklyTrainingSavedDraftAuditBinding,
@@ -154,6 +174,7 @@ function freshAudit(
     actorUid: value.createdBy,
   };
 }
+
 function invalid<T>(message: string): WeeklyTrainingSavedDraftModelResult<T> {
   return { state: "INVALID", error: new Error(message) };
 }
@@ -181,9 +202,11 @@ function parsePlanSummary(input: {
   if (squadLabel === null || mainObjective === null || secondaryObjective === null || headCoachNote === null || sessionCount === null) {
     return invalid("Saved-DRAFT plan content or hierarchy cardinality is invalid.");
   }
+  const planCreatedAt = timestampValue(raw.createdAt);
+  if (!planCreatedAt) return invalid("Saved-DRAFT plan createdAt is invalid.");
   const auditValue = freshAudit(raw, {
     actorUid: input.actorUid,
-    timestamp: timestampValue(raw.createdAt)?.order ?? { seconds: Number.NaN, nanoseconds: Number.NaN },
+    timestamp: planCreatedAt.order,
   });
   if (!auditValue || auditValue.actorUid !== input.actorUid) {
     return invalid("Saved-DRAFT plan fresh-save audit metadata is invalid.");
@@ -206,6 +229,34 @@ function parsePlanSummary(input: {
       updatedAtOrder: auditValue.updatedAtOrder,
     },
   };
+}
+
+function sessionPayloadMatchesPersisted(
+  raw: Record<string, unknown>,
+  parsed: Omit<ProClubTrainingSessionDraft, "blocks">,
+): boolean {
+  return (
+    raw.sessionDate === parsed.sessionDate &&
+    raw.startTime === parsed.startTime &&
+    raw.location === parsed.location &&
+    raw.objective === parsed.objective &&
+    raw.phaseOfPlay === parsed.phaseOfPlay &&
+    raw.plannedLoad === parsed.plannedLoad &&
+    raw.durationMinutes === parsed.durationMinutes
+  );
+}
+
+function blockPayloadMatchesPersisted(
+  raw: Record<string, unknown>,
+  parsed: ProClubTrainingBlockDraft,
+): boolean {
+  return (
+    raw.blockType === parsed.blockType &&
+    raw.title === parsed.title &&
+    raw.durationMinutes === parsed.durationMinutes &&
+    sameOptionalString(raw.drillReference, parsed.drillReference) &&
+    sameStringArray(raw.coachingPoints, parsed.coachingPoints)
+  );
 }
 
 function parseSession(
@@ -248,8 +299,9 @@ function parseSession(
   if (probe.state !== "VALID") return null;
   const parsed = probe.value.sessions[0];
   if (!parsed) return null;
-  if (document.id !== `${parsed.sessionDate}-${parsed.startTime.replace(":", "")}`) return null;
   const { blocks: _blocks, ...withoutBlocks } = parsed;
+  if (!sessionPayloadMatchesPersisted(raw, withoutBlocks)) return null;
+  if (document.id !== `${withoutBlocks.sessionDate}-${withoutBlocks.startTime.replace(":", "")}`) return null;
   return { orderIndex: raw.orderIndex as number, blockCount, value: withoutBlocks };
 }
 
@@ -296,7 +348,7 @@ function parseBlock(
   });
   if (probe.state !== "VALID") return null;
   const parsed = probe.value.sessions[0]?.blocks[0];
-  if (!parsed) return null;
+  if (!parsed || !blockPayloadMatchesPersisted(raw, parsed)) return null;
   if (document.id !== `block-${String((raw.orderIndex as number) + 1).padStart(2, "0")}`) return null;
   return { orderIndex: raw.orderIndex as number, value: parsed };
 }
@@ -314,7 +366,7 @@ export function buildWeeklyTrainingSavedDraftSessionCardinality(
   expectedAudit: WeeklyTrainingSavedDraftAuditBinding,
 ): WeeklyTrainingSavedDraftModelResult<WeeklyTrainingSavedDraftSessionCardinality> {
   const parsed = parseSession(document, expectedAudit);
-  if (!parsed) return invalid("Saved-DRAFT session metadata or fresh-save audit binding is invalid.");
+  if (!parsed) return invalid("Saved-DRAFT session metadata, payload, or fresh-save audit binding is invalid.");
   return {
     state: "VALID",
     value: {
@@ -323,15 +375,6 @@ export function buildWeeklyTrainingSavedDraftSessionCardinality(
       blockCount: parsed.blockCount,
     },
   };
-}
-
-export function sortWeeklyTrainingSavedDraftSummaries(
-  summaries: readonly WeeklyTrainingSavedDraftSummary[],
-): readonly WeeklyTrainingSavedDraftSummary[] {
-  return [...summaries].sort((a, b) => {
-    const byUpdated = compareWeeklyTrainingSavedDraftTimestampOrder(b.updatedAtOrder, a.updatedAtOrder);
-    return byUpdated !== 0 ? byUpdated : b.planId.localeCompare(a.planId);
-  });
 }
 
 export function buildWeeklyTrainingSavedDraftDetail(input: {
@@ -361,7 +404,7 @@ export function buildWeeklyTrainingSavedDraftDetail(input: {
     return { orderIndex: session.orderIndex, value: { ...session.value, blocks: orderedBlocks.map((block) => block.value) } };
   });
   if (parsedSessions.some((session) => session === null)) {
-    return invalid("Saved-DRAFT child hierarchy contains invalid, incomplete, or audit-divergent data.");
+    return invalid("Saved-DRAFT child hierarchy contains invalid, incomplete, non-canonical, or audit-divergent data.");
   }
   const orderedSessions = (parsedSessions as Array<NonNullable<(typeof parsedSessions)[number]>>).sort((a, b) => a.orderIndex - b.orderIndex);
   if (orderedSessions.some((session, index) => session.orderIndex !== index)) {
