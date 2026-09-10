@@ -79,6 +79,25 @@ async function seed(): Promise<void> {
   await batch.commit();
 }
 
+function service() {
+  return createWeeklyTrainingDraftSaveService({
+    firestore: db,
+    trustedClock: () => new Date("2026-09-10T04:00:00.000Z"),
+    planIdFactory: () => "integrity-plan",
+  });
+}
+
+async function saveOnce() {
+  return await service().saveFreshDraft({ actorUid: HEAD_COACH_UID, requestId: REQUEST_ID, draft: draft() });
+}
+
+async function expectRetryFailure(): Promise<void> {
+  await assert.rejects(
+    service().saveFreshDraft({ actorUid: HEAD_COACH_UID, requestId: REQUEST_ID, draft: draft() }),
+    (error: unknown) => error instanceof WeeklyTrainingDraftSaveError && error.code === "FAILED_PRECONDITION",
+  );
+}
+
 before(async () => {
   assert.ok(process.env.FIRESTORE_EMULATOR_HOST, "Must run against Firestore Emulator.");
   await clearData();
@@ -95,12 +114,7 @@ after(async () => {
 });
 
 test("trusted save persists schema v2 hierarchy cardinality without increasing document count", async () => {
-  const service = createWeeklyTrainingDraftSaveService({
-    firestore: db,
-    trustedClock: () => new Date("2026-09-10T04:00:00.000Z"),
-    planIdFactory: () => "integrity-plan",
-  });
-  const result = await service.saveFreshDraft({ actorUid: HEAD_COACH_UID, requestId: REQUEST_ID, draft: draft() });
+  const result = await saveOnce();
   assert.equal(result.documentCount, 6);
 
   const planRef = db.collection("proClubs").doc(CLUB_ID).collection("weeklyTrainingPlans").doc(result.planId);
@@ -122,17 +136,73 @@ test("trusted save persists schema v2 hierarchy cardinality without increasing d
   assert.ok(secondBlocks.docs.every((item) => item.data().schemaVersion === 2));
 });
 
+test("unchanged idempotent retry revalidates the hierarchy and returns the original plan", async () => {
+  const first = await saveOnce();
+  const retry = await service().saveFreshDraft({ actorUid: HEAD_COACH_UID, requestId: REQUEST_ID, draft: draft() });
+  assert.equal(retry.planId, first.planId);
+  assert.equal(retry.documentCount, first.documentCount);
+  assert.equal(retry.createdAt, first.createdAt);
+});
+
 test("idempotent retry rejects a tampered persisted plan cardinality", async () => {
-  const service = createWeeklyTrainingDraftSaveService({
-    firestore: db,
-    planIdFactory: () => "integrity-plan",
-  });
-  const first = await service.saveFreshDraft({ actorUid: HEAD_COACH_UID, requestId: REQUEST_ID, draft: draft() });
+  const first = await saveOnce();
   const planRef = db.collection("proClubs").doc(CLUB_ID).collection("weeklyTrainingPlans").doc(first.planId);
   await planRef.update({ sessionCount: 1 });
+  await expectRetryFailure();
+});
 
-  await assert.rejects(
-    service.saveFreshDraft({ actorUid: HEAD_COACH_UID, requestId: REQUEST_ID, draft: draft() }),
-    (error: unknown) => error instanceof WeeklyTrainingDraftSaveError && error.code === "FAILED_PRECONDITION",
-  );
+test("idempotent retry rejects a tampered session blockCount", async () => {
+  const first = await saveOnce();
+  const sessionRef = db.collection("proClubs").doc(CLUB_ID).collection("weeklyTrainingPlans").doc(first.planId)
+    .collection("sessions").doc("2026-09-08-0900");
+  await sessionRef.update({ blockCount: 1 });
+  await expectRetryFailure();
+});
+
+test("idempotent retry rejects a missing deterministic session", async () => {
+  const first = await saveOnce();
+  const sessionRef = db.collection("proClubs").doc(CLUB_ID).collection("weeklyTrainingPlans").doc(first.planId)
+    .collection("sessions").doc("2026-09-09-1600");
+  await db.recursiveDelete(sessionRef);
+  await expectRetryFailure();
+});
+
+test("idempotent retry rejects an extra session before reporting completion", async () => {
+  const first = await saveOnce();
+  const sessions = db.collection("proClubs").doc(CLUB_ID).collection("weeklyTrainingPlans").doc(first.planId)
+    .collection("sessions");
+  await sessions.doc("2026-09-10-1200").set({ schemaVersion: 2, orderIndex: 2, blockCount: 1 });
+  await expectRetryFailure();
+});
+
+test("idempotent retry rejects a missing deterministic block", async () => {
+  const first = await saveOnce();
+  const blockRef = db.collection("proClubs").doc(CLUB_ID).collection("weeklyTrainingPlans").doc(first.planId)
+    .collection("sessions").doc("2026-09-08-0900").collection("blocks").doc("block-02");
+  await blockRef.delete();
+  await expectRetryFailure();
+});
+
+test("idempotent retry rejects an extra block", async () => {
+  const first = await saveOnce();
+  const blocks = db.collection("proClubs").doc(CLUB_ID).collection("weeklyTrainingPlans").doc(first.planId)
+    .collection("sessions").doc("2026-09-08-0900").collection("blocks");
+  await blocks.doc("block-03").set({ schemaVersion: 2, orderIndex: 2 });
+  await expectRetryFailure();
+});
+
+test("idempotent retry rejects persisted football payload drift", async () => {
+  const first = await saveOnce();
+  const blockRef = db.collection("proClubs").doc(CLUB_ID).collection("weeklyTrainingPlans").doc(first.planId)
+    .collection("sessions").doc("2026-09-08-0900").collection("blocks").doc("block-01");
+  await blockRef.update({ title: "Tampered title" });
+  await expectRetryFailure();
+});
+
+test("idempotent retry rejects audit metadata drift", async () => {
+  const first = await saveOnce();
+  const sessionRef = db.collection("proClubs").doc(CLUB_ID).collection("weeklyTrainingPlans").doc(first.planId)
+    .collection("sessions").doc("2026-09-08-0900");
+  await sessionRef.update({ updatedBy: "different-actor" });
+  await expectRetryFailure();
 });
