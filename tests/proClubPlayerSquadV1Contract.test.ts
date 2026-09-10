@@ -70,7 +70,7 @@ test("future roster identity is exact clubId plus proPlayerId path identity", ()
 
 test("roster lifecycle is canonical and release is terminal historical evidence", () => {
   for (const status of ["ACTIVE", "INACTIVE", "RELEASED"]) {
-    assert.match(contract, new RegExp(`- \\`${status}\\``));
+    assert.ok(contract.includes(`- \`${status}\``));
   }
   assert.match(contract, /`ROSTER_STATUS_V1=ACTIVE_INACTIVE_RELEASED`/);
   assert.match(contract, /`RELEASED_IS_TERMINAL=YES`/);
@@ -105,7 +105,7 @@ test("roster data avoids copying authoritative player profile fields", () => {
     "createdBy",
     "updatedBy",
   ]) {
-    assert.match(contract, new RegExp(`\\`${field}\\``));
+    assert.ok(contract.includes(`\`${field}\``));
   }
 });
 
@@ -120,7 +120,7 @@ test("duplicate and multi-club ACTIVE association policy fails closed", () => {
 
 test("join and release operations are lifecycle actions not arbitrary edits", () => {
   for (const action of ["JOIN", "ACTIVATE", "DEACTIVATE", "RELEASE"]) {
-    assert.match(contract, new RegExp(`\\`${action}\\``));
+    assert.ok(contract.includes(`\`${action}\``));
   }
   assert.match(
     normalized,
