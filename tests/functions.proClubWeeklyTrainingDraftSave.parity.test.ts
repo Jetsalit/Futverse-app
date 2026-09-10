@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   validateWeeklyTrainingDraft,
+  WEEKLY_TRAINING_DRILL_REFERENCE_MAX_UTF8_BYTES,
   WeeklyTrainingDraftSaveError,
 } from "../functions/src/proClubWeeklyTrainingDraftSave/core.ts";
 
@@ -35,6 +36,14 @@ function canonicalDraft(): Record<string, unknown> {
   };
 }
 
+function withDrillReference(reference: string): Record<string, unknown> {
+  const draft = canonicalDraft();
+  const sessions = draft.sessions as Array<Record<string, unknown>>;
+  const blocks = sessions[0].blocks as Array<Record<string, unknown>>;
+  blocks[0] = { ...blocks[0], drillReference: reference };
+  return draft;
+}
+
 function expectInvalid(draft: unknown): void {
   assert.throws(
     () => validateWeeklyTrainingDraft(draft),
@@ -49,14 +58,21 @@ test("server validator rejects whitespace-padded clubId like canonical domain id
 });
 
 test("server validator rejects whitespace-padded drillReference like canonical document identity validation", () => {
-  const draft = canonicalDraft();
-  const sessions = draft.sessions as Array<Record<string, unknown>>;
-  const blocks = sessions[0].blocks as Array<Record<string, unknown>>;
-  blocks[0] = {
-    ...blocks[0],
-    drillReference: " drill-123 ",
-  };
-  expectInvalid(draft);
+  expectInvalid(withDrillReference(" drill-123 "));
+});
+
+test("trusted server drill-reference contract is 1500 UTF-8 bytes", () => {
+  assert.equal(WEEKLY_TRAINING_DRILL_REFERENCE_MAX_UTF8_BYTES, 1_500);
+  assert.equal(validateWeeklyTrainingDraft(withDrillReference("a".repeat(1_500))).sessions[0].blocks[0].drillReference, "a".repeat(1_500));
+  expectInvalid(withDrillReference("a".repeat(1_501)));
+  assert.equal(validateWeeklyTrainingDraft(withDrillReference("ก".repeat(500))).sessions[0].blocks[0].drillReference, "ก".repeat(500));
+  expectInvalid(withDrillReference("ก".repeat(501)));
+});
+
+test("trusted server rejects reserved Firestore document ID forms", () => {
+  for (const value of [".", "..", "__reserved__", "path/segment"]) {
+    expectInvalid(withDrillReference(value));
+  }
 });
 
 test("whitespace-only Technical Director note normalizes to empty and remains non-persisted", () => {
