@@ -1,0 +1,87 @@
+name: PR134 Pro Club Support Session Audit Contract Acceptance R1
+
+on:
+  pull_request:
+    branches:
+      - feat/pro-club-superadmin-support-session-audit-v1-contract
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact product head
+        uses: actions/checkout@v4
+        with:
+          ref: 06fddf77cb559984f23d05051a3aa40e91480b46
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Functions dependencies
+        run: npm --prefix functions ci
+
+      - name: Exact provenance and scope gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=c4305442ce19c7fe470eb50975e3a252618df2aa
+          HEAD=06fddf77cb559984f23d05051a3aa40e91480b46
+          test "$(git rev-parse HEAD)" = "$HEAD"
+          test "$(git merge-base "$BASE" "$HEAD")" = "$BASE"
+          test "$(git rev-list --count "$BASE..$HEAD")" = "2"
+          test "$(git rev-list --count "$HEAD..$BASE")" = "0"
+          mapfile -t files < <(git diff --name-only "$BASE..$HEAD")
+          test "${#files[@]}" = "2"
+          printf '%s\n' "${files[@]}" | sort > /tmp/actual
+          printf '%s\n' \
+            docs/PRO_CLUB_SUPERADMIN_SUPPORT_SESSION_AUDIT_V1_CONTRACT_FREEZE.md \
+            tests/proClubSuperAdminSupportSessionAuditV1Contract.test.ts \
+            | sort > /tmp/expected
+          diff -u /tmp/expected /tmp/actual
+          git diff --check "$BASE..$HEAD"
+
+      - name: New audit contract tests
+        run: node --import tsx --test tests/proClubSuperAdminSupportSessionAuditV1Contract.test.ts
+
+      - name: Parent support contract regression
+        run: node --import tsx --test tests/proClubSuperAdminSupportModeV1Contract.test.ts
+
+      - name: Parent support read adapter regression
+        run: node --import tsx --test tests/proClubSuperAdminSupportReadAdapter.unit.test.ts
+
+      - name: Functions build
+        run: npm --prefix functions run build
+
+      - name: TypeScript
+        run: npm run lint
+
+      - name: Production build
+        run: npm run build
+
+      - name: Safety boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=c4305442ce19c7fe470eb50975e3a252618df2aa
+          HEAD=06fddf77cb559984f23d05051a3aa40e91480b46
+          forbidden='^(src/|functions/|firestore\.rules$|firestore\.indexes\.json$|firebase\.json$|firebase\.spark\.json$|package\.json$|\.github/)'
+          if git diff --name-only "$BASE..$HEAD" | grep -E "$forbidden"; then
+            echo 'Forbidden product/runtime path changed.' >&2
+            exit 1
+          fi
+          test -z "$(git status --porcelain)"
+          echo 'PR134_SUPPORT_SESSION_AUDIT_CONTRACT_ACCEPTANCE=PASS'
+          echo 'PRODUCTION_DEPLOYED=NO'
+          echo 'PRODUCTION_HTTP_CALLED=NO'
+          echo 'PRODUCTION_DATA_READ_WRITE=NO'
