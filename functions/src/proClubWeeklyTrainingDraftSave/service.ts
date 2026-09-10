@@ -133,12 +133,6 @@ export class WeeklyTrainingDraftSaveService {
     const actorStaffRef = clubRef.collection("staff").doc(actorUid);
     const governanceRef = clubRef.collection("technicalGovernance").doc("current");
 
-    // Request identity is actor-global, not tenant-scoped. A Head Coach who is
-    // active in multiple clubs therefore cannot reuse one logical request ID
-    // to create a second hierarchy in another club. The hashed document ID
-    // avoids placing the raw actor UID in the registry path; all receipt fields
-    // are still checked fail-closed, so even an impossible hash collision cannot
-    // silently cross-bind requests.
     const receiptRef = firestore
       .collection(WEEKLY_TRAINING_DRAFT_SAVE_REQUESTS)
       .doc(requestReceiptDocumentId(actorUid, requestId));
@@ -171,57 +165,31 @@ export class WeeklyTrainingDraftSaveService {
       const staff = staffSnap.data();
       const governance = governanceSnap.data();
 
-      if (
-        !userSnap.exists ||
-        !["Active", "ACTIVE"].includes(String(user?.status ?? ""))
-      ) {
-        throw new WeeklyTrainingDraftSaveError(
-          "PERMISSION_DENIED",
-          "Actor account is not active.",
-        );
+      if (!userSnap.exists || !["Active", "ACTIVE"].includes(String(user?.status ?? ""))) {
+        throw new WeeklyTrainingDraftSaveError("PERMISSION_DENIED", "Actor account is not active.");
       }
       if (!clubSnap.exists || club?.status !== "ACTIVE") {
-        throw new WeeklyTrainingDraftSaveError(
-          "FAILED_PRECONDITION",
-          "Pro Club is not active.",
-        );
+        throw new WeeklyTrainingDraftSaveError("FAILED_PRECONDITION", "Pro Club is not active.");
       }
       if (!memberSnap.exists || member?.status !== "ACTIVE") {
-        throw new WeeklyTrainingDraftSaveError(
-          "PERMISSION_DENIED",
-          "Active Pro Club membership required.",
-        );
+        throw new WeeklyTrainingDraftSaveError("PERMISSION_DENIED", "Active Pro Club membership required.");
       }
-      if (
-        !staffSnap.exists ||
-        staff?.status !== "ACTIVE" ||
-        staff?.staffRole !== "HEAD_COACH"
-      ) {
-        throw new WeeklyTrainingDraftSaveError(
-          "PERMISSION_DENIED",
-          "Active Head Coach assignment required.",
-        );
+      if (!staffSnap.exists || staff?.status !== "ACTIVE" || staff?.staffRole !== "HEAD_COACH") {
+        throw new WeeklyTrainingDraftSaveError("PERMISSION_DENIED", "Active Head Coach assignment required.");
       }
       if (
         !governanceSnap.exists ||
         governance?.schemaVersion !== 1 ||
         governance?.status !== "ACTIVE" ||
         !exactId(governance?.authorityUid) ||
-        !["TECHNICAL_DIRECTOR", "HEAD_COACH"].includes(
-          String(governance?.authorityRole ?? ""),
-        )
+        !["TECHNICAL_DIRECTOR", "HEAD_COACH"].includes(String(governance?.authorityRole ?? ""))
       ) {
-        throw new WeeklyTrainingDraftSaveError(
-          "FAILED_PRECONDITION",
-          "Valid technical governance required.",
-        );
+        throw new WeeklyTrainingDraftSaveError("FAILED_PRECONDITION", "Valid technical governance required.");
       }
 
       const receipt = receiptSnap.data();
       const existingPlanId = receiptSnap.exists ? receipt?.planId : undefined;
 
-      // Validate the actor-global request binding before following any receipt
-      // pointer. In particular, changed tenant/payload/actor is not a retry.
       if (
         receiptSnap.exists &&
         (receipt?.schemaVersion !== 1 ||
@@ -247,12 +215,11 @@ export class WeeklyTrainingDraftSaveService {
         ? clubRef.collection("weeklyTrainingPlans").doc(existingPlanId as string)
         : null;
 
-      const [authorityMemberSnap, authorityStaffSnap, existingPlanSnap] =
-        await Promise.all([
-          transaction.get(authorityMemberRef),
-          transaction.get(authorityStaffRef),
-          existingPlanRef ? transaction.get(existingPlanRef) : Promise.resolve(null),
-        ]);
+      const [authorityMemberSnap, authorityStaffSnap, existingPlanSnap] = await Promise.all([
+        transaction.get(authorityMemberRef),
+        transaction.get(authorityStaffRef),
+        existingPlanRef ? transaction.get(existingPlanRef) : Promise.resolve(null),
+      ]);
       const authorityMember = authorityMemberSnap.data();
       const authorityStaff = authorityStaffSnap.data();
 
@@ -263,14 +230,13 @@ export class WeeklyTrainingDraftSaveService {
         authorityStaff?.status !== "ACTIVE" ||
         authorityStaff?.staffRole !== governance.authorityRole
       ) {
-        throw new WeeklyTrainingDraftSaveError(
-          "FAILED_PRECONDITION",
-          "Technical authority evidence is invalid.",
-        );
+        throw new WeeklyTrainingDraftSaveError("FAILED_PRECONDITION", "Technical authority evidence is invalid.");
       }
 
       if (receiptSnap.exists) {
+        const persistedCreatedAt = receipt?.createdAtIso;
         if (
+          !isCanonicalIsoTimestamp(persistedCreatedAt) ||
           !existingPlanSnap ||
           !existingPlanSnap.exists ||
           existingPlanSnap.data()?.authorUid !== actorUid ||
@@ -288,7 +254,7 @@ export class WeeklyTrainingDraftSaveService {
           clubId: draft.clubId,
           planId: existingPlanId as string,
           documentCount: hierarchyDocumentCount,
-          createdAt: receipt.createdAtIso as string,
+          createdAt: persistedCreatedAt,
         };
       }
 
@@ -299,9 +265,7 @@ export class WeeklyTrainingDraftSaveService {
         weekStartDate: draft.weekStartDate,
         squadLabel: draft.squadLabel,
         mainObjective: draft.mainObjective,
-        ...(draft.secondaryObjective
-          ? { secondaryObjective: draft.secondaryObjective }
-          : {}),
+        ...(draft.secondaryObjective ? { secondaryObjective: draft.secondaryObjective } : {}),
         ...(draft.headCoachNote ? { headCoachNote: draft.headCoachNote } : {}),
         createdAt: now,
         createdBy: actorUid,
@@ -333,18 +297,14 @@ export class WeeklyTrainingDraftSaveService {
         documentCount += 1;
 
         session.blocks.forEach((block, blockIndex) => {
-          const blockRef = sessionRef
-            .collection("blocks")
-            .doc(blockId(blockIndex));
+          const blockRef = sessionRef.collection("blocks").doc(blockId(blockIndex));
           transaction.create(blockRef, {
             schemaVersion: 1,
             orderIndex: blockIndex,
             blockType: block.blockType,
             title: block.title,
             durationMinutes: block.durationMinutes,
-            ...(block.drillReference
-              ? { drillReference: block.drillReference }
-              : {}),
+            ...(block.drillReference ? { drillReference: block.drillReference } : {}),
             coachingPoints: block.coachingPoints,
             createdAt: now,
             createdBy: actorUid,
@@ -362,8 +322,6 @@ export class WeeklyTrainingDraftSaveService {
         );
       }
 
-      // Global registry receipt and football hierarchy are one atomic commit.
-      // There is no client Rules grant for this top-level control collection.
       transaction.create(receiptRef, {
         schemaVersion: 1,
         operationType: WEEKLY_TRAINING_DRAFT_SAVE_OPERATION,
