@@ -1,6 +1,7 @@
 import { ClipboardCheck, Dumbbell, FileSearch, ShieldCheck } from "lucide-react";
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
 import WeeklyTrainingDraftComposer from "./WeeklyTrainingDraftComposer";
+import WeeklyTrainingSavedDrafts from "./WeeklyTrainingSavedDrafts";
 
 function EmptyTask({ title, description }: { title: string; description: string }) {
   return (
@@ -22,11 +23,12 @@ export default function ProClubRoleWorkspace({
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-300">My workspace</p>
           <h3 id="pro-club-role-workspace" className="mt-2 text-xl font-black text-white">Head Coach</h3>
-          <p className="mt-2 text-sm text-slate-400">Create a fresh Weekly Training DRAFT through the reviewed server-mediated save boundary.</p>
+          <p className="mt-2 text-sm text-slate-400">Create a fresh Weekly Training DRAFT, then read persisted DRAFTs from the bound Pro Club source of truth.</p>
         </div>
         <WeeklyTrainingDraftComposer authority={authority} />
+        <WeeklyTrainingSavedDrafts authority={authority} />
         <div className="grid gap-4 md:grid-cols-3">
-          <EmptyTask title="Today’s Session" description="Derived session view will come from the saved weekly-plan source of truth in a later read-model slice." />
+          <EmptyTask title="Today’s Session" description="A derived current-session launcher remains deferred until the saved-DRAFT read model is accepted and the active-session selection contract is defined." />
           <EmptyTask title="Department Updates" description="Submitted Fitness, Analysis, GK and Availability work will appear here for review when enabled." />
           <EmptyTask title="Match Preparation" description="Match planning remains deferred until the Pro Club match repository is defined." />
         </div>
@@ -58,7 +60,7 @@ export default function ProClubRoleWorkspace({
         <ShieldCheck className="mt-0.5 text-cyan-300" size={20} />
         <div>
           <h3 id="pro-club-role-workspace" className="font-bold text-white">Role workspace foundation</h3>
-          <p className="mt-2 text-sm leading-6 text-slate-400">Weekly Training fresh-DRAFT creation is currently exposed only to an active Head Coach. Other staff roles retain the existing Pro Club workspace until their reviewed slices are added.</p>
+          <p className="mt-2 text-sm leading-6 text-slate-400">Weekly Training fresh-DRAFT creation and saved-DRAFT read UI are currently exposed only to an active Head Coach. Other staff roles retain the existing Pro Club workspace until their reviewed slices are added.</p>
         </div>
       </div>
       <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-500">

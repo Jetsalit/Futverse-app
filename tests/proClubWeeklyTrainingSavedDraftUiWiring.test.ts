@@ -1,0 +1,58 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { test } from "node:test";
+
+const files = {
+  adapter: "src/lib/firestore/proClubWeeklyTrainingSavedDraftReadAdapter.ts",
+  model: "src/lib/proClubWeeklyTrainingSavedDraftReadModel.ts",
+  component: "src/components/pro-club/operations/WeeklyTrainingSavedDrafts.tsx",
+  workspace: "src/components/pro-club/operations/ProClubRoleWorkspace.tsx",
+  rules: "firestore.rules",
+};
+
+async function source(path: string): Promise<string> {
+  return await readFile(path, "utf8");
+}
+
+test("saved-DRAFT adapter is read-only and tenant/author constrained", async () => {
+  const adapter = await source(files.adapter);
+  assert.match(adapter, /getDocFromServer/);
+  assert.match(adapter, /getDocsFromServer/);
+  assert.match(adapter, /authorUid/);
+  assert.match(adapter, /status/);
+  assert.match(adapter, /DRAFT/);
+  assert.match(adapter, /\["proClubs",\s*clubId,\s*"weeklyTrainingPlans"\]/);
+  for (const forbidden of [/\bsetDoc\b/, /\baddDoc\b/, /\bupdateDoc\b/, /\bdeleteDoc\b/, /\bwriteBatch\b/, /httpsCallable/]) {
+    assert.doesNotMatch(adapter, forbidden);
+  }
+});
+
+test("read model reconstructs through the canonical weekly-training parser and rejects partial hierarchy", async () => {
+  const model = await source(files.model);
+  assert.match(model, /parseProClubWeeklyTrainingDraft/);
+  assert.match(model, /input\.sessions\.length < 1/);
+  assert.match(model, /block-\$\{String/);
+  assert.match(model, /replace\(":", ""\)/);
+  assert.match(model, /updatedAt.*createdAt/s);
+});
+
+test("Head Coach workspace exposes read-only saved drafts without opening Technical Director workflow", async () => {
+  const component = await source(files.component);
+  const workspace = await source(files.workspace);
+  assert.match(component, /authority\.staffRole === "HEAD_COACH"/);
+  assert.match(component, /authority\.organizationId/);
+  assert.match(component, /authority\.userId/);
+  assert.match(component, /Read-only detail/);
+  assert.match(component, /Refresh saved drafts/);
+  assert.doesNotMatch(component, /\bEdit\b/);
+  assert.doesNotMatch(component, /\bSave\b/);
+  assert.match(workspace, /WeeklyTrainingSavedDrafts authority=\{authority\}/);
+  assert.match(workspace, /authority\.staffRole === "TECHNICAL_DIRECTOR"/);
+});
+
+test("existing root Rules retain active-member read boundary and no new rules file is required", async () => {
+  const rules = await source(files.rules);
+  assert.match(rules, /match \/weeklyTrainingPlans\/\{planId\}/);
+  assert.match(rules, /allow get, list: if currentUserIsActive\(\)/);
+  assert.match(rules, /hasActiveProClubMembership\(clubId\)/);
+});
