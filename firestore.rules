@@ -3045,7 +3045,15 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
 
     match /proClubOnboardingControlAudits/{actionId} {
       allow get, list: if isSuperAdmin();
-      allow create: if validProClubOnboardingControlAuditCreateV1(actionId);
+      // Branch on canonical global role first so an INACTIVE SUPERADMIN fails
+      // before the expensive same-commit audit validator is evaluated.
+      allow create: if currentUserHasSuperAdminRoleV1()
+        ? (
+          currentUserIsActive()
+            ? validProClubOnboardingControlAuditCreateV1(actionId)
+            : false
+        )
+        : false;
       allow update, delete: if false;
     }
 
