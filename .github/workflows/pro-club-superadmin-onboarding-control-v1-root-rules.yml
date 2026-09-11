@@ -29,8 +29,24 @@ jobs:
       - name: Checkout exact commit
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
           fetch-depth: 0
+
+      - name: Verify raw HEAD checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            expected="${{ github.event.pull_request.head.sha }}"
+          else
+            expected="${{ github.sha }}"
+          fi
+          actual="$(git rev-parse HEAD)"
+          echo "EXPECTED_RAW_HEAD=$expected"
+          echo "ACTUAL_CHECKOUT_HEAD=$actual"
+          test "$actual" = "$expected"
+          echo "RAW_HEAD_CHECKOUT=PASS"
 
       - name: Select preinstalled Java 21
         shell: bash
