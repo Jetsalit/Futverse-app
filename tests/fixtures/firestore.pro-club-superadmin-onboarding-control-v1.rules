@@ -186,11 +186,7 @@ service cloud.firestore {
         && after.get('approvedAt', null) == request.time
         && after.get('approvedBy', '') == request.auth.uid
         && after.get('updatedAt', null) == request.time
-        && proofMatchesAfter(clubId, uid, id, code, role)
-        && (
-          !activeSuperAdmin()
-          || matchingAuditAfter('APPROVE-' + id, 'CLAIM_APPROVED', clubId, uid, code, id, role)
-        );
+        && proofMatchesAfter(clubId, uid, id, code, role);
     }
 
     function validClaimRejection(clubId, id) {
@@ -198,7 +194,6 @@ service cloud.firestore {
       let after = request.resource.data;
       let uid = before.get('userId', '');
       let code = before.get('inviteCode', '');
-      let role = before.get('staffRole', '');
       let invite = getAfter(invitePath(code)).data;
       return controlActor(clubId)
         && before.get('status', '') == 'PENDING'
@@ -215,11 +210,7 @@ service cloud.firestore {
         && invite.get('updatedBy', '') == request.auth.uid
         && !existsAfter(memberPath(clubId, uid))
         && !existsAfter(staffPath(clubId, uid))
-        && !existsAfter(proofPath(clubId, uid))
-        && (
-          !activeSuperAdmin()
-          || matchingAuditAfter('REJECT-' + id, 'CLAIM_REJECTED', clubId, uid, code, id, role)
-        );
+        && !existsAfter(proofPath(clubId, uid));
     }
 
     function validProofCreate(clubId, uid) {
@@ -316,7 +307,6 @@ service cloud.firestore {
             && after.get('updatedAt', null) == request.time
             && after.get('updatedBy', '') == request.auth.uid
             && proofMatchesAfter(clubId, uid, id, code, role)
-            && (!activeSuperAdmin() || matchingAuditAfter('APPROVE-' + id, 'CLAIM_APPROVED', clubId, uid, code, id, role))
           )
           || (
             after.get('status', '') == 'REVOKED'
@@ -327,7 +317,10 @@ service cloud.firestore {
             && after.get('updatedBy', '') == request.auth.uid
             && existsAfter(claimPath(clubId, id))
             && getAfter(claimPath(clubId, id)).data.get('status', '') == 'REJECTED'
-            && (!activeSuperAdmin() || matchingAuditAfter('REJECT-' + id, 'CLAIM_REJECTED', clubId, uid, code, id, role))
+            && (
+              !activeSuperAdmin()
+              || matchingAuditAfter('REJECT-' + id, 'CLAIM_REJECTED', clubId, uid, code, id, role)
+            )
           )
         );
     }
