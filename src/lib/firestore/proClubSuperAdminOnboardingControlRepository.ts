@@ -31,6 +31,17 @@ export interface SuperAdminPendingStaffRequest {
   invite: ProClubInvite | null;
 }
 
+export interface SuperAdminIssuedStaffInvitation {
+  schemaVersion: 1;
+  inviteCode: string;
+  clubId: string;
+  targetUid: string;
+  membershipAuthorizationRole: "MEMBER";
+  staffRole: ProClubInvite["staffRole"];
+  status: "ACTIVE";
+  expiresAt: ProClubInvite["expiresAt"];
+}
+
 function activeAccountStatus(value: unknown): boolean {
   return value === "ACTIVE" || value === "Active";
 }
@@ -91,7 +102,7 @@ export function createProClubSuperAdminOnboardingControlRepository(
   async function issueInvitation(
     options: IssueProClubInviteOptions,
     uid: string,
-  ): Promise<ProClubInvite> {
+  ): Promise<SuperAdminIssuedStaffInvitation> {
     if (
       !isValidDocumentIdentifier(options.clubId) ||
       !isValidDocumentIdentifier(options.targetUid) ||
@@ -153,12 +164,21 @@ export function createProClubSuperAdminOnboardingControlRepository(
       if (isPermissionDenied(error)) throw new OnboardingError("INVALID_DATA");
       throw error;
     }
-    assertActor(uid);
 
-    const snapshot = await getDocFromServer(inviteRef);
-    assertActor(uid);
-    if (!snapshot.exists()) throw new OnboardingError("NETWORK");
-    return parseProClubInvite(snapshot.data(), inviteCode);
+    // The successful batch acknowledgement is the issuance success boundary.
+    // Do not make a follow-up network read determine whether the caller receives
+    // the already-committed invite code; the canonical document remains readable
+    // later through the normal read/review path.
+    return {
+      schemaVersion: 1,
+      inviteCode,
+      clubId: options.clubId,
+      targetUid: options.targetUid,
+      membershipAuthorizationRole: "MEMBER",
+      staffRole: options.staffRole,
+      status: "ACTIVE",
+      expiresAt,
+    };
   }
 
   async function loadPending(
