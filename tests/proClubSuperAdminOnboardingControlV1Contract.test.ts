@@ -57,6 +57,17 @@ test("contract requires immutable SuperAdmin audit evidence", () => {
   ]);
 });
 
+test("contract requires SuperAdmin control mutation and audit to succeed or fail in the same atomic commit", () => {
+  includesAll(contract, [
+    "SUPERADMIN CONTROL WRITE + AUDIT = SAME ATOMIC COMMIT",
+    "domain/authority write and matching audit write must succeed or fail together in one Firestore transaction/batch",
+    "invite creation without same-commit `INVITE_ISSUED` audit is denied",
+    "approval without same-commit `CLAIM_APPROVED` audit is denied",
+    "rejection without same-commit `CLAIM_REJECTED` audit is denied",
+    "Forced commit failure, stale-state failure, or audit-write failure must leave neither the SuperAdmin domain/authority mutation nor the corresponding audit record partially committed.",
+  ]);
+});
+
 test("contract defines security and regression gates before implementation", () => {
   includesAll(contract, [
     "inactive SuperAdmin cannot issue an invite",
