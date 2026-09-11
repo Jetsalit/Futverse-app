@@ -3,8 +3,10 @@ import { after, before, beforeEach, test } from "node:test";
 import { readFileSync } from "node:fs";
 import { initializeTestEnvironment, type RulesTestEnvironment } from "@firebase/rules-unit-testing";
 import {
+  collection,
   doc,
   getDocFromServer,
+  getDocs,
   serverTimestamp,
   setDoc,
   type DocumentData,
@@ -38,6 +40,35 @@ async function raw(path: string): Promise<DocumentData | null> {
     result = snap.exists() ? snap.data() : null;
   });
   return result;
+}
+
+async function inviteCount(): Promise<number> {
+  let count = 0;
+  await environment.withSecurityRulesDisabled(async (context) => {
+    count = (await getDocs(collection(context.firestore(), "proClubInvites"))).size;
+  });
+  return count;
+}
+
+async function createPendingClaim(inviteCode: string): Promise<string> {
+  const claimId = proClubClaimId(TARGET, inviteCode);
+  await setDoc(doc(db(TARGET), "proClubs", CLUB, "onboardingClaims", claimId), {
+    schemaVersion: 1,
+    type: "PRO_CLUB_STAFF_JOIN",
+    userId: TARGET,
+    claimantIdentity: {
+      displayName: "Runtime Head Coach",
+      email: "runtime.head.coach@example.invalid",
+    },
+    clubId: CLUB,
+    inviteCode,
+    membershipAuthorizationRole: "MEMBER",
+    staffRole: "HEAD_COACH",
+    status: "PENDING",
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return claimId;
 }
 
 before(async () => {
@@ -92,13 +123,27 @@ test("runtime adapter rejects ordinary USER before any invitation write", async 
     targetUid: TARGET,
     staffRole: "HEAD_COACH",
   }, USER));
+  assert.equal(await inviteCount(), 0);
+});
 
-  let inviteCount = 0;
-  await environment.withSecurityRulesDisabled(async (context) => {
-    const { getDocs, collection } = await import("firebase/firestore");
-    inviteCount = (await getDocs(collection(context.firestore(), "proClubInvites"))).size;
-  });
-  assert.equal(inviteCount, 0);
+test("runtime adapter rejects a missing Account Reference without partial invite or audit", async () => {
+  const repository = createProClubSuperAdminOnboardingControlRepository(db(SUPERADMIN), () => SUPERADMIN);
+  await assert.rejects(repository.issueInvitation({
+    clubId: CLUB,
+    targetUid: "missing-account-reference",
+    staffRole: "HEAD_COACH",
+  }, SUPERADMIN));
+  assert.equal(await inviteCount(), 0);
+});
+
+test("runtime adapter fails closed when presented actor differs from authenticated actor", async () => {
+  const repository = createProClubSuperAdminOnboardingControlRepository(db(SUPERADMIN), () => USER);
+  await assert.rejects(repository.issueInvitation({
+    clubId: CLUB,
+    targetUid: TARGET,
+    staffRole: "HEAD_COACH",
+  }, SUPERADMIN));
+  assert.equal(await inviteCount(), 0);
 });
 
 test("runtime adapter approves pending claim atomically as MEMBER plus HEAD_COACH plus audit", async () => {
@@ -108,24 +153,7 @@ test("runtime adapter approves pending claim atomically as MEMBER plus HEAD_COAC
     targetUid: TARGET,
     staffRole: "HEAD_COACH",
   }, SUPERADMIN);
-  const claimId = proClubClaimId(TARGET, invite.inviteCode);
-
-  await setDoc(doc(db(TARGET), "proClubs", CLUB, "onboardingClaims", claimId), {
-    schemaVersion: 1,
-    type: "PRO_CLUB_STAFF_JOIN",
-    userId: TARGET,
-    claimantIdentity: {
-      displayName: "Runtime Head Coach",
-      email: "runtime.head.coach@example.invalid",
-    },
-    clubId: CLUB,
-    inviteCode: invite.inviteCode,
-    membershipAuthorizationRole: "MEMBER",
-    staffRole: "HEAD_COACH",
-    status: "PENDING",
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
+  const claimId = await createPendingClaim(invite.inviteCode);
 
   const pending = await repository.loadPending(CLUB, SUPERADMIN);
   assert.equal(pending.length, 1);
@@ -137,4 +165,23 @@ test("runtime adapter approves pending claim atomically as MEMBER plus HEAD_COAC
   assert.equal((await raw(`proClubs/${CLUB}/staff/${TARGET}`))?.staffRole, "HEAD_COACH");
   assert.equal((await raw(`proClubInvites/${invite.inviteCode}`))?.status, "CONSUMED");
   assert.equal((await raw(`proClubOnboardingControlAudits/APPROVE-${claimId}`))?.actionType, "CLAIM_APPROVED");
+});
+
+test("runtime adapter rejects pending claim atomically without membership or staff", async () => {
+  const repository = createProClubSuperAdminOnboardingControlRepository(db(SUPERADMIN), () => SUPERADMIN);
+  const invite = await repository.issueInvitation({
+    clubId: CLUB,
+    targetUid: TARGET,
+    staffRole: "HEAD_COACH",
+  }, SUPERADMIN);
+  const claimId = await createPendingClaim(invite.inviteCode);
+
+  await repository.reviewClaim(CLUB, claimId, "REJECTED", SUPERADMIN);
+
+  assert.equal((await raw(`proClubs/${CLUB}/onboardingClaims/${claimId}`))?.status, "REJECTED");
+  assert.equal((await raw(`proClubInvites/${invite.inviteCode}`))?.status, "REVOKED");
+  assert.equal(await raw(`proClubs/${CLUB}/members/${TARGET}`), null);
+  assert.equal(await raw(`proClubs/${CLUB}/staff/${TARGET}`), null);
+  assert.equal(await raw(`proClubs/${CLUB}/onboardingApprovals/${TARGET}`), null);
+  assert.equal((await raw(`proClubOnboardingControlAudits/REJECT-${claimId}`))?.actionType, "CLAIM_REJECTED");
 });
