@@ -1340,12 +1340,19 @@ service cloud.firestore {
         && club.get('status', '') == 'ACTIVE';
     }
 
+    function currentUserHasSuperAdminRoleV1() {
+      return isSignedIn()
+        && userExists(request.auth.uid)
+        && currentUserData().get('role', '') == 'SUPERADMIN';
+    }
+
     function isProClubOnboardingControlActorV1(clubId) {
-      return isActiveProClubReviewerV1(clubId)
-        || (
+      return currentUserHasSuperAdminRoleV1()
+        ? (
           isSuperAdmin()
           && proClubDocumentIsActiveForOnboardingControlV1(clubId)
-        );
+        )
+        : isActiveProClubReviewerV1(clubId);
     }
 
     function proClubSuperAdminInviteTargetIsEligibleV1(uid) {
@@ -3076,12 +3083,9 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
     // Membership/Staff reads are preserved for runtime classification. Client
     // writes are opened only for the reviewed invite/claim approval lifecycle.
     match /proClubs/{clubId} {
-      allow get: if isSuperAdmin()
-        || (
-          isSignedIn()
-          && exists(
-            /databases/$(database)/documents/proClubs/$(clubId)/members/$(request.auth.uid)
-          )
+      allow get: if isSignedIn()
+        && exists(
+          /databases/$(database)/documents/proClubs/$(clubId)/members/$(request.auth.uid)
         );
 
       allow list, create, update, delete: if false;
