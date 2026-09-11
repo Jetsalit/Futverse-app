@@ -3,8 +3,10 @@ import { after, before, beforeEach, test } from "node:test";
 import { readFileSync } from "node:fs";
 import { initializeTestEnvironment, type RulesTestEnvironment } from "@firebase/rules-unit-testing";
 import {
+  deleteDoc,
   doc,
   getDocFromServer,
+  serverTimestamp,
   setDoc,
   Timestamp,
   writeBatch,
@@ -27,7 +29,6 @@ const ROLE = "HEAD_COACH";
 const CODE = `FUT-PC-${"A".repeat(24)}`;
 const CODE_2 = `FUT-PC-${"B".repeat(24)}`;
 const CLAIM = `${TARGET}_PRO_CLUB_${CODE}`;
-const CLAIM_2 = `${TARGET_2}_PRO_CLUB_${CODE_2}`;
 
 let environment: RulesTestEnvironment;
 
@@ -59,9 +60,9 @@ function inviteData(code: string, clubId: string, targetUid: string, actorUid: s
     membershipAuthorizationRole: "MEMBER",
     staffRole: role,
     status: "ACTIVE",
-    createdAt: Timestamp.now(),
+    createdAt: serverTimestamp(),
     createdBy: actorUid,
-    updatedAt: Timestamp.now(),
+    updatedAt: serverTimestamp(),
     updatedBy: actorUid,
     expiresAt: Timestamp.fromMillis(Date.now() + 60 * 60 * 1000),
   };
@@ -78,7 +79,7 @@ function inviteAudit(actionId: string, actorUid: string, clubId: string, targetU
     inviteCode: code,
     claimId: null,
     staffRole: role,
-    createdAt: Timestamp.now(),
+    createdAt: serverTimestamp(),
   };
 }
 
@@ -92,8 +93,38 @@ function pendingClaim(uid: string, code: string, role = ROLE) {
     membershipAuthorizationRole: "MEMBER",
     staffRole: role,
     status: "PENDING",
-    createdAt: Timestamp.now(),
-    updatedAt: Timestamp.now(),
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+}
+
+function approvalAudit(actorUid: string) {
+  return {
+    schemaVersion: 1,
+    actionId: `APPROVE-${CLAIM}`,
+    actionType: "CLAIM_APPROVED",
+    actorUid,
+    clubId: CLUB,
+    targetUid: TARGET,
+    inviteCode: CODE,
+    claimId: CLAIM,
+    staffRole: ROLE,
+    createdAt: serverTimestamp(),
+  };
+}
+
+function rejectionAudit(actorUid: string) {
+  return {
+    schemaVersion: 1,
+    actionId: `REJECT-${CLAIM}`,
+    actionType: "CLAIM_REJECTED",
+    actorUid,
+    clubId: CLUB,
+    targetUid: TARGET,
+    inviteCode: CODE,
+    claimId: CLAIM,
+    staffRole: ROLE,
+    createdAt: serverTimestamp(),
   };
 }
 
@@ -108,56 +139,30 @@ async function createInviteAsSuperAdmin(code = CODE, targetUid = TARGET) {
   await batch.commit();
 }
 
-async function createPendingClaim(uid = TARGET, code = CODE, claimId = CLAIM) {
-  const firestore = db(uid);
-  await setDoc(doc(firestore, "proClubs", CLUB, "onboardingClaims", claimId), pendingClaim(uid, code));
+async function createPendingClaim() {
+  const firestore = db(TARGET);
+  await setDoc(doc(firestore, "proClubs", CLUB, "onboardingClaims", CLAIM), pendingClaim(TARGET, CODE));
 }
 
-function approvalAudit(actorUid: string, uid = TARGET, code = CODE, claimId = CLAIM) {
-  return {
-    schemaVersion: 1,
-    actionId: `APPROVE-${claimId}`,
-    actionType: "CLAIM_APPROVED",
-    actorUid,
-    clubId: CLUB,
-    targetUid: uid,
-    inviteCode: code,
-    claimId,
-    staffRole: ROLE,
-    createdAt: Timestamp.now(),
-  };
-}
-
-function rejectionAudit(actorUid: string, uid = TARGET, code = CODE, claimId = CLAIM) {
-  return {
-    schemaVersion: 1,
-    actionId: `REJECT-${claimId}`,
-    actionType: "CLAIM_REJECTED",
-    actorUid,
-    clubId: CLUB,
-    targetUid: uid,
-    inviteCode: code,
-    claimId,
-    staffRole: ROLE,
-    createdAt: Timestamp.now(),
-  };
-}
-
-async function approve(actorUid: string, withAudit = true, options?: { omitStaff?: boolean; forgedAuditActor?: string }) {
+async function approve(
+  actorUid: string,
+  withAudit = true,
+  options?: { omitStaff?: boolean; forgedAuditActor?: string },
+) {
   const firestore = db(actorUid);
   const batch = writeBatch(firestore);
   batch.update(doc(firestore, "proClubs", CLUB, "onboardingClaims", CLAIM), {
     status: "APPROVED",
-    approvedAt: Timestamp.now(),
+    approvedAt: serverTimestamp(),
     approvedBy: actorUid,
-    updatedAt: Timestamp.now(),
+    updatedAt: serverTimestamp(),
   });
   batch.update(doc(firestore, "proClubInvites", CODE), {
     status: "CONSUMED",
-    consumedAt: Timestamp.now(),
+    consumedAt: serverTimestamp(),
     consumedBy: actorUid,
     claimId: CLAIM,
-    updatedAt: Timestamp.now(),
+    updatedAt: serverTimestamp(),
     updatedBy: actorUid,
   });
   batch.set(doc(firestore, "proClubs", CLUB, "onboardingApprovals", TARGET), {
@@ -169,7 +174,7 @@ async function approve(actorUid: string, withAudit = true, options?: { omitStaff
     membershipAuthorizationRole: "MEMBER",
     staffRole: ROLE,
     status: "APPROVED",
-    approvedAt: Timestamp.now(),
+    approvedAt: serverTimestamp(),
     approvedBy: actorUid,
   });
   batch.set(doc(firestore, "proClubs", CLUB, "members", TARGET), {
@@ -196,15 +201,15 @@ async function reject(actorUid: string, withAudit = true) {
   const batch = writeBatch(firestore);
   batch.update(doc(firestore, "proClubs", CLUB, "onboardingClaims", CLAIM), {
     status: "REJECTED",
-    rejectedAt: Timestamp.now(),
+    rejectedAt: serverTimestamp(),
     rejectedBy: actorUid,
-    updatedAt: Timestamp.now(),
+    updatedAt: serverTimestamp(),
   });
   batch.update(doc(firestore, "proClubInvites", CODE), {
     status: "REVOKED",
-    revokedAt: Timestamp.now(),
+    revokedAt: serverTimestamp(),
     revokedBy: actorUid,
-    updatedAt: Timestamp.now(),
+    updatedAt: serverTimestamp(),
     updatedBy: actorUid,
   });
   if (withAudit) {
@@ -279,9 +284,11 @@ test("mismatched or forged invitation audit denies the whole batch", async () =>
 });
 
 test("inactive SuperAdmin, global ADMIN and normal USER cannot use SuperAdmin invite path", async () => {
-  for (const actor of [INACTIVE_SUPERADMIN, ADMIN, USER]) {
-    const code = actor === INACTIVE_SUPERADMIN ? CODE : CODE_2;
-    const target = actor === USER ? TARGET_2 : TARGET;
+  for (const [actor, code, target] of [
+    [INACTIVE_SUPERADMIN, CODE, TARGET],
+    [ADMIN, CODE_2, TARGET],
+    [USER, `FUT-PC-${"C".repeat(24)}`, TARGET_2],
+  ] as const) {
     const firestore = db(actor);
     const batch = writeBatch(firestore);
     batch.set(doc(firestore, "proClubInvites", code), inviteData(code, CLUB, target, actor));
@@ -295,9 +302,11 @@ test("inactive SuperAdmin, global ADMIN and normal USER cannot use SuperAdmin in
 
 test("SuperAdmin cannot escalate invitation membership authority above MEMBER", async () => {
   const firestore = db(SUPERADMIN);
-  const malicious = { ...inviteData(CODE, CLUB, TARGET, SUPERADMIN), membershipAuthorizationRole: "OWNER" };
   const batch = writeBatch(firestore);
-  batch.set(doc(firestore, "proClubInvites", CODE), malicious);
+  batch.set(doc(firestore, "proClubInvites", CODE), {
+    ...inviteData(CODE, CLUB, TARGET, SUPERADMIN),
+    membershipAuthorizationRole: "OWNER",
+  });
   batch.set(
     doc(firestore, "proClubOnboardingControlAudits", `INVITE-${CODE}`),
     inviteAudit(`INVITE-${CODE}`, SUPERADMIN, CLUB, TARGET, CODE),
@@ -330,9 +339,11 @@ test("canonical tenant OWNER invite remains available without SuperAdmin audit",
 
 test("only exact invitation recipient can create deterministic PENDING claim", async () => {
   await createInviteAsSuperAdmin();
-  const wrong = db(WRONG);
   await assert.rejects(
-    setDoc(doc(wrong, "proClubs", CLUB, "onboardingClaims", `${WRONG}_PRO_CLUB_${CODE}`), pendingClaim(WRONG, CODE)),
+    setDoc(
+      doc(db(WRONG), "proClubs", CLUB, "onboardingClaims", `${WRONG}_PRO_CLUB_${CODE}`),
+      pendingClaim(WRONG, CODE),
+    ),
   );
   await createPendingClaim();
   const claim = await readRaw(`proClubs/${CLUB}/onboardingClaims/${CLAIM}`);
@@ -379,7 +390,7 @@ test("incomplete SuperAdmin approval bundle rolls back with no partial membershi
   assert.equal(await readRaw(`proClubs/${CLUB}/onboardingApprovals/${TARGET}`), null);
 });
 
-test("claimant cannot self-approve even if it attempts a complete-looking bundle", async () => {
+test("claimant cannot self-approve even with a complete-looking bundle", async () => {
   await createInviteAsSuperAdmin();
   await createPendingClaim();
   await assert.rejects(approve(TARGET, false));
@@ -405,15 +416,14 @@ test("SuperAdmin rejection without audit rolls back claim and invitation", async
   assert.equal((await readRaw(`proClubInvites/${CODE}`))?.status, "ACTIVE");
 });
 
-test("SuperAdmin control audit is append-only: update and delete are denied", async () => {
+test("SuperAdmin control audit is append-only", async () => {
   await createInviteAsSuperAdmin();
   const firestore = db(SUPERADMIN);
   const ref = doc(firestore, "proClubOnboardingControlAudits", `INVITE-${CODE}`);
-  await assert.rejects(setDoc(ref, { ...inviteAudit(`INVITE-${CODE}`, SUPERADMIN, CLUB, TARGET, CODE), staffRole: "STAFF" }));
-  // deleteDoc deliberately omitted: an overwrite attempt already proves update denial in this fixture;
-  // delete is explicitly denied by the same match rule and is covered statically below.
-  const rules = readFileSync("tests/fixtures/firestore.pro-club-superadmin-onboarding-control-v1.rules", "utf8");
-  assert.match(rules, /match \/proClubOnboardingControlAudits\/\{actionId\}[\s\S]*allow update, delete: if false;/);
+  await assert.rejects(
+    setDoc(ref, { ...inviteAudit(`INVITE-${CODE}`, SUPERADMIN, CLUB, TARGET, CODE), staffRole: "STAFF" }),
+  );
+  await assert.rejects(deleteDoc(ref));
 });
 
 test("canonical tenant OWNER can approve without SuperAdmin audit", async () => {
@@ -425,7 +435,7 @@ test("canonical tenant OWNER can approve without SuperAdmin audit", async () => 
   assert.equal(await readRaw(`proClubOnboardingControlAudits/APPROVE-${CLAIM}`), null);
 });
 
-test("foundation preserves exact atomic-audit and default-deny contract markers", () => {
+test("foundation preserves atomic-audit and default-deny markers", () => {
   const rules = readFileSync("tests/fixtures/firestore.pro-club-superadmin-onboarding-control-v1.rules", "utf8");
   assert.match(rules, /matchingAuditAfter\('INVITE-' \+ code/);
   assert.match(rules, /matchingAuditAfter\('APPROVE-' \+ id/);
