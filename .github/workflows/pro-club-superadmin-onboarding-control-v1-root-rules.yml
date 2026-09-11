@@ -1,6 +1,6 @@
 name: Pro Club SuperAdmin Onboarding Control V1 Root Rules
 
-# Exact-head verification workflow after Firestore compiler-limit remediation.
+# Exact-head verification after compile and approval-expression-budget remediation.
 on:
   push:
     branches:
