@@ -1,6 +1,6 @@
 name: Pro Club SuperAdmin Onboarding Control V1 Root Rules
 
-# Exact-head verification after compile and approval-expression-budget remediation.
+# Exact-head verification after preservation-safe read and expression-budget remediation.
 on:
   push:
     branches:
