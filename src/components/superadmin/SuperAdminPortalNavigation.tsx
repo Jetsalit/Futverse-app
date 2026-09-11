@@ -7,6 +7,7 @@ import {
   FileText,
   LayoutDashboard,
   ShieldCheck,
+  UserPlus,
   Users,
 } from "lucide-react";
 
@@ -20,6 +21,7 @@ import {
   findSuperAdminSectionForTab,
 } from "./superAdminNavigationModel";
 import ProClubProvisioningControlPlane from "./ProClubProvisioningControlPlane";
+import ProClubStaffOnboardingControlPlane from "./ProClubStaffOnboardingControlPlane";
 
 interface SuperAdminPortalNavigationProps {
   activeTab: SuperAdminTab;
@@ -59,6 +61,8 @@ export default function SuperAdminPortalNavigation({
   academyCount,
 }: SuperAdminPortalNavigationProps) {
   const [isProClubControlPlaneOpen, setIsProClubControlPlaneOpen] =
+    useState(false);
+  const [isProClubStaffOnboardingOpen, setIsProClubStaffOnboardingOpen] =
     useState(false);
 
   const tabSections =
@@ -283,14 +287,24 @@ export default function SuperAdminPortalNavigation({
           </div>
 
           {activeSection.id === "organizations" && (
-            <button
-              type="button"
-              onClick={() => setIsProClubControlPlaneOpen(true)}
-              className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-800 transition hover:border-emerald-300 hover:bg-emerald-100"
-            >
-              <ShieldCheck size={15} />
-              Pro Club Control Plane
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsProClubStaffOnboardingOpen(true)}
+                className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-black text-indigo-800 transition hover:border-indigo-300 hover:bg-indigo-100"
+              >
+                <UserPlus size={15} />
+                Pro Club Staff Onboarding
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsProClubControlPlaneOpen(true)}
+                className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-800 transition hover:border-emerald-300 hover:bg-emerald-100"
+              >
+                <ShieldCheck size={15} />
+                Pro Club Control Plane
+              </button>
+            </div>
           )}
 
           {activeSection.tabs.length > 1 && (
@@ -347,6 +361,12 @@ export default function SuperAdminPortalNavigation({
           )}
         </div>
       </div>
+
+      {isProClubStaffOnboardingOpen && (
+        <ProClubStaffOnboardingControlPlane
+          onClose={() => setIsProClubStaffOnboardingOpen(false)}
+        />
+      )}
 
       {isProClubControlPlaneOpen && (
         <ProClubProvisioningControlPlane
