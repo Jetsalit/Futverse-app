@@ -1,0 +1,48 @@
+name: Temporary Pro Club SuperAdmin Inactive Audit Budget Remediation
+
+on:
+  push:
+    branches:
+      - feat/pro-club-superadmin-onboarding-control-v1-root-rules
+    paths:
+      - scripts/remediateProClubSuperAdminInactiveAuditBudget.mjs
+      - .github/workflows/tmp-pro-club-superadmin-inactive-audit-budget-remediation.yml
+
+permissions:
+  contents: write
+
+jobs:
+  remediate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Apply guarded remediation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "feat/pro-club-superadmin-onboarding-control-v1-root-rules"
+          node scripts/remediateProClubSuperAdminInactiveAuditBudget.mjs
+
+      - name: Enforce exact mutation scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only)" = "firestore.rules"
+          git diff --check
+          grep -F "Branch on canonical global role first" firestore.rules >/dev/null
+
+      - name: Commit remediation only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- firestore.rules
+          test "$(git diff --cached --name-only)" = "firestore.rules"
+          git commit -m "fix(pro-club): short-circuit inactive superadmin audit validation"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
