@@ -4,13 +4,20 @@ on:
   push:
     branches:
       - feat/pro-club-superadmin-onboarding-control-v1-runtime-adapter
+      - fix/pro-club-superadmin-onboarding-runtime-p2
     paths:
+      - firestore.rules
       - src/lib/firestore/proClubSuperAdminOnboardingControlRepository.ts
+      - src/lib/proClubOnboarding.ts
+      - src/lib/proClubModel.ts
       - tests/proClubSuperAdminOnboardingControlRuntime.test.ts
       - .github/workflows/pro-club-superadmin-onboarding-control-v1-runtime-adapter.yml
   pull_request:
     paths:
+      - firestore.rules
       - src/lib/firestore/proClubSuperAdminOnboardingControlRepository.ts
+      - src/lib/proClubOnboarding.ts
+      - src/lib/proClubModel.ts
       - tests/proClubSuperAdminOnboardingControlRuntime.test.ts
       - .github/workflows/pro-club-superadmin-onboarding-control-v1-runtime-adapter.yml
 
