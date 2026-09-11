@@ -5,14 +5,17 @@ on:
   push:
     branches:
       - feat/pro-club-superadmin-onboarding-control-v1-root-rules
+      - fix/pro-club-weekly-training-rules-budget-r1
     paths:
       - firestore.rules
       - tests/firestore.pro-club-superadmin-onboarding-control.root-rules.test.ts
+      - tests/firestore.pro-club-weekly-training-root.rules.test.ts
       - .github/workflows/pro-club-superadmin-onboarding-control-v1-root-rules.yml
   pull_request:
     paths:
       - firestore.rules
       - tests/firestore.pro-club-superadmin-onboarding-control.root-rules.test.ts
+      - tests/firestore.pro-club-weekly-training-root.rules.test.ts
       - .github/workflows/pro-club-superadmin-onboarding-control-v1-root-rules.yml
 
 permissions:
@@ -26,8 +29,24 @@ jobs:
       - name: Checkout exact commit
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
           fetch-depth: 0
+
+      - name: Verify raw HEAD checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            expected="${{ github.event.pull_request.head.sha }}"
+          else
+            expected="${{ github.sha }}"
+          fi
+          actual="$(git rev-parse HEAD)"
+          echo "EXPECTED_RAW_HEAD=$expected"
+          echo "ACTUAL_CHECKOUT_HEAD=$actual"
+          test "$actual" = "$expected"
+          echo "RAW_HEAD_CHECKOUT=PASS"
 
       - name: Select preinstalled Java 21
         shell: bash
@@ -43,6 +62,25 @@ jobs:
 
       - name: Install locked Functions dependencies
         run: npm --prefix functions ci --ignore-scripts
+
+      - name: Dedicated Weekly Training root Rules emulator
+        run: >-
+          npx --no-install firebase emulators:exec
+          --project demo-futverse-pro-club-weekly-training-root-v1
+          --only firestore
+          "node --import tsx --test --test-concurrency=1 tests/firestore.pro-club-weekly-training-root.rules.test.ts"
+
+      - name: Reject Weekly Training expression-budget exhaustion
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f firestore-debug.log
+          if grep -Fq "maximum of 1000 expressions to evaluate has been reached" firestore-debug.log; then
+            echo "FAILURE_BEHAVIOR=FAIL"
+            echo "REASON=Weekly Training Firestore Rules expression budget exhausted"
+            exit 1
+          fi
+          echo "WEEKLY_TRAINING_EXPRESSION_BUDGET=PASS"
 
       - name: Dedicated SuperAdmin root Rules emulator
         run: >-
