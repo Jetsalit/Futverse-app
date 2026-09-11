@@ -1489,6 +1489,13 @@ service cloud.firestore {
             && getAfter(proofPath).data.get('staffRole', '') == staffRole
             && getAfter(proofPath).data.get('approvedBy', '') == request.auth.uid
             && getAfter(proofPath).data.get('approvedAt', null) == request.time
+            && validProClubApprovalEvidenceAfterV1(
+              clubId,
+              uid,
+              claimId,
+              inviteCode,
+              staffRole
+            )
           )
           || (
             data.get('actionType', '') == 'CLAIM_REJECTED'
@@ -2225,7 +2232,7 @@ service cloud.firestore {
         && exactDocumentId(uid)
         && validProClubInviteCodeV1(inviteCode)
         && claimId == uid + '_PRO_CLUB_' + inviteCode
-        && isProClubOnboardingControlActorV1(clubId)
+        && isActiveProClubReviewerV1(clubId)
         && proof.keys().hasOnly([
           'schemaVersion',
           'userId',
@@ -2252,18 +2259,48 @@ service cloud.firestore {
           claimId,
           inviteCode,
           proof.get('staffRole', '')
-        )
-        && (
-          !isSuperAdmin()
-          || matchingProClubOnboardingControlAuditAfterV1(
-            'APPROVE-' + claimId,
-            'CLAIM_APPROVED',
-            clubId,
-            uid,
-            inviteCode,
-            claimId,
-            proof.get('staffRole', '')
-          )
+        );
+    }
+
+    function validProClubSuperAdminApprovalProofCreateV1(clubId, uid) {
+      let proof = request.resource.data;
+      let inviteCode = proof.get('inviteCode', '');
+      let claimId = proof.get('claimId', '');
+      let staffRole = proof.get('staffRole', '');
+
+      return isSuperAdmin()
+        && proClubDocumentIsActiveForOnboardingControlV1(clubId)
+        && exactDocumentId(uid)
+        && validProClubInviteCodeV1(inviteCode)
+        && claimId == uid + '_PRO_CLUB_' + inviteCode
+        && proof.keys().hasOnly([
+          'schemaVersion',
+          'userId',
+          'clubId',
+          'claimId',
+          'inviteCode',
+          'membershipAuthorizationRole',
+          'staffRole',
+          'status',
+          'approvedAt',
+          'approvedBy'
+        ])
+        && proof.get('schemaVersion', 0) == 1
+        && proof.get('userId', '') == uid
+        && proof.get('clubId', '') == clubId
+        && proof.get('membershipAuthorizationRole', '') == 'MEMBER'
+        && validProClubStaffRoleV1(staffRole)
+        && proof.get('status', '') == 'APPROVED'
+        && proof.get('approvedAt', null) == request.time
+        && proof.get('approvedBy', '') == request.auth.uid
+        && matchingProClubOnboardingControlAuditAfterV1(
+          'APPROVE-' + claimId,
+          'CLAIM_APPROVED',
+          clubId,
+          uid,
+          inviteCode,
+          claimId,
+          staffRole
         );
     }
 
@@ -3108,7 +3145,9 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
             || isSuperAdmin()
           );
         allow list: if false;
-        allow create: if validProClubApprovalProofCreateV1(clubId, uid);
+        allow create: if isSuperAdmin()
+          ? validProClubSuperAdminApprovalProofCreateV1(clubId, uid)
+          : validProClubApprovalProofCreateV1(clubId, uid);
         allow update, delete: if false;
       }
 
