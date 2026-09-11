@@ -19,7 +19,7 @@ import {
   type Firestore,
 } from "firebase/firestore";
 
-const PROJECT_ID = "demo-futverse-pro-club-weekly-training-root";
+const PROJECT_ID = "demo-futverse-pro-club-weekly-training-root-v1";
 const CLUB_A = "club-a";
 const HC = "hc-a";
 const TD = "td-a";
@@ -262,6 +262,25 @@ test("root rules preserve normalized text and immutable plan-week invariants", a
   await assertFails(
     updateDoc(blockRef(db), {
       coachingPoints: ["   "],
+      updatedAt: serverTimestamp(),
+      updatedBy: HC,
+    }),
+  );
+});
+
+test("root rules deny malformed coachingPoints types fail-closed", async () => {
+  const db = authedDb(HC);
+  await createPlan(db);
+  await assertSucceeds(setDoc(sessionRef(db), sessionData()));
+
+  await assertFails(
+    setDoc(blockRef(db), { ...blockData(), coachingPoints: 123 }),
+  );
+
+  await assertSucceeds(setDoc(blockRef(db), blockData()));
+  await assertFails(
+    updateDoc(blockRef(db), {
+      coachingPoints: 123,
       updatedAt: serverTimestamp(),
       updatedBy: HC,
     }),

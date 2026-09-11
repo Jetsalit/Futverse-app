@@ -2879,18 +2879,24 @@ function proClubWeeklyTrainingValidPointV1(point) {
 
 function proClubWeeklyTrainingValidCoachingPointsV1(points) {
   return points is list
-    && points.size() >= 1
-    && points.size() <= 10
+    && proClubWeeklyTrainingValidCoachingPointsListV1(points);
+}
+
+function proClubWeeklyTrainingValidCoachingPointsListV1(points) {
+  let pointCount = points.size();
+
+  return pointCount >= 1
+    && pointCount <= 10
     && proClubWeeklyTrainingValidPointV1(points[0])
-    && (points.size() < 2 || proClubWeeklyTrainingValidPointV1(points[1]))
-    && (points.size() < 3 || proClubWeeklyTrainingValidPointV1(points[2]))
-    && (points.size() < 4 || proClubWeeklyTrainingValidPointV1(points[3]))
-    && (points.size() < 5 || proClubWeeklyTrainingValidPointV1(points[4]))
-    && (points.size() < 6 || proClubWeeklyTrainingValidPointV1(points[5]))
-    && (points.size() < 7 || proClubWeeklyTrainingValidPointV1(points[6]))
-    && (points.size() < 8 || proClubWeeklyTrainingValidPointV1(points[7]))
-    && (points.size() < 9 || proClubWeeklyTrainingValidPointV1(points[8]))
-    && (points.size() < 10 || proClubWeeklyTrainingValidPointV1(points[9]));
+    && (pointCount < 2 || proClubWeeklyTrainingValidPointV1(points[1]))
+    && (pointCount < 3 || proClubWeeklyTrainingValidPointV1(points[2]))
+    && (pointCount < 4 || proClubWeeklyTrainingValidPointV1(points[3]))
+    && (pointCount < 5 || proClubWeeklyTrainingValidPointV1(points[4]))
+    && (pointCount < 6 || proClubWeeklyTrainingValidPointV1(points[5]))
+    && (pointCount < 7 || proClubWeeklyTrainingValidPointV1(points[6]))
+    && (pointCount < 8 || proClubWeeklyTrainingValidPointV1(points[7]))
+    && (pointCount < 9 || proClubWeeklyTrainingValidPointV1(points[8]))
+    && (pointCount < 10 || proClubWeeklyTrainingValidPointV1(points[9]));
 }
 
 function proClubWeeklyTrainingValidBlockKeysV1(data) {
@@ -2913,38 +2919,36 @@ function proClubWeeklyTrainingValidExactDocumentIdentifierV1(value) {
 }
 
 function proClubWeeklyTrainingValidBlockValuesV1(data) {
+  let orderIndex = data.get('orderIndex', -1);
+  let durationMinutes = data.get('durationMinutes', 0);
+  let coachingPoints = data.get('coachingPoints', []);
   return data.get('schemaVersion', 0) == 1
-    && data.get('orderIndex', -1) is int
-    && data.get('orderIndex', -1) >= 0
-    && data.get('orderIndex', -1) <= 11
+    && orderIndex is int
+    && orderIndex >= 0
+    && orderIndex <= 11
     && data.get('blockType', '') in [
       'WARM_UP', 'TECHNICAL', 'TACTICAL', 'GAME',
       'CONDITIONING', 'COOL_DOWN', 'OTHER'
     ]
     && proClubWeeklyTrainingNormalizedTextV1(data.get('title', ''), 200)
-    && data.get('durationMinutes', 0) is int
-    && data.get('durationMinutes', 0) >= 1
-    && data.get('durationMinutes', 0) <= 180
+    && durationMinutes is int
+    && durationMinutes >= 1
+    && durationMinutes <= 180
     && (!data.keys().hasAny(['drillReference'])
       || proClubWeeklyTrainingValidExactDocumentIdentifierV1(data.drillReference))
-    && proClubWeeklyTrainingValidCoachingPointsV1(
-      data.get('coachingPoints', [])
-    );
+    && proClubWeeklyTrainingValidCoachingPointsV1(coachingPoints);
 }
 
 function proClubWeeklyTrainingBlockIdMatchesOrderV1(blockId, orderIndex) {
-  return (orderIndex == 0 && blockId == 'block-01')
-    || (orderIndex == 1 && blockId == 'block-02')
-    || (orderIndex == 2 && blockId == 'block-03')
-    || (orderIndex == 3 && blockId == 'block-04')
-    || (orderIndex == 4 && blockId == 'block-05')
-    || (orderIndex == 5 && blockId == 'block-06')
-    || (orderIndex == 6 && blockId == 'block-07')
-    || (orderIndex == 7 && blockId == 'block-08')
-    || (orderIndex == 8 && blockId == 'block-09')
-    || (orderIndex == 9 && blockId == 'block-10')
-    || (orderIndex == 10 && blockId == 'block-11')
-    || (orderIndex == 11 && blockId == 'block-12');
+  let blockIdsByOrder = [
+    'block-01', 'block-02', 'block-03', 'block-04',
+    'block-05', 'block-06', 'block-07', 'block-08',
+    'block-09', 'block-10', 'block-11', 'block-12'
+  ];
+  return orderIndex is int
+    && orderIndex >= 0
+    && orderIndex <= 11
+    && blockId == blockIdsByOrder[orderIndex];
 }
 
 function proClubWeeklyTrainingSessionExistsV1(clubId, planId, sessionId) {
@@ -2959,15 +2963,16 @@ function proClubWeeklyTrainingValidBlockCreateV1(
   sessionId,
   blockId
 ) {
-  return proClubWeeklyTrainingParentDraftOwnedByActorV1(clubId, planId)
-    && proClubWeeklyTrainingSessionExistsV1(clubId, planId, sessionId)
-    && proClubWeeklyTrainingValidBlockKeysV1(request.resource.data)
-    && proClubWeeklyTrainingValidBlockValuesV1(request.resource.data)
+  let data = request.resource.data;
+  return proClubWeeklyTrainingValidBlockKeysV1(data)
+    && proClubWeeklyTrainingValidBlockValuesV1(data)
     && proClubWeeklyTrainingBlockIdMatchesOrderV1(
       blockId,
-      request.resource.data.get('orderIndex', -1)
+      data.get('orderIndex', -1)
     )
-    && proClubWeeklyTrainingValidAuditCreateV1(request.resource.data);
+    && proClubWeeklyTrainingValidAuditCreateV1(data)
+    && proClubWeeklyTrainingParentDraftOwnedByActorV1(clubId, planId)
+    && proClubWeeklyTrainingSessionExistsV1(clubId, planId, sessionId);
 }
 
 function proClubWeeklyTrainingValidBlockUpdateV1(
@@ -2976,22 +2981,24 @@ function proClubWeeklyTrainingValidBlockUpdateV1(
   sessionId,
   blockId
 ) {
-  return proClubWeeklyTrainingParentDraftOwnedByActorV1(clubId, planId)
-    && proClubWeeklyTrainingSessionExistsV1(clubId, planId, sessionId)
-    && proClubWeeklyTrainingValidBlockKeysV1(request.resource.data)
-    && proClubWeeklyTrainingValidBlockValuesV1(request.resource.data)
+  let data = request.resource.data;
+  let previous = resource.data;
+  return proClubWeeklyTrainingValidBlockKeysV1(data)
+    && proClubWeeklyTrainingValidBlockValuesV1(data)
     && proClubWeeklyTrainingBlockIdMatchesOrderV1(
       blockId,
-      request.resource.data.get('orderIndex', -1)
+      data.get('orderIndex', -1)
     )
-    && request.resource.data.get('schemaVersion', 0)
-      == resource.data.get('schemaVersion', 0)
-    && request.resource.data.get('orderIndex', -1)
-      == resource.data.get('orderIndex', -1)
+    && data.get('schemaVersion', 0)
+      == previous.get('schemaVersion', 0)
+    && data.get('orderIndex', -1)
+      == previous.get('orderIndex', -1)
     && proClubWeeklyTrainingValidAuditUpdateV1(
-      request.resource.data,
-      resource.data
-    );
+      data,
+      previous
+    )
+    && proClubWeeklyTrainingParentDraftOwnedByActorV1(clubId, planId)
+    && proClubWeeklyTrainingSessionExistsV1(clubId, planId, sessionId);
 }
 
 match /proClubs/{clubId}/technicalGovernance/current {
