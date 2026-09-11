@@ -17,18 +17,19 @@ service cloud.firestore {
     function staffPath(clubId, uid) {
       return /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid);
     }
-    function claimPath(clubId, claimId) {
-      return /databases/$(database)/documents/proClubs/$(clubId)/onboardingClaims/$(claimId);
+    function claimPath(clubId, id) {
+      return /databases/$(database)/documents/proClubs/$(clubId)/onboardingClaims/$(id);
     }
     function proofPath(clubId, uid) {
       return /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(uid);
     }
-    function invitePath(inviteCode) {
-      return /databases/$(database)/documents/proClubInvites/$(inviteCode);
+    function invitePath(code) {
+      return /databases/$(database)/documents/proClubInvites/$(code);
     }
     function auditPath(actionId) {
       return /databases/$(database)/documents/proClubOnboardingControlAudits/$(actionId);
     }
+
     function activeUser(uid) {
       return exists(userPath(uid))
         && get(userPath(uid)).data.get('status', '') in ['ACTIVE', 'Active'];
@@ -51,8 +52,8 @@ service cloud.firestore {
         && get(memberPath(clubId, request.auth.uid)).data.get('status', '') == 'ACTIVE'
         && get(memberPath(clubId, request.auth.uid)).data.get('authorizationRole', '') in ['OWNER', 'ADMIN'];
     }
-    function reviewerOrSuperAdmin(clubId) {
-      return tenantReviewer(clubId) || (activeSuperAdmin() && activeClub(clubId));
+    function controlActor(clubId) {
+      return (activeSuperAdmin() && activeClub(clubId)) || tenantReviewer(clubId);
     }
     function staffRole(role) {
       return role in [
@@ -63,15 +64,14 @@ service cloud.firestore {
     function inviteCode(code) {
       return code is string && code.matches('^FUT-PC-[A-Z0-9]{24,48}$');
     }
-    function claimId(uid, code) { return uid + '_PRO_CLUB_' + code; }
+    function canonicalClaimId(uid, code) { return uid + '_PRO_CLUB_' + code; }
 
-    function auditExact(data, actionId, actionType, clubId, uid, code, expectedClaimId, role) {
+    function auditMatches(data, actionType, clubId, uid, code, expectedClaimId, role) {
       return data.keys().hasOnly([
           'schemaVersion','actionId','actionType','actorUid','clubId','targetUid',
           'inviteCode','claimId','staffRole','createdAt'
         ])
         && data.get('schemaVersion', 0) == 1
-        && data.get('actionId', '') == actionId
         && data.get('actionType', '') == actionType
         && data.get('actorUid', '') == request.auth.uid
         && data.get('clubId', '') == clubId
@@ -82,8 +82,10 @@ service cloud.firestore {
         && data.get('createdAt', null) == request.time;
     }
     function matchingAuditAfter(actionId, actionType, clubId, uid, code, expectedClaimId, role) {
+      let audit = getAfter(auditPath(actionId)).data;
       return existsAfter(auditPath(actionId))
-        && auditExact(getAfter(auditPath(actionId)).data, actionId, actionType, clubId, uid, code, expectedClaimId, role);
+        && audit.get('actionId', '') == actionId
+        && auditMatches(audit, actionType, clubId, uid, code, expectedClaimId, role);
     }
 
     function validInviteCreate(code) {
@@ -91,9 +93,7 @@ service cloud.firestore {
       let clubId = data.get('clubId', '');
       let uid = data.get('targetUid', '');
       let role = data.get('staffRole', '');
-      let superAdminPath = activeSuperAdmin();
-      return signedIn()
-        && activeClub(clubId)
+      return controlActor(clubId)
         && inviteCode(code)
         && data.keys().hasOnly([
           'schemaVersion','inviteCode','clubId','targetUid','membershipAuthorizationRole',
@@ -119,11 +119,8 @@ service cloud.firestore {
         && !exists(memberPath(clubId, uid))
         && !exists(staffPath(clubId, uid))
         && (
-          tenantReviewer(clubId)
-          || (
-            superAdminPath
-            && matchingAuditAfter('INVITE-' + code, 'INVITE_ISSUED', clubId, uid, code, null, role)
-          )
+          !activeSuperAdmin()
+          || matchingAuditAfter('INVITE-' + code, 'INVITE_ISSUED', clubId, uid, code, null, role)
         );
     }
 
@@ -135,8 +132,8 @@ service cloud.firestore {
       let invite = get(invitePath(code)).data;
       return signedIn()
         && uid == request.auth.uid
-        && id == claimId(uid, code)
         && activeUser(uid)
+        && id == canonicalClaimId(uid, code)
         && data.keys().hasOnly([
           'schemaVersion','type','userId','clubId','inviteCode','membershipAuthorizationRole',
           'staffRole','status','createdAt','updatedAt'
@@ -161,37 +158,19 @@ service cloud.firestore {
         && !exists(proofPath(clubId, uid));
     }
 
-    function approvalBundleAfter(clubId, uid, id, code, role) {
-      let claim = getAfter(claimPath(clubId, id)).data;
-      let invite = getAfter(invitePath(code)).data;
+    function proofMatchesAfter(clubId, uid, id, code, role) {
       let proof = getAfter(proofPath(clubId, uid)).data;
-      let member = getAfter(memberPath(clubId, uid)).data;
-      let staff = getAfter(staffPath(clubId, uid)).data;
-      return existsAfter(claimPath(clubId, id))
-        && existsAfter(invitePath(code))
-        && existsAfter(proofPath(clubId, uid))
-        && existsAfter(memberPath(clubId, uid))
-        && existsAfter(staffPath(clubId, uid))
-        && claim.get('status', '') == 'APPROVED'
-        && claim.get('approvedAt', null) == request.time
-        && claim.get('approvedBy', '') == request.auth.uid
-        && claim.get('updatedAt', null) == request.time
-        && invite.get('status', '') == 'CONSUMED'
-        && invite.get('claimId', '') == id
-        && invite.get('consumedAt', null) == request.time
-        && invite.get('consumedBy', '') == request.auth.uid
-        && invite.get('updatedAt', null) == request.time
-        && invite.get('updatedBy', '') == request.auth.uid
-        && proof.get('status', '') == 'APPROVED'
+      return existsAfter(proofPath(clubId, uid))
+        && proof.get('schemaVersion', 0) == 1
+        && proof.get('userId', '') == uid
+        && proof.get('clubId', '') == clubId
         && proof.get('claimId', '') == id
         && proof.get('inviteCode', '') == code
+        && proof.get('membershipAuthorizationRole', '') == 'MEMBER'
         && proof.get('staffRole', '') == role
+        && proof.get('status', '') == 'APPROVED'
         && proof.get('approvedAt', null) == request.time
-        && proof.get('approvedBy', '') == request.auth.uid
-        && member.get('authorizationRole', '') == 'MEMBER'
-        && member.get('status', '') == 'ACTIVE'
-        && staff.get('staffRole', '') == role
-        && staff.get('status', '') == 'ACTIVE';
+        && proof.get('approvedBy', '') == request.auth.uid;
     }
 
     function validClaimApproval(clubId, id) {
@@ -200,14 +179,14 @@ service cloud.firestore {
       let uid = before.get('userId', '');
       let code = before.get('inviteCode', '');
       let role = before.get('staffRole', '');
-      return reviewerOrSuperAdmin(clubId)
+      return controlActor(clubId)
         && before.get('status', '') == 'PENDING'
         && after.get('status', '') == 'APPROVED'
         && after.diff(before).affectedKeys().hasOnly(['status','approvedAt','approvedBy','updatedAt'])
         && after.get('approvedAt', null) == request.time
         && after.get('approvedBy', '') == request.auth.uid
         && after.get('updatedAt', null) == request.time
-        && approvalBundleAfter(clubId, uid, id, code, role)
+        && proofMatchesAfter(clubId, uid, id, code, role)
         && (
           !activeSuperAdmin()
           || matchingAuditAfter('APPROVE-' + id, 'CLAIM_APPROVED', clubId, uid, code, id, role)
@@ -221,7 +200,7 @@ service cloud.firestore {
       let code = before.get('inviteCode', '');
       let role = before.get('staffRole', '');
       let invite = getAfter(invitePath(code)).data;
-      return reviewerOrSuperAdmin(clubId)
+      return controlActor(clubId)
         && before.get('status', '') == 'PENDING'
         && after.get('status', '') == 'REJECTED'
         && after.diff(before).affectedKeys().hasOnly(['status','rejectedAt','rejectedBy','updatedAt'])
@@ -248,7 +227,11 @@ service cloud.firestore {
       let id = p.get('claimId', '');
       let code = p.get('inviteCode', '');
       let role = p.get('staffRole', '');
-      return reviewerOrSuperAdmin(clubId)
+      let claim = getAfter(claimPath(clubId, id)).data;
+      let invite = getAfter(invitePath(code)).data;
+      let member = getAfter(memberPath(clubId, uid)).data;
+      let staff = getAfter(staffPath(clubId, uid)).data;
+      return controlActor(clubId)
         && p.keys().hasOnly([
           'schemaVersion','userId','clubId','claimId','inviteCode','membershipAuthorizationRole',
           'staffRole','status','approvedAt','approvedBy'
@@ -256,38 +239,72 @@ service cloud.firestore {
         && p.get('schemaVersion', 0) == 1
         && p.get('userId', '') == uid
         && p.get('clubId', '') == clubId
-        && id == claimId(uid, code)
+        && id == canonicalClaimId(uid, code)
         && p.get('membershipAuthorizationRole', '') == 'MEMBER'
         && staffRole(role)
         && p.get('status', '') == 'APPROVED'
         && p.get('approvedAt', null) == request.time
         && p.get('approvedBy', '') == request.auth.uid
-        && approvalBundleAfter(clubId, uid, id, code, role)
-        && (!activeSuperAdmin() || matchingAuditAfter('APPROVE-' + id, 'CLAIM_APPROVED', clubId, uid, code, id, role));
+        && existsAfter(claimPath(clubId, id))
+        && existsAfter(invitePath(code))
+        && existsAfter(memberPath(clubId, uid))
+        && existsAfter(staffPath(clubId, uid))
+        && claim.get('status', '') == 'APPROVED'
+        && claim.get('userId', '') == uid
+        && claim.get('clubId', '') == clubId
+        && claim.get('inviteCode', '') == code
+        && claim.get('staffRole', '') == role
+        && claim.get('approvedAt', null) == request.time
+        && claim.get('approvedBy', '') == request.auth.uid
+        && invite.get('status', '') == 'CONSUMED'
+        && invite.get('targetUid', '') == uid
+        && invite.get('clubId', '') == clubId
+        && invite.get('staffRole', '') == role
+        && invite.get('claimId', '') == id
+        && invite.get('consumedAt', null) == request.time
+        && invite.get('consumedBy', '') == request.auth.uid
+        && member.get('authorizationRole', '') == 'MEMBER'
+        && member.get('status', '') == 'ACTIVE'
+        && staff.get('staffRole', '') == role
+        && staff.get('status', '') == 'ACTIVE'
+        && (
+          !activeSuperAdmin()
+          || matchingAuditAfter('APPROVE-' + id, 'CLAIM_APPROVED', clubId, uid, code, id, role)
+        );
     }
+
     function validMemberCreate(clubId, uid) {
-      return reviewerOrSuperAdmin(clubId)
+      let proof = getAfter(proofPath(clubId, uid)).data;
+      return controlActor(clubId)
         && request.resource.data.keys().hasOnly(['authorizationRole','status'])
         && request.resource.data.get('authorizationRole', '') == 'MEMBER'
         && request.resource.data.get('status', '') == 'ACTIVE'
-        && existsAfter(proofPath(clubId, uid));
+        && existsAfter(proofPath(clubId, uid))
+        && proof.get('status', '') == 'APPROVED'
+        && proof.get('userId', '') == uid
+        && proof.get('approvedBy', '') == request.auth.uid;
     }
     function validStaffCreate(clubId, uid) {
-      return reviewerOrSuperAdmin(clubId)
+      let proof = getAfter(proofPath(clubId, uid)).data;
+      return controlActor(clubId)
         && request.resource.data.keys().hasOnly(['staffRole','status'])
         && staffRole(request.resource.data.get('staffRole', ''))
         && request.resource.data.get('status', '') == 'ACTIVE'
         && existsAfter(proofPath(clubId, uid))
-        && getAfter(proofPath(clubId, uid)).data.get('staffRole', '') == request.resource.data.get('staffRole', '');
+        && proof.get('status', '') == 'APPROVED'
+        && proof.get('userId', '') == uid
+        && proof.get('staffRole', '') == request.resource.data.get('staffRole', '')
+        && proof.get('approvedBy', '') == request.auth.uid;
     }
+
     function validInviteUpdate(code) {
       let before = resource.data;
       let after = request.resource.data;
       let clubId = before.get('clubId', '');
       let uid = before.get('targetUid', '');
       let role = before.get('staffRole', '');
-      let id = claimId(uid, code);
-      return reviewerOrSuperAdmin(clubId)
+      let id = canonicalClaimId(uid, code);
+      return controlActor(clubId)
         && before.get('status', '') == 'ACTIVE'
         && (
           (
@@ -298,7 +315,7 @@ service cloud.firestore {
             && after.get('claimId', '') == id
             && after.get('updatedAt', null) == request.time
             && after.get('updatedBy', '') == request.auth.uid
-            && approvalBundleAfter(clubId, uid, id, code, role)
+            && proofMatchesAfter(clubId, uid, id, code, role)
             && (!activeSuperAdmin() || matchingAuditAfter('APPROVE-' + id, 'CLAIM_APPROVED', clubId, uid, code, id, role))
           )
           || (
@@ -326,12 +343,13 @@ service cloud.firestore {
       return activeSuperAdmin()
         && activeClub(clubId)
         && staffRole(role)
+        && data.get('actionId', '') == actionId
         && (
           (
             action == 'INVITE_ISSUED'
             && actionId == 'INVITE-' + code
             && id == null
-            && auditExact(data, actionId, action, clubId, uid, code, null, role)
+            && auditMatches(data, action, clubId, uid, code, null, role)
             && existsAfter(invitePath(code))
             && getAfter(invitePath(code)).data.get('status', '') == 'ACTIVE'
             && getAfter(invitePath(code)).data.get('targetUid', '') == uid
@@ -343,14 +361,14 @@ service cloud.firestore {
             action == 'CLAIM_APPROVED'
             && exactId(id)
             && actionId == 'APPROVE-' + id
-            && auditExact(data, actionId, action, clubId, uid, code, id, role)
-            && approvalBundleAfter(clubId, uid, id, code, role)
+            && auditMatches(data, action, clubId, uid, code, id, role)
+            && proofMatchesAfter(clubId, uid, id, code, role)
           )
           || (
             action == 'CLAIM_REJECTED'
             && exactId(id)
             && actionId == 'REJECT-' + id
-            && auditExact(data, actionId, action, clubId, uid, code, id, role)
+            && auditMatches(data, action, clubId, uid, code, id, role)
             && existsAfter(claimPath(clubId, id))
             && getAfter(claimPath(clubId, id)).data.get('status', '') == 'REJECTED'
             && existsAfter(invitePath(code))
@@ -380,7 +398,7 @@ service cloud.firestore {
       allow delete: if false;
     }
     match /proClubs/{clubId}/onboardingApprovals/{uid} {
-      allow get: if reviewerOrSuperAdmin(clubId) || request.auth.uid == uid;
+      allow get: if controlActor(clubId) || (signedIn() && request.auth.uid == uid);
       allow create: if validProofCreate(clubId, uid);
       allow update, delete: if false;
     }
