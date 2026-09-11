@@ -394,7 +394,13 @@ service cloud.firestore {
     match /proClubs/{clubId}/onboardingClaims/{id} {
       allow get: if signedIn();
       allow create: if validClaimCreate(clubId, id);
-      allow update: if validClaimApproval(clubId, id) || validClaimRejection(clubId, id);
+      allow update: if (
+        request.resource.data.get('status', '') == 'APPROVED'
+        && validClaimApproval(clubId, id)
+      ) || (
+        request.resource.data.get('status', '') == 'REJECTED'
+        && validClaimRejection(clubId, id)
+      );
       allow delete: if false;
     }
     match /proClubs/{clubId}/onboardingApprovals/{uid} {
