@@ -1363,7 +1363,6 @@ service cloud.firestore {
     function proClubOnboardingControlAuditMatchesV1(
       data,
       actionId,
-      actionType,
       clubId,
       uid,
       inviteCode,
@@ -1396,7 +1395,6 @@ service cloud.firestore {
         ])
         && data.get('schemaVersion', 0) == 1
         && data.get('actionId', '') == actionId
-        && data.get('actionType', '') == actionType
         && data.get('actorUid', '') == request.auth.uid
         && data.get('clubId', '') == clubId
         && data.get('targetUid', '') == uid
@@ -1420,10 +1418,10 @@ service cloud.firestore {
       let audit = getAfter(auditPath).data;
 
       return existsAfter(auditPath)
+        && audit.get('actionType', '') == actionType
         && proClubOnboardingControlAuditMatchesV1(
           audit,
           actionId,
-          actionType,
           clubId,
           uid,
           inviteCode,
@@ -1434,7 +1432,6 @@ service cloud.firestore {
 
     function validProClubOnboardingControlAuditCreateV1(actionId) {
       let data = request.resource.data;
-      let actionType = data.get('actionType', '');
       let clubId = data.get('clubId', '');
       let uid = data.get('targetUid', '');
       let inviteCode = data.get('inviteCode', '');
@@ -1446,10 +1443,6 @@ service cloud.firestore {
         /databases/$(database)/documents/proClubs/$(clubId)/onboardingClaims/$(claimId);
       let proofPath =
         /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(uid);
-      let memberPath =
-        /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid);
-      let staffPath =
-        /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid);
 
       return isSuperAdmin()
         && proClubDocumentIsActiveForOnboardingControlV1(clubId)
@@ -1457,13 +1450,12 @@ service cloud.firestore {
         && data.get('actionId', '') == actionId
         && (
           (
-            actionType == 'INVITE_ISSUED'
+            data.get('actionType', '') == 'INVITE_ISSUED'
             && actionId == 'INVITE-' + inviteCode
             && claimId == null
             && proClubOnboardingControlAuditMatchesV1(
               data,
               actionId,
-              actionType,
               clubId,
               uid,
               inviteCode,
@@ -1478,13 +1470,12 @@ service cloud.firestore {
             && getAfter(invitePath).data.get('createdBy', '') == request.auth.uid
           )
           || (
-            actionType == 'CLAIM_APPROVED'
+            data.get('actionType', '') == 'CLAIM_APPROVED'
             && exactDocumentId(claimId)
             && actionId == 'APPROVE-' + claimId
             && proClubOnboardingControlAuditMatchesV1(
               data,
               actionId,
-              actionType,
               clubId,
               uid,
               inviteCode,
@@ -1500,13 +1491,12 @@ service cloud.firestore {
             && getAfter(proofPath).data.get('approvedAt', null) == request.time
           )
           || (
-            actionType == 'CLAIM_REJECTED'
+            data.get('actionType', '') == 'CLAIM_REJECTED'
             && exactDocumentId(claimId)
             && actionId == 'REJECT-' + claimId
             && proClubOnboardingControlAuditMatchesV1(
               data,
               actionId,
-              actionType,
               clubId,
               uid,
               inviteCode,
@@ -1518,8 +1508,12 @@ service cloud.firestore {
             && getAfter(claimPath).data.get('userId', '') == uid
             && existsAfter(invitePath)
             && getAfter(invitePath).data.get('status', '') == 'REVOKED'
-            && !existsAfter(memberPath)
-            && !existsAfter(staffPath)
+            && !existsAfter(
+              /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)
+            )
+            && !existsAfter(
+              /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)
+            )
             && !existsAfter(proofPath)
           )
         );
