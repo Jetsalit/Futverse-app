@@ -10,7 +10,6 @@ on:
       - .github/workflows/pro-club-superadmin-onboarding-control-v1-runtime-adapter.yml
   pull_request:
     paths:
-      - src/lib/firestore/proClubSuperadmin-onboarding-control-v1-runtime-adapter.yml
       - src/lib/firestore/proClubSuperAdminOnboardingControlRepository.ts
       - tests/proClubSuperAdminOnboardingControlRuntime.test.ts
       - .github/workflows/pro-club-superadmin-onboarding-control-v1-runtime-adapter.yml
