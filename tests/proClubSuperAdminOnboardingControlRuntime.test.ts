@@ -113,7 +113,22 @@ test("runtime adapter issues exact HEAD_COACH invite with same-commit audit", as
   assert.equal(invite.targetUid, TARGET);
   assert.equal(invite.staffRole, "HEAD_COACH");
   assert.equal(invite.membershipAuthorizationRole, "MEMBER");
+  assert.equal(invite.status, "ACTIVE");
+  assert.equal((await raw(`proClubInvites/${invite.inviteCode}`))?.inviteCode, invite.inviteCode);
   assert.equal((await raw(`proClubOnboardingControlAudits/INVITE-${invite.inviteCode}`))?.actorUid, SUPERADMIN);
+});
+
+test("issuance success boundary is the batch acknowledgement, not a follow-up invite read", () => {
+  const source = readFileSync("src/lib/firestore/proClubSuperAdminOnboardingControlRepository.ts", "utf8");
+  const issueStart = source.indexOf("async function issueInvitation(");
+  const loadPendingStart = source.indexOf("async function loadPending(");
+  assert.ok(issueStart >= 0 && loadPendingStart > issueStart);
+  const issueSource = source.slice(issueStart, loadPendingStart);
+  const commitIndex = issueSource.indexOf("await batch.commit();");
+  assert.ok(commitIndex >= 0);
+  const afterCommit = issueSource.slice(commitIndex);
+  assert.match(afterCommit, /return\s*\{[\s\S]*inviteCode/);
+  assert.doesNotMatch(afterCommit, /getDocFromServer\s*\(\s*inviteRef\s*\)/);
 });
 
 test("runtime adapter rejects ordinary USER before any invitation write", async () => {
