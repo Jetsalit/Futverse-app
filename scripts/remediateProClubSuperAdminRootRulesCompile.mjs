@@ -19,6 +19,15 @@ function replaceOnce(text, from, to, label) {
   return text.slice(0, i) + to + text.slice(i + from.length);
 }
 
+function replaceExactCount(text, from, to, expectedCount, label) {
+  const parts = text.split(from);
+  const count = parts.length - 1;
+  if (count !== expectedCount) {
+    throw new Error(`STOP: ${label} expected ${expectedCount} matches, found ${count}`);
+  }
+  return parts.join(to);
+}
+
 let rules = readFileSync(path, "utf8");
 const actual = blobSha(rules);
 if (actual !== expectedBlob) throw new Error(`STOP: firestore.rules drift (${actual})`);
@@ -44,14 +53,13 @@ rules = replaceOnce(
   "matching audit action type binding",
 );
 
-for (const actionType of ["INVITE_ISSUED", "CLAIM_APPROVED", "CLAIM_REJECTED"]) {
-  rules = replaceOnce(
-    rules,
-    `              data,\n              actionId,\n              actionType,\n              clubId,`,
-    `              data,\n              actionId,\n              clubId,`,
-    `audit create matcher call ${actionType}`,
-  );
-}
+rules = replaceExactCount(
+  rules,
+  `              data,\n              actionId,\n              actionType,\n              clubId,`,
+  `              data,\n              actionId,\n              clubId,`,
+  3,
+  "audit create matcher calls",
+);
 
 rules = replaceOnce(
   rules,
@@ -60,9 +68,24 @@ rules = replaceOnce(
   "remove actionType local",
 );
 
-rules = rules.replaceAll("            actionType == 'INVITE_ISSUED'", "            data.get('actionType', '') == 'INVITE_ISSUED'");
-rules = rules.replaceAll("            actionType == 'CLAIM_APPROVED'", "            data.get('actionType', '') == 'CLAIM_APPROVED'");
-rules = rules.replaceAll("            actionType == 'CLAIM_REJECTED'", "            data.get('actionType', '') == 'CLAIM_REJECTED'");
+rules = replaceOnce(
+  rules,
+  "            actionType == 'INVITE_ISSUED'",
+  "            data.get('actionType', '') == 'INVITE_ISSUED'",
+  "invite audit action discriminator",
+);
+rules = replaceOnce(
+  rules,
+  "            actionType == 'CLAIM_APPROVED'",
+  "            data.get('actionType', '') == 'CLAIM_APPROVED'",
+  "approval audit action discriminator",
+);
+rules = replaceOnce(
+  rules,
+  "            actionType == 'CLAIM_REJECTED'",
+  "            data.get('actionType', '') == 'CLAIM_REJECTED'",
+  "rejection audit action discriminator",
+);
 
 rules = replaceOnce(
   rules,
