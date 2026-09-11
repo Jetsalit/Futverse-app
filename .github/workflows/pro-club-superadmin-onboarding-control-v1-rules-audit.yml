@@ -24,6 +24,13 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Select preinstalled Java 21
+        run: |
+          test -n "$JAVA_HOME_21_X64"
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
+          "$JAVA_HOME_21_X64/bin/java" -version
+
       - name: Install locked dependencies
         run: npm ci --ignore-scripts
 
