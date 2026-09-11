@@ -51,6 +51,18 @@ jobs:
           --only firestore
           "node --import tsx --test --test-concurrency=1 tests/firestore.pro-club-superadmin-onboarding-control.root-rules.test.ts"
 
+      - name: Reject Firestore expression-budget exhaustion
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f firestore-debug.log
+          if grep -Fq "maximum of 1000 expressions to evaluate has been reached" firestore-debug.log; then
+            echo "FAILURE_BEHAVIOR=FAIL"
+            echo "REASON=Firestore Rules expression budget exhausted"
+            exit 1
+          fi
+          echo "FIRESTORE_EXPRESSION_BUDGET=PASS"
+
       - name: Existing Pro Club emulator regression
         run: npm run test:pro-club-emulator-regression
 
