@@ -1,0 +1,401 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function exactId(value) {
+      return value is string && value.size() > 0 && value.matches('^[^/]+$');
+    }
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+    function clubPath(clubId) {
+      return /databases/$(database)/documents/proClubs/$(clubId);
+    }
+    function memberPath(clubId, uid) {
+      return /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid);
+    }
+    function staffPath(clubId, uid) {
+      return /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid);
+    }
+    function claimPath(clubId, claimId) {
+      return /databases/$(database)/documents/proClubs/$(clubId)/onboardingClaims/$(claimId);
+    }
+    function proofPath(clubId, uid) {
+      return /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(uid);
+    }
+    function invitePath(inviteCode) {
+      return /databases/$(database)/documents/proClubInvites/$(inviteCode);
+    }
+    function auditPath(actionId) {
+      return /databases/$(database)/documents/proClubOnboardingControlAudits/$(actionId);
+    }
+    function activeUser(uid) {
+      return exists(userPath(uid))
+        && get(userPath(uid)).data.get('status', '') in ['ACTIVE', 'Active'];
+    }
+    function activeSuperAdmin() {
+      return signedIn()
+        && activeUser(request.auth.uid)
+        && get(userPath(request.auth.uid)).data.get('role', '') == 'SUPERADMIN';
+    }
+    function activeClub(clubId) {
+      return exactId(clubId)
+        && exists(clubPath(clubId))
+        && get(clubPath(clubId)).data.get('status', '') == 'ACTIVE';
+    }
+    function tenantReviewer(clubId) {
+      return signedIn()
+        && activeUser(request.auth.uid)
+        && activeClub(clubId)
+        && exists(memberPath(clubId, request.auth.uid))
+        && get(memberPath(clubId, request.auth.uid)).data.get('status', '') == 'ACTIVE'
+        && get(memberPath(clubId, request.auth.uid)).data.get('authorizationRole', '') in ['OWNER', 'ADMIN'];
+    }
+    function reviewerOrSuperAdmin(clubId) {
+      return tenantReviewer(clubId) || (activeSuperAdmin() && activeClub(clubId));
+    }
+    function staffRole(role) {
+      return role in [
+        'TECHNICAL_DIRECTOR','MANAGER','HEAD_COACH','ASSISTANT_COACH','GK_COACH',
+        'FITNESS_COACH','ANALYST','PHYSIO','TEAM_MANAGER','STAFF'
+      ];
+    }
+    function inviteCode(code) {
+      return code is string && code.matches('^FUT-PC-[A-Z0-9]{24,48}$');
+    }
+    function claimId(uid, code) { return uid + '_PRO_CLUB_' + code; }
+
+    function auditExact(data, actionId, actionType, clubId, uid, code, expectedClaimId, role) {
+      return data.keys().hasOnly([
+          'schemaVersion','actionId','actionType','actorUid','clubId','targetUid',
+          'inviteCode','claimId','staffRole','createdAt'
+        ])
+        && data.get('schemaVersion', 0) == 1
+        && data.get('actionId', '') == actionId
+        && data.get('actionType', '') == actionType
+        && data.get('actorUid', '') == request.auth.uid
+        && data.get('clubId', '') == clubId
+        && data.get('targetUid', '') == uid
+        && data.get('inviteCode', '') == code
+        && data.get('claimId', 'missing') == expectedClaimId
+        && data.get('staffRole', '') == role
+        && data.get('createdAt', null) == request.time;
+    }
+    function matchingAuditAfter(actionId, actionType, clubId, uid, code, expectedClaimId, role) {
+      return existsAfter(auditPath(actionId))
+        && auditExact(getAfter(auditPath(actionId)).data, actionId, actionType, clubId, uid, code, expectedClaimId, role);
+    }
+
+    function validInviteCreate(code) {
+      let data = request.resource.data;
+      let clubId = data.get('clubId', '');
+      let uid = data.get('targetUid', '');
+      let role = data.get('staffRole', '');
+      let superAdminPath = activeSuperAdmin();
+      return signedIn()
+        && activeClub(clubId)
+        && inviteCode(code)
+        && data.keys().hasOnly([
+          'schemaVersion','inviteCode','clubId','targetUid','membershipAuthorizationRole',
+          'staffRole','status','createdAt','createdBy','updatedAt','updatedBy','expiresAt'
+        ])
+        && data.get('schemaVersion', 0) == 1
+        && data.get('inviteCode', '') == code
+        && exactId(uid)
+        && exists(userPath(uid))
+        && get(userPath(uid)).data.get('status', '') in ['ACTIVE','Active']
+        && get(userPath(uid)).data.get('role', '') != 'SUPERADMIN'
+        && uid != request.auth.uid
+        && data.get('membershipAuthorizationRole', '') == 'MEMBER'
+        && staffRole(role)
+        && data.get('status', '') == 'ACTIVE'
+        && data.get('createdAt', null) == request.time
+        && data.get('createdBy', '') == request.auth.uid
+        && data.get('updatedAt', null) == request.time
+        && data.get('updatedBy', '') == request.auth.uid
+        && data.get('expiresAt', null) is timestamp
+        && data.get('expiresAt', null) > request.time
+        && data.get('expiresAt', null) <= request.time + duration.value(7, 'd')
+        && !exists(memberPath(clubId, uid))
+        && !exists(staffPath(clubId, uid))
+        && (
+          tenantReviewer(clubId)
+          || (
+            superAdminPath
+            && matchingAuditAfter('INVITE-' + code, 'INVITE_ISSUED', clubId, uid, code, null, role)
+          )
+        );
+    }
+
+    function validClaimCreate(clubId, id) {
+      let data = request.resource.data;
+      let uid = data.get('userId', '');
+      let code = data.get('inviteCode', '');
+      let role = data.get('staffRole', '');
+      let invite = get(invitePath(code)).data;
+      return signedIn()
+        && uid == request.auth.uid
+        && id == claimId(uid, code)
+        && activeUser(uid)
+        && data.keys().hasOnly([
+          'schemaVersion','type','userId','clubId','inviteCode','membershipAuthorizationRole',
+          'staffRole','status','createdAt','updatedAt'
+        ])
+        && data.get('schemaVersion', 0) == 1
+        && data.get('type', '') == 'PRO_CLUB_STAFF_JOIN'
+        && data.get('clubId', '') == clubId
+        && data.get('membershipAuthorizationRole', '') == 'MEMBER'
+        && staffRole(role)
+        && data.get('status', '') == 'PENDING'
+        && data.get('createdAt', null) == request.time
+        && data.get('updatedAt', null) == request.time
+        && exists(invitePath(code))
+        && invite.get('status', '') == 'ACTIVE'
+        && invite.get('expiresAt', null) > request.time
+        && invite.get('clubId', '') == clubId
+        && invite.get('targetUid', '') == uid
+        && invite.get('membershipAuthorizationRole', '') == 'MEMBER'
+        && invite.get('staffRole', '') == role
+        && !exists(memberPath(clubId, uid))
+        && !exists(staffPath(clubId, uid))
+        && !exists(proofPath(clubId, uid));
+    }
+
+    function approvalBundleAfter(clubId, uid, id, code, role) {
+      let claim = getAfter(claimPath(clubId, id)).data;
+      let invite = getAfter(invitePath(code)).data;
+      let proof = getAfter(proofPath(clubId, uid)).data;
+      let member = getAfter(memberPath(clubId, uid)).data;
+      let staff = getAfter(staffPath(clubId, uid)).data;
+      return existsAfter(claimPath(clubId, id))
+        && existsAfter(invitePath(code))
+        && existsAfter(proofPath(clubId, uid))
+        && existsAfter(memberPath(clubId, uid))
+        && existsAfter(staffPath(clubId, uid))
+        && claim.get('status', '') == 'APPROVED'
+        && claim.get('approvedAt', null) == request.time
+        && claim.get('approvedBy', '') == request.auth.uid
+        && claim.get('updatedAt', null) == request.time
+        && invite.get('status', '') == 'CONSUMED'
+        && invite.get('claimId', '') == id
+        && invite.get('consumedAt', null) == request.time
+        && invite.get('consumedBy', '') == request.auth.uid
+        && invite.get('updatedAt', null) == request.time
+        && invite.get('updatedBy', '') == request.auth.uid
+        && proof.get('status', '') == 'APPROVED'
+        && proof.get('claimId', '') == id
+        && proof.get('inviteCode', '') == code
+        && proof.get('staffRole', '') == role
+        && proof.get('approvedAt', null) == request.time
+        && proof.get('approvedBy', '') == request.auth.uid
+        && member.get('authorizationRole', '') == 'MEMBER'
+        && member.get('status', '') == 'ACTIVE'
+        && staff.get('staffRole', '') == role
+        && staff.get('status', '') == 'ACTIVE';
+    }
+
+    function validClaimApproval(clubId, id) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let uid = before.get('userId', '');
+      let code = before.get('inviteCode', '');
+      let role = before.get('staffRole', '');
+      return reviewerOrSuperAdmin(clubId)
+        && before.get('status', '') == 'PENDING'
+        && after.get('status', '') == 'APPROVED'
+        && after.diff(before).affectedKeys().hasOnly(['status','approvedAt','approvedBy','updatedAt'])
+        && after.get('approvedAt', null) == request.time
+        && after.get('approvedBy', '') == request.auth.uid
+        && after.get('updatedAt', null) == request.time
+        && approvalBundleAfter(clubId, uid, id, code, role)
+        && (
+          !activeSuperAdmin()
+          || matchingAuditAfter('APPROVE-' + id, 'CLAIM_APPROVED', clubId, uid, code, id, role)
+        );
+    }
+
+    function validClaimRejection(clubId, id) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let uid = before.get('userId', '');
+      let code = before.get('inviteCode', '');
+      let role = before.get('staffRole', '');
+      let invite = getAfter(invitePath(code)).data;
+      return reviewerOrSuperAdmin(clubId)
+        && before.get('status', '') == 'PENDING'
+        && after.get('status', '') == 'REJECTED'
+        && after.diff(before).affectedKeys().hasOnly(['status','rejectedAt','rejectedBy','updatedAt'])
+        && after.get('rejectedAt', null) == request.time
+        && after.get('rejectedBy', '') == request.auth.uid
+        && after.get('updatedAt', null) == request.time
+        && existsAfter(invitePath(code))
+        && invite.get('status', '') == 'REVOKED'
+        && invite.get('revokedAt', null) == request.time
+        && invite.get('revokedBy', '') == request.auth.uid
+        && invite.get('updatedAt', null) == request.time
+        && invite.get('updatedBy', '') == request.auth.uid
+        && !existsAfter(memberPath(clubId, uid))
+        && !existsAfter(staffPath(clubId, uid))
+        && !existsAfter(proofPath(clubId, uid))
+        && (
+          !activeSuperAdmin()
+          || matchingAuditAfter('REJECT-' + id, 'CLAIM_REJECTED', clubId, uid, code, id, role)
+        );
+    }
+
+    function validProofCreate(clubId, uid) {
+      let p = request.resource.data;
+      let id = p.get('claimId', '');
+      let code = p.get('inviteCode', '');
+      let role = p.get('staffRole', '');
+      return reviewerOrSuperAdmin(clubId)
+        && p.keys().hasOnly([
+          'schemaVersion','userId','clubId','claimId','inviteCode','membershipAuthorizationRole',
+          'staffRole','status','approvedAt','approvedBy'
+        ])
+        && p.get('schemaVersion', 0) == 1
+        && p.get('userId', '') == uid
+        && p.get('clubId', '') == clubId
+        && id == claimId(uid, code)
+        && p.get('membershipAuthorizationRole', '') == 'MEMBER'
+        && staffRole(role)
+        && p.get('status', '') == 'APPROVED'
+        && p.get('approvedAt', null) == request.time
+        && p.get('approvedBy', '') == request.auth.uid
+        && approvalBundleAfter(clubId, uid, id, code, role)
+        && (!activeSuperAdmin() || matchingAuditAfter('APPROVE-' + id, 'CLAIM_APPROVED', clubId, uid, code, id, role));
+    }
+    function validMemberCreate(clubId, uid) {
+      return reviewerOrSuperAdmin(clubId)
+        && request.resource.data.keys().hasOnly(['authorizationRole','status'])
+        && request.resource.data.get('authorizationRole', '') == 'MEMBER'
+        && request.resource.data.get('status', '') == 'ACTIVE'
+        && existsAfter(proofPath(clubId, uid));
+    }
+    function validStaffCreate(clubId, uid) {
+      return reviewerOrSuperAdmin(clubId)
+        && request.resource.data.keys().hasOnly(['staffRole','status'])
+        && staffRole(request.resource.data.get('staffRole', ''))
+        && request.resource.data.get('status', '') == 'ACTIVE'
+        && existsAfter(proofPath(clubId, uid))
+        && getAfter(proofPath(clubId, uid)).data.get('staffRole', '') == request.resource.data.get('staffRole', '');
+    }
+    function validInviteUpdate(code) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let clubId = before.get('clubId', '');
+      let uid = before.get('targetUid', '');
+      let role = before.get('staffRole', '');
+      let id = claimId(uid, code);
+      return reviewerOrSuperAdmin(clubId)
+        && before.get('status', '') == 'ACTIVE'
+        && (
+          (
+            after.get('status', '') == 'CONSUMED'
+            && after.diff(before).affectedKeys().hasOnly(['status','consumedAt','consumedBy','claimId','updatedAt','updatedBy'])
+            && after.get('consumedAt', null) == request.time
+            && after.get('consumedBy', '') == request.auth.uid
+            && after.get('claimId', '') == id
+            && after.get('updatedAt', null) == request.time
+            && after.get('updatedBy', '') == request.auth.uid
+            && approvalBundleAfter(clubId, uid, id, code, role)
+            && (!activeSuperAdmin() || matchingAuditAfter('APPROVE-' + id, 'CLAIM_APPROVED', clubId, uid, code, id, role))
+          )
+          || (
+            after.get('status', '') == 'REVOKED'
+            && after.diff(before).affectedKeys().hasOnly(['status','revokedAt','revokedBy','updatedAt','updatedBy'])
+            && after.get('revokedAt', null) == request.time
+            && after.get('revokedBy', '') == request.auth.uid
+            && after.get('updatedAt', null) == request.time
+            && after.get('updatedBy', '') == request.auth.uid
+            && existsAfter(claimPath(clubId, id))
+            && getAfter(claimPath(clubId, id)).data.get('status', '') == 'REJECTED'
+            && (!activeSuperAdmin() || matchingAuditAfter('REJECT-' + id, 'CLAIM_REJECTED', clubId, uid, code, id, role))
+          )
+        );
+    }
+
+    function validAuditCreate(actionId) {
+      let data = request.resource.data;
+      let action = data.get('actionType', '');
+      let clubId = data.get('clubId', '');
+      let uid = data.get('targetUid', '');
+      let code = data.get('inviteCode', '');
+      let id = data.get('claimId', null);
+      let role = data.get('staffRole', '');
+      return activeSuperAdmin()
+        && activeClub(clubId)
+        && staffRole(role)
+        && (
+          (
+            action == 'INVITE_ISSUED'
+            && actionId == 'INVITE-' + code
+            && id == null
+            && auditExact(data, actionId, action, clubId, uid, code, null, role)
+            && existsAfter(invitePath(code))
+            && getAfter(invitePath(code)).data.get('status', '') == 'ACTIVE'
+            && getAfter(invitePath(code)).data.get('targetUid', '') == uid
+            && getAfter(invitePath(code)).data.get('clubId', '') == clubId
+            && getAfter(invitePath(code)).data.get('staffRole', '') == role
+            && getAfter(invitePath(code)).data.get('createdBy', '') == request.auth.uid
+          )
+          || (
+            action == 'CLAIM_APPROVED'
+            && exactId(id)
+            && actionId == 'APPROVE-' + id
+            && auditExact(data, actionId, action, clubId, uid, code, id, role)
+            && approvalBundleAfter(clubId, uid, id, code, role)
+          )
+          || (
+            action == 'CLAIM_REJECTED'
+            && exactId(id)
+            && actionId == 'REJECT-' + id
+            && auditExact(data, actionId, action, clubId, uid, code, id, role)
+            && existsAfter(claimPath(clubId, id))
+            && getAfter(claimPath(clubId, id)).data.get('status', '') == 'REJECTED'
+            && existsAfter(invitePath(code))
+            && getAfter(invitePath(code)).data.get('status', '') == 'REVOKED'
+            && !existsAfter(memberPath(clubId, uid))
+            && !existsAfter(staffPath(clubId, uid))
+            && !existsAfter(proofPath(clubId, uid))
+          )
+        );
+    }
+
+    match /proClubInvites/{code} {
+      allow get: if signedIn();
+      allow create: if validInviteCreate(code);
+      allow update: if validInviteUpdate(code);
+      allow delete: if false;
+    }
+    match /proClubOnboardingControlAudits/{actionId} {
+      allow read: if activeSuperAdmin();
+      allow create: if validAuditCreate(actionId);
+      allow update, delete: if false;
+    }
+    match /proClubs/{clubId}/onboardingClaims/{id} {
+      allow get: if signedIn();
+      allow create: if validClaimCreate(clubId, id);
+      allow update: if validClaimApproval(clubId, id) || validClaimRejection(clubId, id);
+      allow delete: if false;
+    }
+    match /proClubs/{clubId}/onboardingApprovals/{uid} {
+      allow get: if reviewerOrSuperAdmin(clubId) || request.auth.uid == uid;
+      allow create: if validProofCreate(clubId, uid);
+      allow update, delete: if false;
+    }
+    match /proClubs/{clubId}/members/{uid} {
+      allow get: if signedIn();
+      allow create: if validMemberCreate(clubId, uid);
+      allow update, delete: if false;
+    }
+    match /proClubs/{clubId}/staff/{uid} {
+      allow get: if signedIn();
+      allow create: if validStaffCreate(clubId, uid);
+      allow update, delete: if false;
+    }
+    match /users/{uid} { allow get: if signedIn(); allow write: if false; }
+    match /proClubs/{clubId} { allow get: if signedIn(); allow write: if false; }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
