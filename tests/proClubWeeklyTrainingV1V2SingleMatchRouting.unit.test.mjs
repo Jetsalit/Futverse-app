@@ -33,12 +33,14 @@ test("create dispatch is schema-first at plan, session and block levels", () => 
   );
 });
 
-test("updates remain explicitly schema-v1-only so V2 stays fresh-create-only", () => {
-  const v1OnlyGuard = /resource\.data\.get\('schemaVersion', 0\) == 1\s+&& request\.resource\.data\.get\('schemaVersion', 0\) == 1/g;
-  assert.equal([...repaired.matchAll(v1OnlyGuard)].length, 3);
-  assert.match(repaired, /proClubWeeklyTrainingValidDraftPlanUpdateV1/);
-  assert.match(repaired, /proClubWeeklyTrainingValidSessionUpdateV1/);
-  assert.match(repaired, /proClubWeeklyTrainingValidBlockUpdateV1/);
+test("repair preserves the legacy V1 update expressions without adding budget-cost guards", () => {
+  assert.match(repaired, /allow update: if proClubWeeklyTrainingValidDraftPlanUpdateV1\(clubId\);/);
+  assert.match(repaired, /allow update: if proClubWeeklyTrainingValidSessionUpdateV1\(/);
+  assert.match(repaired, /allow update: if proClubWeeklyTrainingValidBlockUpdateV1\(/);
+  assert.doesNotMatch(
+    repaired,
+    /allow update: if resource\.data\.get\('schemaVersion', 0\) == 1\s+&& request\.resource\.data\.get\('schemaVersion', 0\) == 1/,
+  );
 });
 
 test("repair is fail-closed and cannot be applied twice", () => {
