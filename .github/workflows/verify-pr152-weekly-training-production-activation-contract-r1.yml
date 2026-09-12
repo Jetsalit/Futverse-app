@@ -1,0 +1,103 @@
+name: Verify PR152 Weekly Training Production Activation Contract R1
+
+on:
+  push:
+    branches:
+      - verify/pr152-weekly-training-production-activation-contract-r1
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout verification HEAD
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Verify exact product parent and two-file scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_HEAD="9ac3596ab091a534d11a43523a65760a0d939c6f"
+          PRODUCT_BASE="c1742e2437a6e747c236fa49e4da50437b5d873d"
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_HEAD"
+          test "$(git merge-base "$PRODUCT_BASE" "$PRODUCT_HEAD")" = "$PRODUCT_BASE"
+          mapfile -t files < <(git diff --name-only "$PRODUCT_BASE" "$PRODUCT_HEAD" | sort)
+          expected=(
+            "docs/PRO_CLUB_WEEKLY_TRAINING_PRODUCTION_ACTIVATION_V1_CONTRACT_FREEZE.md"
+            "tests/proClubWeeklyTrainingProductionActivationV1Contract.test.ts"
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          test "${#files[@]}" -eq "${#expected_sorted[@]}"
+          for i in "${!files[@]}"; do test "${files[$i]}" = "${expected_sorted[$i]}"; done
+          git diff --check "$PRODUCT_BASE" "$PRODUCT_HEAD"
+          echo "EXACT_HEAD_MATCH=PASS"
+          echo "SCOPE_MATCH=PASS"
+
+      - name: Install locked root dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install locked Functions dependencies
+        run: npm --prefix functions ci --ignore-scripts
+
+      - name: Focused production activation contract
+        run: node --import tsx --test tests/proClubWeeklyTrainingProductionActivationV1Contract.test.ts
+
+      - name: Weekly Training client and saved-DRAFT regressions
+        run: >-
+          node --import tsx --test
+          tests/proClubWeeklyTrainingDraftSaveClient.unit.test.ts
+          tests/proClubWeeklyTrainingSavedDraftUiWiring.test.ts
+
+      - name: Functions build
+        run: npm --prefix functions run build
+
+      - name: Root TypeScript
+        run: npx --no-install tsc --noEmit
+
+      - name: App production build
+        run: npm run build
+
+      - name: Five-question and safety gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_HEAD="9ac3596ab091a534d11a43523a65760a0d939c6f"
+          PRODUCT_BASE="c1742e2437a6e747c236fa49e4da50437b5d873d"
+          VERIFY_FILE=".github/workflows/verify-pr152-weekly-training-production-activation-contract-r1.yml"
+
+          test "$(git diff --name-only "$PRODUCT_HEAD" HEAD)" = "$VERIFY_FILE"
+
+          if git diff "$PRODUCT_BASE" "$PRODUCT_HEAD" -- package.json package-lock.json functions/package.json functions/package-lock.json | grep -q .; then
+            echo "DEPENDENCY=FAIL"
+            exit 1
+          fi
+          echo "DEPENDENCY=N/A (NO CHANGE)"
+
+          if git diff "$PRODUCT_BASE" "$PRODUCT_HEAD" | grep -E '(BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|AIza[0-9A-Za-z_-]{20,}|gh[pousr]_[0-9A-Za-z]{20,})'; then
+            echo "SECRET=FAIL"
+            exit 1
+          fi
+          echo "SECRET=PASS"
+
+          grep -Fq 'HEAD_COACH_FRESH_DRAFT_CREATE=IN_SCOPE' docs/PRO_CLUB_WEEKLY_TRAINING_PRODUCTION_ACTIVATION_V1_CONTRACT_FREEZE.md
+          grep -Fq 'EXISTING_DRAFT_EDIT=FORBIDDEN' docs/PRO_CLUB_WEEKLY_TRAINING_PRODUCTION_ACTIVATION_V1_CONTRACT_FREEZE.md
+          grep -Fq 'UNRELATED_PRO_CLUB_MODULE_CHANGE=FORBIDDEN' docs/PRO_CLUB_WEEKLY_TRAINING_PRODUCTION_ACTIVATION_V1_CONTRACT_FREEZE.md
+          echo "AUTHORIZATION=PASS"
+
+          grep -Fq 'tenant and actor identity remain bound to resolved authority' docs/PRO_CLUB_WEEKLY_TRAINING_PRODUCTION_ACTIVATION_V1_CONTRACT_FREEZE.md
+          echo "INPUT=PASS"
+
+          grep -Fq 'production remains fail-closed' docs/PRO_CLUB_WEEKLY_TRAINING_PRODUCTION_ACTIVATION_V1_CONTRACT_FREEZE.md
+          grep -Fq 'PRODUCTION_DATA_WRITE_AUTHORIZATION=NOT_GRANTED' docs/PRO_CLUB_WEEKLY_TRAINING_PRODUCTION_ACTIVATION_V1_CONTRACT_FREEZE.md
+          echo "FAILURE_BEHAVIOR=PASS"
+
+          git diff --check "$PRODUCT_HEAD" HEAD
+          echo "FIVE_QUESTION_GATE=PASS"
+          echo "PRODUCTION_DEPLOY=NO"
+          echo "PRODUCTION_DATA_WRITE=NO"
