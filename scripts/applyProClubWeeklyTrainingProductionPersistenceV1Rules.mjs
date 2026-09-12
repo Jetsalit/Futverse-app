@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { repairProClubWeeklyTrainingV1V2SingleMatchRouting } from "./repairProClubWeeklyTrainingV1V2SingleMatchRouting.mjs";
 
 const FUNCTION_ANCHOR = "match /proClubs/{clubId}/technicalGovernance/current {";
 const MATCH_ANCHOR = "match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {";
@@ -252,7 +253,8 @@ export function applyProClubWeeklyTrainingProductionPersistenceV1Rules(source) {
     throw new Error("Weekly Training production persistence V1 Rules patch is already present.");
   }
   const withFunctions = replaceOnce(source, FUNCTION_ANCHOR, `${FUNCTIONS}\n`);
-  return replaceOnce(withFunctions, MATCH_ANCHOR, MATCHES);
+  const withLegacyDuplicateShape = replaceOnce(withFunctions, MATCH_ANCHOR, MATCHES);
+  return repairProClubWeeklyTrainingV1V2SingleMatchRouting(withLegacyDuplicateShape);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
