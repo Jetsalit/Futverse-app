@@ -1,0 +1,108 @@
+name: Remediate Weekly Training Rules Generator Single-Match R1
+
+on:
+  push:
+    branches:
+      - remediate/weekly-training-generator-single-match-r1
+
+permissions:
+  contents: write
+
+jobs:
+  remediate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout product repair branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: fix/pro-club-weekly-training-v1-v2-single-match-routing
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact product HEAD before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_HEAD="87fdee5934d13608b2a3a5def58f4de7bd2759d9"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git status --short)"
+
+      - name: Harden generator with deterministic post-transform repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'scripts/applyProClubWeeklyTrainingProductionPersistenceV1Rules.mjs';
+          let source = fs.readFileSync(path, 'utf8');
+          const importAnchor = 'import { pathToFileURL } from "node:url";\n';
+          const returnAnchor = '  return replaceOnce(withFunctions, MATCH_ANCHOR, MATCHES);';
+          if (!source.includes(importAnchor)) throw new Error('Missing generator import anchor');
+          if ((source.split(importAnchor).length - 1) !== 1) throw new Error('Generator import anchor not unique');
+          if (!source.includes(returnAnchor)) throw new Error('Missing generator return anchor');
+          if ((source.split(returnAnchor).length - 1) !== 1) throw new Error('Generator return anchor not unique');
+          source = source.replace(
+            importAnchor,
+            importAnchor + 'import { repairProClubWeeklyTrainingV1V2SingleMatchRouting } from "./repairProClubWeeklyTrainingV1V2SingleMatchRouting.mjs";\n',
+          );
+          source = source.replace(
+            returnAnchor,
+            '  const withLegacyDuplicateShape = replaceOnce(withFunctions, MATCH_ANCHOR, MATCHES);\n  return repairProClubWeeklyTrainingV1V2SingleMatchRouting(withLegacyDuplicateShape);',
+          );
+          fs.writeFileSync(path, source, 'utf8');
+          NODE
+          test "$(git status --short | sed 's/^...//')" = "scripts/applyProClubWeeklyTrainingProductionPersistenceV1Rules.mjs"
+          git diff --check
+
+      - name: Select preinstalled Java 21
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$JAVA_HOME_21_X64"
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
+
+      - name: Install locked dependencies
+        run: |
+          npm ci --ignore-scripts
+          npm --prefix functions ci --ignore-scripts
+
+      - name: Generator and repair unit tests
+        run: >-
+          node --test
+          tests/proClubWeeklyTrainingV1V2SingleMatchRouting.unit.test.mjs
+          tests/proClubWeeklyTrainingProductionRulesGeneratorSingleMatch.unit.test.mjs
+
+      - name: Legacy Weekly Training root Rules emulator
+        run: >-
+          npx --no-install firebase emulators:exec
+          --project demo-futverse-weekly-training-generator-r1
+          --only firestore
+          "node --import tsx --test --test-concurrency=1 tests/firestore.pro-club-weekly-training-root.rules.test.ts"
+
+      - name: Integrated V2 production persistence emulator
+        run: >-
+          npx --no-install firebase emulators:exec
+          --project demo-futverse-weekly-training-generator-v2-r1
+          --only firestore
+          "node --test --test-concurrency=1 tests/firestore.pro-club-weekly-training-production-persistence-v1.implementation.test.mjs"
+
+      - name: Contract regressions and builds
+        run: |
+          node --import tsx --test tests/proClubWeeklyTrainingProductionActivationV1Contract.test.ts
+          npm --prefix functions run build
+          npx --no-install tsc --noEmit
+          npm run build
+
+      - name: Commit hardened generator to product branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git status --short | sed 's/^...//')" = "scripts/applyProClubWeeklyTrainingProductionPersistenceV1Rules.mjs"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/applyProClubWeeklyTrainingProductionPersistenceV1Rules.mjs
+          git commit -m "fix(rules): harden Weekly Training generator single-match output"
+          git push origin HEAD:fix/pro-club-weekly-training-v1-v2-single-match-routing
