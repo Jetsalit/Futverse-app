@@ -1,0 +1,112 @@
+name: Remediate Weekly Training V1 V2 Root Rules R1
+
+on:
+  push:
+    branches:
+      - remediate/weekly-training-v1-v2-root-rules-r1
+
+permissions:
+  contents: write
+
+jobs:
+  remediate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout product repair branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: fix/pro-club-weekly-training-v1-v2-single-match-routing
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact product HEAD before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_HEAD="2edcd0b15362a86230d927ee1ea6718b021cfc2c"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git status --short)"
+
+      - name: Select preinstalled Java 21
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$JAVA_HOME_21_X64"
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
+          "$JAVA_HOME_21_X64/bin/java" -version
+
+      - name: Install locked root dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install locked Functions dependencies
+        run: npm --prefix functions ci --ignore-scripts
+
+      - name: Apply deterministic single-match repair
+        run: node scripts/repairProClubWeeklyTrainingV1V2SingleMatchRouting.mjs firestore.rules firestore.rules
+
+      - name: Verify mutation scope and static routing
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git status --short | sed 's/^...//')" = "firestore.rules"
+          test "$(grep -F "match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {" firestore.rules | wc -l | tr -d ' ')" = "1"
+          grep -Fq "request.resource.data.get('schemaVersion', 0) == 2" firestore.rules
+          grep -Fq "request.resource.data.get('schemaVersion', 0) == 1" firestore.rules
+          grep -Fq "resource.data.get('schemaVersion', 0) == 1" firestore.rules
+          git diff --check
+
+      - name: Deterministic repair unit test against pre-repair base
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show 2edcd0b15362a86230d927ee1ea6718b021cfc2c:firestore.rules > /tmp/firestore-pre-repair.rules
+          cp firestore.rules /tmp/firestore-repaired.rules
+          git checkout -- firestore.rules
+          cp /tmp/firestore-pre-repair.rules firestore.rules
+          node --test tests/proClubWeeklyTrainingV1V2SingleMatchRouting.unit.test.mjs
+          cp /tmp/firestore-repaired.rules firestore.rules
+
+      - name: Legacy Weekly Training root Rules emulator
+        run: >-
+          npx --no-install firebase emulators:exec
+          --project demo-futverse-weekly-training-single-match-r1
+          --only firestore
+          "node --import tsx --test --test-concurrency=1 tests/firestore.pro-club-weekly-training-root.rules.test.ts"
+
+      - name: Integrated V2 production persistence emulator
+        run: >-
+          npx --no-install firebase emulators:exec
+          --project demo-futverse-weekly-training-v2-single-match-r1
+          --only firestore
+          "node --test --test-concurrency=1 tests/firestore.pro-club-weekly-training-production-persistence-v1.implementation.test.mjs"
+
+      - name: Activation contract and Saved-DRAFT regressions
+        run: >-
+          node --import tsx --test
+          tests/proClubWeeklyTrainingProductionActivationV1Contract.test.ts
+          tests/proClubWeeklyTrainingSavedDraftReadModel.test.ts
+          tests/proClubWeeklyTrainingSavedDraftReadAdapter.test.ts
+          tests/proClubWeeklyTrainingSavedDraftUiWiring.test.ts
+
+      - name: Functions build
+        run: npm --prefix functions run build
+
+      - name: Root TypeScript
+        run: npx --no-install tsc --noEmit
+
+      - name: App build
+        run: npm run build
+
+      - name: Commit repaired root Rules to product branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git status --short | sed 's/^...//')" = "firestore.rules"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add firestore.rules
+          git commit -m "fix(rules): route Weekly Training V1 V2 through one match tree"
+          git push origin HEAD:fix/pro-club-weekly-training-v1-v2-single-match-routing
