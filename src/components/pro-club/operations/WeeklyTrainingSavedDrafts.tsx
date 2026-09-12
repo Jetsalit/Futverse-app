@@ -11,6 +11,8 @@ import type {
   WeeklyTrainingSavedDraftDetail,
   WeeklyTrainingSavedDraftSummary,
 } from "../../../lib/proClubWeeklyTrainingSavedDraftReadModel";
+import { deriveProClubWeeklyPeriodizationBoard } from "../../../lib/proClubWeeklyPeriodizationBoard";
+import WeeklyPeriodizationBoard from "./WeeklyPeriodizationBoard";
 
 function canReadSavedDrafts(authority: ProClubOrganizationAuthority): boolean {
   return (
@@ -48,57 +50,27 @@ function displayTimestamp(value: string): string {
 }
 
 function DraftDetail({ detail }: { detail: WeeklyTrainingSavedDraftDetail }) {
+  const board = deriveProClubWeeklyPeriodizationBoard(detail.draft);
+
   return (
-    <article className="rounded-2xl border border-cyan-400/20 bg-slate-950/70 p-5">
+    <article className="space-y-5 rounded-2xl border border-cyan-400/20 bg-slate-950/70 p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-cyan-300">Read-only detail</p>
-          <h5 className="mt-2 text-lg font-black text-white">{detail.squadLabel}</h5>
-          <p className="mt-1 text-sm text-slate-400">Week of {displayDate(detail.weekStartDate)}</p>
+          <p className="mt-2 text-sm text-slate-400">Validated from the saved Head Coach DRAFT.</p>
         </div>
         <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-bold text-cyan-200">DRAFT</span>
       </div>
 
-      <div className="mt-4 grid gap-3 rounded-xl border border-slate-800 bg-slate-900/70 p-4 text-sm md:grid-cols-2">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Main objective</p>
-          <p className="mt-1 text-slate-200">{detail.mainObjective}</p>
-        </div>
+      <div className="grid gap-3 rounded-xl border border-slate-800 bg-slate-900/70 p-4 text-sm md:grid-cols-2">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Saved</p>
           <p className="mt-1 text-slate-200">{displayTimestamp(detail.updatedAt)}</p>
         </div>
-        {detail.secondaryObjective && <div><p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Secondary objective</p><p className="mt-1 text-slate-200">{detail.secondaryObjective}</p></div>}
         {detail.headCoachNote && <div><p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Head Coach note</p><p className="mt-1 whitespace-pre-wrap text-slate-200">{detail.headCoachNote}</p></div>}
       </div>
 
-      <div className="mt-5 space-y-3">
-        {detail.draft.sessions.map((session, sessionIndex) => (
-          <section key={`${session.sessionDate}-${session.startTime}`} className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Session {sessionIndex + 1}</p>
-                <h6 className="mt-1 font-bold text-white">{displayDate(session.sessionDate)} · {session.startTime}</h6>
-                <p className="mt-1 text-sm text-slate-400">{session.location} · {session.durationMinutes} min · {session.plannedLoad}</p>
-              </div>
-              <span className="rounded-lg bg-slate-800 px-2 py-1 text-xs text-slate-300">{session.phaseOfPlay}</span>
-            </div>
-            <p className="mt-3 text-sm text-slate-200">{session.objective}</p>
-            <div className="mt-4 space-y-2">
-              {session.blocks.map((block, blockIndex) => (
-                <div key={`${blockIndex}-${block.title}`} className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="font-bold text-white">{blockIndex + 1}. {block.title}</p>
-                    <p className="text-xs text-slate-400">{block.blockType} · {block.durationMinutes} min</p>
-                  </div>
-                  {block.drillReference && <p className="mt-2 break-all text-xs text-cyan-300">Drill: {block.drillReference}</p>}
-                  {block.coachingPoints.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-slate-400">{block.coachingPoints.map((point, pointIndex) => <li key={`${pointIndex}-${point}`}>{point}</li>)}</ul>}
-                </div>
-              ))}
-            </div>
-          </section>
-        ))}
-      </div>
+      <WeeklyPeriodizationBoard board={board} />
     </article>
   );
 }
