@@ -3227,9 +3227,7 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
       request.resource.data.get('schemaVersion', 0) == 1
         && proClubWeeklyTrainingValidDraftPlanCreateV1(clubId)
     );
-  allow update: if resource.data.get('schemaVersion', 0) == 1
-    && request.resource.data.get('schemaVersion', 0) == 1
-    && proClubWeeklyTrainingValidDraftPlanUpdateV1(clubId);
+  allow update: if proClubWeeklyTrainingValidDraftPlanUpdateV1(clubId);
   allow delete: if false;
 
   match /sessions/{sessionId} {
@@ -3249,13 +3247,11 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
             sessionId
           )
       );
-    allow update: if resource.data.get('schemaVersion', 0) == 1
-      && request.resource.data.get('schemaVersion', 0) == 1
-      && proClubWeeklyTrainingValidSessionUpdateV1(
-        clubId,
-        planId,
-        sessionId
-      );
+    allow update: if proClubWeeklyTrainingValidSessionUpdateV1(
+      clubId,
+      planId,
+      sessionId
+    );
     allow delete: if false;
 
     match /blocks/{blockId} {
@@ -3277,14 +3273,12 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
               blockId
             )
         );
-      allow update: if resource.data.get('schemaVersion', 0) == 1
-        && request.resource.data.get('schemaVersion', 0) == 1
-        && proClubWeeklyTrainingValidBlockUpdateV1(
-          clubId,
-          planId,
-          sessionId,
-          blockId
-        );
+      allow update: if proClubWeeklyTrainingValidBlockUpdateV1(
+        clubId,
+        planId,
+        sessionId,
+        blockId
+      );
       allow delete: if false;
     }
   }
