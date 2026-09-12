@@ -9,6 +9,9 @@ const contract = read(
   "docs/PRO_CLUB_WEEKLY_TRAINING_PRODUCTION_ACTIVATION_V1_CONTRACT_FREEZE.md",
 );
 const runtimeCapabilities = read("src/config/runtimeCapabilities.ts");
+const activationEvidence = read(
+  "docs/PRO_CLUB_WEEKLY_TRAINING_FRESH_DRAFT_PRODUCTION_ACTIVATION_V1_EVIDENCE.md",
+);
 const composer = read(
   "src/components/pro-club/operations/WeeklyTrainingDraftComposer.tsx",
 );
@@ -45,7 +48,7 @@ test("production scope remains Head Coach fresh DRAFT only", () => {
   assert.doesNotMatch(composer, /technicalDirectorNote/);
 });
 
-test("generic Function-backed boundary remains unchanged while dedicated production capability stays fail-closed", () => {
+test("generic Function-backed boundary remains unchanged while dedicated Weekly Training production capability is activated", () => {
   assert.match(saveClient, /"saveProClubWeeklyTrainingDraftV1" as const/);
   assert.match(
     runtimeCapabilities,
@@ -53,7 +56,7 @@ test("generic Function-backed boundary remains unchanged while dedicated product
   );
   assert.match(
     runtimeCapabilities,
-    /export const PRODUCTION_WEEKLY_TRAINING_FRESH_DRAFT_RULES_VERIFIED = false as const/,
+    /export const PRODUCTION_WEEKLY_TRAINING_FRESH_DRAFT_RULES_VERIFIED = true as const/,
   );
   assert.match(
     runtimeCapabilities,
@@ -152,14 +155,26 @@ test("production activation remains isolated to the dedicated Weekly Training ca
   );
 });
 
-test("failure behavior stays fail-closed after Rules integration and before deployment/activation", () => {
+test("activation preserves bounded failure behavior after reviewed Rules acceptance", () => {
   assert.match(contract, /`IDEMPOTENCY_REGRESSION=FORBIDDEN`/);
   assert.match(contract, /`PARTIAL_VALID_DRAFT=FORBIDDEN`/);
-  assert.match(contract, /production remains fail-closed/i);
-  assert.match(contract, /`PRODUCTION_DEPLOY_AUTHORIZATION=NOT_GRANTED`/);
-  assert.match(contract, /`PRODUCTION_DATA_WRITE_AUTHORIZATION=NOT_GRANTED`/);
+
+  assert.match(activationEvidence, /`GIT_BLOB_EXACT_MATCH=PASS`/);
+  assert.match(
+    activationEvidence,
+    /`PRODUCTION_RULES_DEPLOYMENT_ACCEPTANCE=PASS`/,
+  );
+  assert.match(activationEvidence, /`REDEPLOY_REQUIRED=NO`/);
+  assert.match(activationEvidence, /production deploy: NO/i);
+  assert.match(activationEvidence, /production document write: NO/i);
+
   assert.match(
     runtimeCapabilities,
-    /PRODUCTION_WEEKLY_TRAINING_FRESH_DRAFT_RULES_VERIFIED = false as const/,
+    /PRODUCTION_WEEKLY_TRAINING_FRESH_DRAFT_RULES_VERIFIED = true as const/,
+  );
+
+  assert.doesNotMatch(
+    runtimeCapabilities,
+    /FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE\s*=\s*true/,
   );
 });

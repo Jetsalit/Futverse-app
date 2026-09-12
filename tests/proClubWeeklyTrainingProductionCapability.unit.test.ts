@@ -8,9 +8,9 @@ import {
   isWeeklyTrainingFreshDraftProductionAvailable,
 } from "../src/config/runtimeCapabilities.ts";
 
-test("dedicated Weekly Training production capability stays fail-closed until reviewed Rules evidence is true", () => {
-  assert.equal(PRODUCTION_WEEKLY_TRAINING_FRESH_DRAFT_RULES_VERIFIED, false);
-  assert.equal(PRO_CLUB_WEEKLY_TRAINING_FRESH_DRAFT_PRODUCTION_AVAILABLE, false);
+test("dedicated Weekly Training production capability activates after reviewed Rules evidence is true", () => {
+  assert.equal(PRODUCTION_WEEKLY_TRAINING_FRESH_DRAFT_RULES_VERIFIED, true);
+  assert.equal(PRO_CLUB_WEEKLY_TRAINING_FRESH_DRAFT_PRODUCTION_AVAILABLE, true);
   assert.equal(
     isWeeklyTrainingFreshDraftProductionAvailable({ productionRulesVerified: false }),
     false,
