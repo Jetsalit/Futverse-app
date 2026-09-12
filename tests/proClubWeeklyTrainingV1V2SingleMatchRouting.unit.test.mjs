@@ -1,14 +1,19 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import test from "node:test";
 import { repairProClubWeeklyTrainingV1V2SingleMatchRouting } from "../scripts/repairProClubWeeklyTrainingV1V2SingleMatchRouting.mjs";
 
-const defectiveRoot = readFileSync("firestore.rules", "utf8");
+const DEFECTIVE_ROOT_HEAD = "e90a06713e3c0f86fd8ede63a768e3d0b4c2e8b0";
+const defectiveRoot = execFileSync(
+  "git",
+  ["show", `${DEFECTIVE_ROOT_HEAD}:firestore.rules`],
+  { encoding: "utf8" },
+);
 const repaired = repairProClubWeeklyTrainingV1V2SingleMatchRouting(defectiveRoot);
 
 const weeklyPlanMatch = "match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {";
 
-test("repair collapses duplicate Weekly Training path to one canonical match tree", () => {
+test("repair collapses the exact historical defective Weekly Training path to one canonical match tree", () => {
   assert.equal(defectiveRoot.split(weeklyPlanMatch).length - 1, 2);
   assert.equal(repaired.split(weeklyPlanMatch).length - 1, 1);
 });
