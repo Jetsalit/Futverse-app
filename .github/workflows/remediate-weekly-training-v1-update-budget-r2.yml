@@ -1,0 +1,115 @@
+name: Remediate Weekly Training V1 Update Budget R2
+
+on:
+  push:
+    branches:
+      - remediate/weekly-training-v1-update-budget-r2
+
+permissions:
+  contents: write
+
+jobs:
+  remediate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout product repair branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: fix/pro-club-weekly-training-v1-v2-single-match-routing
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact product HEAD before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_HEAD="aa58340e97c45eee9d925067f130df7cc01552fe"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git status --short)"
+
+      - name: Regenerate root repair from exact defective historical root
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEFECTIVE_HEAD="e90a06713e3c0f86fd8ede63a768e3d0b4c2e8b0"
+          git show "$DEFECTIVE_HEAD:firestore.rules" > /tmp/firestore-defective.rules
+          node scripts/repairProClubWeeklyTrainingV1V2SingleMatchRouting.mjs /tmp/firestore-defective.rules /tmp/firestore-repaired.rules
+          cp /tmp/firestore-repaired.rules firestore.rules
+          test "$(git status --short | sed 's/^...//')" = "firestore.rules"
+          test "$(grep -F "match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {" firestore.rules | wc -l | tr -d ' ')" = "1"
+          grep -Fq "allow update: if proClubWeeklyTrainingValidDraftPlanUpdateV1(clubId);" firestore.rules
+          grep -Fq "allow update: if proClubWeeklyTrainingValidSessionUpdateV1(" firestore.rules
+          grep -Fq "allow update: if proClubWeeklyTrainingValidBlockUpdateV1(" firestore.rules
+          if grep -Fq "allow update: if resource.data.get('schemaVersion', 0) == 1" firestore.rules; then
+            echo "Unexpected extra update schema guard remains"
+            exit 1
+          fi
+          git diff --check
+
+      - name: Select preinstalled Java 21
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$JAVA_HOME_21_X64"
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
+
+      - name: Install locked dependencies
+        run: |
+          npm ci --ignore-scripts
+          npm --prefix functions ci --ignore-scripts
+
+      - name: Repair and generator unit proofs
+        run: >-
+          node --test
+          tests/proClubWeeklyTrainingV1V2SingleMatchRouting.unit.test.mjs
+          tests/proClubWeeklyTrainingProductionRulesGeneratorSingleMatch.unit.test.mjs
+
+      - name: Legacy Weekly Training root Rules emulator
+        run: >-
+          npx --no-install firebase emulators:exec
+          --project demo-futverse-weekly-training-v1-update-budget-r2
+          --only firestore
+          "node --import tsx --test --test-concurrency=1 tests/firestore.pro-club-weekly-training-root.rules.test.ts"
+
+      - name: Reject legacy expression-budget exhaustion
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f firestore-debug.log
+          ! grep -Fq "maximum of 1000 expressions to evaluate has been reached" firestore-debug.log
+          echo "LEGACY_WEEKLY_TRAINING_EXPRESSION_BUDGET=PASS"
+
+      - name: Integrated V2 production persistence emulator
+        run: >-
+          npx --no-install firebase emulators:exec
+          --project demo-futverse-weekly-training-v2-update-budget-r2
+          --only firestore
+          "node --test --test-concurrency=1 tests/firestore.pro-club-weekly-training-production-persistence-v1.implementation.test.mjs"
+
+      - name: Mixed schema adversarial emulator
+        run: >-
+          npx --no-install firebase emulators:exec
+          --project demo-futverse-weekly-training-mixed-update-budget-r2
+          --only firestore
+          "node --test --test-concurrency=1 tests/firestore.pro-club-weekly-training-v1-v2-mixed-schema.rules.test.mjs"
+
+      - name: Contract regressions and builds
+        run: |
+          node --import tsx --test tests/proClubWeeklyTrainingProductionActivationV1Contract.test.ts
+          npm --prefix functions run build
+          npx --no-install tsc --noEmit
+          npm run build
+
+      - name: Commit corrected root Rules to product branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git status --short | sed 's/^...//')" = "firestore.rules"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add firestore.rules
+          git commit -m "fix(rules): preserve legacy Weekly Training V1 update budget"
+          git push origin HEAD:fix/pro-club-weekly-training-v1-v2-single-match-routing
