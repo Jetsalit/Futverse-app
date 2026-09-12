@@ -4,6 +4,7 @@ import {
   WEEKLY_TRAINING_SAVED_DRAFT_READ_UNAVAILABLE_MESSAGE,
 } from "../../../config/runtimeCapabilities";
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
+import WeeklyTrainingCollaborationPreview from "./WeeklyTrainingCollaborationPreview";
 import WeeklyTrainingDraftComposer from "./WeeklyTrainingDraftComposer";
 import WeeklyTrainingSavedDrafts from "./WeeklyTrainingSavedDrafts";
 
@@ -56,6 +57,7 @@ export default function ProClubRoleWorkspace({
         ) : (
           <SavedDraftReadPending />
         )}
+        <WeeklyTrainingCollaborationPreview role={authority.staffRole} />
         <div className="grid gap-4 md:grid-cols-3">
           <EmptyTask title="Today’s Session" description="A derived current-session launcher remains deferred until the saved-DRAFT read model is accepted and the active-session selection contract is defined." />
           <EmptyTask title="Department Updates" description="Submitted Fitness, Analysis, GK and Availability work will appear here for review when enabled." />
@@ -73,12 +75,34 @@ export default function ProClubRoleWorkspace({
           <h3 id="pro-club-role-workspace" className="mt-2 text-xl font-black text-white">Technical Director</h3>
           <p className="mt-2 text-sm text-slate-400">Fresh-DRAFT writing remains Head Coach only. Co-planning, review and approval stay closed until their own trusted persistence contracts are reviewed.</p>
         </div>
+        <WeeklyTrainingCollaborationPreview role={authority.staffRole} />
         <div className="grid gap-4 md:grid-cols-2">
           <EmptyTask title="Training Collaboration" description="Technical Director co-author persistence remains deliberately deferred." />
           <EmptyTask title="Technical Review Queue" description="No synthetic queue is shown. Real submitted work will appear after repository and permission contracts exist." />
           <EmptyTask title="Department Reports" description="Fitness, Analysis, GK and Availability submissions will aggregate here without duplicate re-entry." />
           <EmptyTask title="Technical Decisions" description="Review comments, revision requests and approvals will preserve actor-role provenance." />
         </div>
+      </section>
+    );
+  }
+
+  if (
+    authority.staffRole === "ASSISTANT_COACH" ||
+    authority.staffRole === "GK_COACH" ||
+    authority.staffRole === "FITNESS_COACH" ||
+    authority.staffRole === "ANALYST"
+  ) {
+    return (
+      <section aria-labelledby="pro-club-role-workspace" className="space-y-5">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-300">My workspace</p>
+          <h3 id="pro-club-role-workspace" className="mt-2 text-xl font-black text-white">Coaching collaboration</h3>
+          <p className="mt-2 text-sm leading-6 text-slate-400">
+            This preview shows how explicitly assigned staff will contribute to a Head Coach-owned Weekly Plan.
+            Assignment and editing persistence remain closed until their own reviewed authorization slice is accepted.
+          </p>
+        </div>
+        <WeeklyTrainingCollaborationPreview role={authority.staffRole} />
       </section>
     );
   }
