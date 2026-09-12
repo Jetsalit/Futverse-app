@@ -96,7 +96,7 @@ test("trusted fresh save persists schema v2 hierarchy with server receipt", () =
   assert.match(trustedService, /transaction\.create\(receiptRef/);
 });
 
-test("current root browser Firestore write Rules remain schema v1 until the separately reviewed production patch is applied", () => {
+test("root Rules preserve legacy schema-v1 semantics and integrate isolated schema-v2 fresh-create path", () => {
   assert.match(
     rules,
     /function proClubWeeklyTrainingValidPlanValuesV1\(data\)[\s\S]*data\.get\('schemaVersion', 0\) == 1/,
@@ -108,6 +108,30 @@ test("current root browser Firestore write Rules remain schema v1 until the sepa
   assert.match(
     rules,
     /function proClubWeeklyTrainingValidBlockValuesV1\(data\)[\s\S]*data\.get\('schemaVersion', 0\) == 1/,
+  );
+  assert.match(
+    rules,
+    /Pro Club Weekly Training Production Persistence V1 — schema-v2 create-only\./,
+  );
+  assert.match(
+    rules,
+    /match \/proClubs\/\{clubId\}\/weeklyTrainingDraftCreateRequests\/\{planId\}/,
+  );
+  assert.match(
+    rules,
+    /function proClubWeeklyTrainingValidPlanCreateV2\(clubId, planId\)/,
+  );
+  assert.match(
+    rules,
+    /function proClubWeeklyTrainingValidSessionCreateV2\(clubId, planId, sessionId\)/,
+  );
+  assert.match(
+    rules,
+    /function proClubWeeklyTrainingValidBlockCreateV2\(clubId, planId, sessionId, blockId\)/,
+  );
+  assert.match(
+    rules,
+    /'WARM_UP', 'TECHNICAL', 'TACTICAL', 'GAME',[\s\S]*'CONDITIONING', 'COOL_DOWN', 'OTHER'/,
   );
   assert.match(
     contract,
@@ -128,7 +152,7 @@ test("production activation remains isolated to the dedicated Weekly Training ca
   );
 });
 
-test("failure behavior stays fail-closed before Rules deployment and activation", () => {
+test("failure behavior stays fail-closed after Rules integration and before deployment/activation", () => {
   assert.match(contract, /`IDEMPOTENCY_REGRESSION=FORBIDDEN`/);
   assert.match(contract, /`PARTIAL_VALID_DRAFT=FORBIDDEN`/);
   assert.match(contract, /production remains fail-closed/i);
