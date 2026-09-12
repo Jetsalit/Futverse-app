@@ -1,0 +1,78 @@
+name: Verify Weekly Training V1 V2 Single-Match Repair R1
+
+on:
+  push:
+    branches:
+      - verify/weekly-training-v1-v2-single-match-repair-r1
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout verification HEAD
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Verify exact product parent and isolated repair scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_HEAD="2edcd0b15362a86230d927ee1ea6718b021cfc2c"
+          PRODUCT_BASE="e90a06713e3c0f86fd8ede63a768e3d0b4c2e8b0"
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_HEAD"
+          test "$(git merge-base "$PRODUCT_BASE" "$PRODUCT_HEAD")" = "$PRODUCT_BASE"
+          mapfile -t files < <(git diff --name-only "$PRODUCT_BASE" "$PRODUCT_HEAD" | sort)
+          expected=(
+            "scripts/repairProClubWeeklyTrainingV1V2SingleMatchRouting.mjs"
+            "tests/proClubWeeklyTrainingV1V2SingleMatchRouting.unit.test.mjs"
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          test "${#files[@]}" -eq "${#expected_sorted[@]}"
+          for i in "${!files[@]}"; do test "${files[$i]}" = "${expected_sorted[$i]}"; done
+          git diff --check "$PRODUCT_BASE" "$PRODUCT_HEAD"
+
+      - name: Install locked root dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install locked Functions dependencies
+        run: npm --prefix functions ci --ignore-scripts
+
+      - name: Prove deterministic single-match repair
+        run: node --test tests/proClubWeeklyTrainingV1V2SingleMatchRouting.unit.test.mjs
+
+      - name: Existing Weekly Training domain regression
+        run: node --import tsx --test tests/proClubWeeklyTraining.unit.test.ts
+
+      - name: Functions build
+        run: npm --prefix functions run build
+
+      - name: Root TypeScript
+        run: npx --no-install tsc --noEmit
+
+      - name: App build
+        run: npm run build
+
+      - name: Safety gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_HEAD="2edcd0b15362a86230d927ee1ea6718b021cfc2c"
+          PRODUCT_BASE="e90a06713e3c0f86fd8ede63a768e3d0b4c2e8b0"
+          VERIFY_FILE=".github/workflows/verify-weekly-training-v1-v2-single-match-repair-r1.yml"
+          test "$(git diff --name-only "$PRODUCT_HEAD" HEAD)" = "$VERIFY_FILE"
+          ! git diff "$PRODUCT_BASE" "$PRODUCT_HEAD" -- package.json package-lock.json functions/package.json functions/package-lock.json | grep -q .
+          ! git diff "$PRODUCT_BASE" "$PRODUCT_HEAD" | grep -E '(BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|AIza[0-9A-Za-z_-]{20,}|gh[pousr]_[0-9A-Za-z]{20,})'
+          echo 'INPUT=PASS'
+          echo 'AUTHORIZATION=PASS (NO AUTHORITY EXPANSION IN THIS SLICE)'
+          echo 'SECRET=PASS'
+          echo 'DEPENDENCY=N/A (NO CHANGE)'
+          echo 'FAILURE_BEHAVIOR=PASS (REPAIR FAILS CLOSED ON SHAPE DRIFT)'
+          echo 'PRODUCTION_DEPLOY=NO'
+          echo 'PRODUCTION_DATA_WRITE=NO'
+          echo 'PRODUCTION_CAPABILITY_CHANGE=NO'
