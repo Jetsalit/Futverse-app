@@ -1,0 +1,210 @@
+name: Verify PR165 Weekly Training Single-Match Final R1
+
+on:
+  push:
+    branches:
+      - verify/pr165-weekly-training-single-match-final-r1
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout verification HEAD
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Verify exact product parent and remediation scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_HEAD="0d3133fffe82fdeb152b9307cb5758d7dcf16cf6"
+          DEFECTIVE_BASE="e90a06713e3c0f86fd8ede63a768e3d0b4c2e8b0"
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_HEAD"
+          test "$(git merge-base "$DEFECTIVE_BASE" "$PRODUCT_HEAD")" = "$DEFECTIVE_BASE"
+          mapfile -t files < <(git diff --name-only "$DEFECTIVE_BASE" "$PRODUCT_HEAD" | sort)
+          expected=(
+            "firestore.rules"
+            "scripts/applyProClubWeeklyTrainingProductionPersistenceV1Rules.mjs"
+            "scripts/repairProClubWeeklyTrainingV1V2SingleMatchRouting.mjs"
+            "tests/firestore.pro-club-weekly-training-v1-v2-mixed-schema.rules.test.mjs"
+            "tests/proClubWeeklyTrainingProductionRulesGeneratorSingleMatch.unit.test.mjs"
+            "tests/proClubWeeklyTrainingV1V2SingleMatchRouting.unit.test.mjs"
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          test "${#files[@]}" -eq "${#expected_sorted[@]}"
+          for i in "${!files[@]}"; do test "${files[$i]}" = "${expected_sorted[$i]}"; done
+          ! git diff --name-only "$DEFECTIVE_BASE" "$PRODUCT_HEAD" | grep -E '^(src/|functions/|firebase\.json$|firebase\.spark\.json$|firestore\.indexes\.json$|package(-lock)?\.json$)'
+          git diff --check "$DEFECTIVE_BASE" "$PRODUCT_HEAD"
+          test "$(grep -F "match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {" firestore.rules | wc -l | tr -d ' ')" = "1"
+
+      - name: Select preinstalled Java 21
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$JAVA_HOME_21_X64"
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
+          "$JAVA_HOME_21_X64/bin/java" -version
+
+      - name: Install locked root dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install locked Functions dependencies
+        run: npm --prefix functions ci --ignore-scripts
+
+      - name: Repair and generator unit proofs
+        run: >-
+          node --test
+          tests/proClubWeeklyTrainingV1V2SingleMatchRouting.unit.test.mjs
+          tests/proClubWeeklyTrainingProductionRulesGeneratorSingleMatch.unit.test.mjs
+
+      - name: Legacy Weekly Training root Rules emulator
+        run: >-
+          npx --no-install firebase emulators:exec
+          --project demo-futverse-pr165-legacy-weekly-training-r1
+          --only firestore
+          "node --import tsx --test --test-concurrency=1 tests/firestore.pro-club-weekly-training-root.rules.test.ts"
+
+      - name: Reject legacy Weekly Training expression-budget exhaustion
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f firestore-debug.log
+          if grep -Fq "maximum of 1000 expressions to evaluate has been reached" firestore-debug.log; then
+            echo "FAILURE_BEHAVIOR=FAIL"
+            echo "REASON=Legacy Weekly Training expression budget exhausted"
+            exit 1
+          fi
+          echo "LEGACY_WEEKLY_TRAINING_EXPRESSION_BUDGET=PASS"
+
+      - name: Integrated V2 production persistence emulator
+        run: >-
+          npx --no-install firebase emulators:exec
+          --project demo-futverse-pr165-v2-persistence-r1
+          --only firestore
+          "node --test --test-concurrency=1 tests/firestore.pro-club-weekly-training-production-persistence-v1.implementation.test.mjs"
+
+      - name: Reject V2 expression-budget exhaustion
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f firestore-debug.log
+          if grep -Fq "maximum of 1000 expressions to evaluate has been reached" firestore-debug.log; then
+            echo "FAILURE_BEHAVIOR=FAIL"
+            echo "REASON=V2 Weekly Training expression budget exhausted"
+            exit 1
+          fi
+          echo "V2_WEEKLY_TRAINING_EXPRESSION_BUDGET=PASS"
+
+      - name: Mixed V1 V2 schema adversarial emulator
+        run: >-
+          npx --no-install firebase emulators:exec
+          --project demo-futverse-pr165-mixed-schema-r1
+          --only firestore
+          "node --test --test-concurrency=1 tests/firestore.pro-club-weekly-training-v1-v2-mixed-schema.rules.test.mjs"
+
+      - name: Reject mixed-schema expression-budget exhaustion
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f firestore-debug.log
+          if grep -Fq "maximum of 1000 expressions to evaluate has been reached" firestore-debug.log; then
+            echo "FAILURE_BEHAVIOR=FAIL"
+            echo "REASON=Mixed-schema test exhausted Rules expression budget"
+            exit 1
+          fi
+          echo "MIXED_SCHEMA_EXPRESSION_BUDGET=PASS"
+
+      - name: Production persistence client and capability units
+        run: >-
+          node --import tsx --test
+          tests/proClubWeeklyTrainingProductionPersistence.unit.test.ts
+          tests/proClubWeeklyTrainingProductionCapability.unit.test.ts
+          tests/proClubWeeklyTrainingDraftSaveClient.unit.test.ts
+
+      - name: Activation contract regression
+        run: node --import tsx --test tests/proClubWeeklyTrainingProductionActivationV1Contract.test.ts
+
+      - name: Saved-DRAFT read regressions
+        run: >-
+          node --import tsx --test
+          tests/proClubWeeklyTrainingSavedDraftReadModel.test.ts
+          tests/proClubWeeklyTrainingSavedDraftReadAdapter.test.ts
+          tests/proClubWeeklyTrainingSavedDraftUiWiring.test.ts
+
+      - name: Dedicated SuperAdmin root Rules emulator
+        run: >-
+          npx --no-install firebase emulators:exec
+          --project demo-futverse-pr165-superadmin-root-r1
+          --only firestore
+          "node --import tsx --test --test-concurrency=1 tests/firestore.pro-club-superadmin-onboarding-control.root-rules.test.ts"
+
+      - name: Reject root Rules expression-budget exhaustion
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f firestore-debug.log
+          if grep -Fq "maximum of 1000 expressions to evaluate has been reached" firestore-debug.log; then
+            echo "FAILURE_BEHAVIOR=FAIL"
+            echo "REASON=Root Firestore Rules expression budget exhausted"
+            exit 1
+          fi
+          echo "ROOT_RULES_EXPRESSION_BUDGET=PASS"
+
+      - name: Existing Pro Club emulator regression
+        run: npm run test:pro-club-emulator-regression
+
+      - name: Membership Rules regression
+        run: npm run test:rules
+
+      - name: Admin decision Rules regression
+        run: npm run test:admin-decisions
+
+      - name: Drill Rules regression
+        run: npm run test:drill-rules
+
+      - name: Nonstaff Rules regression
+        run: npm run test:nonstaff-rules
+
+      - name: SuperAdmin relationship Rules regression
+        run: npm run test:superadmin-relationship-rules
+
+      - name: Functions build
+        run: npm --prefix functions run build
+
+      - name: Root TypeScript
+        run: npx --no-install tsc --noEmit
+
+      - name: App build
+        run: npm run build
+
+      - name: Five-question and production safety gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_HEAD="0d3133fffe82fdeb152b9307cb5758d7dcf16cf6"
+          DEFECTIVE_BASE="e90a06713e3c0f86fd8ede63a768e3d0b4c2e8b0"
+          VERIFY_FILE=".github/workflows/verify-pr165-weekly-training-single-match-final-r1.yml"
+          test "$(git diff --name-only "$PRODUCT_HEAD" HEAD)" = "$VERIFY_FILE"
+          ! git diff "$DEFECTIVE_BASE" "$PRODUCT_HEAD" -- package.json package-lock.json functions/package.json functions/package-lock.json | grep -q .
+          ! git diff "$DEFECTIVE_BASE" "$PRODUCT_HEAD" | grep -E '(BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|AIza[0-9A-Za-z_-]{20,}|gh[pousr]_[0-9A-Za-z]{20,})'
+          grep -Fq 'PRODUCTION_WEEKLY_TRAINING_FRESH_DRAFT_RULES_VERIFIED = false' src/config/runtimeCapabilities.ts
+          test "$(grep -F "match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {" firestore.rules | wc -l | tr -d ' ')" = "1"
+          grep -Fq "request.resource.data.get('schemaVersion', 0) == 2" firestore.rules
+          grep -Fq "request.resource.data.get('schemaVersion', 0) == 1" firestore.rules
+          grep -Fq "resource.data.get('schemaVersion', 0) == 1" firestore.rules
+          echo 'INPUT=PASS'
+          echo 'AUTHORIZATION=PASS'
+          echo 'SECRET=PASS'
+          echo 'DEPENDENCY=N/A (NO CHANGE)'
+          echo 'FAILURE_BEHAVIOR=PASS'
+          echo 'PRODUCTION_CAPABILITY=FALSE'
+          echo 'PRODUCTION_DEPLOY=NO'
+          echo 'PRODUCTION_DATA_WRITE=NO'
+          echo 'MERGE=NOT_PERFORMED'
