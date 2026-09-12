@@ -1,0 +1,86 @@
+name: Verify PR164 Weekly Training Collaboration Preview V1 R1
+
+on:
+  push:
+    branches:
+      - verify/pr164-weekly-training-collaboration-preview-v1-r1
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout verification HEAD
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Verify exact product parent and isolated three-file scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_HEAD="696ae9e128be0d159e9308c9d656419628ab3ee9"
+          PRODUCT_BASE="48c53b885b57b48fee6b68af7ecac1eea10bf841"
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_HEAD"
+          test "$(git merge-base "$PRODUCT_BASE" "$PRODUCT_HEAD")" = "$PRODUCT_BASE"
+          mapfile -t files < <(git diff --name-only "$PRODUCT_BASE" "$PRODUCT_HEAD" | sort)
+          expected=(
+            "src/components/pro-club/operations/ProClubRoleWorkspace.tsx"
+            "src/components/pro-club/operations/WeeklyTrainingCollaborationPreview.tsx"
+            "tests/proClubWeeklyTrainingCollaborationPreview.unit.test.ts"
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          test "${#files[@]}" -eq "${#expected_sorted[@]}"
+          for i in "${!files[@]}"; do test "${files[$i]}" = "${expected_sorted[$i]}"; done
+          ! git diff --name-only "$PRODUCT_BASE" "$PRODUCT_HEAD" | grep -E '^(functions/|firestore\.rules$|firebase\.json$|firebase\.spark\.json$|firestore\.indexes\.json$|package(-lock)?\.json$)'
+          git diff --check "$PRODUCT_BASE" "$PRODUCT_HEAD"
+
+      - name: Install locked root dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install locked Functions dependencies
+        run: npm --prefix functions ci --ignore-scripts
+
+      - name: Collaboration contract and preview tests
+        run: >-
+          node --import tsx --test
+          tests/proClubWeeklyTrainingCollaborationAuditV1Contract.test.ts
+          tests/proClubWeeklyTrainingCollaborationPreview.unit.test.ts
+
+      - name: Existing Weekly Training domain regression
+        run: node --import tsx --test tests/proClubWeeklyTraining.unit.test.ts
+
+      - name: Functions build
+        run: npm --prefix functions run build
+
+      - name: Root TypeScript
+        run: npx --no-install tsc --noEmit
+
+      - name: App build
+        run: npm run build
+
+      - name: Safety gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_HEAD="696ae9e128be0d159e9308c9d656419628ab3ee9"
+          PRODUCT_BASE="48c53b885b57b48fee6b68af7ecac1eea10bf841"
+          VERIFY_FILE=".github/workflows/verify-pr164-weekly-training-collaboration-preview-v1-r1.yml"
+          test "$(git diff --name-only "$PRODUCT_HEAD" HEAD)" = "$VERIFY_FILE"
+          ! git diff "$PRODUCT_BASE" "$PRODUCT_HEAD" -- package.json package-lock.json functions/package.json functions/package-lock.json | grep -q .
+          ! git diff "$PRODUCT_BASE" "$PRODUCT_HEAD" | grep -E '(BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|AIza[0-9A-Za-z_-]{20,}|gh[pousr]_[0-9A-Za-z]{20,})'
+          ! grep -E '(firebase/firestore|firebase/functions|writeBatch|setDoc|updateDoc|fetch\()' src/components/pro-club/operations/WeeklyTrainingCollaborationPreview.tsx
+          grep -Fq 'PREVIEW ONLY · NO PRODUCTION WRITE' src/components/pro-club/operations/WeeklyTrainingCollaborationPreview.tsx
+          grep -Fq 'Fresh-DRAFT writing remains Head Coach only' src/components/pro-club/operations/ProClubRoleWorkspace.tsx
+          echo 'INPUT=PASS'
+          echo 'AUTHORIZATION=PASS'
+          echo 'SECRET=PASS'
+          echo 'DEPENDENCY=N/A (NO CHANGE)'
+          echo 'FAILURE_BEHAVIOR=PASS'
+          echo 'PRODUCTION_DEPLOY=NO'
+          echo 'PRODUCTION_DATA_WRITE=NO'
+          echo 'PRODUCTION_CAPABILITY_CHANGE=NO'
