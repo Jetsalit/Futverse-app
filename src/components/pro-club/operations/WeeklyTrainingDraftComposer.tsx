@@ -1,11 +1,14 @@
 import { useMemo, useState } from "react";
 import { CalendarDays, CheckCircle2, Plus, Save, Trash2 } from "lucide-react";
-import { FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE } from "../../../config/runtimeCapabilities";
+import {
+  FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE,
+  PRO_CLUB_WEEKLY_TRAINING_FRESH_DRAFT_PRODUCTION_AVAILABLE,
+} from "../../../config/runtimeCapabilities";
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
 import {
   createWeeklyTrainingDraftSaveRequestId,
   isAmbiguousWeeklyTrainingDraftSaveError,
-  saveProClubWeeklyTrainingFreshDraft,
+  saveProClubWeeklyTrainingFreshDraftForCurrentRuntime,
   weeklyTrainingDraftSaveClientErrorMessage,
   type ProClubWeeklyTrainingFreshDraftInput,
 } from "../../../lib/proClubWeeklyTrainingDraftSaveClient";
@@ -102,7 +105,9 @@ export default function WeeklyTrainingDraftComposer({
   } | null>(null);
 
   const authorityAllowed = canUseWeeklyTrainingDraftSave(authority);
-  const runtimeAllowed = FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE;
+  const runtimeAllowed =
+    FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE ||
+    PRO_CLUB_WEEKLY_TRAINING_FRESH_DRAFT_PRODUCTION_AVAILABLE;
   const expectedDocuments = useMemo(
     () => expectedWeeklyTrainingDocumentCount(draft.sessions),
     [draft.sessions],
@@ -145,7 +150,7 @@ export default function WeeklyTrainingDraftComposer({
     setSaving(true);
     setError("");
     try {
-      const result = await saveProClubWeeklyTrainingFreshDraft({
+      const result = await saveProClubWeeklyTrainingFreshDraftForCurrentRuntime({
         requestId,
         clubId: authority.organizationId,
         actorUid: authority.userId,
@@ -173,7 +178,7 @@ export default function WeeklyTrainingDraftComposer({
       <section className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-5">
         <h4 className="font-bold text-amber-200">Weekly Training fresh DRAFT unavailable</h4>
         <p className="mt-2 text-sm leading-6 text-amber-100/80">
-          A current active Head Coach assignment is required. Server-side membership, staff and
+          A current active Head Coach assignment is required. Membership, staff and
           technical-governance checks remain authoritative for every save.
         </p>
       </section>
@@ -189,8 +194,8 @@ export default function WeeklyTrainingDraftComposer({
             Weekly Training Plan
           </h4>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-            Create one new server-mediated DRAFT. Existing draft editing, lifecycle actions and
-            Technical Director co-authoring remain closed in this slice.
+            Create one new DRAFT with deterministic request identity. Existing draft editing,
+            lifecycle actions and Technical Director co-authoring remain closed in this slice.
           </p>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-400">
@@ -213,8 +218,8 @@ export default function WeeklyTrainingDraftComposer({
 
       {!runtimeAllowed && (
         <p role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm leading-6 text-amber-100">
-          Saving is intentionally disabled in this production web environment. The reviewed
-          function-backed path remains DEV/emulator-only until a separate production rollout is approved.
+          Saving is intentionally disabled in this production web environment. The dedicated
+          schema-v2 path stays closed until the exact Firestore Rules are deployed and independently verified.
         </p>
       )}
 
@@ -223,7 +228,7 @@ export default function WeeklyTrainingDraftComposer({
           <p className="font-bold">Save result is uncertain — draft locked for safe reconciliation</p>
           <p className="mt-2 leading-6 text-amber-100/80">
             Do not change this draft. Retry the same save; FutVerse will reuse the same request identity
-            and the server will return the already-created plan if the first transaction committed.
+            and reconcile the deterministic plan if the first atomic save committed.
           </p>
           <p className="mt-2 break-all text-xs text-amber-200/70">Request: {pendingRequestId}</p>
         </div>
@@ -326,7 +331,7 @@ export default function WeeklyTrainingDraftComposer({
 
       <div className="flex flex-wrap items-center gap-3">
         <button type="button" onClick={() => void handleSave()} disabled={saving || Boolean(saved) || !authorityAllowed || !runtimeAllowed} className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-4 py-2.5 text-sm font-black text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"><Save size={17} /> {saving ? "Saving DRAFT…" : saved ? "DRAFT saved" : ambiguousSave ? "Retry same save" : "Save fresh DRAFT"}</button>
-        <p className="text-xs leading-5 text-slate-500">Server-side authorization, idempotency receipt and one atomic Admin transaction remain the final write boundary.</p>
+        <p className="text-xs leading-5 text-slate-500">Fresh saves use one reviewed atomic persistence boundary with deterministic request identity; existing DRAFT mutation remains closed.</p>
       </div>
     </section>
   );
