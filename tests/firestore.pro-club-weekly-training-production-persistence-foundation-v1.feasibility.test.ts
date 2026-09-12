@@ -38,8 +38,9 @@ function authedDb(uid: string): Firestore {
 
 async function seed(entries: Array<[string, DocumentData]>): Promise<void> {
   await testEnv.withSecurityRulesDisabled(async (context) => {
-    const batch = writeBatch(context.firestore() as unknown as Firestore);
-    for (const [path, data] of entries) batch.set(doc(context.firestore() as unknown as Firestore, path), data);
+    const db = context.firestore() as unknown as Firestore;
+    const batch = writeBatch(db);
+    for (const [path, data] of entries) batch.set(doc(db, path), data);
     await batch.commit();
   });
 }
@@ -194,9 +195,11 @@ function buildFreshDraftBatch(
 }
 
 async function assertHierarchyMissing(planId = PLAN_ID): Promise<void> {
-  const db = authedDb(HEAD_COACH_UID);
-  assert.equal((await getDoc(doc(db, manifestPath(planId)))).exists(), false);
-  assert.equal((await getDoc(doc(db, planPath(planId)))).exists(), false);
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore() as unknown as Firestore;
+    assert.equal((await getDoc(doc(db, manifestPath(planId)))).exists(), false);
+    assert.equal((await getDoc(doc(db, planPath(planId)))).exists(), false);
+  });
 }
 
 before(async () => {
