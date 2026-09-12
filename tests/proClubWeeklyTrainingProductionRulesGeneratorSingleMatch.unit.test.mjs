@@ -27,11 +27,14 @@ test("generated create routing dispatches schema 1 and 2 before expensive valida
   assert.match(generated, /proClubWeeklyTrainingValidBlockCreateV1/);
 });
 
-test("generated updates remain explicitly schema-v1-only", () => {
-  const guards = generated.match(
-    /resource\.data\.get\('schemaVersion', 0\) == 1\s+&& request\.resource\.data\.get\('schemaVersion', 0\) == 1/g,
+test("generated Rules preserve the legacy V1 update expressions without extra schema guards", () => {
+  assert.match(generated, /allow update: if proClubWeeklyTrainingValidDraftPlanUpdateV1\(clubId\);/);
+  assert.match(generated, /allow update: if proClubWeeklyTrainingValidSessionUpdateV1\(/);
+  assert.match(generated, /allow update: if proClubWeeklyTrainingValidBlockUpdateV1\(/);
+  assert.doesNotMatch(
+    generated,
+    /allow update: if resource\.data\.get\('schemaVersion', 0\) == 1\s+&& request\.resource\.data\.get\('schemaVersion', 0\) == 1/,
   );
-  assert.equal(guards?.length, 3);
 });
 
 test("generated Rules preserve manifest and canonical V2 block enums", () => {
