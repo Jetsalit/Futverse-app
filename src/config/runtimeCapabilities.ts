@@ -7,6 +7,10 @@ export interface WeeklyTrainingSavedDraftReadCapabilityEvidence {
   readonly productionIndexVerified?: boolean;
 }
 
+export interface WeeklyTrainingFreshDraftProductionCapabilityEvidence {
+  readonly productionRulesVerified?: boolean;
+}
+
 export function isFunctionBackedProClubWebAvailable(
   environment: RuntimeCapabilityEnvironment,
 ): boolean {
@@ -26,6 +30,19 @@ export function isWeeklyTrainingSavedDraftReadAvailable(
   evidence: WeeklyTrainingSavedDraftReadCapabilityEvidence,
 ): boolean {
   return evidence.dev === true || evidence.productionIndexVerified === true;
+}
+
+/**
+ * Fresh-DRAFT browser persistence is intentionally a dedicated production
+ * capability. It must never inherit the generic Function-backed capability and
+ * it must never be controlled by an environment variable. The only production
+ * activation input is reviewed, source-controlled evidence that the exact
+ * schema-v2 Firestore Rules have been deployed and independently verified.
+ */
+export function isWeeklyTrainingFreshDraftProductionAvailable(
+  evidence: WeeklyTrainingFreshDraftProductionCapabilityEvidence,
+): boolean {
+  return evidence.productionRulesVerified === true;
 }
 
 /**
@@ -75,8 +92,24 @@ export const WEEKLY_TRAINING_SAVED_DRAFT_READ_AVAILABLE =
       PRODUCTION_WEEKLY_TRAINING_SAVED_DRAFT_INDEX_VERIFIED,
   });
 
+/**
+ * Production persistence remains OFF in this implementation slice. A later,
+ * separate activation gate must deploy the exact reviewed Rules, verify those
+ * deployed Rules, and then change this source-controlled evidence to true.
+ */
+export const PRODUCTION_WEEKLY_TRAINING_FRESH_DRAFT_RULES_VERIFIED = false as const;
+
+export const PRO_CLUB_WEEKLY_TRAINING_FRESH_DRAFT_PRODUCTION_AVAILABLE =
+  isWeeklyTrainingFreshDraftProductionAvailable({
+    productionRulesVerified:
+      PRODUCTION_WEEKLY_TRAINING_FRESH_DRAFT_RULES_VERIFIED,
+  });
+
 export const SPARK_FUNCTION_BACKED_WEB_UNAVAILABLE_MESSAGE =
   "This server-backed action is unavailable in the Spark production web app. Use the reviewed trusted-local operator path where available.";
 
 export const WEEKLY_TRAINING_SAVED_DRAFT_READ_UNAVAILABLE_MESSAGE =
   "Saved Weekly Training DRAFT history will be enabled after its required Firestore index is deployed and verified in production.";
+
+export const WEEKLY_TRAINING_FRESH_DRAFT_PRODUCTION_UNAVAILABLE_MESSAGE =
+  "Fresh Weekly Training DRAFT saving will be enabled only after the exact schema-v2 Firestore Rules are deployed and independently verified in production.";
