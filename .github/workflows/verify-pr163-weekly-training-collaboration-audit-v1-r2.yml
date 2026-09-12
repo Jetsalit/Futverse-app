@@ -1,0 +1,84 @@
+name: Verify PR163 Weekly Training Collaboration Audit V1 R2
+
+on:
+  push:
+    branches:
+      - verify/pr163-weekly-training-collaboration-audit-v1-r2
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout verification HEAD
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Verify exact product parent and isolated two-file scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_HEAD="48c53b885b57b48fee6b68af7ecac1eea10bf841"
+          PRODUCT_BASE="c1742e2437a6e747c236fa49e4da50437b5d873d"
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_HEAD"
+          test "$(git merge-base "$PRODUCT_BASE" "$PRODUCT_HEAD")" = "$PRODUCT_BASE"
+          mapfile -t files < <(git diff --name-only "$PRODUCT_BASE" "$PRODUCT_HEAD" | sort)
+          expected=(
+            "docs/PRO_CLUB_WEEKLY_TRAINING_COLLABORATION_AUDIT_V1_CONTRACT_FREEZE.md"
+            "tests/proClubWeeklyTrainingCollaborationAuditV1Contract.test.ts"
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          test "${#files[@]}" -eq "${#expected_sorted[@]}"
+          for i in "${!files[@]}"; do test "${files[$i]}" = "${expected_sorted[$i]}"; done
+          ! git diff --name-only "$PRODUCT_BASE" "$PRODUCT_HEAD" | grep -E '^(src/|functions/|firestore\.rules$|firebase\.json$|firebase\.spark\.json$|firestore\.indexes\.json$|package(-lock)?\.json$)'
+          git diff --check "$PRODUCT_BASE" "$PRODUCT_HEAD"
+
+      - name: Install locked root dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install locked Functions dependencies
+        run: npm --prefix functions ci --ignore-scripts
+
+      - name: Collaboration contract tests
+        run: node --import tsx --test tests/proClubWeeklyTrainingCollaborationAuditV1Contract.test.ts
+
+      - name: Existing Weekly Training domain regression
+        run: node --import tsx --test tests/proClubWeeklyTraining.unit.test.ts
+
+      - name: Functions build
+        run: npm --prefix functions run build
+
+      - name: Root TypeScript
+        run: npx --no-install tsc --noEmit
+
+      - name: App build
+        run: npm run build
+
+      - name: Safety gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_HEAD="48c53b885b57b48fee6b68af7ecac1eea10bf841"
+          PRODUCT_BASE="c1742e2437a6e747c236fa49e4da50437b5d873d"
+          VERIFY_FILE=".github/workflows/verify-pr163-weekly-training-collaboration-audit-v1-r2.yml"
+          test "$(git diff --name-only "$PRODUCT_HEAD" HEAD)" = "$VERIFY_FILE"
+          ! git diff "$PRODUCT_BASE" "$PRODUCT_HEAD" -- package.json package-lock.json functions/package.json functions/package-lock.json | grep -q .
+          ! git diff "$PRODUCT_BASE" "$PRODUCT_HEAD" | grep -E '(BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|AIza[0-9A-Za-z_-]{20,}|gh[pousr]_[0-9A-Za-z]{20,})'
+          grep -Fq 'UI_PREVIEW_ONLY=AUTHORIZED_BY_CONTRACT' docs/PRO_CLUB_WEEKLY_TRAINING_COLLABORATION_AUDIT_V1_CONTRACT_FREEZE.md
+          grep -Fq 'NEW_PERSISTENCE=NOT_AUTHORIZED' docs/PRO_CLUB_WEEKLY_TRAINING_COLLABORATION_AUDIT_V1_CONTRACT_FREEZE.md
+          grep -Fq 'FIRESTORE_RULES_CHANGE=NOT_AUTHORIZED' docs/PRO_CLUB_WEEKLY_TRAINING_COLLABORATION_AUDIT_V1_CONTRACT_FREEZE.md
+          grep -Fq 'PRODUCTION_DEPLOY=NOT_AUTHORIZED' docs/PRO_CLUB_WEEKLY_TRAINING_COLLABORATION_AUDIT_V1_CONTRACT_FREEZE.md
+          grep -Fq 'PRODUCTION_DATA_WRITE=NOT_AUTHORIZED' docs/PRO_CLUB_WEEKLY_TRAINING_COLLABORATION_AUDIT_V1_CONTRACT_FREEZE.md
+          grep -Fq 'PRODUCTION_CAPABILITY_CHANGE=NOT_AUTHORIZED' docs/PRO_CLUB_WEEKLY_TRAINING_COLLABORATION_AUDIT_V1_CONTRACT_FREEZE.md
+          echo 'INPUT=PASS'
+          echo 'AUTHORIZATION=PASS'
+          echo 'SECRET=PASS'
+          echo 'DEPENDENCY=N/A (NO CHANGE)'
+          echo 'FAILURE_BEHAVIOR=PASS'
+          echo 'PRODUCTION_DEPLOY=NO'
+          echo 'PRODUCTION_DATA_WRITE=NO'
