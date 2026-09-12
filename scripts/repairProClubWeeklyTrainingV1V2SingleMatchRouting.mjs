@@ -91,25 +91,6 @@ const V1_BLOCK_UPDATE = `      allow update: if proClubWeeklyTrainingValidBlockU
         blockId
       );`;
 
-const V1_ONLY_PLAN_UPDATE = `  allow update: if resource.data.get('schemaVersion', 0) == 1
-    && request.resource.data.get('schemaVersion', 0) == 1
-    && proClubWeeklyTrainingValidDraftPlanUpdateV1(clubId);`;
-const V1_ONLY_SESSION_UPDATE = `    allow update: if resource.data.get('schemaVersion', 0) == 1
-      && request.resource.data.get('schemaVersion', 0) == 1
-      && proClubWeeklyTrainingValidSessionUpdateV1(
-        clubId,
-        planId,
-        sessionId
-      );`;
-const V1_ONLY_BLOCK_UPDATE = `      allow update: if resource.data.get('schemaVersion', 0) == 1
-        && request.resource.data.get('schemaVersion', 0) == 1
-        && proClubWeeklyTrainingValidBlockUpdateV1(
-          clubId,
-          planId,
-          sessionId,
-          blockId
-        );`;
-
 function replaceExactlyOnce(source, from, to, label) {
   const first = source.indexOf(from);
   if (first < 0) throw new Error(`Missing expected ${label}.`);
@@ -130,9 +111,6 @@ export function repairProClubWeeklyTrainingV1V2SingleMatchRouting(source) {
   next = replaceExactlyOnce(next, V1_PLAN_CREATE, DISPATCH_PLAN_CREATE, "legacy plan create rule");
   next = replaceExactlyOnce(next, V1_SESSION_CREATE, DISPATCH_SESSION_CREATE, "legacy session create rule");
   next = replaceExactlyOnce(next, V1_BLOCK_CREATE, DISPATCH_BLOCK_CREATE, "legacy block create rule");
-  next = replaceExactlyOnce(next, V1_PLAN_UPDATE, V1_ONLY_PLAN_UPDATE, "legacy plan update rule");
-  next = replaceExactlyOnce(next, V1_SESSION_UPDATE, V1_ONLY_SESSION_UPDATE, "legacy session update rule");
-  next = replaceExactlyOnce(next, V1_BLOCK_UPDATE, V1_ONLY_BLOCK_UPDATE, "legacy block update rule");
 
   const matchCount = next.split("match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {").length - 1;
   if (matchCount !== 1) {
@@ -144,8 +122,8 @@ export function repairProClubWeeklyTrainingV1V2SingleMatchRouting(source) {
   if (!next.includes(DISPATCH_PLAN_CREATE) || !next.includes(DISPATCH_SESSION_CREATE) || !next.includes(DISPATCH_BLOCK_CREATE)) {
     throw new Error("Schema dispatcher verification failed after repair.");
   }
-  if (!next.includes(V1_ONLY_PLAN_UPDATE) || !next.includes(V1_ONLY_SESSION_UPDATE) || !next.includes(V1_ONLY_BLOCK_UPDATE)) {
-    throw new Error("Schema-v1-only update verification failed after repair.");
+  if (!next.includes(V1_PLAN_UPDATE) || !next.includes(V1_SESSION_UPDATE) || !next.includes(V1_BLOCK_UPDATE)) {
+    throw new Error("Legacy schema-v1 update routing was not preserved.");
   }
   return next;
 }
