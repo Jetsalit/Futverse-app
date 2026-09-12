@@ -93,11 +93,16 @@ export const WEEKLY_TRAINING_SAVED_DRAFT_READ_AVAILABLE =
   });
 
 /**
- * Production persistence remains OFF in this implementation slice. A later,
- * separate activation gate must deploy the exact reviewed Rules, verify those
- * deployed Rules, and then change this source-controlled evidence to true.
+ * Production activation evidence:
+ * - exact reviewed schema-v2 Firestore Rules are deployed to `futverse-d7872`;
+ * - deployed Rules Git blob exactly matches the independently reviewed Git blob;
+ * - read-only production acceptance passed;
+ * - no Rules redeploy or production document write belongs to this activation PR.
+ *
+ * This source-controlled capability is dedicated only to Weekly Training
+ * fresh-DRAFT creation. Generic Function-backed Pro Club production remains unchanged.
  */
-export const PRODUCTION_WEEKLY_TRAINING_FRESH_DRAFT_RULES_VERIFIED = false as const;
+export const PRODUCTION_WEEKLY_TRAINING_FRESH_DRAFT_RULES_VERIFIED = true as const;
 
 export const PRO_CLUB_WEEKLY_TRAINING_FRESH_DRAFT_PRODUCTION_AVAILABLE =
   isWeeklyTrainingFreshDraftProductionAvailable({
