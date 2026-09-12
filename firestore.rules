@@ -3219,63 +3219,72 @@ match /proClubs/{clubId}/weeklyTrainingDraftCreateRequests/{planId} {
 }
 
 match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
-  allow create: if proClubWeeklyTrainingValidPlanCreateV2(clubId, planId);
-
-  match /sessions/{sessionId} {
-    allow create: if proClubWeeklyTrainingValidSessionCreateV2(
-      clubId,
-      planId,
-      sessionId
-    );
-
-    match /blocks/{blockId} {
-      allow create: if proClubWeeklyTrainingValidBlockCreateV2(
-        clubId,
-        planId,
-        sessionId,
-        blockId
-      );
-    }
-  }
-}
-
-match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
   allow get, list: if currentUserIsActive()
     && proClubWeeklyTrainingActiveMemberV1(clubId, request.auth.uid);
-  allow create: if proClubWeeklyTrainingValidDraftPlanCreateV1(clubId);
-  allow update: if proClubWeeklyTrainingValidDraftPlanUpdateV1(clubId);
+  allow create: if request.resource.data.get('schemaVersion', 0) == 2
+    ? proClubWeeklyTrainingValidPlanCreateV2(clubId, planId)
+    : (
+      request.resource.data.get('schemaVersion', 0) == 1
+        && proClubWeeklyTrainingValidDraftPlanCreateV1(clubId)
+    );
+  allow update: if resource.data.get('schemaVersion', 0) == 1
+    && request.resource.data.get('schemaVersion', 0) == 1
+    && proClubWeeklyTrainingValidDraftPlanUpdateV1(clubId);
   allow delete: if false;
 
   match /sessions/{sessionId} {
     allow get, list: if currentUserIsActive()
       && proClubWeeklyTrainingActiveMemberV1(clubId, request.auth.uid);
-    allow create: if proClubWeeklyTrainingValidSessionCreateV1(
-      clubId,
-      planId,
-      sessionId
-    );
-    allow update: if proClubWeeklyTrainingValidSessionUpdateV1(
-      clubId,
-      planId,
-      sessionId
-    );
+    allow create: if request.resource.data.get('schemaVersion', 0) == 2
+      ? proClubWeeklyTrainingValidSessionCreateV2(
+        clubId,
+        planId,
+        sessionId
+      )
+      : (
+        request.resource.data.get('schemaVersion', 0) == 1
+          && proClubWeeklyTrainingValidSessionCreateV1(
+            clubId,
+            planId,
+            sessionId
+          )
+      );
+    allow update: if resource.data.get('schemaVersion', 0) == 1
+      && request.resource.data.get('schemaVersion', 0) == 1
+      && proClubWeeklyTrainingValidSessionUpdateV1(
+        clubId,
+        planId,
+        sessionId
+      );
     allow delete: if false;
 
     match /blocks/{blockId} {
       allow get, list: if currentUserIsActive()
         && proClubWeeklyTrainingActiveMemberV1(clubId, request.auth.uid);
-      allow create: if proClubWeeklyTrainingValidBlockCreateV1(
-        clubId,
-        planId,
-        sessionId,
-        blockId
-      );
-      allow update: if proClubWeeklyTrainingValidBlockUpdateV1(
-        clubId,
-        planId,
-        sessionId,
-        blockId
-      );
+      allow create: if request.resource.data.get('schemaVersion', 0) == 2
+        ? proClubWeeklyTrainingValidBlockCreateV2(
+          clubId,
+          planId,
+          sessionId,
+          blockId
+        )
+        : (
+          request.resource.data.get('schemaVersion', 0) == 1
+            && proClubWeeklyTrainingValidBlockCreateV1(
+              clubId,
+              planId,
+              sessionId,
+              blockId
+            )
+        );
+      allow update: if resource.data.get('schemaVersion', 0) == 1
+        && request.resource.data.get('schemaVersion', 0) == 1
+        && proClubWeeklyTrainingValidBlockUpdateV1(
+          clubId,
+          planId,
+          sessionId,
+          blockId
+        );
       allow delete: if false;
     }
   }
