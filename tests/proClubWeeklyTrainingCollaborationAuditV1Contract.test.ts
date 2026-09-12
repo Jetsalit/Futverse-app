@@ -26,8 +26,8 @@ test("contract preserves Plan, Execution and Actual as distinct concepts", () =>
 
 test("assigned contributor roles already exist in the canonical Pro Club staff model", () => {
   for (const role of ["ASSISTANT_COACH", "GK_COACH", "FITNESS_COACH", "ANALYST"]) {
-    assert.match(proClubTypes, new RegExp(`\\| \\"${role}\\"`));
-    assert.match(contract, new RegExp(`\\`${role}\\``));
+    assert.equal(proClubTypes.includes(`| "${role}"`), true, `${role} must remain a canonical Pro Club staff role`);
+    assert.equal(contract.includes(`\`${role}\``), true, `${role} must be explicitly frozen in the collaboration contract`);
   }
   assert.match(contract, /Assignment is explicit and scoped/);
   assert.match(contract, /staff role alone does not grant access to every Weekly Training plan/);
@@ -53,7 +53,7 @@ test("audit history is append-only and actor-specific", () => {
     "delegatedBy",
     "reason",
   ]) {
-    assert.match(contract, new RegExp(`\\`${field}\\``));
+    assert.equal(contract.includes(`\`${field}\``), true, `${field} must be part of the frozen audit envelope`);
   }
   assert.match(contract, /updatedBy.*not a substitute for the audit history/s);
 });
