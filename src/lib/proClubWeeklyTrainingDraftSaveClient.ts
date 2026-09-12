@@ -1,6 +1,13 @@
 import { httpsCallable } from "firebase/functions";
-import { FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE } from "../config/runtimeCapabilities";
+import {
+  FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE,
+  PRO_CLUB_WEEKLY_TRAINING_FRESH_DRAFT_PRODUCTION_AVAILABLE,
+} from "../config/runtimeCapabilities";
 import { functions } from "./firebase";
+import {
+  ProClubWeeklyTrainingProductionPersistenceError,
+  saveProClubWeeklyTrainingFreshDraftToProductionFirestore,
+} from "./firestore/proClubWeeklyTrainingProductionPersistence";
 import { isValidDocumentIdentifier } from "./proClubModel";
 import {
   parseProClubWeeklyTrainingDraft,
@@ -96,6 +103,33 @@ function containsClosedTechnicalDirectorNote(value: unknown): boolean {
   return typeof note !== "string" || note.trim().length > 0;
 }
 
+function parseBoundFreshDraft(input: {
+  requestId: string;
+  clubId: string;
+  actorUid: string;
+  draft: ProClubWeeklyTrainingFreshDraftInput;
+}): ProClubWeeklyTrainingDraft {
+  if (
+    !isCanonicalWeeklyTrainingDraftSaveRequestId(input.requestId) ||
+    !isValidDocumentIdentifier(input.clubId) ||
+    !isValidDocumentIdentifier(input.actorUid) ||
+    containsClosedTechnicalDirectorNote(input.draft)
+  ) {
+    throw new ProClubWeeklyTrainingDraftSaveClientError("INVALID_ARGUMENT");
+  }
+
+  const boundDraft: ProClubWeeklyTrainingDraft = {
+    ...input.draft,
+    clubId: input.clubId,
+    authorUid: input.actorUid,
+  };
+  const parsed = parseProClubWeeklyTrainingDraft(boundDraft);
+  if (parsed.state !== "VALID") {
+    throw new ProClubWeeklyTrainingDraftSaveClientError("INVALID_ARGUMENT");
+  }
+  return parsed.value;
+}
+
 function normalizeCallableError(error: unknown): ProClubWeeklyTrainingDraftSaveClientError {
   if (error instanceof ProClubWeeklyTrainingDraftSaveClientError) return error;
 
@@ -117,6 +151,27 @@ function normalizeCallableError(error: unknown): ProClubWeeklyTrainingDraftSaveC
     return new ProClubWeeklyTrainingDraftSaveClientError("FAILED_PRECONDITION");
   }
   return new ProClubWeeklyTrainingDraftSaveClientError("NETWORK");
+}
+
+function normalizeProductionPersistenceError(
+  error: unknown,
+): ProClubWeeklyTrainingDraftSaveClientError {
+  if (error instanceof ProClubWeeklyTrainingDraftSaveClientError) return error;
+  if (!(error instanceof ProClubWeeklyTrainingProductionPersistenceError)) {
+    return new ProClubWeeklyTrainingDraftSaveClientError("NETWORK");
+  }
+  switch (error.code) {
+    case "unauthenticated":
+      return new ProClubWeeklyTrainingDraftSaveClientError("AUTH_REQUIRED");
+    case "permission-denied":
+      return new ProClubWeeklyTrainingDraftSaveClientError("PERMISSION_DENIED");
+    case "invalid-argument":
+      return new ProClubWeeklyTrainingDraftSaveClientError("INVALID_ARGUMENT");
+    case "failed-precondition":
+      return new ProClubWeeklyTrainingDraftSaveClientError("FAILED_PRECONDITION");
+    default:
+      return new ProClubWeeklyTrainingDraftSaveClientError("NETWORK");
+  }
 }
 
 export function isAmbiguousWeeklyTrainingDraftSaveError(error: unknown): boolean {
@@ -149,35 +204,17 @@ export async function saveProClubWeeklyTrainingFreshDraft(
   caller: WeeklyTrainingDraftSaveCallableCaller =
     defaultWeeklyTrainingDraftSaveCallableCaller,
 ): Promise<ProClubWeeklyTrainingDraftSaveResult> {
-  if (
-    !isCanonicalWeeklyTrainingDraftSaveRequestId(input.requestId) ||
-    !isValidDocumentIdentifier(input.clubId) ||
-    !isValidDocumentIdentifier(input.actorUid) ||
-    containsClosedTechnicalDirectorNote(input.draft)
-  ) {
-    throw new ProClubWeeklyTrainingDraftSaveClientError("INVALID_ARGUMENT");
-  }
-
-  const boundDraft: ProClubWeeklyTrainingDraft = {
-    ...input.draft,
-    clubId: input.clubId,
-    authorUid: input.actorUid,
-  };
-
-  const parsed = parseProClubWeeklyTrainingDraft(boundDraft);
-  if (parsed.state !== "VALID") {
-    throw new ProClubWeeklyTrainingDraftSaveClientError("INVALID_ARGUMENT");
-  }
+  const parsedDraft = parseBoundFreshDraft(input);
 
   let result: { data: unknown };
   try {
-    result = await caller({ requestId: input.requestId, draft: parsed.value });
+    result = await caller({ requestId: input.requestId, draft: parsedDraft });
   } catch (error) {
     throw normalizeCallableError(error);
   }
 
   const response = asRecord(result?.data);
-  const expectedCount = expectedDocumentCount(parsed.value);
+  const expectedCount = expectedDocumentCount(parsedDraft);
   if (
     !response ||
     response.status !== "COMPLETED" ||
@@ -200,6 +237,39 @@ export async function saveProClubWeeklyTrainingFreshDraft(
     documentCount: response.documentCount,
     createdAt: response.createdAt,
   };
+}
+
+/**
+ * Runtime router for fresh DRAFT creation only.
+ *
+ * Production may use the direct schema-v2 Firestore batch only after the
+ * dedicated source-controlled Rules evidence is explicitly activated. Until
+ * then the existing callable path remains available solely in Vite dev/server
+ * environments. No other Pro Club capability inherits this switch.
+ */
+export async function saveProClubWeeklyTrainingFreshDraftForCurrentRuntime(
+  input: {
+    requestId: string;
+    clubId: string;
+    actorUid: string;
+    draft: ProClubWeeklyTrainingFreshDraftInput;
+  },
+): Promise<ProClubWeeklyTrainingDraftSaveResult> {
+  if (!PRO_CLUB_WEEKLY_TRAINING_FRESH_DRAFT_PRODUCTION_AVAILABLE) {
+    return await saveProClubWeeklyTrainingFreshDraft(input);
+  }
+
+  const parsedDraft = parseBoundFreshDraft(input);
+  try {
+    return await saveProClubWeeklyTrainingFreshDraftToProductionFirestore({
+      requestId: input.requestId,
+      clubId: input.clubId,
+      actorUid: input.actorUid,
+      draft: parsedDraft,
+    });
+  } catch (error) {
+    throw normalizeProductionPersistenceError(error);
+  }
 }
 
 export function weeklyTrainingDraftSaveClientErrorMessage(
