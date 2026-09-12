@@ -17,8 +17,6 @@ import {
   writeBatch,
 } from "firebase/firestore";
 
-import { applyProClubWeeklyTrainingProductionPersistenceV1Rules } from "../scripts/applyProClubWeeklyTrainingProductionPersistenceV1Rules.mjs";
-
 const PROJECT_ID = "demo-futverse-weekly-training-production-persistence-implementation-v1";
 const CLUB_ID = "club-a";
 const HEAD_COACH_UID = "hc-a";
@@ -179,12 +177,11 @@ async function assertHierarchyMissing(planId = PLAN_ID) {
 
 before(async () => {
   const emulatorHost = process.env.FIRESTORE_EMULATOR_HOST;
-  assert.ok(emulatorHost, "Implementation Rules test must run through Firestore Emulator.");
+  assert.ok(emulatorHost, "Integrated root Rules test must run through Firestore Emulator.");
   const separator = emulatorHost.lastIndexOf(":");
   const host = emulatorHost.slice(0, separator);
   const port = Number(emulatorHost.slice(separator + 1));
-  const baselineRules = readFileSync(new URL("../firestore.rules", import.meta.url), "utf8");
-  const rules = applyProClubWeeklyTrainingProductionPersistenceV1Rules(baselineRules);
+  const rules = readFileSync(new URL("../firestore.rules", import.meta.url), "utf8");
   assert.match(rules, /Production Persistence V1 — schema-v2 create-only/);
   assert.match(rules, /'GAME',\s*'CONDITIONING'/);
   assert.doesNotMatch(rules, /'PHYSICAL',\s*'SMALL_SIDED_GAME'/);
@@ -200,14 +197,14 @@ after(async () => {
   await testEnv.cleanup();
 });
 
-test("exact patch accepts canonical GAME and CONDITIONING values", async () => {
+test("integrated root accepts canonical GAME and CONDITIONING values", async () => {
   for (const [index, blockType] of ["GAME", "CONDITIONING"].entries()) {
     const planId = index === 0 ? PLAN_ID : SECOND_PLAN_ID;
     await assertSucceeds(buildFreshDraftBatch(authedDb(HEAD_COACH_UID), { planId, blockType }).batch.commit());
   }
 });
 
-test("exact patch rejects stale candidate-only block enums", async () => {
+test("integrated root rejects stale candidate-only block enums", async () => {
   for (const [index, blockType] of ["PHYSICAL", "SMALL_SIDED_GAME", "SET_PIECE"].entries()) {
     const planId = `stale-${index}`;
     await assertFails(buildFreshDraftBatch(authedDb(HEAD_COACH_UID), { planId, blockType }).batch.commit());
