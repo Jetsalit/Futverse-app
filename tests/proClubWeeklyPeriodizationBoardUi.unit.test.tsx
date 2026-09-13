@@ -84,6 +84,19 @@ function visibleText(markup: string): string {
   return markup.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function datePresentations(markup: string, canonicalDate: string): string[] {
+  const escapedDate = canonicalDate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return Array.from(
+    markup.matchAll(
+      new RegExp(
+        `<time\\s+datetime="${escapedDate}"[^>]*>([^<]+)<\\/time>`,
+        "gi",
+      ),
+    ),
+    (match) => match[1].trim(),
+  );
+}
+
 test("renders the read-only microcycle header and canonical objectives", () => {
   const text = visibleText(renderBoard());
 
@@ -104,9 +117,9 @@ test("renders supplied sessions as day cards with load, objective, time, locatio
     "MONDAY",
     "SATURDAY",
     "SUNDAY",
-    "Sep 7",
-    "Sep 12",
-    "Sep 13",
+    "2026-09-07",
+    "2026-09-12",
+    "2026-09-13",
     "LOW",
     "MODERATE",
     "HIGH",
@@ -132,6 +145,16 @@ test("renders supplied sessions as day cards with load, objective, time, locatio
 
   assert.match(markup, /aria-label="Weekly microcycle sessions"/);
   assert.equal((markup.match(/role="meter"/g) ?? []).length, 3);
+  for (const canonicalDate of ["2026-09-07", "2026-09-12", "2026-09-13"]) {
+    const presentations = datePresentations(markup, canonicalDate);
+    assert.ok(
+      presentations.some(
+        (presentation) =>
+          presentation.length > 0 && presentation !== canonicalDate,
+      ),
+      `missing localized presentation for ${canonicalDate}`,
+    );
+  }
   assert.doesNotMatch(text, /TUESDAY|WEDNESDAY|THURSDAY|FRIDAY/);
 });
 
@@ -221,6 +244,9 @@ test("Board source remains presentation-only and Saved-DRAFT wiring preserves th
   assert.deepEqual(boardImports, [
     "../../../lib/proClubWeeklyPeriodizationBoard",
   ]);
+  assert.doesNotMatch(boardSource, /["']en-US["']/);
+  assert.match(boardSource, /\.toLocaleDateString\(undefined,/);
+  assert.match(boardSource, /Date\.UTC\(year, month - 1, day\)/);
   assert.doesNotMatch(
     boardSource,
     /firebase|SavedDraftReadAdapter|runtimeCapabilities|WeeklyTrainingSavedDraftDetail|clubId|actorUid|userId/i,

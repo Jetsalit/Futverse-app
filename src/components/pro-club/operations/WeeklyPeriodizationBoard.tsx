@@ -31,11 +31,11 @@ const PLANNED_LOAD_PRESENTATION: Record<
 function formatSessionDate(sessionDate: string): string {
   const [year, month, day] = sessionDate.split("-").map(Number);
 
-  return new Intl.DateTimeFormat("en-US", {
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
     timeZone: "UTC",
-  }).format(new Date(Date.UTC(year, month - 1, day)));
+  });
 }
 
 function formatDayLabel(dayOfWeek: string): string {
