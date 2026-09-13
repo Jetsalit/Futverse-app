@@ -302,9 +302,6 @@ export async function executeLocalTechnicalGovernanceBootstrap(
 
     for (const staffDocument of staffSnapshot.docs) {
       const staffData = staffDocument.data();
-      const rawStaffRole = asRecord(staffData)?.staffRole;
-      if (!isTechnicalRole(rawStaffRole)) continue;
-
       if (
         !validateProClubStaffAssignment(staffData, {
           clubId: options.clubId,
@@ -316,22 +313,26 @@ export async function executeLocalTechnicalGovernanceBootstrap(
         fail("STAFF_INVALID", "Technical staff assignment is not canonical");
       }
 
-      const memberRef = clubRef.collection("members").doc(staffDocument.id);
-      const memberSnapshot = await transaction.get(memberRef);
-      if (
-        !memberSnapshot.exists ||
-        !validateProClubMembership(memberSnapshot.data(), {
-          clubId: options.clubId,
-          documentClubId: clubSnapshot.id,
-          userId: staffDocument.id,
-          documentId: memberSnapshot.id,
-        }) ||
-        memberSnapshot.data()?.status !== "ACTIVE"
-      ) {
-        fail(
-          "MEMBERSHIP_INVALID",
-          "Technical staff candidate lacks a matching canonical ACTIVE membership",
-        );
+      if (!isTechnicalRole(staffData.staffRole)) continue;
+
+      if (staffData.status === "ACTIVE") {
+        const memberRef = clubRef.collection("members").doc(staffDocument.id);
+        const memberSnapshot = await transaction.get(memberRef);
+        if (
+          !memberSnapshot.exists ||
+          !validateProClubMembership(memberSnapshot.data(), {
+            clubId: options.clubId,
+            documentClubId: clubSnapshot.id,
+            userId: staffDocument.id,
+            documentId: memberSnapshot.id,
+          }) ||
+          memberSnapshot.data()?.status !== "ACTIVE"
+        ) {
+          fail(
+            "MEMBERSHIP_INVALID",
+            "ACTIVE technical staff candidate lacks a matching canonical ACTIVE membership",
+          );
+        }
       }
 
       candidates.push({

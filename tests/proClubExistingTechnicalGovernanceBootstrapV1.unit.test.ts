@@ -277,6 +277,16 @@ test("inactive and non-SUPERADMIN operators are denied with zero writes", async 
   }
 });
 
+test("missing operator document is denied with zero writes", async () => {
+  const store = createStore((documents) => {
+    delete documents[`users/${OPERATOR_UID}`];
+    addStaff(documents, "coach-one", "HEAD_COACH");
+  });
+
+  await rejectsWithCode(execute(store), "UNAUTHORIZED_OPERATOR");
+  assert.deepEqual(store.committedCreatePaths, []);
+});
+
 test("malformed club IDs are denied before database work", async () => {
   for (const clubId of ["", " club-alpha", "club-alpha ", "club/alpha"] ) {
     const store = createStore();
@@ -299,6 +309,42 @@ test("missing and inactive clubs fail closed", async () => {
   assert.deepEqual(inactiveStore.committedCreatePaths, []);
 });
 
+test("noncanonical Pro Club document fails closed with zero writes", async () => {
+  const store = createStore((documents) => {
+    documents[`proClubs/${CLUB_ID}`].unexpectedField = true;
+    addStaff(documents, "coach-one", "HEAD_COACH");
+  });
+
+  await rejectsWithCode(execute(store), "CLUB_INVALID");
+  assert.deepEqual(store.committedCreatePaths, []);
+});
+
+test("malformed staff fails closed before Head Coach fallback", async () => {
+  const store = createStore((documents) => {
+    documents[`proClubs/${CLUB_ID}/staff/director-malformed`] = {
+      staffRole: "TECHNICAL_DIRECTOR",
+      status: "ACTIVE",
+      unexpectedField: true,
+    };
+    addStaff(documents, "coach-one", "HEAD_COACH");
+  });
+
+  await rejectsWithCode(execute(store), "STAFF_INVALID");
+  assert.deepEqual(store.committedCreatePaths, []);
+  assert.equal(store.documents.has(CURRENT_PATH), false);
+});
+
+test("malformed ACTIVE technical membership fails closed with zero writes", async () => {
+  const store = createStore((documents) => {
+    addStaff(documents, "director-one", "TECHNICAL_DIRECTOR");
+    documents[`proClubs/${CLUB_ID}/members/director-one`].unexpectedField =
+      true;
+  });
+
+  await rejectsWithCode(execute(store), "MEMBERSHIP_INVALID");
+  assert.deepEqual(store.committedCreatePaths, []);
+});
+
 test("exactly one ACTIVE Technical Director takes AUTO precedence", async () => {
   const store = createStore((documents) => {
     addStaff(documents, "director-one", "TECHNICAL_DIRECTOR");
@@ -317,6 +363,42 @@ test("exactly one ACTIVE Head Coach wins when no Technical Director is active", 
       documents,
       "director-inactive",
       "TECHNICAL_DIRECTOR",
+      "INACTIVE",
+    );
+    addStaff(documents, "coach-one", "HEAD_COACH");
+  });
+
+  const result = await execute(store);
+  assert.equal(result.status, "CREATED");
+  assert.equal(result.authorityUid, "coach-one");
+  assert.equal(result.authorityRole, "HEAD_COACH");
+});
+
+test("inactive Technical Director without membership does not block Head Coach", async () => {
+  const store = createStore((documents) => {
+    addStaff(
+      documents,
+      "director-inactive",
+      "TECHNICAL_DIRECTOR",
+      "INACTIVE",
+      null,
+    );
+    addStaff(documents, "coach-one", "HEAD_COACH");
+  });
+
+  const result = await execute(store);
+  assert.equal(result.status, "CREATED");
+  assert.equal(result.authorityUid, "coach-one");
+  assert.equal(result.authorityRole, "HEAD_COACH");
+});
+
+test("inactive Technical Director with inactive membership does not block Head Coach", async () => {
+  const store = createStore((documents) => {
+    addStaff(
+      documents,
+      "director-inactive",
+      "TECHNICAL_DIRECTOR",
+      "INACTIVE",
       "INACTIVE",
     );
     addStaff(documents, "coach-one", "HEAD_COACH");
@@ -458,4 +540,35 @@ test("dry-run traverses canonical gates and performs zero writes", async () => {
   assert.equal(store.transactionCalls, 1);
   assert.deepEqual(store.committedCreatePaths, []);
   assert.equal(store.documents.has(CURRENT_PATH), false);
+});
+
+test("unknown CLI flags fail closed", () => {
+  assert.throws(
+    () =>
+      parseTechnicalGovernanceBootstrapArgs([
+        "--club-id",
+        CLUB_ID,
+        "--unknown-option",
+      ]),
+    /Unknown or unrecognized flag/,
+  );
+});
+
+test("dry-run reports NOOP for an identical current document without writing", async () => {
+  const store = createStore((documents) => {
+    addStaff(documents, "coach-one", "HEAD_COACH");
+    documents[CURRENT_PATH] = {
+      schemaVersion: 1,
+      status: "ACTIVE",
+      authorityUid: "coach-one",
+      authorityRole: "HEAD_COACH",
+    };
+  });
+  const before = clone(store.documents.get(CURRENT_PATH));
+
+  const result = await execute(store, { dryRun: true });
+  assert.equal(result.status, "DRY_RUN");
+  if (result.dryRun) assert.equal(result.wouldStatus, "NOOP");
+  assert.deepEqual(store.committedCreatePaths, []);
+  assert.deepEqual(store.documents.get(CURRENT_PATH), before);
 });
