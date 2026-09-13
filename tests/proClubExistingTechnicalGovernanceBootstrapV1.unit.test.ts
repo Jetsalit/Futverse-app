@@ -334,6 +334,20 @@ test("malformed staff fails closed before Head Coach fallback", async () => {
   assert.equal(store.documents.has(CURRENT_PATH), false);
 });
 
+test("malformed technical-looking role cannot be filtered out before canonical validation", async () => {
+  const store = createStore((documents) => {
+    documents[`proClubs/${CLUB_ID}/staff/director-malformed-role`] = {
+      staffRole: "TECHNICAL_DIRECTOR ",
+      status: "ACTIVE",
+    };
+    addStaff(documents, "coach-one", "HEAD_COACH");
+  });
+
+  await rejectsWithCode(execute(store), "STAFF_INVALID");
+  assert.deepEqual(store.committedCreatePaths, []);
+  assert.equal(store.documents.has(CURRENT_PATH), false);
+});
+
 test("malformed ACTIVE technical membership fails closed with zero writes", async () => {
   const store = createStore((documents) => {
     addStaff(documents, "director-one", "TECHNICAL_DIRECTOR");
