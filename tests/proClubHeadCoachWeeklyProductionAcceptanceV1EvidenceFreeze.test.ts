@@ -78,16 +78,29 @@ test("freezes still-closed mutation/lifecycle/unrelated-module boundaries", () =
   );
 });
 
-test("freeze contains no raw production smoke identifiers or actor UID", () => {
-  assert.doesNotMatch(
-    evidence,
-    /4f8c7d0f-ae2d-4a8a-a777-6a622dc03745/,
-    "raw smoke plan/request ID must remain redacted",
+test("freezes generic identifier-redaction policy without embedding production identifiers", () => {
+  requireText(
+    "raw actor UID is not frozen in this evidence document",
+    "raw plan/request identifier is not frozen in this evidence document",
+    "SMOKE_IDENTIFIERS_REDACTED=YES",
+    "AUTHORITY_UID_DISCLOSED_IN_EVIDENCE=NO",
   );
 
   assert.doesNotMatch(
     evidence,
-    /gvhSrc9e5Aghp8L4FWN3yzKp9G33/,
-    "raw Head Coach UID must remain redacted",
+    /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i,
+    "evidence must not contain raw UUID-shaped production identifiers",
+  );
+
+  assert.doesNotMatch(
+    evidence,
+    /\b(?:actor|authority|head coach)\s*(?:uid|user id)\s*[:=]\s*[A-Za-z0-9_-]{20,}\b/i,
+    "evidence must not contain a labeled raw actor/authority UID",
+  );
+
+  assert.doesNotMatch(
+    evidence,
+    /\b(?:plan|request)\s*(?:id|identifier)\s*[:=]\s*[A-Za-z0-9_-]{16,}\b/i,
+    "evidence must not contain a labeled raw plan/request identifier",
   );
 });
