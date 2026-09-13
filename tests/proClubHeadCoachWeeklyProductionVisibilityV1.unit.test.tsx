@@ -179,6 +179,14 @@ test("production presentation adds no IO environment switch or forbidden module"
     /Today.s Session/i,
     /Department Updates/i,
     /Match Preparation/i,
+    /\bSquad\b/i,
+    /\bMatches\b/i,
+    /\bFitness\b/i,
+    /\bAnalysis\b/i,
+    /\bAvailability\b/i,
+    /\bReports\b/i,
+    /\bStaff\b/i,
+    /Club administration/i,
     /Competition Calendar/i,
   ]) {
     assert.doesNotMatch(source, forbidden);
