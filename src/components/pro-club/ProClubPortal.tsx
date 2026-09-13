@@ -10,6 +10,7 @@ import { isProClubReviewer, proClubOnboardingRepository as repository } from "..
 import type { ProClubOrganizationAuthority } from "../../lib/firestore/proClubOrganizationAdapter";
 import StaffOnboarding, { buttonClass, inputClass, secondaryClass, StatusBadge } from "./StaffOnboarding";
 import PendingStaffRequests from "./PendingStaffRequests";
+import ProClubHeadCoachWeeklyProductionWorkspace from "./operations/ProClubHeadCoachWeeklyProductionWorkspace";
 import ProClubOperationsDashboard from "./operations/ProClubOperationsDashboard";
 
 function ClubWorkspace({ clubId, uid }: { clubId: string; uid: string }) {
@@ -31,7 +32,11 @@ function ClubWorkspace({ clubId, uid }: { clubId: string; uid: string }) {
         {authority.staffRole && <span className="rounded-lg bg-white/10 px-3 py-2">{staffRoleLabels[authority.staffRole]}</span>}</div>
       <p className="mt-5 text-sm text-slate-300">Your club membership is active.</p>
     </section>
-    {PRO_CLUB_OPERATIONS_PREVIEW_AVAILABLE && <ProClubOperationsDashboard authority={authority} />}
+    {PRO_CLUB_OPERATIONS_PREVIEW_AVAILABLE ? (
+      <ProClubOperationsDashboard authority={authority} />
+    ) : (
+      <ProClubHeadCoachWeeklyProductionWorkspace authority={authority} />
+    )}
     {isProClubReviewer(authority) ? <PendingStaffRequests clubId={clubId} clubName={authority.organizationName} uid={uid} /> :
       <section className="rounded-2xl border border-slate-200 bg-white p-6"><Users className="text-emerald-600" /><h3 className="mt-3 text-lg font-bold">Welcome to your club</h3><p className="mt-2 text-sm text-slate-600">You have joined the club as {authority.staffRole ? staffRoleLabels[authority.staffRole].toLowerCase() : "a member"}.</p></section>}
   </div>;
