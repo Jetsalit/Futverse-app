@@ -1,5 +1,5 @@
 import { httpsCallable } from "firebase/functions";
-import { FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE } from "../config/runtimeCapabilities";
+import { PRO_CLUB_WEEKLY_TRAINING_EXISTING_DRAFT_EDIT_AVAILABLE } from "../config/runtimeCapabilities";
 import { functions } from "./firebase";
 import { isValidDocumentIdentifier } from "./proClubModel";
 import {
@@ -94,7 +94,7 @@ export function isAmbiguousWeeklyTrainingExistingDraftEditError(error: unknown):
 
 export const defaultWeeklyTrainingExistingDraftEditCallableCaller:
 WeeklyTrainingExistingDraftEditCallableCaller = async (request) => {
-  if (!FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE) {
+  if (!PRO_CLUB_WEEKLY_TRAINING_EXISTING_DRAFT_EDIT_AVAILABLE) {
     throw new ProClubWeeklyTrainingExistingDraftEditClientError("UNAVAILABLE");
   }
   const callable = httpsCallable<ProClubWeeklyTrainingExistingDraftEditRequest, unknown>(
