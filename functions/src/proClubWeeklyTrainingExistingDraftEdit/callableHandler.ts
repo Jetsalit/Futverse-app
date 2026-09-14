@@ -7,6 +7,8 @@ import type {
   WeeklyTrainingExistingDraftEditService,
 } from "./service.ts";
 
+export const PRODUCTION_WEEKLY_TRAINING_EXISTING_DRAFT_EDIT_SERVER_ENABLED = false as const;
+
 export interface WeeklyTrainingExistingDraftEditCallableContext {
   readonly auth?: { readonly uid: string };
   readonly app?: { readonly appId: string };
@@ -22,6 +24,7 @@ export interface ExecuteWeeklyTrainingExistingDraftEditCallableOptions {
   readonly service: Pick<WeeklyTrainingExistingDraftEditService, "editExistingDraft">;
   readonly allowedAppIds: readonly string[];
   readonly enforceAppCheck?: boolean;
+  readonly executionEnabled?: boolean;
   readonly logger?: SafeWeeklyTrainingExistingDraftEditCallableLogger;
 }
 
@@ -31,11 +34,33 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+function defaultExecutionEnabled(): boolean {
+  return (
+    process.env.FUNCTIONS_EMULATOR === "true" ||
+    PRODUCTION_WEEKLY_TRAINING_EXISTING_DRAFT_EDIT_SERVER_ENABLED === true
+  );
+}
+
 export async function executeEditProClubWeeklyTrainingExistingDraftCallable(
   context: WeeklyTrainingExistingDraftEditCallableContext,
   options: ExecuteWeeklyTrainingExistingDraftEditCallableOptions,
-): Promise<EditWeeklyTrainingExistingDraftResult> {
-  const { service, allowedAppIds, enforceAppCheck = true, logger } = options;
+): Promise<EditWeeklyTrainingExistingDraftEditResult> {
+  const {
+    service,
+    allowedAppIds,
+    enforceAppCheck = true,
+    executionEnabled = defaultExecutionEnabled(),
+    logger,
+  } = options;
+
+  if (!executionEnabled) {
+    logger?.warn("Weekly Training Existing-DRAFT edit rejected: server capability disabled");
+    throw new HttpsError(
+      "failed-precondition",
+      "Existing-DRAFT edit server capability is not enabled.",
+    );
+  }
+
   const allowlist = new Set(allowedAppIds);
   if (
     allowlist.size === 0 ||
