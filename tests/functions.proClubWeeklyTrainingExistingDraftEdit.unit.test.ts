@@ -8,6 +8,7 @@ import {
 } from "../functions/src/proClubWeeklyTrainingExistingDraftEdit/core.ts";
 import {
   executeEditProClubWeeklyTrainingExistingDraftCallable,
+  PRODUCTION_WEEKLY_TRAINING_EXISTING_DRAFT_EDIT_SERVER_ENABLED,
 } from "../functions/src/proClubWeeklyTrainingExistingDraftEdit/callableHandler.ts";
 
 const draft = {
@@ -60,6 +61,35 @@ test("Existing-DRAFT edit rejects non-canonical envelope and timestamp", () => {
   );
 });
 
+test("server production activation remains fail-closed before service execution", async () => {
+  assert.equal(PRODUCTION_WEEKLY_TRAINING_EXISTING_DRAFT_EDIT_SERVER_ENABLED, false);
+  let called = false;
+  await assert.rejects(
+    () => executeEditProClubWeeklyTrainingExistingDraftCallable(
+      {
+        auth: { uid: "hc-a" },
+        app: { appId: "app-a" },
+        data: { planId: "plan-a", expectedPlanUpdatedAt: EXPECTED_UPDATED_AT, draft },
+      },
+      {
+        allowedAppIds: ["app-a"],
+        executionEnabled: false,
+        service: {
+          async editExistingDraft() {
+            called = true;
+            throw new Error("must not run");
+          },
+        },
+      },
+    ),
+    (error: unknown) => Boolean(
+      error && typeof error === "object" && "code" in error &&
+      String((error as { code?: unknown }).code).includes("failed-precondition"),
+    ),
+  );
+  assert.equal(called, false);
+});
+
 test("callable rejects missing App Check before invoking service", async () => {
   let called = false;
   await assert.rejects(
@@ -67,6 +97,7 @@ test("callable rejects missing App Check before invoking service", async () => {
       { auth: { uid: "hc-a" }, data: { planId: "plan-a", expectedPlanUpdatedAt: EXPECTED_UPDATED_AT, draft } },
       {
         allowedAppIds: ["app-a"],
+        executionEnabled: true,
         service: {
           async editExistingDraft() {
             called = true;
@@ -94,6 +125,7 @@ test("callable binds actor from auth and maps conflict to aborted", async () => 
       },
       {
         allowedAppIds: ["app-a"],
+        executionEnabled: true,
         service: {
           async editExistingDraft(input) {
             receivedActor = input.actorUid;
