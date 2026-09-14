@@ -11,6 +11,7 @@ const files = {
   adapter: "src/lib/firestore/proClubWeeklyTrainingSavedDraftReadAdapter.ts",
   model: "src/lib/proClubWeeklyTrainingSavedDraftReadModel.ts",
   component: "src/components/pro-club/operations/WeeklyTrainingSavedDrafts.tsx",
+  editor: "src/components/pro-club/operations/WeeklyTrainingExistingDraftEditor.tsx",
   workspace: "src/components/pro-club/operations/ProClubRoleWorkspace.tsx",
   capability: "src/config/runtimeCapabilities.ts",
   rules: "firestore.rules",
@@ -80,17 +81,32 @@ test("read model enforces creation/update audit-pair coherence and exact persist
   assert.match(model, /parseProClubWeeklyTrainingDraft/);
 });
 
-test("Head Coach UI remains capability-gated and mounts saved-DRAFT history when production evidence is verified", async () => {
+test("Head Coach UI keeps Existing-DRAFT edit behind its dedicated capability and fixed-shape editor", async () => {
   const component = await source(files.component);
+  const editor = await source(files.editor);
   const workspace = await source(files.workspace);
+
   assert.match(component, /authority\.staffRole === "HEAD_COACH"/);
+  assert.match(component, /PRO_CLUB_WEEKLY_TRAINING_EXISTING_DRAFT_EDIT_AVAILABLE/);
+  assert.match(component, /Edit DRAFT/);
+  assert.match(component, /<WeeklyTrainingExistingDraftEditor/);
   assert.match(component, /setNextCursor\(result\.value\.nextCursor\)/);
   assert.match(component, /Load more saved drafts/);
   assert.match(component, /loadPage\(nextCursor, true\)/);
   assert.match(component, /new Map\(current\.map/);
   assert.match(component, /Refresh saved drafts/);
-  assert.doesNotMatch(component, /\bEdit\b/);
-  assert.doesNotMatch(component, /\bSave\b/);
+
+  assert.match(editor, /Fixed-shape Weekly Training edit/);
+  assert.match(editor, /editProClubWeeklyTrainingExistingDraft/);
+  assert.match(editor, /getHeadCoachWeeklyTrainingSavedDraftDetail/);
+  assert.match(editor, /exactIntendedDraft/);
+  assert.match(editor, /complete read-back/i);
+  assert.match(editor, /Save DRAFT edit/);
+  assert.doesNotMatch(editor, /Add session/);
+  assert.doesNotMatch(editor, /Remove session/);
+  assert.doesNotMatch(editor, /Add block/);
+  assert.doesNotMatch(editor, /Remove block/);
+
   assert.match(workspace, /WEEKLY_TRAINING_SAVED_DRAFT_READ_AVAILABLE \? \(/);
   assert.match(workspace, /<WeeklyTrainingSavedDrafts authority=\{authority\} \/>/);
   assert.match(workspace, /<SavedDraftReadPending \/>/);
