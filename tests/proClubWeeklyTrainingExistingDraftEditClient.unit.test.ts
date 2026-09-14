@@ -29,7 +29,10 @@ const draft = {
   }],
 };
 
-const expectedPlanUpdatedAt = "2026-09-14T06:00:00.000Z";
+const expectedPlanUpdatedAt = {
+  seconds: 1_757_829_600,
+  nanoseconds: 123_456_789,
+} as const;
 
 test("existing-DRAFT edit client validates and accepts exact server result", async () => {
   const result = await editProClubWeeklyTrainingExistingDraft(
@@ -69,4 +72,29 @@ test("existing-DRAFT edit client rejects unverifiable response", async () => {
     ),
     (error) => error instanceof ProClubWeeklyTrainingExistingDraftEditClientError && error.code === "INVALID_RESPONSE",
   );
+});
+
+
+test("existing-DRAFT client preserves nanosecond concurrency precision", async () => {
+  let received:
+    | { readonly seconds: number; readonly nanoseconds: number }
+    | undefined;
+
+  await editProClubWeeklyTrainingExistingDraft(
+    { planId: "plan-a", expectedPlanUpdatedAt, draft },
+    async (request) => {
+      received = request.expectedPlanUpdatedAt;
+      return {
+        data: {
+          status: "COMPLETED",
+          clubId: request.draft.clubId,
+          planId: request.planId,
+          documentCount: 3,
+          updatedAt: "2026-09-14T06:05:00.000Z",
+        },
+      };
+    },
+  );
+
+  assert.deepEqual(received, expectedPlanUpdatedAt);
 });

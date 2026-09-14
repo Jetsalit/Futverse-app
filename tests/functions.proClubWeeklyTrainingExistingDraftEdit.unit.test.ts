@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  canonicalIsoTimestamp,
+  exactWeeklyTrainingTimestampToken,
   validateWeeklyTrainingExistingDraftEditInput,
   WeeklyTrainingExistingDraftEditError,
 } from "../functions/src/proClubWeeklyTrainingExistingDraftEdit/core.ts";
@@ -34,7 +34,10 @@ const draft = {
   }],
 };
 
-const EXPECTED_UPDATED_AT = "2026-09-14T06:00:00.000Z";
+const EXPECTED_UPDATED_AT = {
+  seconds: 1_757_829_600,
+  nanoseconds: 123_456_789,
+} as const;
 
 test("Existing-DRAFT edit input reuses canonical Weekly Training validation", () => {
   const result = validateWeeklyTrainingExistingDraftEditInput({
@@ -43,13 +46,23 @@ test("Existing-DRAFT edit input reuses canonical Weekly Training validation", ()
     draft,
   });
   assert.equal(result.planId, "plan-a");
-  assert.equal(result.expectedPlanUpdatedAt, EXPECTED_UPDATED_AT);
+  assert.deepEqual(result.expectedPlanUpdatedAt, EXPECTED_UPDATED_AT);
   assert.equal(result.draft.clubId, "club-a");
 });
 
 test("Existing-DRAFT edit rejects non-canonical envelope and timestamp", () => {
-  assert.equal(canonicalIsoTimestamp(EXPECTED_UPDATED_AT), true);
-  assert.equal(canonicalIsoTimestamp("2026-09-14"), false);
+  assert.equal(exactWeeklyTrainingTimestampToken(EXPECTED_UPDATED_AT), true);
+  assert.equal(
+    exactWeeklyTrainingTimestampToken({
+      seconds: EXPECTED_UPDATED_AT.seconds,
+      nanoseconds: 1_000_000_000,
+    }),
+    false,
+  );
+  assert.equal(
+    exactWeeklyTrainingTimestampToken("2026-09-14T06:00:00.123Z"),
+    false,
+  );
   assert.throws(
     () => validateWeeklyTrainingExistingDraftEditInput({
       planId: "plan-a",

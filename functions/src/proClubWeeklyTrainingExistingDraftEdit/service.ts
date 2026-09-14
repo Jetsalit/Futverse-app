@@ -2,6 +2,7 @@ import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import {
   validateWeeklyTrainingExistingDraftEditInput,
   WeeklyTrainingExistingDraftEditError,
+  type WeeklyTrainingExistingDraftEditTimestampToken,
 } from "./core.ts";
 
 export interface WeeklyTrainingExistingDraftEditServiceDependencies {
@@ -58,11 +59,16 @@ function sameTimestamp(left: unknown, right: unknown): boolean {
   );
 }
 
-function timestampMatchesIso(value: unknown, expectedIso: string): boolean {
+function timestampMatchesToken(
+  value: unknown,
+  expected: WeeklyTrainingExistingDraftEditTimestampToken,
+): boolean {
   const parts = timestampParts(value);
-  if (!parts) return false;
-  const millis = parts.seconds * 1_000 + Math.floor(parts.nanoseconds / 1_000_000);
-  return Number.isSafeInteger(millis) && new Date(millis).toISOString() === expectedIso;
+  return Boolean(
+    parts &&
+    parts.seconds === expected.seconds &&
+    parts.nanoseconds === expected.nanoseconds
+  );
 }
 
 function sameKeys(value: Record<string, unknown>, expectedKeys: readonly string[]): boolean {
@@ -111,7 +117,7 @@ function conflict(message: string): never {
 function validatePlanAuditAndIdentity(
   data: Record<string, unknown>,
   actorUid: string,
-  expectedPlanUpdatedAt: string,
+  expectedPlanUpdatedAt: WeeklyTrainingExistingDraftEditTimestampToken,
   clubDraft: ReturnType<typeof validateWeeklyTrainingExistingDraftEditInput>["draft"],
 ): void {
   if (
@@ -128,7 +134,7 @@ function validatePlanAuditAndIdentity(
   ) {
     conflict("Existing Weekly Training DRAFT identity or audit state changed.");
   }
-  if (!timestampMatchesIso(data.updatedAt, expectedPlanUpdatedAt)) {
+  if (!timestampMatchesToken(data.updatedAt, expectedPlanUpdatedAt)) {
     conflict("Existing Weekly Training DRAFT is stale.");
   }
 }

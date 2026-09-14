@@ -174,7 +174,7 @@ export default function WeeklyTrainingExistingDraftEditor({
     try {
       await editProClubWeeklyTrainingExistingDraft({
         planId: detail.planId,
-        expectedPlanUpdatedAt: detail.updatedAt,
+        expectedPlanUpdatedAt: detail.updatedAtOrder,
         draft,
       });
       const confirmed = await readBackIntendedState();

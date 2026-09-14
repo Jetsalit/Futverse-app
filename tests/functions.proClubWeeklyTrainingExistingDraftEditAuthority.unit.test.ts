@@ -18,6 +18,9 @@ test("Existing-DRAFT writer binds actor authority to active canonical membership
   assert.match(source, /staff\?\.status\s*!==\s*"ACTIVE"/);
   assert.match(source, /staff\?\.staffRole\s*!==\s*"HEAD_COACH"/);
   assert.match(source, /data\.authorUid\s*!==\s*actorUid/);
+  assert.match(source, /parts\.seconds === expected\.seconds/);
+  assert.match(source, /parts\.nanoseconds === expected\.nanoseconds/);
+  assert.doesNotMatch(source, /timestampMatchesIso/);
 });
 
 test("Existing-DRAFT writer also validates technical authority membership and staff evidence", async () => {

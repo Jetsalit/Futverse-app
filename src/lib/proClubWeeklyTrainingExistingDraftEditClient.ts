@@ -12,7 +12,10 @@ export const WEEKLY_TRAINING_EXISTING_DRAFT_EDIT_CALLABLE =
 
 export interface ProClubWeeklyTrainingExistingDraftEditRequest {
   readonly planId: string;
-  readonly expectedPlanUpdatedAt: string;
+  readonly expectedPlanUpdatedAt: {
+    readonly seconds: number;
+    readonly nanoseconds: number;
+  };
   readonly draft: ProClubWeeklyTrainingDraft;
 }
 
@@ -55,6 +58,24 @@ function canonicalIsoTimestamp(value: unknown): value is string {
   if (typeof value !== "string" || value.trim() !== value) return false;
   const millis = Date.parse(value);
   return !Number.isNaN(millis) && new Date(millis).toISOString() === value;
+}
+
+function exactTimestampToken(value: unknown): value is {
+  readonly seconds: number;
+  readonly nanoseconds: number;
+} {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const raw = value as Record<string, unknown>;
+  const keys = Object.keys(raw).sort();
+  return (
+    keys.length === 2 &&
+    keys[0] === "nanoseconds" &&
+    keys[1] === "seconds" &&
+    Number.isSafeInteger(raw.seconds) &&
+    Number.isInteger(raw.nanoseconds) &&
+    (raw.nanoseconds as number) >= 0 &&
+    (raw.nanoseconds as number) <= 999_999_999
+  );
 }
 
 function expectedDocumentCount(draft: ProClubWeeklyTrainingDraft): number {
@@ -111,7 +132,7 @@ export async function editProClubWeeklyTrainingExistingDraft(
 ): Promise<ProClubWeeklyTrainingExistingDraftEditResult> {
   if (
     !isValidDocumentIdentifier(input.planId) ||
-    !canonicalIsoTimestamp(input.expectedPlanUpdatedAt)
+    !exactTimestampToken(input.expectedPlanUpdatedAt)
   ) {
     throw new ProClubWeeklyTrainingExistingDraftEditClientError("INVALID_ARGUMENT");
   }
