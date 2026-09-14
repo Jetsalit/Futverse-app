@@ -11,6 +11,7 @@ import {
 
 const stamp = (seconds: number, nanoseconds = 0) => ({ seconds, nanoseconds });
 const BASE_STAMP = stamp(1_757_280_100, 500_000);
+const EDITED_STAMP = stamp(BASE_STAMP.seconds, BASE_STAMP.nanoseconds + 1);
 const plan = (authorUid = "hc-a", overrides: Record<string, unknown> = {}, id = "plan-a") => ({
   id,
   data: {
@@ -63,6 +64,10 @@ const block = {
     updatedBy: "hc-a",
   },
 };
+const blockDocument = (overrides: Record<string, unknown> = {}) => ({
+  ...block,
+  data: { ...block.data, ...overrides },
+});
 
 function baseOps(): WeeklyTrainingSavedDraftReadOps {
   return {
@@ -115,6 +120,29 @@ test("list page preserves authoritative Firestore order and uses the twentieth q
   assert.deepEqual(result.value.nextCursor, { updatedAt: same, planId: ids[19] });
 });
 
+test("list page accepts edited summaries and keeps the advanced twentieth update audit as its cursor", async () => {
+  const docs = Array.from({ length: WEEKLY_TRAINING_SAVED_DRAFT_PAGE_SIZE + 1 }, (_, index) => {
+    const updatedAt = stamp(BASE_STAMP.seconds + 100 - index, index);
+    return plan("hc-a", { updatedAt }, `edited-plan-${String(99 - index).padStart(2, "0")}`);
+  });
+  const ops: WeeklyTrainingSavedDraftReadOps = {
+    ...baseOps(),
+    async listPlanPage() { return docs; },
+  };
+
+  const result = await listHeadCoachWeeklyTrainingSavedDrafts("club-a", "hc-a", null, ops);
+  assert.equal(result.state, "FOUND");
+  if (result.state !== "FOUND") return;
+  assert.deepEqual(
+    result.value.items.map((item) => item.planId),
+    docs.slice(0, WEEKLY_TRAINING_SAVED_DRAFT_PAGE_SIZE).map((item) => item.id),
+  );
+  assert.deepEqual(result.value.nextCursor, {
+    updatedAt: stamp(BASE_STAMP.seconds + 81, 19),
+    planId: docs[19]?.id,
+  });
+});
+
 test("list page returns no cursor when the page is exhausted", async () => {
   const ops: WeeklyTrainingSavedDraftReadOps = { ...baseOps(), async listPlanPage() { return [plan()]; } };
   const result = await listHeadCoachWeeklyTrainingSavedDrafts("club-a", "hc-a", null, ops);
@@ -163,6 +191,23 @@ test("detail bounds session and block reads by trusted cardinality and audit par
     { path: "proClubs/club-a/weeklyTrainingPlans/plan-a/sessions", maxDocuments: 2 },
     { path: "proClubs/club-a/weeklyTrainingPlans/plan-a/sessions/2026-09-08-1600/blocks", maxDocuments: 2 },
   ]);
+});
+
+test("detail accepts one coherent advanced update audit across plan session and block", async () => {
+  const ops: WeeklyTrainingSavedDraftReadOps = {
+    ...baseOps(),
+    async readDocument() { return plan("hc-a", { updatedAt: EDITED_STAMP }); },
+    async listDocuments(path) {
+      if (path.at(-1) === "sessions") return [session({ updatedAt: EDITED_STAMP })];
+      if (path.at(-1) === "blocks") return [blockDocument({ updatedAt: EDITED_STAMP })];
+      return [];
+    },
+  };
+  const result = await getHeadCoachWeeklyTrainingSavedDraftDetail("club-a", "hc-a", "plan-a", ops);
+  assert.equal(result.state, "FOUND");
+  if (result.state !== "FOUND") return;
+  assert.deepEqual(result.value.createdAtOrder, BASE_STAMP);
+  assert.deepEqual(result.value.updatedAtOrder, EDITED_STAMP);
 });
 
 test("detail rejects child audit drift before rendering", async () => {
