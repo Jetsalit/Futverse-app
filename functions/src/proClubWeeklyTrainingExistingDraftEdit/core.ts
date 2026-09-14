@@ -18,9 +18,14 @@ export class WeeklyTrainingExistingDraftEditError extends Error {
   }
 }
 
+export interface WeeklyTrainingExistingDraftEditTimestampToken {
+  readonly seconds: number;
+  readonly nanoseconds: number;
+}
+
 export interface ValidatedWeeklyTrainingExistingDraftEditInput {
   readonly planId: string;
-  readonly expectedPlanUpdatedAt: string;
+  readonly expectedPlanUpdatedAt: WeeklyTrainingExistingDraftEditTimestampToken;
   readonly draft: ValidatedWeeklyTrainingDraft;
 }
 
@@ -33,10 +38,19 @@ export function exactWeeklyTrainingDocumentId(value: unknown): value is string {
   );
 }
 
-export function canonicalIsoTimestamp(value: unknown): value is string {
-  if (typeof value !== "string" || value.trim() !== value) return false;
-  const millis = Date.parse(value);
-  return !Number.isNaN(millis) && new Date(millis).toISOString() === value;
+export function exactWeeklyTrainingTimestampToken(
+  value: unknown,
+): value is WeeklyTrainingExistingDraftEditTimestampToken {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const raw = value as Record<string, unknown>;
+  const keys = Object.keys(raw).sort();
+  if (keys.length !== 2 || keys[0] !== "nanoseconds" || keys[1] !== "seconds") return false;
+  return (
+    Number.isSafeInteger(raw.seconds) &&
+    Number.isInteger(raw.nanoseconds) &&
+    (raw.nanoseconds as number) >= 0 &&
+    (raw.nanoseconds as number) <= 999_999_999
+  );
 }
 
 export function validateWeeklyTrainingExistingDraftEditInput(value: unknown):
@@ -63,17 +77,20 @@ export function validateWeeklyTrainingExistingDraftEditInput(value: unknown):
       "Canonical plan ID required.",
     );
   }
-  if (!canonicalIsoTimestamp(input.expectedPlanUpdatedAt)) {
+  if (!exactWeeklyTrainingTimestampToken(input.expectedPlanUpdatedAt)) {
     throw new WeeklyTrainingExistingDraftEditError(
       "INVALID_ARGUMENT",
-      "Canonical expected plan update timestamp required.",
+      "Exact expected plan update timestamp required.",
     );
   }
 
   try {
     return {
       planId: input.planId,
-      expectedPlanUpdatedAt: input.expectedPlanUpdatedAt,
+      expectedPlanUpdatedAt: {
+        seconds: input.expectedPlanUpdatedAt.seconds,
+        nanoseconds: input.expectedPlanUpdatedAt.nanoseconds,
+      },
       draft: validateWeeklyTrainingDraft(input.draft),
     };
   } catch (error) {
