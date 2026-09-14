@@ -223,6 +223,14 @@ import {
   executeSaveProClubWeeklyTrainingDraftCallable,
   type SafeWeeklyTrainingDraftSaveCallableLogger,
 } from "./proClubWeeklyTrainingDraftSave/callableHandler.ts";
+import {
+  createWeeklyTrainingExistingDraftEditService,
+  type WeeklyTrainingExistingDraftEditService,
+} from "./proClubWeeklyTrainingExistingDraftEdit/service.ts";
+import {
+  executeEditProClubWeeklyTrainingExistingDraftCallable,
+  type SafeWeeklyTrainingExistingDraftEditCallableLogger,
+} from "./proClubWeeklyTrainingExistingDraftEdit/callableHandler.ts";
 
 const safeResolutionCallableLogger: SafeCallableLogger = {
   warn(message, meta) {
@@ -242,8 +250,18 @@ const safeWeeklyTrainingDraftSaveCallableLogger: SafeWeeklyTrainingDraftSaveCall
   },
 };
 
+const safeWeeklyTrainingExistingDraftEditCallableLogger: SafeWeeklyTrainingExistingDraftEditCallableLogger = {
+  warn(message, meta) {
+    logWarn(message, meta);
+  },
+  error(message, meta) {
+    logError(message, meta);
+  },
+};
+
 let cachedResolutionService: ProClubStaffCandidateResolutionService | null = null;
 let cachedWeeklyTrainingDraftSaveService: WeeklyTrainingDraftSaveService | null = null;
+let cachedWeeklyTrainingExistingDraftEditService: WeeklyTrainingExistingDraftEditService | null = null;
 
 function getResolutionService(): ProClubStaffCandidateResolutionService {
   if (!cachedResolutionService) {
@@ -266,6 +284,16 @@ function getWeeklyTrainingDraftSaveService(): WeeklyTrainingDraftSaveService {
     });
   }
   return cachedWeeklyTrainingDraftSaveService;
+}
+
+function getWeeklyTrainingExistingDraftEditService(): WeeklyTrainingExistingDraftEditService {
+  if (!cachedWeeklyTrainingExistingDraftEditService) {
+    const adminServices = initializeAdminServices();
+    cachedWeeklyTrainingExistingDraftEditService = createWeeklyTrainingExistingDraftEditService({
+      firestore: adminServices.firestore,
+    });
+  }
+  return cachedWeeklyTrainingExistingDraftEditService;
 }
 
 export const resolveProClubStaffCandidateV1 = onCall(
@@ -349,6 +377,32 @@ export const saveProClubWeeklyTrainingDraftV1 = onCall(
         allowedAppIds: [FUTVERSE_PRODUCTION_WEB_APP_ID],
         enforceAppCheck: true,
         logger: safeWeeklyTrainingDraftSaveCallableLogger,
+      },
+    );
+  },
+);
+
+export const editProClubWeeklyTrainingExistingDraftV1 = onCall(
+  {
+    region: "asia-southeast1",
+    enforceAppCheck: true,
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    concurrency: 20,
+    maxInstances: 10,
+  },
+  async (request) => {
+    return await executeEditProClubWeeklyTrainingExistingDraftCallable(
+      {
+        auth: request.auth ? { uid: request.auth.uid } : undefined,
+        app: request.app ? { appId: request.app.appId } : undefined,
+        data: request.data,
+      },
+      {
+        service: getWeeklyTrainingExistingDraftEditService(),
+        allowedAppIds: [FUTVERSE_PRODUCTION_WEB_APP_ID],
+        enforceAppCheck: true,
+        logger: safeWeeklyTrainingExistingDraftEditCallableLogger,
       },
     );
   },

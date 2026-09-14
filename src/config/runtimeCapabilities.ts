@@ -11,6 +11,11 @@ export interface WeeklyTrainingFreshDraftProductionCapabilityEvidence {
   readonly productionRulesVerified?: boolean;
 }
 
+export interface WeeklyTrainingExistingDraftEditCapabilityEvidence {
+  readonly dev?: boolean;
+  readonly productionWriterVerified?: boolean;
+}
+
 export function isFunctionBackedProClubWebAvailable(
   environment: RuntimeCapabilityEnvironment,
 ): boolean {
@@ -43,6 +48,19 @@ export function isWeeklyTrainingFreshDraftProductionAvailable(
   evidence: WeeklyTrainingFreshDraftProductionCapabilityEvidence,
 ): boolean {
   return evidence.productionRulesVerified === true;
+}
+
+/**
+ * Existing-DRAFT editing has its own capability boundary. Local dev may exercise
+ * the reviewed callable through the Vite dev server, but deployable production
+ * builds remain closed until the dedicated writer has been independently
+ * verified and activated by a reviewed source change. This capability never
+ * inherits the generic Function-backed, Fresh-DRAFT, or Saved-DRAFT read gates.
+ */
+export function isWeeklyTrainingExistingDraftEditAvailable(
+  evidence: WeeklyTrainingExistingDraftEditCapabilityEvidence,
+): boolean {
+  return evidence.dev === true || evidence.productionWriterVerified === true;
 }
 
 /**
@@ -110,6 +128,21 @@ export const PRO_CLUB_WEEKLY_TRAINING_FRESH_DRAFT_PRODUCTION_AVAILABLE =
       PRODUCTION_WEEKLY_TRAINING_FRESH_DRAFT_RULES_VERIFIED,
   });
 
+/**
+ * Existing-DRAFT production activation is deliberately still closed. The
+ * implementation branch may exercise the callable only in local/dev runtime.
+ * This evidence must remain false until the dedicated writer deployment and
+ * independent production verification gate is explicitly completed.
+ */
+export const PRODUCTION_WEEKLY_TRAINING_EXISTING_DRAFT_EDIT_WRITER_VERIFIED = false as const;
+
+export const PRO_CLUB_WEEKLY_TRAINING_EXISTING_DRAFT_EDIT_AVAILABLE =
+  isWeeklyTrainingExistingDraftEditAvailable({
+    dev: readViteDevServerRuntime(),
+    productionWriterVerified:
+      PRODUCTION_WEEKLY_TRAINING_EXISTING_DRAFT_EDIT_WRITER_VERIFIED,
+  });
+
 export const SPARK_FUNCTION_BACKED_WEB_UNAVAILABLE_MESSAGE =
   "This server-backed action is unavailable in the Spark production web app. Use the reviewed trusted-local operator path where available.";
 
@@ -118,3 +151,6 @@ export const WEEKLY_TRAINING_SAVED_DRAFT_READ_UNAVAILABLE_MESSAGE =
 
 export const WEEKLY_TRAINING_FRESH_DRAFT_PRODUCTION_UNAVAILABLE_MESSAGE =
   "Fresh Weekly Training DRAFT saving will be enabled only after the exact schema-v2 Firestore Rules are deployed and independently verified in production.";
+
+export const WEEKLY_TRAINING_EXISTING_DRAFT_EDIT_UNAVAILABLE_MESSAGE =
+  "Existing Weekly Training DRAFT editing remains closed until its dedicated trusted writer is deployed and independently verified in production.";
