@@ -89,10 +89,14 @@ export function canUseWeeklyTrainingDraftSave(
 
 export default function WeeklyTrainingDraftComposer({
   authority,
+  initialDraft,
 }: {
   authority: ProClubOrganizationAuthority;
+  initialDraft?: ProClubWeeklyTrainingFreshDraftInput;
 }) {
-  const [draft, setDraft] = useState<ProClubWeeklyTrainingFreshDraftInput>(freshDraft);
+  const [draft, setDraft] = useState<ProClubWeeklyTrainingFreshDraftInput>(
+    () => initialDraft ?? freshDraft(),
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
