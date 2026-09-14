@@ -3203,6 +3203,10 @@ function proClubWeeklyTrainingValidBlockCreateV2(clubId, planId, sessionId, bloc
     && proClubWeeklyTrainingExactFreshAuditV2(data);
 }
 
+// Existing-DRAFT Edit V1 — direct schema-v2 client updates stay closed.
+// Firestore Rules cannot enumerate dynamic descendants to prove a complete
+// hierarchy update. The future trusted B3 writer owns that transaction.
+
 match /proClubs/{clubId}/technicalGovernance/current {
   allow get: if currentUserIsActive()
     && proClubWeeklyTrainingActiveMemberV1(clubId, request.auth.uid)
@@ -3227,7 +3231,12 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
       request.resource.data.get('schemaVersion', 0) == 1
         && proClubWeeklyTrainingValidDraftPlanCreateV1(clubId)
     );
-  allow update: if proClubWeeklyTrainingValidDraftPlanUpdateV1(clubId);
+  allow update: if request.resource.data.get('schemaVersion', 0) == 2
+    ? false
+    : (
+      request.resource.data.get('schemaVersion', 0) == 1
+        && proClubWeeklyTrainingValidDraftPlanUpdateV1(clubId)
+    );
   allow delete: if false;
 
   match /sessions/{sessionId} {
@@ -3247,11 +3256,16 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
             sessionId
           )
       );
-    allow update: if proClubWeeklyTrainingValidSessionUpdateV1(
-      clubId,
-      planId,
-      sessionId
-    );
+    allow update: if request.resource.data.get('schemaVersion', 0) == 2
+      ? false
+      : (
+        request.resource.data.get('schemaVersion', 0) == 1
+          && proClubWeeklyTrainingValidSessionUpdateV1(
+            clubId,
+            planId,
+            sessionId
+          )
+      );
     allow delete: if false;
 
     match /blocks/{blockId} {
@@ -3273,12 +3287,17 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
               blockId
             )
         );
-      allow update: if proClubWeeklyTrainingValidBlockUpdateV1(
-        clubId,
-        planId,
-        sessionId,
-        blockId
-      );
+      allow update: if request.resource.data.get('schemaVersion', 0) == 2
+        ? false
+        : (
+          request.resource.data.get('schemaVersion', 0) == 1
+            && proClubWeeklyTrainingValidBlockUpdateV1(
+              clubId,
+              planId,
+              sessionId,
+              blockId
+            )
+        );
       allow delete: if false;
     }
   }
