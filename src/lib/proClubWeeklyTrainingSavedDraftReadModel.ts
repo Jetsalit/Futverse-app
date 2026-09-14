@@ -26,6 +26,16 @@ export interface WeeklyTrainingSavedDraftAuditBinding {
   readonly timestamp: WeeklyTrainingSavedDraftTimestampOrder;
 }
 
+interface WeeklyTrainingSavedDraftAuditPair {
+  readonly creation: WeeklyTrainingSavedDraftAuditBinding;
+  readonly update: WeeklyTrainingSavedDraftAuditBinding;
+}
+
+interface WeeklyTrainingSavedDraftAuditExpectation {
+  readonly creation: WeeklyTrainingSavedDraftAuditBinding;
+  readonly update?: WeeklyTrainingSavedDraftAuditBinding;
+}
+
 export interface WeeklyTrainingSavedDraftSessionCardinality {
   readonly sessionId: string;
   readonly orderIndex: number;
@@ -148,33 +158,43 @@ function sameStringArray(value: unknown, expected: readonly string[]): boolean {
   );
 }
 
-function freshAudit(
+function auditPair(
   value: Record<string, unknown>,
-  expected?: WeeklyTrainingSavedDraftAuditBinding,
+  expected?: WeeklyTrainingSavedDraftAuditExpectation,
 ): {
-  createdAt: string;
-  updatedAt: string;
-  createdAtOrder: WeeklyTrainingSavedDraftTimestampOrder;
-  updatedAtOrder: WeeklyTrainingSavedDraftTimestampOrder;
-  actorUid: string;
+  creation: {
+    actorUid: string;
+    iso: string;
+    order: WeeklyTrainingSavedDraftTimestampOrder;
+  };
+  update: {
+    actorUid: string;
+    iso: string;
+    order: WeeklyTrainingSavedDraftTimestampOrder;
+  };
 } | null {
   if (!isValidDocumentIdentifier(value.createdBy) || !isValidDocumentIdentifier(value.updatedBy)) return null;
-  if (value.createdBy !== value.updatedBy) return null;
   const createdAt = timestampValue(value.createdAt);
   const updatedAt = timestampValue(value.updatedAt);
-  if (!createdAt || !updatedAt || !sameTimestampOrder(createdAt.order, updatedAt.order)) return null;
+  if (
+    !createdAt ||
+    !updatedAt ||
+    compareWeeklyTrainingSavedDraftTimestampOrder(updatedAt.order, createdAt.order) < 0
+  ) return null;
   if (
     expected &&
-    (value.createdBy !== expected.actorUid || !sameTimestampOrder(createdAt.order, expected.timestamp))
+    (
+      value.createdBy !== expected.creation.actorUid ||
+      !sameTimestampOrder(createdAt.order, expected.creation.timestamp) ||
+      value.updatedBy !== (expected.update?.actorUid ?? expected.creation.actorUid) ||
+      (expected.update !== undefined && !sameTimestampOrder(updatedAt.order, expected.update.timestamp))
+    )
   ) {
     return null;
   }
   return {
-    createdAt: createdAt.iso,
-    updatedAt: updatedAt.iso,
-    createdAtOrder: createdAt.order,
-    updatedAtOrder: updatedAt.order,
-    actorUid: value.createdBy,
+    creation: { actorUid: value.createdBy, iso: createdAt.iso, order: createdAt.order },
+    update: { actorUid: value.updatedBy, iso: updatedAt.iso, order: updatedAt.order },
   };
 }
 
@@ -207,12 +227,14 @@ function parsePlanSummary(input: {
   }
   const planCreatedAt = timestampValue(raw.createdAt);
   if (!planCreatedAt) return invalid("Saved-DRAFT plan createdAt is invalid.");
-  const auditValue = freshAudit(raw, {
-    actorUid: input.actorUid,
-    timestamp: planCreatedAt.order,
+  const auditValue = auditPair(raw, {
+    creation: {
+      actorUid: input.actorUid,
+      timestamp: planCreatedAt.order,
+    },
   });
-  if (!auditValue || auditValue.actorUid !== input.actorUid) {
-    return invalid("Saved-DRAFT plan fresh-save audit metadata is invalid.");
+  if (!auditValue) {
+    return invalid("Saved-DRAFT plan creation or update audit metadata is invalid.");
   }
   return {
     state: "VALID",
@@ -226,10 +248,10 @@ function parsePlanSummary(input: {
       ...(secondaryObjective !== undefined ? { secondaryObjective } : {}),
       ...(headCoachNote !== undefined ? { headCoachNote } : {}),
       sessionCount,
-      createdAt: auditValue.createdAt,
-      updatedAt: auditValue.updatedAt,
-      createdAtOrder: auditValue.createdAtOrder,
-      updatedAtOrder: auditValue.updatedAtOrder,
+      createdAt: auditValue.creation.iso,
+      updatedAt: auditValue.update.iso,
+      createdAtOrder: auditValue.creation.order,
+      updatedAtOrder: auditValue.update.order,
     },
   };
 }
@@ -264,7 +286,7 @@ function blockPayloadMatchesPersisted(
 
 function parseSession(
   document: WeeklyTrainingSavedDraftDocument,
-  expectedAudit: WeeklyTrainingSavedDraftAuditBinding,
+  expectedAudit: WeeklyTrainingSavedDraftAuditExpectation,
 ): {
   orderIndex: number;
   blockCount: number;
@@ -276,7 +298,7 @@ function parseSession(
     !raw ||
     !hasOnlyFields(raw, SESSION_FIELDS) ||
     raw.schemaVersion !== SAVED_DRAFT_HIERARCHY_SCHEMA_VERSION ||
-    !freshAudit(raw, expectedAudit)
+    !auditPair(raw, expectedAudit)
   ) return null;
   if (!Number.isInteger(raw.orderIndex) || (raw.orderIndex as number) < 0 || (raw.orderIndex as number) > 13) return null;
   const blockCount = boundedCount(raw.blockCount, 1, 12);
@@ -310,7 +332,7 @@ function parseSession(
 
 function parseBlock(
   document: WeeklyTrainingSavedDraftDocument,
-  expectedAudit: WeeklyTrainingSavedDraftAuditBinding,
+  expectedAudit: WeeklyTrainingSavedDraftAuditExpectation,
 ): {
   orderIndex: number;
   value: ProClubTrainingBlockDraft;
@@ -321,7 +343,7 @@ function parseBlock(
     !raw ||
     !hasOnlyFields(raw, BLOCK_FIELDS) ||
     raw.schemaVersion !== SAVED_DRAFT_HIERARCHY_SCHEMA_VERSION ||
-    !freshAudit(raw, expectedAudit)
+    !auditPair(raw, expectedAudit)
   ) return null;
   if (!Number.isInteger(raw.orderIndex) || (raw.orderIndex as number) < 0 || (raw.orderIndex as number) > 11) return null;
   const candidate = {
@@ -368,8 +390,8 @@ export function buildWeeklyTrainingSavedDraftSessionCardinality(
   document: WeeklyTrainingSavedDraftDocument,
   expectedAudit: WeeklyTrainingSavedDraftAuditBinding,
 ): WeeklyTrainingSavedDraftModelResult<WeeklyTrainingSavedDraftSessionCardinality> {
-  const parsed = parseSession(document, expectedAudit);
-  if (!parsed) return invalid("Saved-DRAFT session metadata, payload, or fresh-save audit binding is invalid.");
+  const parsed = parseSession(document, { creation: expectedAudit });
+  if (!parsed) return invalid("Saved-DRAFT session metadata, payload, or creation/update audit binding is invalid.");
   return {
     state: "VALID",
     value: {
@@ -393,9 +415,15 @@ export function buildWeeklyTrainingSavedDraftDetail(input: {
   if (input.sessions.length !== summaryResult.value.sessionCount) {
     return invalid("Saved-DRAFT session hierarchy cardinality does not match the trusted plan metadata.");
   }
-  const expectedAudit: WeeklyTrainingSavedDraftAuditBinding = {
-    actorUid: summaryResult.value.authorUid,
-    timestamp: summaryResult.value.createdAtOrder,
+  const expectedAudit: WeeklyTrainingSavedDraftAuditPair = {
+    creation: {
+      actorUid: summaryResult.value.authorUid,
+      timestamp: summaryResult.value.createdAtOrder,
+    },
+    update: {
+      actorUid: summaryResult.value.authorUid,
+      timestamp: summaryResult.value.updatedAtOrder,
+    },
   };
   const parsedSessions = input.sessions.map((entry) => {
     const session = parseSession(entry.document, expectedAudit);

@@ -62,12 +62,16 @@ test("saved-DRAFT adapter is read-only, tenant-bound, page-bounded and preserves
   }
 });
 
-test("read model enforces immutable audit parity and exact persisted payload parity", async () => {
+test("read model enforces creation/update audit-pair coherence and exact persisted payload parity", async () => {
   const model = await source(files.model);
-  assert.match(model, /value\.createdBy !== value\.updatedBy/);
-  assert.match(model, /sameTimestampOrder\(createdAt\.order, updatedAt\.order\)/);
-  assert.match(model, /actorUid: summaryResult\.value\.authorUid/);
-  assert.match(model, /timestamp: summaryResult\.value\.createdAtOrder/);
+  assert.doesNotMatch(model, /value\.createdBy !== value\.updatedBy/);
+  assert.doesNotMatch(model, /sameTimestampOrder\(createdAt\.order, updatedAt\.order\)/);
+  assert.match(model, /interface WeeklyTrainingSavedDraftAuditPair/);
+  assert.match(model, /readonly creation: WeeklyTrainingSavedDraftAuditBinding/);
+  assert.match(model, /readonly update: WeeklyTrainingSavedDraftAuditBinding/);
+  assert.match(model, /compareWeeklyTrainingSavedDraftTimestampOrder\(updatedAt\.order, createdAt\.order\) < 0/);
+  assert.match(model, /creation:[\s\S]*timestamp: summaryResult\.value\.createdAtOrder/);
+  assert.match(model, /update:[\s\S]*timestamp: summaryResult\.value\.updatedAtOrder/);
   assert.match(model, /sessionPayloadMatchesPersisted/);
   assert.match(model, /blockPayloadMatchesPersisted/);
   assert.match(model, /sameStringArray/);
