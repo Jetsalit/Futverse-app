@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CalendarDays, ChevronRight, Pencil, RefreshCw, ShieldCheck } from "lucide-react";
+import { CalendarDays, ChevronRight, Copy, Pencil, RefreshCw, ShieldCheck, X } from "lucide-react";
 import { PRO_CLUB_WEEKLY_TRAINING_EXISTING_DRAFT_EDIT_AVAILABLE } from "../../../config/runtimeCapabilities";
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
 import {
@@ -13,7 +13,9 @@ import type {
   WeeklyTrainingSavedDraftSummary,
 } from "../../../lib/proClubWeeklyTrainingSavedDraftReadModel";
 import { deriveProClubWeeklyPeriodizationBoard } from "../../../lib/proClubWeeklyPeriodizationBoard";
+import { buildFreshWeeklyTrainingDraftFromSavedDraft } from "../../../lib/proClubWeeklyTrainingReviseAsNewDraft";
 import WeeklyPeriodizationBoard from "./WeeklyPeriodizationBoard";
+import WeeklyTrainingDraftComposer from "./WeeklyTrainingDraftComposer";
 import WeeklyTrainingExistingDraftEditor from "./WeeklyTrainingExistingDraftEditor";
 
 function canReadSavedDrafts(authority: ProClubOrganizationAuthority): boolean {
@@ -54,9 +56,11 @@ function displayTimestamp(value: string): string {
 function DraftDetail({
   detail,
   onEdit,
+  onUseAsNew,
 }: {
   detail: WeeklyTrainingSavedDraftDetail;
   onEdit: () => void;
+  onUseAsNew: () => void;
 }) {
   const board = deriveProClubWeeklyPeriodizationBoard(detail.draft);
 
@@ -69,6 +73,7 @@ function DraftDetail({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-bold text-cyan-200">DRAFT</span>
+          <button type="button" onClick={onUseAsNew} className="inline-flex items-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-xs font-black text-emerald-100 transition hover:bg-emerald-400/20"><Copy size={14} /> Use as new DRAFT</button>
           {PRO_CLUB_WEEKLY_TRAINING_EXISTING_DRAFT_EDIT_AVAILABLE && (
             <button type="button" onClick={onEdit} className="inline-flex items-center gap-2 rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-3 py-2 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20"><Pencil size={14} /> Edit DRAFT</button>
           )}
@@ -94,6 +99,7 @@ export default function WeeklyTrainingSavedDrafts({ authority }: { authority: Pr
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [detail, setDetail] = useState<WeeklyTrainingSavedDraftDetail | null>(null);
   const [editing, setEditing] = useState(false);
+  const [revisingAsNew, setRevisingAsNew] = useState(false);
   const [loadingList, setLoadingList] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -110,6 +116,7 @@ export default function WeeklyTrainingSavedDrafts({ authority }: { authority: Pr
       setSelectedPlanId(null);
       setDetail(null);
       setEditing(false);
+      setRevisingAsNew(false);
     }
     const result = await listHeadCoachWeeklyTrainingSavedDrafts(authority.organizationId, authority.userId, cursor);
     if (generation !== requestGeneration.current) return;
@@ -143,6 +150,7 @@ export default function WeeklyTrainingSavedDrafts({ authority }: { authority: Pr
     setSelectedPlanId(null);
     setDetail(null);
     setEditing(false);
+    setRevisingAsNew(false);
     setLoadingList(false);
     setLoadingMore(false);
     setLoadingDetail(false);
@@ -157,6 +165,7 @@ export default function WeeklyTrainingSavedDrafts({ authority }: { authority: Pr
     setSelectedPlanId(planId);
     setDetail(null);
     setEditing(false);
+    setRevisingAsNew(false);
     setLoadingDetail(true);
     setMessage("");
     const result = await getHeadCoachWeeklyTrainingSavedDraftDetail(authority.organizationId, authority.userId, planId);
@@ -199,27 +208,49 @@ export default function WeeklyTrainingSavedDrafts({ authority }: { authority: Pr
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-300">Saved DRAFTs</p>
           <h4 id="weekly-training-saved-drafts" className="mt-2 text-lg font-black text-white">Weekly Training history</h4>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">Read validated Head Coach DRAFTs from the club source of truth. Existing-DRAFT editing appears only when its dedicated capability is enabled.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">Read validated Head Coach DRAFTs from the club source of truth. On Spark, reuse a validated DRAFT as the starting point for a new Fresh-DRAFT save without mutating the source.</p>
         </div>
-        <button type="button" onClick={() => void refresh()} disabled={busy || editing} className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-bold text-slate-200 transition hover:border-cyan-400/50 disabled:cursor-not-allowed disabled:opacity-60">
+        <button type="button" onClick={() => void refresh()} disabled={busy || editing || revisingAsNew} className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-bold text-slate-200 transition hover:border-cyan-400/50 disabled:cursor-not-allowed disabled:opacity-60">
           <RefreshCw size={16} className={loadingList ? "animate-spin" : ""} /> Refresh saved drafts
         </button>
       </div>
 
-      <div className="flex items-start gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs leading-5 text-emerald-100/80"><ShieldCheck size={16} className="mt-0.5 shrink-0 text-emerald-300" />Saved-DRAFT reads stay bound to the current active Head Coach and Pro Club. Edit writes use the dedicated trusted callable only.</div>
+      <div className="flex items-start gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs leading-5 text-emerald-100/80"><ShieldCheck size={16} className="mt-0.5 shrink-0 text-emerald-300" />Saved-DRAFT reads stay bound to the current active Head Coach and Pro Club. “Use as new DRAFT” reuses the reviewed Fresh-DRAFT persistence path and leaves the source DRAFT unchanged; direct Existing-DRAFT mutation remains separately capability-gated.</div>
       {message && <p role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">{message}</p>}
       {loadingList && <p role="status" className="text-sm text-slate-400">Loading saved drafts…</p>}
       {!loadingList && drafts.length === 0 && !message && <p className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-400">No saved Weekly Training DRAFTs are available for this Head Coach yet.</p>}
 
-      {drafts.length > 0 && !editing && <div className="grid gap-3 lg:grid-cols-2">{drafts.map((draft) => (
+      {drafts.length > 0 && !editing && !revisingAsNew && <div className="grid gap-3 lg:grid-cols-2">{drafts.map((draft) => (
         <button key={draft.planId} type="button" onClick={() => void openDetail(draft.planId)} disabled={busy} className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 text-left transition hover:border-cyan-400/40 disabled:cursor-not-allowed disabled:opacity-60">
           <div className="flex items-start justify-between gap-3"><div><p className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-[0.12em] text-cyan-300"><CalendarDays size={14} /> {displayDate(draft.weekStartDate)}</p><p className="mt-2 font-black text-white">{draft.squadLabel}</p><p className="mt-1 line-clamp-2 text-sm text-slate-400">{draft.mainObjective}</p><p className="mt-3 text-xs text-slate-500">Saved {displayTimestamp(draft.updatedAt)}</p></div><ChevronRight size={18} className="mt-1 shrink-0 text-slate-500" /></div>
         </button>
       ))}</div>}
 
-      {nextCursor && !loadingList && !editing && <button type="button" onClick={() => void loadPage(nextCursor, true)} disabled={busy} className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-bold text-slate-200 disabled:cursor-not-allowed disabled:opacity-60">{loadingMore ? "Loading more…" : "Load more saved drafts"}</button>}
+      {nextCursor && !loadingList && !editing && !revisingAsNew && <button type="button" onClick={() => void loadPage(nextCursor, true)} disabled={busy} className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-bold text-slate-200 disabled:cursor-not-allowed disabled:opacity-60">{loadingMore ? "Loading more…" : "Load more saved drafts"}</button>}
       {loadingDetail && selectedPlanId && <p role="status" className="text-sm text-slate-400">Validating saved DRAFT detail…</p>}
-      {detail && !editing && <DraftDetail detail={detail} onEdit={() => setEditing(true)} />}
+      {detail && !editing && !revisingAsNew && (
+        <DraftDetail
+          detail={detail}
+          onEdit={() => { setRevisingAsNew(false); setEditing(true); }}
+          onUseAsNew={() => { setEditing(false); setRevisingAsNew(true); }}
+        />
+      )}
+      {detail && revisingAsNew && (
+        <div className="space-y-4 rounded-2xl border border-emerald-400/20 bg-emerald-950/10 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-300">New DRAFT from saved plan</p>
+              <p className="mt-2 text-sm leading-6 text-slate-300">The saved source remains unchanged. Edit this copied content and save it through the existing Fresh-DRAFT path to create a new plan identity.</p>
+            </div>
+            <button type="button" onClick={() => setRevisingAsNew(false)} className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-3 py-2 text-xs font-bold text-slate-200 hover:border-slate-500"><X size={14} /> Cancel</button>
+          </div>
+          <WeeklyTrainingDraftComposer
+            key={`revise-as-new-${detail.planId}`}
+            authority={authority}
+            initialDraft={buildFreshWeeklyTrainingDraftFromSavedDraft(detail.draft)}
+          />
+        </div>
+      )}
       {detail && editing && (
         <WeeklyTrainingExistingDraftEditor
           authority={authority}
