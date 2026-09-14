@@ -7,7 +7,7 @@ import type {
   WeeklyTrainingExistingDraftEditService,
 } from "./service.ts";
 
-export const PRODUCTION_WEEKLY_TRAINING_EXISTING_DRAFT_EDIT_SERVER_ENABLED = false as const;
+export const PRODUCTION_WEEKLY_TRAINING_EXISTING_DRAFT_EDIT_SERVER_ENABLED: boolean = false;
 
 export interface WeeklyTrainingExistingDraftEditCallableContext {
   readonly auth?: { readonly uid: string };
@@ -37,14 +37,14 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 function defaultExecutionEnabled(): boolean {
   return (
     process.env.FUNCTIONS_EMULATOR === "true" ||
-    PRODUCTION_WEEKLY_TRAINING_EXISTING_DRAFT_EDIT_SERVER_ENABLED === true
+    PRODUCTION_WEEKLY_TRAINING_EXISTING_DRAFT_EDIT_SERVER_ENABLED
   );
 }
 
 export async function executeEditProClubWeeklyTrainingExistingDraftCallable(
   context: WeeklyTrainingExistingDraftEditCallableContext,
   options: ExecuteWeeklyTrainingExistingDraftEditCallableOptions,
-): Promise<EditWeeklyTrainingExistingDraftEditResult> {
+): Promise<EditWeeklyTrainingExistingDraftResult> {
   const {
     service,
     allowedAppIds,
