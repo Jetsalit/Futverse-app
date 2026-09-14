@@ -213,8 +213,17 @@ export class WeeklyTrainingExistingDraftEditService {
       if (!clubSnap.exists || club?.status !== "ACTIVE") {
         throw new WeeklyTrainingExistingDraftEditError("FAILED_PRECONDITION", "Pro Club is not active.");
       }
-      if (!memberSnap.exists || member?.status !== "ACTIVE") {
-        throw new WeeklyTrainingExistingDraftEditError("PERMISSION_DENIED", "Active Pro Club membership required.");
+      if (
+        !memberSnap.exists ||
+        member?.status !== "ACTIVE" ||
+        !["OWNER", "ADMIN", "MEMBER"].includes(
+          String(member?.authorizationRole ?? ""),
+        )
+      ) {
+        throw new WeeklyTrainingExistingDraftEditError(
+          "PERMISSION_DENIED",
+          "Active Pro Club membership authority required.",
+        );
       }
       if (!staffSnap.exists || staff?.status !== "ACTIVE" || staff?.staffRole !== "HEAD_COACH") {
         throw new WeeklyTrainingExistingDraftEditError("PERMISSION_DENIED", "Active Head Coach assignment required.");
@@ -237,7 +246,11 @@ export class WeeklyTrainingExistingDraftEditService {
       const authorityMember = authorityMemberSnap.data();
       const authorityStaff = authorityStaffSnap.data();
       if (
-        !authorityMemberSnap.exists || authorityMember?.status !== "ACTIVE" ||
+        !authorityMemberSnap.exists ||
+        authorityMember?.status !== "ACTIVE" ||
+        !["OWNER", "ADMIN", "MEMBER"].includes(
+          String(authorityMember?.authorizationRole ?? ""),
+        ) ||
         !authorityStaffSnap.exists || authorityStaff?.status !== "ACTIVE" ||
         authorityStaff?.staffRole !== governance.authorityRole
       ) {

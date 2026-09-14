@@ -38,5 +38,6 @@ test("Existing-DRAFT writer keeps all hierarchy writes inside the trusted transa
   assert.match(source, /transaction\.update\(blockSnapshot\.ref/);
   assert.doesNotMatch(source, /\.set\(/);
   assert.doesNotMatch(source, /\.create\(/);
-  assert.doesNotMatch(source, /\.delete\(/);
+  assert.doesNotMatch(source, /transaction\.delete\(/);
+  assert.match(source, /FieldValue\.delete\(\)/);
 });
