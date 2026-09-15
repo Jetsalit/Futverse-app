@@ -5,6 +5,11 @@ import { useOrganizationRuntime } from "../../contexts/OrganizationRuntimeContex
 import { PRO_CLUB_OPERATIONS_PREVIEW_AVAILABLE } from "../../config/proClubOperationsCapabilities";
 import { isOrganizationRuntimeAuthorized } from "../../lib/organizationRuntimeSelection";
 import { isValidDocumentIdentifier } from "../../lib/proClubModel";
+import {
+  clearProClubWorkspaceSession,
+  readProClubWorkspaceSession,
+  rememberProClubWorkspaceSession,
+} from "../../lib/proClubWorkspaceSession";
 import { onboardingErrorMessage, staffRoleLabels } from "../../lib/proClubOnboarding";
 import { isProClubReviewer, proClubOnboardingRepository as repository } from "../../lib/firestore/proClubOnboardingRepository";
 import type { ProClubOrganizationAuthority } from "../../lib/firestore/proClubOrganizationAdapter";
@@ -51,28 +56,57 @@ function ClubWorkspace({ clubId, uid }: { clubId: string; uid: string }) {
 export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void; onLogout: () => void }) {
   const { actualUser, currentUser } = useAuth();
   const { runtimeState, selectProClub } = useOrganizationRuntime();
-  const [tab, setTab] = useState<"join" | "workspace">("join");
-  const [clubReference, setClubReference] = useState("");
+  const [restoredClubReference] = useState(() => readProClubWorkspaceSession());
+  const [tab, setTab] = useState<"join" | "workspace">(restoredClubReference ? "workspace" : "join");
+  const [clubReference, setClubReference] = useState(restoredClubReference ?? "");
   const [inputError, setInputError] = useState("");
   const uid = actualUser?.uid;
   const allowed = uid && currentUser?.uid === uid && !currentUser.supportPresentation;
   const authorized = allowed && runtimeState.uid === uid && isOrganizationRuntimeAuthorized(runtimeState) && runtimeState.selection?.organizationType === "PRO_CLUB";
+
+  useEffect(() => {
+    if (!uid || !restoredClubReference) return;
+    selectProClub(restoredClubReference);
+  }, [restoredClubReference, selectProClub, uid]);
+
+  useEffect(() => {
+    if (!authorized || runtimeState.selection?.organizationType !== "PRO_CLUB") return;
+    rememberProClubWorkspaceSession(runtimeState.selection.organizationId);
+  }, [authorized, runtimeState.selection]);
+
   function openClub(clubId: string) {
     if (!isValidDocumentIdentifier(clubId)) { setInputError("Enter the club workspace reference provided by your club."); return; }
     setInputError(""); setTab("workspace"); setClubReference(clubId);
     selectProClub(clubId); // Also refreshes the same selection through the existing authority bridge.
   }
+
+  function openStaffOnboarding() {
+    clearProClubWorkspaceSession();
+    setInputError("");
+    setTab("join");
+  }
+
+  function leaveProClub() {
+    clearProClubWorkspaceSession();
+    onBack();
+  }
+
+  function signOut() {
+    clearProClubWorkspaceSession();
+    onLogout();
+  }
+
   if (!allowed) return <p role="alert">Sign in with your own account to open Pro Club onboarding.</p>;
   return <div className="min-h-screen bg-slate-50 text-slate-900">
     <header className="border-b border-slate-200 bg-white"><div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
-      <button className="inline-flex items-center gap-2 text-sm font-bold text-slate-600" onClick={onBack}><ArrowLeft size={18} /> Back to FutVerse</button>
+      <button className="inline-flex items-center gap-2 text-sm font-bold text-slate-600" onClick={leaveProClub}><ArrowLeft size={18} /> Back to FutVerse</button>
       <div className="flex items-center gap-2 font-black"><Shield size={20} className="text-emerald-600" /> Pro Club</div>
-      <button className="text-sm font-bold text-slate-600" onClick={onLogout}>Sign out</button>
+      <button className="text-sm font-bold text-slate-600" onClick={signOut}>Sign out</button>
     </div></header>
     <main className="mx-auto max-w-5xl space-y-7 px-4 py-7 sm:px-6 sm:py-10">
       <div><h1 className="text-3xl font-black tracking-tight">Your club starts here</h1><p className="mt-2 text-slate-500">Join your team or open your club workspace.</p></div>
       <nav aria-label="Pro Club sections" className="flex flex-wrap gap-2">
-        <button className={tab === "join" ? buttonClass : secondaryClass} aria-current={tab === "join" ? "page" : undefined} onClick={() => setTab("join")}>Staff onboarding</button>
+        <button className={tab === "join" ? buttonClass : secondaryClass} aria-current={tab === "join" ? "page" : undefined} onClick={openStaffOnboarding}>Staff onboarding</button>
         <button className={tab === "workspace" ? buttonClass : secondaryClass} aria-current={tab === "workspace" ? "page" : undefined} onClick={() => setTab("workspace")}>Club workspace</button>
       </nav>
       {tab === "join" ? <StaffOnboarding key={uid} uid={uid} onOpenClub={openClub} /> : <div className="space-y-7">

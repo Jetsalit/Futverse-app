@@ -1,6 +1,7 @@
 import type { User, UserRole } from "./AuthContext";
 import type { Membership } from "../types/Membership";
 import { isActivePrivilegedActor } from "../lib/privilegedAuthorization";
+import { readProClubWorkspaceSession } from "../lib/proClubWorkspaceSession";
 
 type MembershipAuthorizationFields = Pick<
   Membership,
@@ -140,6 +141,9 @@ export function appShellLandingPage(
     isActivePrivilegedActor(user, ["SUPERADMIN"])
   ) {
     return "superadmin";
+  }
+  if (readProClubWorkspaceSession()) {
+    return "pro_club";
   }
   return "dashboard";
 }
