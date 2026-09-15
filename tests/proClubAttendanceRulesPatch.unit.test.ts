@@ -27,6 +27,19 @@ test("Attendance Rules patch adds only the dedicated helper and match surfaces",
   assert.match(patched, /allow delete: if false;/);
 });
 
+test("Attendance helpers and match are inserted inside the Pro Club scope", () => {
+  const patched = patchProClubAttendanceRulesV1(currentRules);
+  const proClubStart = patched.indexOf("match /proClubs/{clubId}");
+  const proPlayersStart = patched.indexOf("match /proPlayers/{proPlayerId}");
+  const helperIndex = patched.indexOf(PRO_CLUB_ATTENDANCE_RULES_HELPER_MARKER);
+  const matchIndex = patched.indexOf(PRO_CLUB_ATTENDANCE_RULES_MATCH_MARKER);
+
+  assert.ok(proClubStart >= 0);
+  assert.ok(proPlayersStart > proClubStart);
+  assert.ok(helperIndex > proClubStart && helperIndex < proPlayersStart);
+  assert.ok(matchIndex > helperIndex && matchIndex < proPlayersStart);
+});
+
 test("Attendance session Rules freeze strict identity and immutable session updates", () => {
   const patched = patchProClubAttendanceRulesV1(currentRules);
 
@@ -43,7 +56,7 @@ test("Attendance record Rules require Head Coach plus ACTIVE First Team roster o
   const patched = patchProClubAttendanceRulesV1(currentRules);
 
   assert.match(patched, /proClubSquadRosterActiveHeadCoachV1\(clubId\)/);
-  assert.match(patched, /proClubAttendanceRosterEligibleV1\(clubId, playerKey\)/);
+  assert.match(patched, /proClubAttendanceRosterEligibleV1\(playerKey\)/);
   assert.match(patched, /player\.get\('status', ''\) == 'ACTIVE'/);
   assert.match(patched, /player\.get\('squadLabel', ''\) == 'First Team'/);
   assert.match(patched, /\['PRESENT', 'LATE', 'ABSENT', 'EXCUSED'\]/);
@@ -90,9 +103,10 @@ test("Attendance patch preserves CRLF repositories", () => {
 });
 
 test("Attendance patch fails closed on partial marker state", () => {
+  const anchor = "      allow list, create, update, delete: if false;\n\n      match /members/{uid} {";
   const partial = currentRules.replace(
-    "    // Pro Club Weekly Training V1 — root Firestore Rules integration.",
-    `    ${PRO_CLUB_ATTENDANCE_RULES_HELPER_MARKER}\n    // Pro Club Weekly Training V1 — root Firestore Rules integration.`,
+    anchor,
+    `      ${PRO_CLUB_ATTENDANCE_RULES_HELPER_MARKER}\n${anchor}`,
   );
   assert.throws(
     () => patchProClubAttendanceRulesV1(partial),
