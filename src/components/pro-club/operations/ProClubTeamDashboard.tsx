@@ -1,9 +1,8 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   CalendarDays,
   ClipboardCheck,
   Dumbbell,
-  LayoutDashboard,
   Users,
 } from "lucide-react";
 
@@ -181,7 +180,7 @@ function OverviewCard({
   title,
   description,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   title: string;
   description: string;
 }) {
