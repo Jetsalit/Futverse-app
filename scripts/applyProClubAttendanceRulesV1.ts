@@ -21,17 +21,24 @@ export function patchProClubAttendanceRulesV1(original: string): string {
     throw new Error("STOP: partial Pro Club Attendance Rules patch detected");
   }
 
-  const proClubScopeAnchor = withEol(`      allow list, create, update, delete: if false;
+  const helperAnchor = withEol(`    match /proClubs/{clubId} {
+      allow get: if isSignedIn()`, fileEol);
+  const matchAnchor = withEol(`      allow list, create, update, delete: if false;
 
       match /members/{uid} {`, fileEol);
 
-  if (original.split(proClubScopeAnchor).length !== 2) {
+  if (original.split(helperAnchor).length !== 2) {
     throw new Error(
-      "STOP: Pro Club Attendance insertion anchor is missing or ambiguous",
+      "STOP: Pro Club Attendance helper anchor is missing or ambiguous",
+    );
+  }
+  if (original.split(matchAnchor).length !== 2) {
+    throw new Error(
+      "STOP: Pro Club Attendance match anchor is missing or ambiguous",
     );
   }
 
-  const attendanceBlock = withEol(`      ${PRO_CLUB_ATTENDANCE_RULES_HELPER_MARKER}
+  const helpers = withEol(`      ${PRO_CLUB_ATTENDANCE_RULES_HELPER_MARKER}
       function proClubAttendanceValidSessionKeysV1(data) {
         return data.keys().hasAll([
             'schemaVersion', 'sessionDate', 'startTime', 'squadLabel',
@@ -153,7 +160,9 @@ export function patchProClubAttendanceRulesV1(original: string): string {
           && data.get('updatedBy', '') == request.auth.uid;
       }
 
-      ${PRO_CLUB_ATTENDANCE_RULES_MATCH_MARKER}
+`, fileEol);
+
+  const attendanceMatch = withEol(`      ${PRO_CLUB_ATTENDANCE_RULES_MATCH_MARKER}
       match /attendanceSessions/{attendanceSessionId} {
         allow get, list: if proClubSquadRosterActiveStaffV1(clubId);
         allow create: if proClubAttendanceValidSessionCreateV1(
@@ -181,10 +190,18 @@ export function patchProClubAttendanceRulesV1(original: string): string {
 
 `, fileEol);
 
-  const next = original.replace(
-    proClubScopeAnchor,
-    attendanceBlock + proClubScopeAnchor,
+  let next = original.replace(
+    helperAnchor,
+    withEol(`    match /proClubs/{clubId} {
+`, fileEol) + helpers + withEol(`      allow get: if isSignedIn()`, fileEol),
   );
+  next = next.replace(
+    matchAnchor,
+    withEol(`      allow list, create, update, delete: if false;
+
+`, fileEol) + attendanceMatch + withEol(`      match /members/{uid} {`, fileEol),
+  );
+
   if (next === original) {
     throw new Error("STOP: Attendance Rules patch produced no change");
   }
