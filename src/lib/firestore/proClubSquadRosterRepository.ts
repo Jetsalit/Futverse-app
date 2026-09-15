@@ -11,15 +11,15 @@ import {
 
 import { auth, db } from "../firebase";
 import {
-  canBindProClubRosterFutId,
   canTransitionProClubSquadRosterStatus,
   validateProClubSquadRosterFootballInput,
   type ValidProClubSquadRosterFootballInput,
 } from "../proClubSquadRoster";
-import { isExactPlayerKey } from "../playerIdentityFoundation";
 import {
-  isValidDocumentIdentifier,
-} from "../proClubModel";
+  isExactPlayerKey,
+  isIssuedFutIdV1,
+} from "../playerIdentityFoundation";
+import { isValidDocumentIdentifier } from "../proClubModel";
 import {
   resolveProClubOrganizationAuthority,
   type ProClubOrganizationAuthority,
@@ -84,25 +84,14 @@ const DOCUMENT_KEYS = [
   "updatedBy",
 ] as const;
 
-function isPlainObject(
-  value: unknown,
-): value is Record<string, unknown> {
-  return Boolean(
-    value &&
-      typeof value === "object" &&
-      !Array.isArray(value),
-  );
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-function hasExactKeys(
-  value: Record<string, unknown>,
-): boolean {
+function hasExactKeys(value: Record<string, unknown>): boolean {
   const actual = Object.keys(value).sort();
   const expected = [...DOCUMENT_KEYS].sort();
-  return (
-    actual.length === expected.length &&
-    actual.join(",") === expected.join(",")
-  );
+  return actual.length === expected.length && actual.join(",") === expected.join(",");
 }
 
 function requireExactPathIdentity(
@@ -114,25 +103,19 @@ function requireExactPathIdentity(
   }
 }
 
-function requireExactPlayerKey(
-  value: unknown,
-): asserts value is string {
+function requireExactPlayerKey(value: unknown): asserts value is string {
   if (!isExactPlayerKey(value)) {
     throw new Error("playerKey must be an exact Player Identity key.");
   }
 }
 
-function requireAuthenticatedUid(
-  ops: ProClubSquadRosterRepositoryOps,
-): string {
+function requireAuthenticatedUid(ops: ProClubSquadRosterRepositoryOps): string {
   const uid = ops.getAuthenticatedUid();
   requireExactPathIdentity(uid, "Authenticated actor UID");
   return uid;
 }
 
-function assertActiveStaffAuthority(
-  authority: ProClubOrganizationAuthority,
-): void {
+function assertActiveStaffAuthority(authority: ProClubOrganizationAuthority): void {
   if (
     authority.organizationStatus !== "ACTIVE" ||
     authority.membershipStatus !== "ACTIVE" ||
@@ -145,9 +128,7 @@ function assertActiveStaffAuthority(
   }
 }
 
-function assertHeadCoachAuthority(
-  authority: ProClubOrganizationAuthority,
-): void {
+function assertHeadCoachAuthority(authority: ProClubOrganizationAuthority): void {
   assertActiveStaffAuthority(authority);
 
   if (authority.staffRole !== "HEAD_COACH") {
@@ -165,15 +146,10 @@ async function resolveRequiredAuthority(
   const result = await ops.resolveAuthority(clubId, uid);
 
   if (result.state !== "FOUND") {
-    throw new Error(
-      `Pro Club authority could not be resolved: ${result.state}.`,
-    );
+    throw new Error(`Pro Club authority could not be resolved: ${result.state}.`);
   }
 
-  if (
-    result.value.organizationId !== clubId ||
-    result.value.userId !== uid
-  ) {
+  if (result.value.organizationId !== clubId || result.value.userId !== uid) {
     throw new Error("Resolved Pro Club authority identity mismatch.");
   }
 
@@ -230,40 +206,27 @@ function parseRosterDocument(
   };
 }
 
-async function assertRequestedFutIdBinding(
-  playerKey: string,
+/**
+ * Client-side transition guard only.
+ *
+ * futIdRegistry is intentionally not client-readable. Exact FUTID -> playerKey
+ * compatibility is therefore enforced by Firestore Rules on the write itself.
+ * The repository still fails early on malformed FUTIDs and non-null replacement.
+ */
+function assertRequestedFutIdTransition(
   currentFutId: string | null,
   requestedFutId: string | null,
-  ops: ProClubSquadRosterRepositoryOps,
-): Promise<void> {
-  if (currentFutId === null && requestedFutId === null) {
-    return;
-  }
-
-  let registryPlayerKey: unknown = null;
-
-  if (requestedFutId !== null) {
-    const registry = await ops.readDocument([
-      "futIdRegistry",
-      requestedFutId,
-    ]);
-
-    if (registry.exists && isPlainObject(registry.data)) {
-      registryPlayerKey = registry.data.playerKey;
+): void {
+  if (currentFutId === null) {
+    if (requestedFutId === null || isIssuedFutIdV1(requestedFutId)) {
+      return;
     }
+
+    throw new Error("Requested FUTID is not a valid issued FUTID V1 value.");
   }
 
-  if (
-    !canBindProClubRosterFutId(
-      playerKey,
-      currentFutId,
-      requestedFutId,
-      registryPlayerKey,
-    )
-  ) {
-    throw new Error(
-      "Requested FUTID is not compatible with the canonical playerKey.",
-    );
+  if (requestedFutId !== currentFutId) {
+    throw new Error("Existing non-null FUTID is immutable in Pro Club Squad V1.");
   }
 }
 
@@ -364,11 +327,7 @@ export async function listProClubSquadRoster(
   const authority = await resolveRequiredAuthority(clubId, uid, ops);
   assertActiveStaffAuthority(authority);
 
-  const snapshot = await ops.listDocuments([
-    "proClubs",
-    clubId,
-    "players",
-  ]);
+  const snapshot = await ops.listDocuments(["proClubs", clubId, "players"]);
 
   return snapshot.documents.map((item) => {
     if (!item.exists) {
@@ -431,26 +390,16 @@ export async function createProClubSquadRosterPlayer(
   const authority = await resolveRequiredAuthority(clubId, uid, ops);
   assertHeadCoachAuthority(authority);
 
-  const existing = await ops.readDocument([
-    "proClubs",
-    clubId,
-    "players",
-    playerKey,
-  ]);
+  const path = ["proClubs", clubId, "players", playerKey] as const;
+  const existing = await ops.readDocument(path);
 
   if (existing.exists) {
     throw new Error("Pro Club Squad roster player already exists.");
   }
 
-  await assertRequestedFutIdBinding(
-    playerKey,
-    null,
-    validation.value.futId,
-    ops,
-  );
+  assertRequestedFutIdTransition(null, validation.value.futId);
 
   const timestamp = ops.timestamp();
-  const path = ["proClubs", clubId, "players", playerKey] as const;
 
   await ops.createDocument(path, {
     ...cloneFootballFields(validation.value),
@@ -509,21 +458,11 @@ export async function updateProClubSquadRosterPlayer(
 
   const current = parseRosterDocument(playerKey, existing.data);
 
-  if (
-    !canTransitionProClubSquadRosterStatus(
-      current.status,
-      validation.value.status,
-    )
-  ) {
+  if (!canTransitionProClubSquadRosterStatus(current.status, validation.value.status)) {
     throw new Error("Invalid Pro Club Squad roster status transition.");
   }
 
-  await assertRequestedFutIdBinding(
-    playerKey,
-    current.futId,
-    validation.value.futId,
-    ops,
-  );
+  assertRequestedFutIdTransition(current.futId, validation.value.futId);
 
   await ops.updateDocument(path, {
     ...cloneFootballFields(validation.value),

@@ -9,9 +9,7 @@ import {
   updateProClubSquadRosterPlayer,
   type ProClubSquadRosterRepositoryOps,
 } from "../src/lib/firestore/proClubSquadRosterRepository";
-import type {
-  ProClubOrganizationAuthority,
-} from "../src/lib/firestore/proClubOrganizationAdapter";
+import type { ProClubOrganizationAuthority } from "../src/lib/firestore/proClubOrganizationAdapter";
 
 const CLUB_ID = "club-a";
 const HEAD_COACH_UID = "head-coach-a";
@@ -59,13 +57,12 @@ function makeOps(options?: {
     path: string;
     data: DocumentData;
   }> = [];
+  const reads: string[] = [];
   let tick = 0;
 
   const ops: ProClubSquadRosterRepositoryOps = {
     getAuthenticatedUid() {
-      return options?.uid === undefined
-        ? HEAD_COACH_UID
-        : options.uid;
+      return options?.uid === undefined ? HEAD_COACH_UID : options.uid;
     },
 
     async resolveAuthority() {
@@ -77,6 +74,7 @@ function makeOps(options?: {
 
     async readDocument(path) {
       const pathKey = key(path);
+      reads.push(pathKey);
       const data = documents.get(pathKey);
       return {
         id: path[path.length - 1] ?? "",
@@ -124,7 +122,7 @@ function makeOps(options?: {
     },
   };
 
-  return { ops, documents, writes };
+  return { ops, documents, writes, reads };
 }
 
 function rosterDocument(overrides: DocumentData = {}): DocumentData {
@@ -174,16 +172,8 @@ test("roster read fails closed without active staff authority", async () => {
   );
 });
 
-test("Head Coach creates an ACTIVE roster player and read-back verifies it", async () => {
-  const { ops, writes } = makeOps({
-    initial: {
-      [`futIdRegistry/${FUT_ID}`]: {
-        schemaVersion: 1,
-        futId: FUT_ID,
-        playerKey: PLAYER_KEY,
-      },
-    },
-  });
+test("Head Coach creates an ACTIVE roster player without client registry reads", async () => {
+  const { ops, writes, reads } = makeOps();
 
   const created = await createProClubSquadRosterPlayer(
     CLUB_ID,
@@ -200,29 +190,7 @@ test("Head Coach creates an ACTIVE roster player and read-back verifies it", asy
     writes[0]?.path,
     `proClubs/${CLUB_ID}/players/${PLAYER_KEY}`,
   );
-});
-
-test("create rejects a FUTID registry mapping for another playerKey", async () => {
-  const { ops, writes } = makeOps({
-    initial: {
-      [`futIdRegistry/${FUT_ID}`]: {
-        schemaVersion: 1,
-        futId: FUT_ID,
-        playerKey: "player-2",
-      },
-    },
-  });
-
-  await assert.rejects(
-    () => createProClubSquadRosterPlayer(
-      CLUB_ID,
-      PLAYER_KEY,
-      validInput,
-      ops,
-    ),
-    /FUTID is not compatible/i,
-  );
-  assert.equal(writes.length, 0);
+  assert.equal(reads.some((path) => path.startsWith("futIdRegistry/")), false);
 });
 
 test("non-Head-Coach cannot create or update roster records", async () => {
@@ -233,32 +201,29 @@ test("non-Head-Coach cannot create or update roster records", async () => {
   const { ops, writes } = makeOps({
     authority: assistantAuthority,
     initial: {
-      [`futIdRegistry/${FUT_ID}`]: {
-        schemaVersion: 1,
-        futId: FUT_ID,
-        playerKey: PLAYER_KEY,
-      },
       [`proClubs/${CLUB_ID}/players/${PLAYER_KEY}`]: rosterDocument(),
     },
   });
 
   await assert.rejects(
-    () => createProClubSquadRosterPlayer(
-      CLUB_ID,
-      "player-2",
-      { ...validInput, futId: null },
-      ops,
-    ),
+    () =>
+      createProClubSquadRosterPlayer(
+        CLUB_ID,
+        "player-2",
+        { ...validInput, futId: null },
+        ops,
+      ),
     /HEAD_COACH/,
   );
 
   await assert.rejects(
-    () => updateProClubSquadRosterPlayer(
-      CLUB_ID,
-      PLAYER_KEY,
-      validInput,
-      ops,
-    ),
+    () =>
+      updateProClubSquadRosterPlayer(
+        CLUB_ID,
+        PLAYER_KEY,
+        validInput,
+        ops,
+      ),
     /HEAD_COACH/,
   );
 
@@ -269,11 +234,6 @@ test("update permits ACTIVE to INACTIVE while preserving create audit fields", a
   const originalCreatedAt = { logical: "created" };
   const { ops, documents, writes } = makeOps({
     initial: {
-      [`futIdRegistry/${FUT_ID}`]: {
-        schemaVersion: 1,
-        futId: FUT_ID,
-        playerKey: PLAYER_KEY,
-      },
       [`proClubs/${CLUB_ID}/players/${PLAYER_KEY}`]: rosterDocument({
         createdAt: originalCreatedAt,
       }),
@@ -309,14 +269,27 @@ test("update permits ACTIVE to INACTIVE while preserving create audit fields", a
   );
 });
 
+test("null FUTID may be submitted for canonical binding without client registry reads", async () => {
+  const { ops, reads } = makeOps({
+    initial: {
+      [`proClubs/${CLUB_ID}/players/${PLAYER_KEY}`]: rosterDocument({ futId: null }),
+    },
+  });
+
+  const updated = await updateProClubSquadRosterPlayer(
+    CLUB_ID,
+    PLAYER_KEY,
+    validInput,
+    ops,
+  );
+
+  assert.equal(updated.futId, FUT_ID);
+  assert.equal(reads.some((path) => path.startsWith("futIdRegistry/")), false);
+});
+
 test("RELEASED roster player cannot return to ACTIVE", async () => {
   const { ops, writes } = makeOps({
     initial: {
-      [`futIdRegistry/${FUT_ID}`]: {
-        schemaVersion: 1,
-        futId: FUT_ID,
-        playerKey: PLAYER_KEY,
-      },
       [`proClubs/${CLUB_ID}/players/${PLAYER_KEY}`]: rosterDocument({
         status: "RELEASED",
       }),
@@ -324,40 +297,32 @@ test("RELEASED roster player cannot return to ACTIVE", async () => {
   });
 
   await assert.rejects(
-    () => updateProClubSquadRosterPlayer(
-      CLUB_ID,
-      PLAYER_KEY,
-      validInput,
-      ops,
-    ),
+    () => updateProClubSquadRosterPlayer(CLUB_ID, PLAYER_KEY, validInput, ops),
     /status transition/i,
   );
   assert.equal(writes.length, 0);
 });
 
 test("existing non-null FUTID cannot be replaced", async () => {
-  const { ops, writes } = makeOps({
+  const { ops, writes, reads } = makeOps({
     initial: {
-      [`futIdRegistry/FUT-PLAYER-002`]: {
-        schemaVersion: 1,
-        futId: "FUT-PLAYER-002",
-        playerKey: PLAYER_KEY,
-      },
       [`proClubs/${CLUB_ID}/players/${PLAYER_KEY}`]: rosterDocument(),
     },
   });
 
   await assert.rejects(
-    () => updateProClubSquadRosterPlayer(
-      CLUB_ID,
-      PLAYER_KEY,
-      {
-        ...validInput,
-        futId: "FUT-PLAYER-002",
-      },
-      ops,
-    ),
-    /FUTID is not compatible/i,
+    () =>
+      updateProClubSquadRosterPlayer(
+        CLUB_ID,
+        PLAYER_KEY,
+        {
+          ...validInput,
+          futId: "FUT-PLAYER-002",
+        },
+        ops,
+      ),
+    /immutable/i,
   );
   assert.equal(writes.length, 0);
+  assert.equal(reads.some((path) => path.startsWith("futIdRegistry/")), false);
 });
