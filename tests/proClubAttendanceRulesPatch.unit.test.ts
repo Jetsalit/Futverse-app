@@ -40,6 +40,24 @@ test("Attendance helpers and match are inserted inside the Pro Club scope", () =
   assert.ok(matchIndex > helperIndex && matchIndex < proPlayersStart);
 });
 
+test("Attendance replacement preserves regex end anchors literally", () => {
+  const patched = patchProClubAttendanceRulesV1(currentRules);
+  const expected =
+    "data.get('startTime', '').matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')";
+
+  assert.equal(patched.includes(expected), true);
+  assert.equal(
+    patched.indexOf("match /{document=**}", patched.indexOf(expected)) >
+      patched.indexOf(expected),
+    true,
+  );
+  assert.equal(
+    patched.lastIndexOf("proClubAttendanceValidSessionCreateV1") <
+      patched.lastIndexOf("match /proPlayers/{proPlayerId}"),
+    true,
+  );
+});
+
 test("Attendance session Rules freeze strict identity and immutable session updates", () => {
   const patched = patchProClubAttendanceRulesV1(currentRules);
 
