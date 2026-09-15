@@ -10,6 +10,8 @@ import type { ProClubOrganizationAuthority } from "../src/lib/firestore/proClubO
 
 const files = {
   portal: "src/components/pro-club/ProClubPortal.tsx",
+  teamDashboard:
+    "src/components/pro-club/operations/ProClubTeamDashboard.tsx",
   productionWorkspace:
     "src/components/pro-club/operations/ProClubHeadCoachWeeklyProductionWorkspace.tsx",
   draftComposer:
@@ -145,27 +147,40 @@ test("reuses the existing Weekly components and source-controlled capabilities",
   );
 });
 
-test("keeps the full Operations dashboard preview-only while wiring Squad into production", () => {
+test("keeps the full Operations dashboard preview-only while routing production through the team dashboard", () => {
   const portal = readFileSync(files.portal, "utf8");
+  const teamDashboard = readFileSync(files.teamDashboard, "utf8");
 
   assert.match(
     portal,
-    /PRO_CLUB_OPERATIONS_PREVIEW_AVAILABLE \? \(\s*<ProClubOperationsDashboard authority=\{authority\} \/>\s*\) : \(\s*<>\s*<div[^>]*>\s*<ProClubSquadRoster authority=\{authority\} \/>\s*<\/div>\s*<ProClubHeadCoachWeeklyProductionWorkspace authority=\{authority\} \/>\s*<\/>\s*\)/s,
+    /PRO_CLUB_OPERATIONS_PREVIEW_AVAILABLE \? \(\s*<ProClubOperationsDashboard authority=\{authority\} \/>\s*\) : \(\s*<ProClubTeamDashboard authority=\{authority\} \/>\s*\)/s,
   );
   assert.match(
     portal,
-    /import ProClubSquadRoster from "\.\/operations\/ProClubSquadRoster"/,
+    /import ProClubTeamDashboard from "\.\/operations\/ProClubTeamDashboard"/,
+  );
+  assert.match(
+    teamDashboard,
+    /import ProClubSquadRoster from "\.\/ProClubSquadRoster"/,
+  );
+  assert.match(
+    teamDashboard,
+    /import ProClubHeadCoachWeeklyProductionWorkspace from "\.\/ProClubHeadCoachWeeklyProductionWorkspace"/,
   );
   assert.equal(
     (portal.match(/<ProClubOperationsDashboard\b/g) ?? []).length,
     1,
   );
   assert.equal(
-    (portal.match(/<ProClubSquadRoster\b/g) ?? []).length,
+    (portal.match(/<ProClubTeamDashboard\b/g) ?? []).length,
     1,
   );
   assert.equal(
-    (portal.match(/<ProClubHeadCoachWeeklyProductionWorkspace\b/g) ?? [])
+    (teamDashboard.match(/<ProClubSquadRoster\b/g) ?? []).length,
+    1,
+  );
+  assert.equal(
+    (teamDashboard.match(/<ProClubHeadCoachWeeklyProductionWorkspace\b/g) ?? [])
       .length,
     1,
   );
