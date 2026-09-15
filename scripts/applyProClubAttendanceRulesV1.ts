@@ -190,17 +190,20 @@ export function patchProClubAttendanceRulesV1(original: string): string {
 
 `, fileEol);
 
-  let next = original.replace(
-    helperAnchor,
+  const helperReplacement =
     withEol(`    match /proClubs/{clubId} {
-`, fileEol) + helpers + withEol(`      allow get: if isSignedIn()`, fileEol),
-  );
-  next = next.replace(
-    matchAnchor,
+`, fileEol) +
+    helpers +
+    withEol(`      allow get: if isSignedIn()`, fileEol);
+  const matchReplacement =
     withEol(`      allow list, create, update, delete: if false;
 
-`, fileEol) + attendanceMatch + withEol(`      match /members/{uid} {`, fileEol),
-  );
+`, fileEol) +
+    attendanceMatch +
+    withEol(`      match /members/{uid} {`, fileEol);
+
+  let next = original.replace(helperAnchor, () => helperReplacement);
+  next = next.replace(matchAnchor, () => matchReplacement);
 
   if (next === original) {
     throw new Error("STOP: Attendance Rules patch produced no change");
