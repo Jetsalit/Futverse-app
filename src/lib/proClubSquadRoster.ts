@@ -247,7 +247,8 @@ export function canBindProClubRosterFutId(
   if (currentFutId !== null) {
     return (
       isIssuedFutIdV1(currentFutId) &&
-      requestedFutId === currentFutId
+      requestedFutId === currentFutId &&
+      registryPlayerKey === playerKey
     );
   }
 
