@@ -541,7 +541,6 @@ export async function updateProClubSquadRosterPlayer(
   const record = parseRosterDocument(playerKey, readBack.data);
   if (
     record.createdBy !== current.createdBy ||
-    record.createdAt !== current.createdAt ||
     record.updatedBy !== uid ||
     JSON.stringify(cloneFootballFields(record)) !==
       JSON.stringify(cloneFootballFields(validation.value))
