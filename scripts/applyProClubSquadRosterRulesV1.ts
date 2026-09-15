@@ -125,9 +125,8 @@ const helpers = withFileEol(`    ${HELPER_MARKER}
         && get(registryPath).data.get('playerKey', '') == playerKey;
     }
 
-    function proClubSquadRosterValidDataV1(playerKey, data) {
-      return validPlayerIdentityKeyV1(playerKey)
-        && data.keys().hasAll([
+    function proClubSquadRosterHasCanonicalKeysV1(data) {
+      return data.keys().hasAll([
           'schemaVersion', 'futId', 'firstName', 'lastName', 'position',
           'additionalPositions', 'jerseyNumber', 'squadLabel', 'status',
           'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
@@ -136,7 +135,12 @@ const helpers = withFileEol(`    ${HELPER_MARKER}
           'schemaVersion', 'futId', 'firstName', 'lastName', 'position',
           'additionalPositions', 'jerseyNumber', 'squadLabel', 'status',
           'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
-        ])
+        ]);
+    }
+
+    function proClubSquadRosterValidDataV1(playerKey, data) {
+      return validPlayerIdentityKeyV1(playerKey)
+        && proClubSquadRosterHasCanonicalKeysV1(data)
         && data.get('schemaVersion', 0) == 1
         && proClubSquadRosterFutIdCompatibleV1(playerKey, data.get('futId', null))
         && proClubSquadRosterNormalizedTextV1(data.get('firstName', ''), 80, false)
@@ -190,7 +194,9 @@ const helpers = withFileEol(`    ${HELPER_MARKER}
       let data = request.resource.data;
       let previous = resource.data;
       return proClubSquadRosterActiveHeadCoachV1(clubId)
-        && proClubSquadRosterValidDataV1(playerKey, previous)
+        && validPlayerIdentityKeyV1(playerKey)
+        && proClubSquadRosterHasCanonicalKeysV1(previous)
+        && previous.get('schemaVersion', 0) == 1
         && proClubSquadRosterValidDataV1(playerKey, data)
         && proClubSquadRosterValidStatusTransitionV1(
           previous.get('status', ''),
