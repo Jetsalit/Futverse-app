@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { RefreshCw, Search, ShieldCheck, Users } from "lucide-react";
+import { Edit3, Plus, RefreshCw, Search, ShieldCheck, Users } from "lucide-react";
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
 import {
   listProClubSquadRoster,
@@ -13,6 +13,8 @@ import {
   type ProClubSquadPositionGroup,
   type ProClubSquadStatusFilter,
 } from "./proClubSquadRosterViewModel";
+import ProClubSquadRosterEditor from "./ProClubSquadRosterEditor";
+import { generateProvisionalPlayerKey } from "./proClubSquadRosterEditorModel";
 
 const STATUS_OPTIONS: readonly ProClubSquadStatusFilter[] = [
   "ALL",
@@ -53,6 +55,8 @@ export default function ProClubSquadRoster({
   const [status, setStatus] = useState<ProClubSquadStatusFilter>("ALL");
   const [group, setGroup] = useState<ProClubSquadPositionGroup>("ALL");
   const [reloadToken, setReloadToken] = useState(0);
+  const [createPlayerKey, setCreatePlayerKey] = useState<string | null>(null);
+  const [editingPlayer, setEditingPlayer] = useState<ProClubSquadRosterRecord | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,6 +102,23 @@ export default function ProClubSquadRoster({
 
   const canWrite = authority.staffRole === "HEAD_COACH";
 
+  const openCreate = () => {
+    if (!canWrite) return;
+    setCreatePlayerKey(generateProvisionalPlayerKey(crypto.randomUUID()));
+  };
+
+  const handleSaved = (saved: ProClubSquadRosterRecord) => {
+    setRecords((previous) => {
+      const withoutSaved = previous.filter(
+        (record) => record.playerKey !== saved.playerKey,
+      );
+      return [...withoutSaved, saved];
+    });
+    setCreatePlayerKey(null);
+    setEditingPlayer(null);
+    setError(null);
+  };
+
   return (
     <section aria-labelledby="pro-club-squad-roster" className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -105,18 +126,30 @@ export default function ProClubSquadRoster({
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-300">Squad</p>
           <h3 id="pro-club-squad-roster" className="mt-2 text-xl font-black text-white">First Team</h3>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-            Canonical Pro Club roster from the reviewed tenant path. {canWrite ? "Head Coach mutation controls will be added in the next accepted UI slice." : "Your current staff role is read-only for roster data."}
+            Canonical Pro Club roster from the reviewed tenant path. {canWrite ? "Head Coach may add and edit roster football fields. Other staff remain read-only." : "Your current staff role is read-only for roster data."}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setReloadToken((value) => value + 1)}
-          disabled={loading}
-          className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs font-bold text-slate-300 hover:border-cyan-500/40 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
-          Refresh
-        </button>
+        <div className="flex flex-wrap gap-2">
+          {canWrite && (
+            <button
+              type="button"
+              onClick={openCreate}
+              className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-3 py-2 text-xs font-black text-slate-950 hover:bg-cyan-300"
+            >
+              <Plus size={15} />
+              Add player
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setReloadToken((value) => value + 1)}
+            disabled={loading}
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs font-bold text-slate-300 hover:border-cyan-500/40 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
@@ -179,6 +212,15 @@ export default function ProClubSquadRoster({
           <Users className="mx-auto text-slate-600" size={28} />
           <h4 className="mt-3 font-bold text-white">No First Team players yet</h4>
           <p className="mt-2 text-sm text-slate-500">The canonical Pro Club roster is empty. No Academy or global player fallback is shown.</p>
+          {canWrite && (
+            <button
+              type="button"
+              onClick={openCreate}
+              className="mt-4 rounded-xl bg-cyan-400 px-4 py-2 text-sm font-black text-slate-950 hover:bg-cyan-300"
+            >
+              Add first player
+            </button>
+          )}
         </article>
       ) : filtered.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/40 p-8 text-center text-sm text-slate-500">No players match the current filters.</div>
@@ -212,10 +254,41 @@ export default function ProClubSquadRoster({
                   <span className="text-slate-500">Additional</span>
                   <span className="text-right text-slate-300">{player.additionalPositions.length > 0 ? player.additionalPositions.join(" · ") : "—"}</span>
                 </div>
+                {canWrite && (
+                  <button
+                    type="button"
+                    onClick={() => setEditingPlayer(player)}
+                    className="mt-1 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-cyan-500/40 hover:text-cyan-200"
+                  >
+                    <Edit3 size={14} />
+                    Edit roster record
+                  </button>
+                )}
               </div>
             </article>
           ))}
         </div>
+      )}
+
+      {createPlayerKey && canWrite && (
+        <ProClubSquadRosterEditor
+          clubId={authority.organizationId}
+          mode="CREATE"
+          playerKey={createPlayerKey}
+          onClose={() => setCreatePlayerKey(null)}
+          onSaved={handleSaved}
+        />
+      )}
+
+      {editingPlayer && canWrite && (
+        <ProClubSquadRosterEditor
+          clubId={authority.organizationId}
+          mode="EDIT"
+          playerKey={editingPlayer.playerKey}
+          current={editingPlayer}
+          onClose={() => setEditingPlayer(null)}
+          onSaved={handleSaved}
+        />
       )}
     </section>
   );
