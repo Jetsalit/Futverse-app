@@ -12,6 +12,7 @@ import StaffOnboarding, { buttonClass, inputClass, secondaryClass, StatusBadge }
 import PendingStaffRequests from "./PendingStaffRequests";
 import ProClubHeadCoachWeeklyProductionWorkspace from "./operations/ProClubHeadCoachWeeklyProductionWorkspace";
 import ProClubOperationsDashboard from "./operations/ProClubOperationsDashboard";
+import ProClubSquadRoster from "./operations/ProClubSquadRoster";
 
 function ClubWorkspace({ clubId, uid }: { clubId: string; uid: string }) {
   const [authority, setAuthority] = useState<ProClubOrganizationAuthority | null>(null);
@@ -35,7 +36,12 @@ function ClubWorkspace({ clubId, uid }: { clubId: string; uid: string }) {
     {PRO_CLUB_OPERATIONS_PREVIEW_AVAILABLE ? (
       <ProClubOperationsDashboard authority={authority} />
     ) : (
-      <ProClubHeadCoachWeeklyProductionWorkspace authority={authority} />
+      <>
+        <div className="rounded-3xl bg-slate-900 p-6 text-white sm:p-8">
+          <ProClubSquadRoster authority={authority} />
+        </div>
+        <ProClubHeadCoachWeeklyProductionWorkspace authority={authority} />
+      </>
     )}
     {isProClubReviewer(authority) ? <PendingStaffRequests clubId={clubId} clubName={authority.organizationName} uid={uid} /> :
       <section className="rounded-2xl border border-slate-200 bg-white p-6"><Users className="text-emerald-600" /><h3 className="mt-3 text-lg font-bold">Welcome to your club</h3><p className="mt-2 text-sm text-slate-600">You have joined the club as {authority.staffRole ? staffRoleLabels[authority.staffRole].toLowerCase() : "a member"}.</p></section>}

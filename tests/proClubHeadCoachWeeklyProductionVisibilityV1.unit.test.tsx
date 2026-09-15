@@ -145,15 +145,23 @@ test("reuses the existing Weekly components and source-controlled capabilities",
   );
 });
 
-test("keeps the full Operations dashboard preview-only", () => {
+test("keeps the full Operations dashboard preview-only while wiring Squad into production", () => {
   const portal = readFileSync(files.portal, "utf8");
 
   assert.match(
     portal,
-    /PRO_CLUB_OPERATIONS_PREVIEW_AVAILABLE \? \(\s*<ProClubOperationsDashboard authority=\{authority\} \/>\s*\) : \(\s*<ProClubHeadCoachWeeklyProductionWorkspace authority=\{authority\} \/>\s*\)/s,
+    /PRO_CLUB_OPERATIONS_PREVIEW_AVAILABLE \? \(\s*<ProClubOperationsDashboard authority=\{authority\} \/>\s*\) : \(\s*<>\s*<div[^>]*>\s*<ProClubSquadRoster authority=\{authority\} \/>\s*<\/div>\s*<ProClubHeadCoachWeeklyProductionWorkspace authority=\{authority\} \/>\s*<\/>\s*\)/s,
+  );
+  assert.match(
+    portal,
+    /import ProClubSquadRoster from "\.\/operations\/ProClubSquadRoster"/,
   );
   assert.equal(
     (portal.match(/<ProClubOperationsDashboard\b/g) ?? []).length,
+    1,
+  );
+  assert.equal(
+    (portal.match(/<ProClubSquadRoster\b/g) ?? []).length,
     1,
   );
   assert.equal(
