@@ -15,6 +15,7 @@ import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClu
 import {
   createProClubAttendanceRecord,
   createProClubAttendanceSession,
+  getProClubAttendanceSession,
   listProClubAttendanceRecords,
   listProClubAttendanceSessions,
   updateProClubAttendanceRecord,
@@ -322,32 +323,60 @@ export default function ProClubAttendance({
       return;
     }
 
-    // Check if session already exists locally
-    const existing = sessions.find((s) => s.attendanceSessionId === expectedId);
-    if (existing) {
-      setSelectedSessionId(existing.attendanceSessionId);
-      return;
-    }
-
-    // If not existing, creation requires Head Coach mutation authority
-    if (!canMutate) {
-      setFormError("Attendance session does not exist. Only Head Coach can create new sessions.");
-      return;
-    }
-
+    // Canonical exact read is authoritative. A cache miss must never
+    // be treated as proof that the deterministic session does not exist.
     setCreatingSession(true);
     try {
+      const existing = await getProClubAttendanceSession(
+        clubId,
+        expectedId,
+        attendanceOps,
+      );
+
+      if (existing) {
+        setSessions((prev) => [
+          existing,
+          ...prev.filter(
+            (session) =>
+              session.attendanceSessionId !==
+              existing.attendanceSessionId,
+          ),
+        ]);
+        setSelectedSessionId(existing.attendanceSessionId);
+        setFormError(null);
+        return;
+      }
+
+      // Only a canonical exact-read null result permits creation.
+      if (!canMutate) {
+        setFormError(
+          "Attendance session does not exist. Only Head Coach can create new sessions.",
+        );
+        return;
+      }
+
       const created = await createProClubAttendanceSession(
         clubId,
         { sessionDate: trimmedDate, startTime: trimmedTime },
         attendanceOps,
       );
-      setSessions((prev) => [created, ...prev.filter((s) => s.attendanceSessionId !== created.attendanceSessionId)]);
+
+      setSessions((prev) => [
+        created,
+        ...prev.filter(
+          (session) =>
+            session.attendanceSessionId !==
+            created.attendanceSessionId,
+        ),
+      ]);
       setSelectedSessionId(created.attendanceSessionId);
       setFormError(null);
     } catch (err) {
+      // Exact-read failure fails closed: creation is never attempted.
       setFormError(
-        err instanceof Error ? err.message : "Failed to create attendance session.",
+        err instanceof Error
+          ? err.message
+          : "Failed to open attendance session.",
       );
     } finally {
       setCreatingSession(false);

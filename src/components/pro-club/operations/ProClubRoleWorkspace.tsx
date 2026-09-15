@@ -42,6 +42,15 @@ export default function ProClubRoleWorkspace({
   authority: ProClubOrganizationAuthority;
 }) {
   if (authority.staffRole === "HEAD_COACH") {
+    const attendanceAuthorityKey = [
+      authority.organizationId,
+      authority.userId,
+      authority.organizationStatus,
+      authority.membershipStatus,
+      authority.hasMembershipAuthority ? "AUTHORIZED" : "UNAUTHORIZED",
+      authority.staffRole ?? "NO_ROLE",
+    ].join("|");
+
     return (
       <section aria-labelledby="pro-club-role-workspace" className="space-y-5">
         <div>
@@ -57,7 +66,7 @@ export default function ProClubRoleWorkspace({
         ) : (
           <SavedDraftReadPending />
         )}
-        <ProClubAttendance authority={authority} />
+        <ProClubAttendance key={attendanceAuthorityKey} authority={authority} />
         <div className="grid gap-4 md:grid-cols-3">
           <EmptyTask title="Today’s Session" description="A derived current-session launcher remains deferred until the saved-DRAFT read model is accepted and the active-session selection contract is defined." />
           <EmptyTask title="Department Updates" description="Submitted Fitness, Analysis, GK and Availability work will appear here for review when enabled." />
