@@ -57,6 +57,7 @@ test("search reuses roster identity fields without Academy or global fallback da
       position: "GK",
       additionalPositions: [],
       jerseyNumber: 1,
+      squadLabel: "Reserve Team",
     }),
   ];
 
