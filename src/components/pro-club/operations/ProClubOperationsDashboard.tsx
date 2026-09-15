@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
-import { Activity, CalendarDays, ClipboardList, HeartPulse, ShieldCheck, Users } from "lucide-react";
+import { Activity, CalendarDays, ClipboardList, HeartPulse, ShieldCheck } from "lucide-react";
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
 import { staffRoleLabels } from "../../../lib/proClubOnboarding";
 import ProClubRoleWorkspace from "./ProClubRoleWorkspace";
+import ProClubSquadRoster from "./ProClubSquadRoster";
 
 function EmptyModule({
   icon,
@@ -58,23 +59,24 @@ export default function ProClubOperationsDashboard({
               {item}
             </div>
           ))}
-          <p className="pt-3 text-xs leading-5 text-slate-600">Navigation is intentionally non-interactive in this preview. The Head Coach workspace below is the reviewed entry point for fresh Weekly Training DRAFT creation.</p>
+          <p className="pt-3 text-xs leading-5 text-slate-600">Navigation remains intentionally non-interactive in this preview. The canonical First Team roster is now connected below, while Head Coach Weekly Training continues through its reviewed workspace.</p>
         </nav>
 
         <div className="space-y-7">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-300">Overview</p>
             <h3 className="mt-2 text-xl font-black">Authoritative data only</h3>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">Weekly Training fresh-DRAFT creation now uses the trusted callable boundary for an active Head Coach. Other football modules remain empty until their own Pro Club contracts and adapters are reviewed.</p>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">The First Team roster now reads from the canonical Pro Club tenant path. Weekly Training remains on its reviewed fresh-DRAFT workflow. Other football modules stay closed until their own contracts and adapters are accepted.</p>
           </div>
 
+          <ProClubSquadRoster authority={authority} />
+
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <EmptyModule icon={<Users size={20} />} title="Squad" description="First-team roster foundation is not connected yet." />
-            <EmptyModule icon={<ClipboardList size={20} />} title="Weekly Training" description="Fresh Head Coach DRAFT creation is connected in the role workspace through the reviewed server-mediated callable. Production web saving remains gated." />
+            <EmptyModule icon={<ClipboardList size={20} />} title="Weekly Training" description="Fresh Head Coach DRAFT creation is connected in the role workspace through the reviewed persistence path." />
             <EmptyModule icon={<Activity size={20} />} title="Department Reports" description="Will aggregate real submitted work instead of asking staff to enter reports twice." />
             <EmptyModule icon={<HeartPulse size={20} />} title="Availability" description="Only football availability states will be broadly visible; clinical detail remains restricted." />
-            <EmptyModule icon={<CalendarDays size={20} />} title="Competition Calendar" description="No Academy match repository is reused for Pro Club data." />
-            <EmptyModule icon={<ShieldCheck size={20} />} title="Authority" description="Club access continues to come from the existing exact Membership + staff authority bridge; server checks remain final for writes." />
+            <EmptyModule icon={<CalendarDays size={20} />} title="Competition Calendar" description="Match planning remains deferred until the reviewed Pro Club match slice is connected." />
+            <EmptyModule icon={<ShieldCheck size={20} />} title="Authority" description="Club access continues to come from the exact Membership + staff authority bridge; Firestore Rules remain final for client writes." />
           </div>
 
           <ProClubRoleWorkspace authority={authority} />
