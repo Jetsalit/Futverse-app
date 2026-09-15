@@ -116,6 +116,15 @@ test("FUTID binding allows only exact null-to-registry binding or immutable exis
     canBindProClubRosterFutId(
       "player-1",
       "FUT-PLAYER-001",
+      "FUT-PLAYER-001",
+      "player-2",
+    ),
+    false,
+  );
+  assert.equal(
+    canBindProClubRosterFutId(
+      "player-1",
+      "FUT-PLAYER-001",
       "FUT-PLAYER-002",
       "player-1",
     ),
