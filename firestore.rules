@@ -919,6 +919,45 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
+      // Pro Club Membership Discovery V1 — discovery only, never authority.
+      match /proClubMemberships/{clubId} {
+        allow get, list: if currentUserIsActive()
+          && request.auth.uid == uid;
+
+        // Staff discovery pointers may only be born inside the same
+        // canonical approval batch that creates proof/member/staff.
+        allow create: if isSignedIn()
+          && exactDocumentId(uid)
+          && exactDocumentId(clubId)
+          && request.resource.data.keys().hasAll([
+            'schemaVersion',
+            'clubId'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'schemaVersion',
+            'clubId'
+          ])
+          && request.resource.data.get('schemaVersion', 0) == 1
+          && request.resource.data.get('clubId', '') == clubId
+          && freshProClubApprovalProofForUidV1(clubId, uid)
+          && existsAfter(
+            /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)
+          )
+          && getAfter(
+            /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)
+          ).data.get('authorizationRole', '') == 'MEMBER'
+          && getAfter(
+            /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)
+          ).data.get('status', '') == 'ACTIVE'
+          && existsAfter(
+            /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)
+          )
+          && getAfter(
+            /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)
+          ).data.get('status', '') == 'ACTIVE';
+
+        allow update, delete: if false;
+      }
       allow read: if isOwnUserDocument(uid) || isSuperAdmin();
       allow create: if isOwnUserDocument(uid)
         && hasNoStoredDocumentId()
