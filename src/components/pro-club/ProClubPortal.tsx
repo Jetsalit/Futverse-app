@@ -119,7 +119,10 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
         if (mounted) setDiscoveredAuthorities([]);
       });
 
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+      discoveryStarted.current = false;
+    };
   }, [allowed, selectProClub, shouldDiscover, uid]);
 
   useEffect(() => {
