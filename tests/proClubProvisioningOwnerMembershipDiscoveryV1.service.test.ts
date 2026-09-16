@@ -10,6 +10,10 @@ import {
   type MinimalAdminAuth,
 } from "../functions/src/lib/serverAuthTokenVerifier.ts";
 import {
+  ERROR_CODES,
+  ProClubProvisioningError,
+} from "../functions/src/proClubProvisioning/core.ts";
+import {
   createProClubProvisioningService,
   type ProClubProvisioningService,
 } from "../functions/src/proClubProvisioning/service.ts";
@@ -41,6 +45,16 @@ const fakeAuth: MinimalAdminAuth = {
     throw new Error("Invalid or unauthenticated token");
   },
 };
+
+function requestBody() {
+  return {
+    provisioningId: "prov-owner-discovery-001",
+    clubId: CLUB,
+    name: "Owner Discovery FC",
+    level: "T3",
+    initialOwnerUid: OWNER,
+  };
+}
 
 async function clearFirestoreEmulator(): Promise<void> {
   const url = `http://${emulatorHost}/emulator/v1/projects/${PROJECT}/databases/(default)/documents`;
@@ -82,13 +96,7 @@ after(async () => {
 test("successful provisioning atomically creates the exact owner membership discovery pointer", async () => {
   const result = await service.provisionProClub({
     authorizationHeader: "Bearer token-superadmin-owner-discovery",
-    requestBody: {
-      provisioningId: "prov-owner-discovery-001",
-      clubId: CLUB,
-      name: "Owner Discovery FC",
-      level: "T3",
-      initialOwnerUid: OWNER,
-    },
+    requestBody: requestBody(),
   });
 
   assert.equal(result.status, "COMPLETED");
@@ -124,5 +132,29 @@ test("successful provisioning atomically creates the exact owner membership disc
   assert.deepEqual(
     pointer.exists ? pointer.data() : null,
     { schemaVersion: 1, clubId: CLUB },
+  );
+});
+
+test("provisioning replay fails closed when the owner discovery pointer is missing", async () => {
+  await service.provisionProClub({
+    authorizationHeader: "Bearer token-superadmin-owner-discovery",
+    requestBody: requestBody(),
+  });
+
+  await firestore
+    .collection("users")
+    .doc(OWNER)
+    .collection("proClubMemberships")
+    .doc(CLUB)
+    .delete();
+
+  await assert.rejects(
+    service.provisionProClub({
+      authorizationHeader: "Bearer token-superadmin-owner-discovery",
+      requestBody: requestBody(),
+    }),
+    (error) =>
+      error instanceof ProClubProvisioningError &&
+      error.code === ERROR_CODES.PROVISIONING_INTEGRITY,
   );
 });
