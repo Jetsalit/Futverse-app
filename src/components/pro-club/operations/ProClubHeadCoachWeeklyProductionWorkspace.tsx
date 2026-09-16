@@ -63,16 +63,17 @@ export default function ProClubHeadCoachWeeklyProductionWorkspace({
           Weekly Training
         </h3>
         <p className="mt-2 text-sm leading-6 text-slate-400">
-          Create a fresh Weekly Training DRAFT or review your saved DRAFT history.
+          Review the current weekly microcycle and Weekly Training history first, then create or revise a DRAFT when needed.
         </p>
       </header>
 
-      <WeeklyTrainingDraftComposer authority={authority} />
       {WEEKLY_TRAINING_SAVED_DRAFT_READ_AVAILABLE ? (
         <WeeklyTrainingSavedDrafts authority={authority} />
       ) : (
         <SavedDraftReadPending />
       )}
+
+      <WeeklyTrainingDraftComposer authority={authority} />
     </section>
   );
 }

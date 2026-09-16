@@ -19,6 +19,8 @@ import PendingStaffRequests from "./PendingStaffRequests";
 import ProClubOperationsDashboard from "./operations/ProClubOperationsDashboard";
 import ProClubTeamDashboard from "./operations/ProClubTeamDashboard";
 
+type ProClubDiscoveryState = "DISCOVERING" | "OPENING" | "COMPLETE";
+
 function ClubWorkspace({ clubId, uid }: { clubId: string; uid: string }) {
   const [authority, setAuthority] = useState<ProClubOrganizationAuthority | null>(null);
   const [error, setError] = useState("");
@@ -56,6 +58,7 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
   const [clubReference, setClubReference] = useState(restoredClubReference ?? "");
   const [inputError, setInputError] = useState("");
   const [shouldDiscover, setShouldDiscover] = useState(!restoredClubReference);
+  const [discoveryState, setDiscoveryState] = useState<ProClubDiscoveryState>(restoredClubReference ? "COMPLETE" : "DISCOVERING");
   const [discoveredAuthorities, setDiscoveredAuthorities] = useState<ProClubOrganizationAuthority[]>([]);
   const discoveryStarted = useRef(false);
   const uid = actualUser?.uid;
@@ -79,6 +82,7 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
       clearProClubWorkspaceSession();
       setClubReference("");
       setTab("join");
+      setDiscoveryState("DISCOVERING");
       setShouldDiscover(true);
     }
   }, [restoredClubReference, runtimeState, shouldDiscover, uid]);
@@ -86,6 +90,7 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
   useEffect(() => {
     if (!allowed || !uid || !shouldDiscover || discoveryStarted.current) return;
     discoveryStarted.current = true;
+    setDiscoveryState("DISCOVERING");
     let mounted = true;
 
     void loadOwnProClubMembershipDiscoveries(uid)
@@ -110,13 +115,18 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
           const clubId = validAuthorities[0].organizationId;
           setClubReference(clubId);
           setTab("workspace");
+          setDiscoveryState("OPENING");
           selectProClub(clubId);
-        } else if (validAuthorities.length > 1) {
-          setTab("workspace");
+        } else {
+          if (validAuthorities.length > 1) setTab("workspace");
+          setDiscoveryState("COMPLETE");
         }
       })
       .catch(() => {
-        if (mounted) setDiscoveredAuthorities([]);
+        if (mounted) {
+          setDiscoveredAuthorities([]);
+          setDiscoveryState("COMPLETE");
+        }
       });
 
     return () => {
@@ -126,18 +136,27 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
   }, [allowed, selectProClub, shouldDiscover, uid]);
 
   useEffect(() => {
+    if (discoveryState !== "OPENING") return;
+    if (runtimeState.status === "REJECTED" || runtimeState.status === "ERROR") {
+      setDiscoveryState("COMPLETE");
+    }
+  }, [discoveryState, runtimeState.status]);
+
+  useEffect(() => {
     if (!authorized || runtimeState.selection?.organizationType !== "PRO_CLUB") return;
     rememberProClubWorkspaceSession(runtimeState.selection.organizationId);
   }, [authorized, runtimeState.selection]);
 
   function openClub(clubId: string) {
     if (!isValidDocumentIdentifier(clubId)) { setInputError("Enter the club workspace reference provided by your club."); return; }
+    setDiscoveryState("COMPLETE");
     setInputError(""); setTab("workspace"); setClubReference(clubId);
     selectProClub(clubId); // Also refreshes the same selection through the existing authority bridge.
   }
 
   function openStaffOnboarding() {
     clearProClubWorkspaceSession();
+    setDiscoveryState("COMPLETE");
     setInputError("");
     setTab("join");
   }
@@ -162,6 +181,12 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
     <main className="mx-auto max-w-5xl space-y-7 px-4 py-7 sm:px-6 sm:py-10">
       {authorized ? (
         <ClubWorkspace key={`${uid}:${runtimeState.generation}`} uid={uid} clubId={runtimeState.selection!.organizationId} />
+      ) : discoveryState !== "COMPLETE" ? (
+        <section className="rounded-3xl border border-slate-200 bg-white px-6 py-14 text-center shadow-sm">
+          <Shield className="mx-auto text-emerald-600" size={28} />
+          <h1 className="mt-4 text-2xl font-black">Opening your club…</h1>
+          <p role="status" className="mt-2 text-sm text-slate-500">Checking your active Pro Club membership and workspace authority.</p>
+        </section>
       ) : (
         <>
           <div><h1 className="text-3xl font-black tracking-tight">Your club starts here</h1><p className="mt-2 text-slate-500">Join your team or open your club workspace.</p></div>
