@@ -217,7 +217,7 @@ export default function WeeklyTrainingSavedDrafts({ authority }: { authority: Pr
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">The newest validated Head Coach DRAFT opens as the current weekly card board. Older saved weeks remain available below without changing the source DRAFT.</p>
         </div>
         <button type="button" onClick={() => void refresh()} disabled={busy || editing || revisingAsNew} className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-bold text-slate-200 transition hover:border-cyan-400/50 disabled:cursor-not-allowed disabled:opacity-60">
-          <RefreshCw size={16} className={loadingList ? "animate-spin" : ""} /> Refresh saved weeks
+          <RefreshCw size={16} className={loadingList ? "animate-spin" : ""} /> Refresh saved drafts
         </button>
       </div>
 
@@ -247,7 +247,7 @@ export default function WeeklyTrainingSavedDrafts({ authority }: { authority: Pr
         ))}</div>
       </div>}
 
-      {nextCursor && !loadingList && !editing && !revisingAsNew && <button type="button" onClick={() => void loadPage(nextCursor, true)} disabled={busy} className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-bold text-slate-200 disabled:cursor-not-allowed disabled:opacity-60">{loadingMore ? "Loading more…" : "Load more saved weeks"}</button>}
+      {nextCursor && !loadingList && !editing && !revisingAsNew && <button type="button" onClick={() => void loadPage(nextCursor, true)} disabled={busy} className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-bold text-slate-200 disabled:cursor-not-allowed disabled:opacity-60">{loadingMore ? "Loading more…" : "Load more saved drafts"}</button>}
       {detail && revisingAsNew && (
         <div className="space-y-4 rounded-2xl border border-emerald-400/20 bg-emerald-950/10 p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
