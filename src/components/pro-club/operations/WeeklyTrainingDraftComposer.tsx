@@ -23,6 +23,7 @@ import {
   PRO_CLUB_TRAINING_DRILL_REFERENCE_MAX_UTF8_BYTES,
   proClubTrainingUtf8ByteLength,
 } from "../../../lib/proClubWeeklyTrainingStorageBounds";
+import ProClubTrainingDrillReferencePicker from "./ProClubTrainingDrillReferencePicker";
 import {
   MAX_WEEKLY_TRAINING_BLOCKS_PER_SESSION,
   MAX_WEEKLY_TRAINING_SESSIONS,
@@ -101,6 +102,10 @@ export default function WeeklyTrainingDraftComposer({
   const [error, setError] = useState("");
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
   const [ambiguousSave, setAmbiguousSave] = useState(false);
+  const [drillPickerTarget, setDrillPickerTarget] = useState<{
+    sessionIndex: number;
+    blockIndex: number;
+  } | null>(null);
   const [saved, setSaved] = useState<{
     requestId: string;
     planId: string;
@@ -198,8 +203,7 @@ export default function WeeklyTrainingDraftComposer({
             Weekly Training Plan
           </h4>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-            Create one new DRAFT with deterministic request identity. Existing draft editing,
-            lifecycle actions and Technical Director co-authoring remain closed in this slice.
+            Create one new DRAFT with deterministic request identity. Each training block can bind an existing FutVerse drill or one designed in Tactic Board without changing the Weekly Training schema.
           </p>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-400">
@@ -216,7 +220,7 @@ export default function WeeklyTrainingDraftComposer({
         <div>
           <span className={labelClass}>Bound actor</span>
           <p className="mt-1 font-bold text-white">Head Coach</p>
-          <p className="text-xs text-slate-500">{authority.userId}</p>
+          <p className="text-xs text-slate-500">Authenticated club authority</p>
         </div>
       </div>
 
@@ -324,6 +328,38 @@ export default function WeeklyTrainingDraftComposer({
                       </span>
                     </label>
                     <button type="button" disabled={session.blocks.length <= 1} onClick={() => updateSession(sessionIndex, removeTrainingBlock(session, blockIndex))} className="self-end rounded-xl border border-rose-500/30 px-3 py-2 text-xs font-bold text-rose-300 disabled:opacity-30">Remove block</button>
+                    <div className="flex flex-wrap items-center gap-2 lg:col-span-3">
+                      <button
+                        type="button"
+                        onClick={() => setDrillPickerTarget({ sessionIndex, blockIndex })}
+                        className="rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-3 py-2 text-xs font-black text-cyan-100 hover:bg-cyan-400/20"
+                      >
+                        Design in Tactic Board
+                      </button>
+                      {block.drillReference && (
+                        <span className="text-xs text-emerald-300">Linked drill: {block.drillReference}</span>
+                      )}
+                    </div>
+                    {drillPickerTarget?.sessionIndex === sessionIndex && drillPickerTarget.blockIndex === blockIndex && (
+                      <div className="lg:col-span-3">
+                        <ProClubTrainingDrillReferencePicker
+                          onClose={() => setDrillPickerTarget(null)}
+                          onSelectDrill={(drill) => {
+                            const currentSession = draft.sessions[sessionIndex];
+                            const currentBlock = currentSession?.blocks[blockIndex];
+                            if (!currentBlock) {
+                              setDrillPickerTarget(null);
+                              return;
+                            }
+                            updateBlock(sessionIndex, blockIndex, {
+                              ...currentBlock,
+                              drillReference: drill.id,
+                            });
+                            setDrillPickerTarget(null);
+                          }}
+                        />
+                      </div>
+                    )}
                     <label className={`${labelClass} lg:col-span-3`}>Coaching points (one per line)<textarea className={inputClass} rows={3} maxLength={3000} value={block.coachingPoints.join("\n")} onChange={(event) => updateBlock(sessionIndex, blockIndex, { ...block, coachingPoints: event.target.value.split("\n") })} /></label>
                   </div>
                 ))}
