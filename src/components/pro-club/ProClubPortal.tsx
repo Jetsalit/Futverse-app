@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Shield, Users } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useOrganizationRuntime } from "../../contexts/OrganizationRuntimeContext";
@@ -11,6 +11,7 @@ import {
   rememberProClubWorkspaceSession,
 } from "../../lib/proClubWorkspaceSession";
 import { onboardingErrorMessage, staffRoleLabels } from "../../lib/proClubOnboarding";
+import { loadOwnProClubMembershipDiscoveries } from "../../lib/firestore/proClubMembershipDiscoveryRepository";
 import { isProClubReviewer, proClubOnboardingRepository as repository } from "../../lib/firestore/proClubOnboardingRepository";
 import type { ProClubOrganizationAuthority } from "../../lib/firestore/proClubOrganizationAdapter";
 import StaffOnboarding, { buttonClass, inputClass, secondaryClass, StatusBadge } from "./StaffOnboarding";
@@ -54,6 +55,9 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
   const [tab, setTab] = useState<"join" | "workspace">(restoredClubReference ? "workspace" : "join");
   const [clubReference, setClubReference] = useState(restoredClubReference ?? "");
   const [inputError, setInputError] = useState("");
+  const [shouldDiscover, setShouldDiscover] = useState(!restoredClubReference);
+  const [discoveredAuthorities, setDiscoveredAuthorities] = useState<ProClubOrganizationAuthority[]>([]);
+  const discoveryStarted = useRef(false);
   const uid = actualUser?.uid;
   const allowed = uid && currentUser?.uid === uid && !currentUser.supportPresentation;
   const authorized = allowed && runtimeState.uid === uid && isOrganizationRuntimeAuthorized(runtimeState) && runtimeState.selection?.organizationType === "PRO_CLUB";
@@ -62,6 +66,64 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
     if (!uid || !restoredClubReference) return;
     selectProClub(restoredClubReference);
   }, [restoredClubReference, selectProClub, uid]);
+
+  useEffect(() => {
+    if (!uid || !restoredClubReference || shouldDiscover) return;
+    if (
+      runtimeState.uid !== uid ||
+      runtimeState.selection?.organizationType !== "PRO_CLUB" ||
+      runtimeState.selection.organizationId !== restoredClubReference
+    ) return;
+
+    if (runtimeState.status === "REJECTED" || runtimeState.status === "ERROR") {
+      clearProClubWorkspaceSession();
+      setClubReference("");
+      setTab("join");
+      setShouldDiscover(true);
+    }
+  }, [restoredClubReference, runtimeState, shouldDiscover, uid]);
+
+  useEffect(() => {
+    if (!allowed || !uid || !shouldDiscover || discoveryStarted.current) return;
+    discoveryStarted.current = true;
+    let mounted = true;
+
+    void loadOwnProClubMembershipDiscoveries(uid)
+      .then(async (discoveries) => {
+        const candidates = await Promise.all(
+          discoveries.map(async ({ clubId }) => {
+            try {
+              return await repository.loadWorkspace(clubId, uid);
+            } catch {
+              return null;
+            }
+          }),
+        );
+
+        if (!mounted) return;
+        const validAuthorities = candidates.filter(
+          (candidate): candidate is ProClubOrganizationAuthority => candidate !== null,
+        );
+        setDiscoveredAuthorities(validAuthorities);
+
+        if (validAuthorities.length === 1) {
+          const clubId = validAuthorities[0].organizationId;
+          setClubReference(clubId);
+          setTab("workspace");
+          selectProClub(clubId);
+        } else if (validAuthorities.length > 1) {
+          setTab("workspace");
+        }
+      })
+      .catch(() => {
+        if (mounted) setDiscoveredAuthorities([]);
+      });
+
+    return () => {
+      mounted = false;
+      discoveryStarted.current = false;
+    };
+  }, [allowed, selectProClub, shouldDiscover, uid]);
 
   useEffect(() => {
     if (!authorized || runtimeState.selection?.organizationType !== "PRO_CLUB") return;
@@ -110,6 +172,23 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
           {tab === "join" ? <StaffOnboarding key={uid} uid={uid} onOpenClub={openClub} /> : <div className="space-y-7">
             {runtimeState.status === "RESOLVING" ? (
               <p role="status" className="py-12 text-center text-slate-600">Opening your club…</p>
+            ) : discoveredAuthorities.length > 1 ? (
+              <section className="rounded-2xl border border-slate-200 bg-white p-5">
+                <h2 className="text-lg font-black">Choose your club</h2>
+                <p className="mt-1 text-sm text-slate-500">Select the team workspace you want to open.</p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {discoveredAuthorities.map((authority) => (
+                    <button
+                      key={authority.organizationId}
+                      type="button"
+                      className={`${secondaryClass} justify-start text-left`}
+                      onClick={() => openClub(authority.organizationId)}
+                    >
+                      {authority.organizationName}
+                    </button>
+                  ))}
+                </div>
+              </section>
             ) : (
               <form className="rounded-2xl border border-slate-200 bg-white p-5" onSubmit={(event) => { event.preventDefault(); openClub(clubReference.trim()); }}>
                 <label htmlFor="club-workspace-reference" className="block text-sm font-bold">Club workspace reference</label>
@@ -119,7 +198,7 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
               </form>
             )}
             {inputError && <p role="alert" className="text-rose-700">{inputError}</p>}
-            {(runtimeState.status === "ERROR" || runtimeState.status === "REJECTED") && <p role="alert" className="rounded-xl bg-amber-50 p-5 text-amber-900">This club workspace is unavailable for your account. Check the reference and your membership, then try again.</p>}
+            {discoveredAuthorities.length <= 1 && (runtimeState.status === "ERROR" || runtimeState.status === "REJECTED") && <p role="alert" className="rounded-xl bg-amber-50 p-5 text-amber-900">This club workspace is unavailable for your account. Check the reference and your membership, then try again.</p>}
           </div>}
         </>
       )}

@@ -129,6 +129,9 @@ export class ProClubProvisioningService {
       const memberRef = clubRef
         .collection("members")
         .doc(normalized.initialOwnerUid);
+      const discoveryRef = ownerRef
+        .collection("proClubMemberships")
+        .doc(normalized.clubId);
 
       if (auditSnap.exists) {
         // Replay Branch: Validate complete audit shape, fingerprint, and identity bindings
@@ -142,6 +145,7 @@ export class ProClubProvisioningService {
         // Verify canonical resources exist and match sovereign state
         const clubSnap = await transaction.get(clubRef);
         const memberSnap = await transaction.get(memberRef);
+        const discoverySnap = await transaction.get(discoveryRef);
 
         if (!clubSnap.exists || !validateStoredClubPayload(clubSnap.data())) {
           throw new ProClubProvisioningError(
@@ -158,6 +162,20 @@ export class ProClubProvisioningService {
           throw new ProClubProvisioningError(
             ERROR_CODES.PROVISIONING_INTEGRITY,
             "Replay integrity violation: Initial owner membership does not exist or does not match exact ACTIVE OWNER shape",
+          );
+        }
+
+        const discoveryData = discoverySnap.data();
+        if (
+          !discoverySnap.exists ||
+          !discoveryData ||
+          discoveryData.schemaVersion !== 1 ||
+          discoveryData.clubId !== normalized.clubId ||
+          Object.keys(discoveryData).sort().join(",") !== "clubId,schemaVersion"
+        ) {
+          throw new ProClubProvisioningError(
+            ERROR_CODES.PROVISIONING_INTEGRITY,
+            "Replay integrity violation: Initial owner discovery pointer does not exist or does not match exact discovery shape",
           );
         }
 
@@ -190,9 +208,13 @@ export class ProClubProvisioningService {
         );
       }
 
-      // Commit exact 3-way atomic write (Club + Owner + Audit) in the SAME transaction
+      // Commit exact 4-way atomic write (Club + Owner + Discovery + Audit) in the SAME transaction
       transaction.set(clubRef, clubPayload);
       transaction.set(memberRef, membershipPayload);
+      transaction.set(discoveryRef, {
+        schemaVersion: 1,
+        clubId: normalized.clubId,
+      });
       transaction.set(auditRef, auditPayload);
 
       return {

@@ -283,6 +283,9 @@ export function createProClubOnboardingRepository(
       batch.set(doc(firestore, "proClubs", clubId, "staff", claim.userId), {
         staffRole: invite.staffRole, status: "ACTIVE",
       });
+      batch.set(doc(firestore, "users", claim.userId, "proClubMemberships", clubId), {
+        schemaVersion: 1, clubId,
+      });
       batch.update(inviteRef, {
         status: "CONSUMED", consumedAt: at, consumedBy: uid, claimId, updatedAt: at, updatedBy: uid,
       });
