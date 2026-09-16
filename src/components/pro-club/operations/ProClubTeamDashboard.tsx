@@ -80,7 +80,10 @@ export default function ProClubTeamDashboard({
       </header>
 
       <div className="grid gap-6 p-5 sm:p-7 lg:grid-cols-[210px_minmax(0,1fr)]">
-        <nav aria-label="Pro Club team sections" className="space-y-2">
+        <nav
+          aria-label="Pro Club team sections"
+          className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0"
+        >
           {PRO_CLUB_TEAM_DASHBOARD_TABS.map((tab) => {
             const disabled = tab === "MATCHES";
             const selected = activeTab === tab;
@@ -95,7 +98,7 @@ export default function ProClubTeamDashboard({
                   if (!disabled) setActiveTab(tab);
                 }}
                 className={[
-                  "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-bold transition",
+                  "flex shrink-0 items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold transition lg:w-full",
                   selected
                     ? "bg-cyan-400/10 text-cyan-200"
                     : "text-slate-400 hover:bg-white/5 hover:text-white",

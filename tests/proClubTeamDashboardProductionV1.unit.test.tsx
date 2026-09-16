@@ -103,6 +103,29 @@ test("portal mounts the production team dashboard without opening the full previ
   assert.equal((portal.match(/<ProClubTeamDashboard\b/g) ?? []).length, 1);
 });
 
+test("authorized workspace becomes the primary page instead of remaining below the entry form", () => {
+  const portal = readFileSync(files.portal, "utf8");
+
+  assert.doesNotMatch(
+    portal,
+    /\{authorized\s*&&\s*<ClubWorkspace\b/,
+  );
+  assert.match(
+    portal,
+    /authorized\s*\?\s*\(\s*<ClubWorkspace\b[\s\S]*?\)\s*:\s*\(/,
+  );
+  assert.match(portal, /Opening your club/i);
+});
+
+test("team navigation is horizontally usable on small screens and returns to a sidebar on desktop", () => {
+  const source = readFileSync(files.dashboard, "utf8");
+
+  assert.match(
+    source,
+    /aria-label="Pro Club team sections"[^>]*className="[^"]*flex[^"]*overflow-x-auto[^"]*lg:flex-col[^"]*"/,
+  );
+});
+
 test("team dashboard adds presentation state only and no new persistence boundary", () => {
   const source = readFileSync(files.dashboard, "utf8");
 
