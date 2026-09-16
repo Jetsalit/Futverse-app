@@ -291,6 +291,10 @@ export function createProClubSuperAdminOnboardingControlRepository(
         staffRole: invite.staffRole,
         status: "ACTIVE",
       });
+      batch.set(doc(firestore, "users", claim.userId, "proClubMemberships", clubId), {
+        schemaVersion: 1,
+        clubId,
+      });
       batch.update(inviteRef, {
         status: "CONSUMED",
         consumedAt: at,
