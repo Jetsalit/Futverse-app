@@ -52,7 +52,7 @@ jobs:
 
       - name: Targeted Training + discovery contracts
         run: >-
-          node --import tsx --test
+          node --experimental-test-module-mocks --import tsx --test
           tests/proClubWeeklyTrainingCardBoardProduction.unit.test.ts
           tests/proClubTrainingTacticBoardIntegration.unit.test.ts
           tests/proClubPortalDiscoveryLoading.unit.test.ts
