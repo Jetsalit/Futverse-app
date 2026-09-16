@@ -63,7 +63,7 @@ export default function ProClubHeadCoachWeeklyProductionWorkspace({
           Weekly Training
         </h3>
         <p className="mt-2 text-sm leading-6 text-slate-400">
-          Review the current weekly microcycle first, then create or revise a DRAFT when needed.
+          Review the current weekly microcycle and Weekly Training history first, then create or revise a DRAFT when needed.
         </p>
       </header>
 
