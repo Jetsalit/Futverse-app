@@ -173,12 +173,12 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
 
   if (!allowed) return <p role="alert">Sign in with your own account to open Pro Club onboarding.</p>;
   return <div className="min-h-screen bg-slate-50 text-slate-900">
-    <header className="border-b border-slate-200 bg-white"><div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
+    <header className="border-b border-slate-200 bg-white"><div className="mx-auto flex w-full max-w-none flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8">
       <button className="inline-flex items-center gap-2 text-sm font-bold text-slate-600" onClick={leaveProClub}><ArrowLeft size={18} /> Back to FutVerse</button>
       <div className="flex items-center gap-2 font-black"><Shield size={20} className="text-emerald-600" /> Pro Club</div>
       <button className="text-sm font-bold text-slate-600" onClick={signOut}>Sign out</button>
     </div></header>
-    <main className="mx-auto max-w-5xl space-y-7 px-4 py-7 sm:px-6 sm:py-10">
+    <main className="mx-auto w-full max-w-none space-y-7 px-4 py-7 sm:px-6 sm:py-10 lg:px-8">
       {authorized ? (
         <ClubWorkspace key={`${uid}:${runtimeState.generation}`} uid={uid} clubId={runtimeState.selection!.organizationId} />
       ) : discoveryState !== "COMPLETE" ? (
