@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { JSDOM } from "jsdom";
-import React, { act } from "react";
+import React, { StrictMode, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createOrganizationResolutionResult } from "../src/lib/organizationRuntimeSelection";
 
@@ -184,6 +184,23 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
     await settle();
   }
 
+  async function mountPortalStrict(): Promise<void> {
+    await act(async () => {
+      root?.unmount();
+    });
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        <StrictMode>
+          <OrganizationRuntimeProvider>
+            <ProClubPortal onBack={() => {}} onLogout={() => {}} />
+          </OrganizationRuntimeProvider>
+        </StrictMode>,
+      );
+    });
+    await settle();
+  }
+
   function resetScenario(): void {
     clearProClubWorkspaceSession();
     discoveryRows = [];
@@ -221,6 +238,17 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
 
       assert.deepEqual(discoveryCalls, [uid]);
       assert.ok(workspaceLoads.includes("club-alpha"));
+      assert.equal(resolutionRequests.length, 1);
+      assert.equal(resolutionRequests[0]?.organizationId, "club-alpha");
+      assert.match(text(), /Alpha United/);
+    });
+
+    await t.test("one discovered canonical club still opens under React StrictMode", async () => {
+      resetScenario();
+      discoveryRows = [{ clubId: "club-alpha" }];
+
+      await mountPortalStrict();
+
       assert.equal(resolutionRequests.length, 1);
       assert.equal(resolutionRequests[0]?.organizationId, "club-alpha");
       assert.match(text(), /Alpha United/);
