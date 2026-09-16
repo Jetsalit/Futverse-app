@@ -129,6 +129,9 @@ export class ProClubProvisioningService {
       const memberRef = clubRef
         .collection("members")
         .doc(normalized.initialOwnerUid);
+      const discoveryRef = ownerRef
+        .collection("proClubMemberships")
+        .doc(normalized.clubId);
 
       if (auditSnap.exists) {
         // Replay Branch: Validate complete audit shape, fingerprint, and identity bindings
@@ -190,9 +193,13 @@ export class ProClubProvisioningService {
         );
       }
 
-      // Commit exact 3-way atomic write (Club + Owner + Audit) in the SAME transaction
+      // Commit exact 4-way atomic write (Club + Owner + Discovery + Audit) in the SAME transaction
       transaction.set(clubRef, clubPayload);
       transaction.set(memberRef, membershipPayload);
+      transaction.set(discoveryRef, {
+        schemaVersion: 1,
+        clubId: normalized.clubId,
+      });
       transaction.set(auditRef, auditPayload);
 
       return {
