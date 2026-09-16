@@ -98,23 +98,31 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
       <button className="text-sm font-bold text-slate-600" onClick={signOut}>Sign out</button>
     </div></header>
     <main className="mx-auto max-w-5xl space-y-7 px-4 py-7 sm:px-6 sm:py-10">
-      <div><h1 className="text-3xl font-black tracking-tight">Your club starts here</h1><p className="mt-2 text-slate-500">Join your team or open your club workspace.</p></div>
-      <nav aria-label="Pro Club sections" className="flex flex-wrap gap-2">
-        <button className={tab === "join" ? buttonClass : secondaryClass} aria-current={tab === "join" ? "page" : undefined} onClick={openStaffOnboarding}>Staff onboarding</button>
-        <button className={tab === "workspace" ? buttonClass : secondaryClass} aria-current={tab === "workspace" ? "page" : undefined} onClick={() => setTab("workspace")}>Club workspace</button>
-      </nav>
-      {tab === "join" ? <StaffOnboarding key={uid} uid={uid} onOpenClub={openClub} /> : <div className="space-y-7">
-        <form className="rounded-2xl border border-slate-200 bg-white p-5" onSubmit={(event) => { event.preventDefault(); openClub(clubReference.trim()); }}>
-          <label htmlFor="club-workspace-reference" className="block text-sm font-bold">Club workspace reference</label>
-          <p className="mt-1 text-sm text-slate-500">Use the reference provided by your club administrator. Access is checked when you open it.</p>
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row"><input id="club-workspace-reference" className={inputClass} value={clubReference} maxLength={200} onChange={(event) => setClubReference(event.target.value)} required autoComplete="off" />
-            <button className={`${buttonClass} shrink-0`} disabled={runtimeState.status === "RESOLVING"}>Open workspace</button></div>
-        </form>
-        {inputError && <p role="alert" className="text-rose-700">{inputError}</p>}
-        {runtimeState.status === "RESOLVING" && <p role="status" className="py-8 text-center text-slate-500">Checking club access…</p>}
-        {(runtimeState.status === "ERROR" || runtimeState.status === "REJECTED") && <p role="alert" className="rounded-xl bg-amber-50 p-5 text-amber-900">This club workspace is unavailable for your account. Check the reference and your membership, then try again.</p>}
-        {authorized && <ClubWorkspace key={`${uid}:${runtimeState.generation}`} uid={uid} clubId={runtimeState.selection!.organizationId} />}
-      </div>}
+      {authorized ? (
+        <ClubWorkspace key={`${uid}:${runtimeState.generation}`} uid={uid} clubId={runtimeState.selection!.organizationId} />
+      ) : (
+        <>
+          <div><h1 className="text-3xl font-black tracking-tight">Your club starts here</h1><p className="mt-2 text-slate-500">Join your team or open your club workspace.</p></div>
+          <nav aria-label="Pro Club sections" className="flex flex-wrap gap-2">
+            <button className={tab === "join" ? buttonClass : secondaryClass} aria-current={tab === "join" ? "page" : undefined} onClick={openStaffOnboarding}>Staff onboarding</button>
+            <button className={tab === "workspace" ? buttonClass : secondaryClass} aria-current={tab === "workspace" ? "page" : undefined} onClick={() => setTab("workspace")}>Club workspace</button>
+          </nav>
+          {tab === "join" ? <StaffOnboarding key={uid} uid={uid} onOpenClub={openClub} /> : <div className="space-y-7">
+            {runtimeState.status === "RESOLVING" ? (
+              <p role="status" className="py-12 text-center text-slate-600">Opening your club…</p>
+            ) : (
+              <form className="rounded-2xl border border-slate-200 bg-white p-5" onSubmit={(event) => { event.preventDefault(); openClub(clubReference.trim()); }}>
+                <label htmlFor="club-workspace-reference" className="block text-sm font-bold">Club workspace reference</label>
+                <p className="mt-1 text-sm text-slate-500">Use the reference provided by your club administrator. Access is checked when you open it.</p>
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row"><input id="club-workspace-reference" className={inputClass} value={clubReference} maxLength={200} onChange={(event) => setClubReference(event.target.value)} required autoComplete="off" />
+                  <button className={`${buttonClass} shrink-0`}>Open workspace</button></div>
+              </form>
+            )}
+            {inputError && <p role="alert" className="text-rose-700">{inputError}</p>}
+            {(runtimeState.status === "ERROR" || runtimeState.status === "REJECTED") && <p role="alert" className="rounded-xl bg-amber-50 p-5 text-amber-900">This club workspace is unavailable for your account. Check the reference and your membership, then try again.</p>}
+          </div>}
+        </>
+      )}
     </main>
   </div>;
 }
