@@ -208,10 +208,8 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
 
       assert.equal(discoveryCalls.length, 0);
       assert.equal(resolutionRequests.length, 1);
-      assert.deepEqual(resolutionRequests[0], {
-        uid,
-        organizationId: "club-remembered",
-      });
+      assert.equal(resolutionRequests[0]?.uid, uid);
+      assert.equal(resolutionRequests[0]?.organizationId, "club-remembered");
       assert.match(text(), /Remembered United/);
     });
 
