@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const workspace = readFileSync(
@@ -10,6 +10,14 @@ const savedDrafts = readFileSync(
   "src/components/pro-club/operations/WeeklyTrainingSavedDrafts.tsx",
   "utf8",
 );
+
+test("Weekly Planner UI foundation has a dedicated pure model boundary", () => {
+  assert.equal(
+    existsSync("src/components/pro-club/operations/weeklyPlannerUiModel.ts"),
+    true,
+    "weeklyPlannerUiModel.ts must exist before the seven-day planner can be implemented",
+  );
+});
 
 test("Weekly Training production presents the saved weekly card board before the fresh-DRAFT composer", () => {
   const savedDraftIndex = workspace.indexOf(
