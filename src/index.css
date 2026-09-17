@@ -1,1 +1,153 @@
 @import "tailwindcss";
+
+[data-pro-club-theme="light"] {
+  --pc-bg: #f1f5f9;
+  --pc-surface: #ffffff;
+  --pc-surface-soft: #f8fafc;
+  --pc-border: #dbe3ee;
+  --pc-text: #0f172a;
+  --pc-muted: #64748b;
+  --pc-accent: #0891b2;
+  --pc-topbar: rgba(255, 255, 255, 0.96);
+  --pc-glow: 0 0 0 rgba(6, 182, 212, 0);
+}
+
+[data-pro-club-theme="neon"] {
+  --pc-bg: #020617;
+  --pc-surface: #0b1220;
+  --pc-surface-soft: #111827;
+  --pc-border: rgba(34, 211, 238, 0.18);
+  --pc-text: #f8fafc;
+  --pc-muted: #94a3b8;
+  --pc-accent: #22d3ee;
+  --pc-topbar: rgba(2, 6, 23, 0.94);
+  --pc-glow: 0 0 24px rgba(34, 211, 238, 0.10);
+}
+
+.pro-club-theme-root,
+.pro-club-main,
+.pro-club-themed-surface {
+  background: var(--pc-bg);
+  color: var(--pc-text);
+}
+
+.pro-club-theme-root {
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.pro-club-sidebar {
+  background: #020617;
+  border-color: #1e293b;
+  color: #f8fafc;
+}
+
+.pro-club-topbar {
+  background: var(--pc-topbar);
+  border-color: var(--pc-border);
+  color: var(--pc-text);
+}
+
+.pro-club-topbar-divider {
+  background: var(--pc-border);
+}
+
+.pro-club-topbar-action,
+.pro-club-heading {
+  color: var(--pc-text);
+}
+
+.pro-club-topbar-action:hover,
+.pro-club-accent {
+  color: var(--pc-accent);
+}
+
+.pro-club-muted {
+  color: var(--pc-muted);
+}
+
+.pro-club-overview-card,
+.pro-club-theme-toggle {
+  background: var(--pc-surface);
+  border-color: var(--pc-border);
+  box-shadow: var(--pc-glow);
+}
+
+.pro-club-theme-option {
+  color: var(--pc-muted);
+}
+
+.pro-club-theme-option[data-selected="true"] {
+  background: var(--pc-accent);
+  color: #020617;
+  box-shadow: var(--pc-glow);
+}
+
+[data-pro-club-theme="neon"] .pro-club-sidebar {
+  border-color: rgba(34, 211, 238, 0.16);
+  box-shadow: 8px 0 28px rgba(6, 182, 212, 0.05);
+}
+
+[data-pro-club-theme="neon"] .pro-club-overview-card {
+  box-shadow:
+    0 14px 40px rgba(2, 6, 23, 0.45),
+    0 0 24px rgba(34, 211, 238, 0.08);
+}
+
+/*
+ * Existing Pro Club modules predate the shared theme layer and use Tailwind
+ * slate utilities directly. These overrides are intentionally scoped to the
+ * Pro Club module container so Light mode can remap those reviewed surfaces
+ * without changing their business logic or persistence boundaries.
+ */
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="bg-slate-950"],
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="bg-slate-900"] {
+  background-color: var(--pc-surface) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="bg-slate-800"] {
+  background-color: var(--pc-surface-soft) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="border-slate-900"],
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="border-slate-800"],
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="border-slate-700"],
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="border-slate-600"] {
+  border-color: var(--pc-border) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-white"],
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-slate-50"],
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-slate-100"],
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-slate-200"] {
+  color: var(--pc-text) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-slate-300"],
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-slate-400"],
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-slate-500"],
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-slate-600"] {
+  color: var(--pc-muted) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-module-surface input,
+[data-pro-club-theme="light"] .pro-club-module-surface select,
+[data-pro-club-theme="light"] .pro-club-module-surface textarea {
+  background-color: var(--pc-surface) !important;
+  border-color: var(--pc-border) !important;
+  color: var(--pc-text) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-module-surface input::placeholder,
+[data-pro-club-theme="light"] .pro-club-module-surface textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+[data-pro-club-theme="neon"] .pro-club-module-surface [class*="border-slate-800"],
+[data-pro-club-theme="neon"] .pro-club-module-surface [class*="border-slate-700"] {
+  border-color: var(--pc-border) !important;
+}
+
+[data-pro-club-theme="neon"] .pro-club-module-surface [class*="bg-slate-950"],
+[data-pro-club-theme="neon"] .pro-club-module-surface [class*="bg-slate-900"] {
+  box-shadow: 0 0 18px rgba(34, 211, 238, 0.035);
+}
