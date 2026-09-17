@@ -223,7 +223,7 @@ export default function ProClubTeamDashboard({
           </div>
         </header>
 
-        <main className="pro-club-themed-surface min-w-0 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+        <main className="min-w-0 pro-club-themed-surface px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
           {activeTab === "OVERVIEW" && (
             <section aria-labelledby="pro-club-team-overview" className="pro-club-module-surface space-y-6">
               <div>
