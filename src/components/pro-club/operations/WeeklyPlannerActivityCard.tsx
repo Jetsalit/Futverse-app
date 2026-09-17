@@ -90,7 +90,7 @@ export default function WeeklyPlannerActivityCard({
   onTakeAttendance,
 }: {
   activity: WeeklyPlannerActivity;
-  sessionDate: string;
+  sessionDate?: string;
   onTakeAttendance?: (slot: { sessionDate: string; startTime: string }) => void;
 }) {
   if (activity.source === "SAVED_TRAINING") {
@@ -122,7 +122,7 @@ export default function WeeklyPlannerActivityCard({
 
         <LoadMeter load={session.plannedLoad} />
 
-        {onTakeAttendance && (
+        {sessionDate && onTakeAttendance && (
           <button
             type="button"
             onClick={() =>
@@ -193,7 +193,7 @@ export default function WeeklyPlannerActivityCard({
           </MetaItem>
         </div>
         <LoadMeter load={activity.plannedLoad} />
-        {activity.activityType === "TRAINING" && onTakeAttendance && (
+        {activity.activityType === "TRAINING" && sessionDate && onTakeAttendance && (
           <button
             type="button"
             onClick={() =>
