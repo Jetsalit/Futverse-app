@@ -1,0 +1,43 @@
+name: Pro Club App Shell V1 Test Diagnostic
+
+on:
+  push:
+    branches:
+      - verify/pro-club-app-shell-v1-test-diagnostic
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - run: npm ci --ignore-scripts
+      - name: Minimal navigation
+        if: always()
+        run: node --experimental-test-module-mocks --import tsx --test --test-name-pattern="freezes the minimal production team navigation" tests/proClubTeamDashboardProductionV1.unit.test.tsx
+      - name: Rendered shell identity
+        if: always()
+        run: node --experimental-test-module-mocks --import tsx --test --test-name-pattern="renders the production app shell" tests/proClubTeamDashboardProductionV1.unit.test.tsx
+      - name: Shell layout source
+        if: always()
+        run: node --experimental-test-module-mocks --import tsx --test --test-name-pattern="app shell uses a left desktop sidebar" tests/proClubTeamDashboardProductionV1.unit.test.tsx
+      - name: Existing surfaces
+        if: always()
+        run: node --experimental-test-module-mocks --import tsx --test --test-name-pattern="production dashboard reuses reviewed" tests/proClubTeamDashboardProductionV1.unit.test.tsx
+      - name: Portal production dashboard
+        if: always()
+        run: node --experimental-test-module-mocks --import tsx --test --test-name-pattern="portal mounts only the production team dashboard" tests/proClubTeamDashboardProductionV1.unit.test.tsx
+      - name: Duplicate card removal
+        if: always()
+        run: node --experimental-test-module-mocks --import tsx --test --test-name-pattern="authorized workspace removes the duplicate" tests/proClubTeamDashboardProductionV1.unit.test.tsx
+      - name: Responsive navigation
+        if: always()
+        run: node --experimental-test-module-mocks --import tsx --test --test-name-pattern="team navigation is horizontally usable" tests/proClubTeamDashboardProductionV1.unit.test.tsx
+      - name: Persistence boundary
+        if: always()
+        run: node --experimental-test-module-mocks --import tsx --test --test-name-pattern="team dashboard adds presentation state only" tests/proClubTeamDashboardProductionV1.unit.test.tsx
