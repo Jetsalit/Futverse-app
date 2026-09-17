@@ -87,9 +87,18 @@ test("Day Card Take Attendance reuses the existing Attendance surface and passes
   assert.match(plannerBoard, /onTakeAttendance/);
   assert.match(dayCard, /onTakeAttendance/);
 
+  assert.match(activityCard, /activity\.source === "SAVED_TRAINING"/);
   assert.match(activityCard, /Take Attendance/);
-  assert.match(activityCard, /activity\.activityType === "TRAINING"/);
-  assert.match(activityCard, /onTakeAttendance\?\./);
+  assert.equal(
+    (activityCard.match(/Take Attendance/g) ?? []).length,
+    1,
+    "only authoritative saved Training may launch Attendance",
+  );
+  const localTrainingBlock = activityCard.slice(
+    activityCard.indexOf('if (activity.activityType === "TRAINING")'),
+    activityCard.indexOf('if (activity.activityType === "RECOVERY")'),
+  );
+  assert.doesNotMatch(localTrainingBlock, /Take Attendance/);
 
   assert.match(attendance, /initialSlot\?:/);
   assert.match(attendance, /sessionDate:\s*string/);
