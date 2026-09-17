@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -176,4 +177,34 @@ test("saved Training stays read-only while local activities can expose remove co
   assert.match(localMarkup, /Cup Match/);
   assert.match(localMarkup, /School Cup/);
   assert.match(localMarkup, /School A/);
+});
+
+test("Day Card and Activity Card remain UI-only with no persistence boundary", () => {
+  const sources = [
+    readFileSync(
+      "src/components/pro-club/operations/WeeklyPlannerActivityCard.tsx",
+      "utf8",
+    ),
+    readFileSync(
+      "src/components/pro-club/operations/WeeklyPlannerDayCard.tsx",
+      "utf8",
+    ),
+  ].join("\n");
+
+  for (const forbidden of [
+    /firebase/i,
+    /\/firestore\//i,
+    /\bsetDoc\b/,
+    /\baddDoc\b/,
+    /\bupdateDoc\b/,
+    /\bdeleteDoc\b/,
+    /\bwriteBatch\b/,
+    /\brunTransaction\b/,
+    /\bhttpsCallable\b/,
+    /saveProClubWeeklyTrainingFreshDraftForCurrentRuntime/,
+    /VITE_/,
+    /process\.env/,
+  ]) {
+    assert.doesNotMatch(sources, forbidden);
+  }
 });
