@@ -57,10 +57,12 @@ function DraftDetail({
   detail,
   onEdit,
   onUseAsNew,
+  onTakeAttendance,
 }: {
   detail: WeeklyTrainingSavedDraftDetail;
   onEdit: () => void;
   onUseAsNew: () => void;
+  onTakeAttendance?: (slot: { sessionDate: string; startTime: string }) => void;
 }) {
   const board = deriveProClubWeeklyPeriodizationBoard(detail.draft);
 
@@ -88,12 +90,21 @@ function DraftDetail({
         {detail.headCoachNote && <div><p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Head Coach note</p><p className="mt-1 whitespace-pre-wrap text-slate-200">{detail.headCoachNote}</p></div>}
       </div>
 
-      <WeeklyPeriodizationBoard board={board} />
+      <WeeklyPeriodizationBoard
+        board={board}
+        onTakeAttendance={onTakeAttendance}
+      />
     </article>
   );
 }
 
-export default function WeeklyTrainingSavedDrafts({ authority }: { authority: ProClubOrganizationAuthority }) {
+export default function WeeklyTrainingSavedDrafts({
+  authority,
+  onTakeAttendance,
+}: {
+  authority: ProClubOrganizationAuthority;
+  onTakeAttendance?: (slot: { sessionDate: string; startTime: string }) => void;
+}) {
   const [drafts, setDrafts] = useState<readonly WeeklyTrainingSavedDraftSummary[]>([]);
   const [nextCursor, setNextCursor] = useState<WeeklyTrainingSavedDraftPageCursor | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
@@ -232,6 +243,7 @@ export default function WeeklyTrainingSavedDrafts({ authority }: { authority: Pr
           detail={detail}
           onEdit={() => { setRevisingAsNew(false); setEditing(true); }}
           onUseAsNew={() => { setEditing(false); setRevisingAsNew(true); }}
+          onTakeAttendance={onTakeAttendance}
         />
       )}
 
