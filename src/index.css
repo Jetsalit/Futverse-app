@@ -407,3 +407,16 @@
 [data-pro-club-theme="neon"] .pro-club-weekday-accent {
   box-shadow: 0 0 14px color-mix(in srgb, var(--pc-weekday-accent) 36%, transparent);
 }
+
+/* Tactic Board Line Contrast Polish V1 — keep only pitch markings dark. */
+[aria-label="Weekly Training Tactic Board full-page workspace"] [class*="ring-slate-800"] {
+  --tw-ring-color: #1f2937 !important;
+}
+
+[aria-label="Weekly Training Tactic Board full-page workspace"] [class*="ring-slate-800"] [class*="border-slate-800"] {
+  border-color: #1f2937 !important;
+}
+
+[aria-label="Weekly Training Tactic Board full-page workspace"] [class*="ring-slate-800"] [class*="bg-slate-800"] {
+  background-color: #1f2937 !important;
+}
