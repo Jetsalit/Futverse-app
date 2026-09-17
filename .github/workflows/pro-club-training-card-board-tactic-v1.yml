@@ -4,12 +4,19 @@ on:
   push:
     branches:
       - feat/pro-club-training-card-board-tactic-v1
+      - feat/pro-club-day-card-attendance-v1
     paths:
       - src/components/pro-club/ProClubPortal.tsx
+      - src/components/pro-club/operations/ProClubTeamDashboard.tsx
+      - src/components/pro-club/operations/ProClubAttendance.tsx
       - src/components/pro-club/operations/ProClubHeadCoachWeeklyProductionWorkspace.tsx
       - src/components/pro-club/operations/ProClubTrainingDrillReferencePicker.tsx
       - src/components/pro-club/operations/WeeklyTrainingDraftComposer.tsx
       - src/components/pro-club/operations/WeeklyTrainingSavedDrafts.tsx
+      - src/components/pro-club/operations/WeeklyPeriodizationBoard.tsx
+      - src/components/pro-club/operations/WeeklyPlannerBoard.tsx
+      - src/components/pro-club/operations/WeeklyPlannerDayCard.tsx
+      - tests/proClubDayCardAttendanceIntegration.unit.test.ts
       - tests/proClubPortalDiscoveryLoading.unit.test.ts
       - tests/proClubTrainingTacticBoardIntegration.unit.test.ts
       - tests/proClubWeeklyTrainingCardBoardProduction.unit.test.ts
@@ -17,10 +24,16 @@ on:
   pull_request:
     paths:
       - src/components/pro-club/ProClubPortal.tsx
+      - src/components/pro-club/operations/ProClubTeamDashboard.tsx
+      - src/components/pro-club/operations/ProClubAttendance.tsx
       - src/components/pro-club/operations/ProClubHeadCoachWeeklyProductionWorkspace.tsx
       - src/components/pro-club/operations/ProClubTrainingDrillReferencePicker.tsx
       - src/components/pro-club/operations/WeeklyTrainingDraftComposer.tsx
       - src/components/pro-club/operations/WeeklyTrainingSavedDrafts.tsx
+      - src/components/pro-club/operations/WeeklyPeriodizationBoard.tsx
+      - src/components/pro-club/operations/WeeklyPlannerBoard.tsx
+      - src/components/pro-club/operations/WeeklyPlannerDayCard.tsx
+      - tests/proClubDayCardAttendanceIntegration.unit.test.ts
       - tests/proClubPortalDiscoveryLoading.unit.test.ts
       - tests/proClubTrainingTacticBoardIntegration.unit.test.ts
       - tests/proClubWeeklyTrainingCardBoardProduction.unit.test.ts
@@ -55,6 +68,7 @@ jobs:
       - name: Targeted Training + discovery contracts
         run: >-
           node --experimental-test-module-mocks --import tsx --test
+          tests/proClubDayCardAttendanceIntegration.unit.test.ts
           tests/proClubWeeklyTrainingCardBoardProduction.unit.test.ts
           tests/proClubTrainingTacticBoardIntegration.unit.test.ts
           tests/proClubPortalDiscoveryLoading.unit.test.ts
