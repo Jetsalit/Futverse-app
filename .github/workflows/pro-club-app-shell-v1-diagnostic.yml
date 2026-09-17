@@ -1,0 +1,44 @@
+name: Pro Club App Shell V1 Diagnostic
+
+on:
+  push:
+    branches:
+      - verify/pro-club-app-shell-v1-diagnostic
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - run: npm ci --ignore-scripts
+      - name: Team dashboard contract
+        continue-on-error: true
+        run: node --experimental-test-module-mocks --import tsx --test tests/proClubTeamDashboardProductionV1.unit.test.tsx
+      - name: Portal loading contract
+        continue-on-error: true
+        run: node --experimental-test-module-mocks --import tsx --test tests/proClubPortalDiscoveryLoading.unit.test.ts
+      - name: Membership discovery portal
+        continue-on-error: true
+        run: node --experimental-test-module-mocks --import tsx --test tests/proClubMembershipDiscoveryPortal.unit.test.tsx
+      - name: Weekly visibility
+        continue-on-error: true
+        run: node --experimental-test-module-mocks --import tsx --test tests/proClubHeadCoachWeeklyProductionVisibilityV1.unit.test.tsx
+      - name: Saved draft wiring
+        continue-on-error: true
+        run: node --experimental-test-module-mocks --import tsx --test tests/proClubWeeklyTrainingSavedDraftUiWiring.test.ts
+      - name: Weekly card board
+        continue-on-error: true
+        run: node --experimental-test-module-mocks --import tsx --test tests/proClubWeeklyTrainingCardBoardProduction.unit.test.ts
+      - name: Tactic integration
+        continue-on-error: true
+        run: node --experimental-test-module-mocks --import tsx --test tests/proClubTrainingTacticBoardIntegration.unit.test.ts
+      - name: Drill ownership
+        continue-on-error: true
+        run: node --experimental-test-module-mocks --import tsx --test tests/drillOwnership.test.ts
