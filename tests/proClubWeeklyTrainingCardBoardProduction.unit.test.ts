@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 import "./proClubWeeklyPlannerUiModel.unit.test";
+import "./proClubWeeklyPlannerBoardUi.unit.test";
 
 const workspace = readFileSync(
   "src/components/pro-club/operations/ProClubHeadCoachWeeklyProductionWorkspace.tsx",
