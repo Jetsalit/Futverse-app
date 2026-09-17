@@ -1,3 +1,5 @@
+import { Clock, MapPin, Users } from "lucide-react";
+
 import type {
   WeeklyPlannerActivity,
   WeeklyPlannerSquadScope,
@@ -24,12 +26,46 @@ const loadPercent = {
   HIGH: 100,
 } as const;
 
-function LoadMeter({ load }: { load: "LOW" | "MODERATE" | "HIGH" }) {
+const LOAD_VISUALS = {
+  LOW: {
+    labelClass: "text-emerald-300",
+    meterClass: "bg-emerald-400",
+  },
+  MODERATE: {
+    labelClass: "text-amber-300",
+    meterClass: "bg-amber-400",
+  },
+  HIGH: {
+    labelClass: "text-rose-300",
+    meterClass: "bg-rose-500",
+  },
+} as const;
+
+function MetaItem({
+  icon,
+  children,
+  className = "",
+}: {
+  icon: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="space-y-1">
+    <span className={`inline-flex min-w-0 items-center gap-1.5 ${className}`}>
+      <span className="shrink-0 text-cyan-300/80">{icon}</span>
+      <span className="truncate">{children}</span>
+    </span>
+  );
+}
+
+function LoadMeter({ load }: { load: "LOW" | "MODERATE" | "HIGH" }) {
+  const visual = LOAD_VISUALS[load];
+
+  return (
+    <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
         <span>Load</span>
-        <span className="text-cyan-200">{load}</span>
+        <span className={visual.labelClass}>{load}</span>
       </div>
       <div
         role="meter"
@@ -40,7 +76,7 @@ function LoadMeter({ load }: { load: "LOW" | "MODERATE" | "HIGH" }) {
         className="h-1.5 overflow-hidden rounded-full bg-slate-800"
       >
         <div
-          className="h-full rounded-full bg-cyan-400"
+          className={`h-full rounded-full transition-[width] ${visual.meterClass}`}
           style={{ width: `${loadPercent[load]}%` }}
         />
       </div>
@@ -67,11 +103,15 @@ export default function WeeklyPlannerActivityCard({
           <time className="text-sm font-black text-cyan-200">{session.startTime}</time>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-400">
-          <span>{session.durationMinutes} min</span>
-          <span className="text-right">{squadScopeLabel[activity.squadScope]}</span>
-          <span className="col-span-2 truncate">{session.location}</span>
-          <span className="col-span-2 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">
+        <div className="grid gap-2 text-[11px] text-slate-400 sm:grid-cols-2">
+          <MetaItem icon={<Clock size={13} />}>{session.durationMinutes} min</MetaItem>
+          <MetaItem icon={<Users size={13} />} className="sm:justify-end">
+            {squadScopeLabel[activity.squadScope]}
+          </MetaItem>
+          <MetaItem icon={<MapPin size={13} />} className="sm:col-span-2">
+            {session.location}
+          </MetaItem>
+          <span className="sm:col-span-2 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">
             {session.phaseOfPlay.replaceAll("_", " ")}
           </span>
         </div>
@@ -124,10 +164,14 @@ export default function WeeklyPlannerActivityCard({
           <span className="text-sm font-black text-cyan-200">{activity.startTime}</span>
         </div>
         <p className="text-xs leading-5 text-slate-400">{activity.focus}</p>
-        <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-400">
-          <span>{activity.durationMinutes} min</span>
-          <span className="text-right">{squadScopeLabel[activity.squadScope]}</span>
-          <span className="col-span-2 truncate">{activity.location}</span>
+        <div className="grid gap-2 text-[11px] text-slate-400 sm:grid-cols-2">
+          <MetaItem icon={<Clock size={13} />}>{activity.durationMinutes} min</MetaItem>
+          <MetaItem icon={<Users size={13} />} className="sm:justify-end">
+            {squadScopeLabel[activity.squadScope]}
+          </MetaItem>
+          <MetaItem icon={<MapPin size={13} />} className="sm:col-span-2">
+            {activity.location}
+          </MetaItem>
         </div>
         <LoadMeter load={activity.plannedLoad} />
       </article>
@@ -146,10 +190,14 @@ export default function WeeklyPlannerActivityCard({
           </div>
           <span className="text-sm font-black text-emerald-200">{activity.startTime}</span>
         </div>
-        <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-400">
-          <span>{activity.durationMinutes} min</span>
-          <span className="text-right">{squadScopeLabel[activity.squadScope]}</span>
-          <span className="col-span-2 truncate">{activity.location}</span>
+        <div className="grid gap-2 text-[11px] text-slate-400 sm:grid-cols-2">
+          <MetaItem icon={<Clock size={13} />}>{activity.durationMinutes} min</MetaItem>
+          <MetaItem icon={<Users size={13} />} className="sm:justify-end">
+            {squadScopeLabel[activity.squadScope]}
+          </MetaItem>
+          <MetaItem icon={<MapPin size={13} />} className="sm:col-span-2">
+            {activity.location}
+          </MetaItem>
         </div>
       </article>
     );
@@ -166,11 +214,13 @@ export default function WeeklyPlannerActivityCard({
         </div>
         <span className="text-sm font-black text-amber-200">{activity.kickoffTime}</span>
       </div>
-      <div className="space-y-1 text-[11px] leading-4 text-slate-400">
+      <div className="space-y-2 text-[11px] leading-4 text-slate-400">
         <p className="font-semibold text-slate-300">{activity.competition || "Competition not set"}</p>
-        <p>{activity.venue || "Venue not set"}</p>
-        <p>{activity.squadLabel}</p>
-        <p>{squadScopeLabel[activity.squadScope]}</p>
+        <MetaItem icon={<Clock size={13} />}>{activity.kickoffTime}</MetaItem>
+        <MetaItem icon={<MapPin size={13} />}>{activity.venue || "Venue not set"}</MetaItem>
+        <MetaItem icon={<Users size={13} />}>
+          {activity.squadLabel} · {squadScopeLabel[activity.squadScope]}
+        </MetaItem>
       </div>
     </article>
   );
