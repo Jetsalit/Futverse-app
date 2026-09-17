@@ -139,7 +139,7 @@ test("reuses the existing Weekly components and source-controlled capabilities",
   );
   assert.match(
     savedDraftSource,
-    /<WeeklyPeriodizationBoard board=\{board\} \/>/,
+    /<WeeklyPeriodizationBoard[\s\S]*board=\{board\}[\s\S]*onTakeAttendance=\{onTakeAttendance\}/,
   );
   assert.doesNotMatch(
     source,
