@@ -32,6 +32,8 @@ export const PRO_CLUB_TEAM_DASHBOARD_TABS = [
 type ProClubTeamDashboardTab =
   (typeof PRO_CLUB_TEAM_DASHBOARD_TABS)[number];
 
+type OverviewCardTone = "squad" | "training" | "attendance" | "matches";
+
 const TAB_LABELS: Record<ProClubTeamDashboardTab, string> = {
   OVERVIEW: "Overview",
   SQUAD: "Squad",
@@ -243,25 +245,34 @@ export default function ProClubTeamDashboard({
                   icon={<Users size={20} />}
                   title="Squad"
                   description="First Team roster"
+                  tone="squad"
                 />
                 <OverviewCard
                   icon={<Dumbbell size={20} />}
                   title="Training"
                   description="Weekly Training"
+                  tone="training"
                 />
                 <OverviewCard
                   icon={<ClipboardCheck size={20} />}
                   title="Attendance"
                   description="Training attendance"
+                  tone="attendance"
                 />
                 <OverviewCard
                   icon={<CalendarDays size={20} />}
                   title="Matches"
                   description="Coming soon"
+                  tone="matches"
+                  badge="Coming soon"
                 />
               </div>
 
-              {overviewSupplement && <div className="pt-1">{overviewSupplement}</div>}
+              {overviewSupplement && (
+                <div className="pro-club-workspace-status pt-1">
+                  {overviewSupplement}
+                </div>
+              )}
             </section>
           )}
 
@@ -295,15 +306,31 @@ function OverviewCard({
   icon,
   title,
   description,
+  tone,
+  badge,
 }: {
   icon: ReactNode;
   title: string;
   description: string;
+  tone: OverviewCardTone;
+  badge?: string;
 }) {
   return (
-    <article className="pro-club-overview-card rounded-2xl border p-4 shadow-sm">
-      <div className="pro-club-accent">{icon}</div>
-      <h4 className="pro-club-heading mt-3 font-bold">{title}</h4>
+    <article
+      data-tone={tone}
+      className="pro-club-overview-card group relative overflow-hidden rounded-2xl border p-4 shadow-sm transition duration-200"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="pro-club-overview-card-icon flex h-10 w-10 items-center justify-center rounded-xl">
+          {icon}
+        </div>
+        {badge && (
+          <span className="pro-club-overview-card-badge rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em]">
+            {badge}
+          </span>
+        )}
+      </div>
+      <h4 className="pro-club-heading mt-4 font-black">{title}</h4>
       <p className="pro-club-muted mt-1 text-sm">{description}</p>
     </article>
   );
