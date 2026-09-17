@@ -10,6 +10,7 @@
   --pc-accent: #0e7490;
   --pc-success: #047857;
   --pc-warning: #92400e;
+  --pc-danger: #be123c;
   --pc-topbar: rgba(255, 255, 255, 0.96);
   --pc-glow: 0 0 0 rgba(6, 182, 212, 0);
 }
@@ -24,6 +25,7 @@
   --pc-accent: #67e8f9;
   --pc-success: #6ee7b7;
   --pc-warning: #fcd34d;
+  --pc-danger: #fda4af;
   --pc-topbar: rgba(2, 6, 23, 0.94);
   --pc-glow: 0 0 24px rgba(34, 211, 238, 0.10);
 }
@@ -145,6 +147,10 @@
   color: var(--pc-warning) !important;
 }
 
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-rose-"] {
+  color: var(--pc-danger) !important;
+}
+
 [data-pro-club-theme="light"] .pro-club-module-surface input,
 [data-pro-club-theme="light"] .pro-club-module-surface select,
 [data-pro-club-theme="light"] .pro-club-module-surface textarea {
@@ -183,4 +189,144 @@
 
 [data-pro-club-theme="neon"] .pro-club-module-surface [class*="text-amber-"] {
   color: var(--pc-warning) !important;
+}
+
+[data-pro-club-theme="neon"] .pro-club-module-surface [class*="text-rose-"] {
+  color: var(--pc-danger) !important;
+}
+
+/* Pro Club Visual Polish V1 — shared presentation identities. */
+.pro-club-overview-card,
+.pro-club-roster-summary-card {
+  --pc-card-accent: #0891b2;
+  --pc-card-soft: rgba(8, 145, 178, 0.10);
+}
+
+.pro-club-overview-card::before,
+.pro-club-roster-summary-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--pc-card-accent);
+  opacity: 0.9;
+}
+
+.pro-club-overview-card-icon,
+.pro-club-roster-summary-icon {
+  background: var(--pc-card-soft);
+  color: var(--pc-card-accent);
+}
+
+.pro-club-overview-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--pc-card-accent) 38%, var(--pc-border));
+}
+
+.pro-club-overview-card-badge,
+.pro-club-roster-summary-label,
+.pro-club-roster-summary-count {
+  color: var(--pc-card-accent);
+}
+
+.pro-club-overview-card-badge {
+  background: var(--pc-card-soft);
+}
+
+.pro-club-overview-card[data-tone="squad"],
+.pro-club-roster-summary-card[data-tone="total"] {
+  --pc-card-accent: #0891b2;
+  --pc-card-soft: rgba(8, 145, 178, 0.11);
+}
+
+.pro-club-overview-card[data-tone="training"] {
+  --pc-card-accent: #7c3aed;
+  --pc-card-soft: rgba(124, 58, 237, 0.10);
+}
+
+.pro-club-overview-card[data-tone="attendance"],
+.pro-club-roster-summary-card[data-tone="midfielders"] {
+  --pc-card-accent: #059669;
+  --pc-card-soft: rgba(5, 150, 105, 0.10);
+}
+
+.pro-club-overview-card[data-tone="matches"],
+.pro-club-roster-summary-card[data-tone="gk"] {
+  --pc-card-accent: #d97706;
+  --pc-card-soft: rgba(217, 119, 6, 0.11);
+}
+
+.pro-club-roster-summary-card[data-tone="defenders"] {
+  --pc-card-accent: #2563eb;
+  --pc-card-soft: rgba(37, 99, 235, 0.10);
+}
+
+.pro-club-roster-summary-card[data-tone="forwards"] {
+  --pc-card-accent: #e11d48;
+  --pc-card-soft: rgba(225, 29, 72, 0.10);
+}
+
+.pro-club-roster-summary-card {
+  background: var(--pc-surface);
+  border-color: var(--pc-border) !important;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+}
+
+.pro-club-workspace-status > section:has(> svg) {
+  border-color: color-mix(in srgb, var(--pc-success) 25%, var(--pc-border)) !important;
+  border-left: 4px solid var(--pc-success) !important;
+  background: var(--pc-surface) !important;
+  padding: 1rem 1.25rem !important;
+}
+
+.pro-club-workspace-status > section:has(> svg) > svg {
+  float: left;
+  margin-right: 0.75rem;
+  color: var(--pc-success) !important;
+}
+
+.pro-club-workspace-status > section:has(> svg) > h3 {
+  margin-top: 0 !important;
+  color: var(--pc-text) !important;
+}
+
+.pro-club-workspace-status > section:has(> svg) > p {
+  margin-top: 0.25rem !important;
+  color: var(--pc-muted) !important;
+}
+
+[data-pro-club-theme="neon"] .pro-club-overview-card,
+[data-pro-club-theme="neon"] .pro-club-roster-summary-card {
+  background: color-mix(in srgb, var(--pc-surface) 94%, var(--pc-card-accent) 6%);
+  border-color: color-mix(in srgb, var(--pc-card-accent) 24%, var(--pc-border)) !important;
+  box-shadow:
+    0 14px 32px rgba(2, 6, 23, 0.36),
+    0 0 20px color-mix(in srgb, var(--pc-card-accent) 8%, transparent);
+}
+
+[data-pro-club-theme="neon"] .pro-club-overview-card[data-tone="squad"],
+[data-pro-club-theme="neon"] .pro-club-roster-summary-card[data-tone="total"] {
+  --pc-card-accent: #67e8f9;
+}
+
+[data-pro-club-theme="neon"] .pro-club-overview-card[data-tone="training"] {
+  --pc-card-accent: #c4b5fd;
+}
+
+[data-pro-club-theme="neon"] .pro-club-overview-card[data-tone="attendance"],
+[data-pro-club-theme="neon"] .pro-club-roster-summary-card[data-tone="midfielders"] {
+  --pc-card-accent: #6ee7b7;
+}
+
+[data-pro-club-theme="neon"] .pro-club-overview-card[data-tone="matches"],
+[data-pro-club-theme="neon"] .pro-club-roster-summary-card[data-tone="gk"] {
+  --pc-card-accent: #fcd34d;
+}
+
+[data-pro-club-theme="neon"] .pro-club-roster-summary-card[data-tone="defenders"] {
+  --pc-card-accent: #93c5fd;
+}
+
+[data-pro-club-theme="neon"] .pro-club-roster-summary-card[data-tone="forwards"] {
+  --pc-card-accent: #fda4af;
 }
