@@ -34,7 +34,7 @@ const attendance = readFileSync(
 test("saved Training activity exposes Take Attendance with its exact date and start time", () => {
   assert.match(dayCard, /onTakeAttendance/);
   assert.match(dayCard, /Take Attendance/);
-  assert.match(dayCard, /activity\.type\s*===\s*["']TRAINING["']/);
+  assert.match(dayCard, /activity\.activityType\s*===\s*["']TRAINING["']/);
   assert.match(dayCard, /activity\.source\s*===\s*["']SAVED_TRAINING["']/);
   assert.match(
     dayCard,
@@ -52,7 +52,7 @@ test("attendance launch callback is threaded through the existing Weekly Trainin
 test("team dashboard switches from Training to the existing Attendance module with launch context", () => {
   assert.match(dashboard, /attendanceLaunchContext/);
   assert.match(dashboard, /setAttendanceLaunchContext/);
-  assert.match(dashboard, /setActiveModule\(["']ATTENDANCE["']\)/);
+  assert.match(dashboard, /setActiveTab\(["']ATTENDANCE["']\)/);
   assert.match(
     dashboard,
     /<ProClubAttendance[\s\S]*initialSession=\{attendanceLaunchContext\}/,
