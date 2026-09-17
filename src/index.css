@@ -1,1 +1,422 @@
 @import "tailwindcss";
+
+[data-pro-club-theme="light"] {
+  --pc-bg: #f1f5f9;
+  --pc-surface: #ffffff;
+  --pc-surface-soft: #f8fafc;
+  --pc-border: #dbe3ee;
+  --pc-text: #0f172a;
+  --pc-muted: #475569;
+  --pc-accent: #0e7490;
+  --pc-success: #047857;
+  --pc-warning: #92400e;
+  --pc-danger: #be123c;
+  --pc-topbar: rgba(255, 255, 255, 0.96);
+  --pc-glow: 0 0 0 rgba(6, 182, 212, 0);
+}
+
+[data-pro-club-theme="neon"] {
+  --pc-bg: #020617;
+  --pc-surface: #0b1220;
+  --pc-surface-soft: #111827;
+  --pc-border: rgba(34, 211, 238, 0.18);
+  --pc-text: #f8fafc;
+  --pc-muted: #cbd5e1;
+  --pc-accent: #67e8f9;
+  --pc-success: #6ee7b7;
+  --pc-warning: #fcd34d;
+  --pc-danger: #fda4af;
+  --pc-topbar: rgba(2, 6, 23, 0.94);
+  --pc-glow: 0 0 24px rgba(34, 211, 238, 0.10);
+}
+
+.pro-club-theme-root,
+.pro-club-main,
+.pro-club-themed-surface {
+  background: var(--pc-bg);
+  color: var(--pc-text);
+}
+
+.pro-club-theme-root {
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.pro-club-sidebar {
+  background: #020617;
+  border-color: #1e293b;
+  color: #f8fafc;
+}
+
+.pro-club-topbar {
+  background: var(--pc-topbar);
+  border-color: var(--pc-border);
+  color: var(--pc-text);
+}
+
+.pro-club-topbar-divider {
+  background: var(--pc-border);
+}
+
+.pro-club-topbar-action,
+.pro-club-heading {
+  color: var(--pc-text);
+}
+
+.pro-club-topbar-action:hover,
+.pro-club-accent {
+  color: var(--pc-accent);
+}
+
+.pro-club-muted {
+  color: var(--pc-muted);
+}
+
+.pro-club-overview-card,
+.pro-club-theme-toggle {
+  background: var(--pc-surface);
+  border-color: var(--pc-border);
+  box-shadow: var(--pc-glow);
+}
+
+.pro-club-theme-option {
+  color: var(--pc-muted);
+}
+
+.pro-club-theme-option[data-selected="true"] {
+  background: var(--pc-accent);
+  color: #020617;
+  box-shadow: var(--pc-glow);
+}
+
+[data-pro-club-theme="neon"] .pro-club-sidebar {
+  border-color: rgba(34, 211, 238, 0.16);
+  box-shadow: 8px 0 28px rgba(6, 182, 212, 0.05);
+}
+
+[data-pro-club-theme="neon"] .pro-club-overview-card {
+  box-shadow:
+    0 14px 40px rgba(2, 6, 23, 0.45),
+    0 0 24px rgba(34, 211, 238, 0.08);
+}
+
+/*
+ * Existing Pro Club modules predate the shared theme layer and use Tailwind
+ * slate utilities directly. These overrides are intentionally scoped to the
+ * Pro Club module container so both approved themes can improve readability
+ * without changing business logic or persistence boundaries.
+ */
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="bg-slate-950"],
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="bg-slate-900"] {
+  background-color: var(--pc-surface) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="bg-slate-800"] {
+  background-color: var(--pc-surface-soft) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="border-slate-900"],
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="border-slate-800"],
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="border-slate-700"],
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="border-slate-600"] {
+  border-color: var(--pc-border) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-white"],
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-slate-50"],
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-slate-100"],
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-slate-200"] {
+  color: var(--pc-text) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-slate-300"],
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-slate-400"],
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-slate-500"],
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-slate-600"] {
+  color: var(--pc-muted) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-cyan-"] {
+  color: var(--pc-accent) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-emerald-"] {
+  color: var(--pc-success) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-amber-"] {
+  color: var(--pc-warning) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-rose-"] {
+  color: var(--pc-danger) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-module-surface input,
+[data-pro-club-theme="light"] .pro-club-module-surface select,
+[data-pro-club-theme="light"] .pro-club-module-surface textarea {
+  background-color: var(--pc-surface) !important;
+  border-color: var(--pc-border) !important;
+  color: var(--pc-text) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-module-surface input::placeholder,
+[data-pro-club-theme="light"] .pro-club-module-surface textarea::placeholder {
+  color: #64748b !important;
+}
+
+[data-pro-club-theme="neon"] .pro-club-module-surface [class*="border-slate-800"],
+[data-pro-club-theme="neon"] .pro-club-module-surface [class*="border-slate-700"] {
+  border-color: var(--pc-border) !important;
+}
+
+[data-pro-club-theme="neon"] .pro-club-module-surface [class*="bg-slate-950"],
+[data-pro-club-theme="neon"] .pro-club-module-surface [class*="bg-slate-900"] {
+  box-shadow: 0 0 18px rgba(34, 211, 238, 0.035);
+}
+
+[data-pro-club-theme="neon"] .pro-club-module-surface [class*="text-slate-500"],
+[data-pro-club-theme="neon"] .pro-club-module-surface [class*="text-slate-600"] {
+  color: var(--pc-muted) !important;
+}
+
+[data-pro-club-theme="neon"] .pro-club-module-surface [class*="text-cyan-"] {
+  color: var(--pc-accent) !important;
+}
+
+[data-pro-club-theme="neon"] .pro-club-module-surface [class*="text-emerald-"] {
+  color: var(--pc-success) !important;
+}
+
+[data-pro-club-theme="neon"] .pro-club-module-surface [class*="text-amber-"] {
+  color: var(--pc-warning) !important;
+}
+
+[data-pro-club-theme="neon"] .pro-club-module-surface [class*="text-rose-"] {
+  color: var(--pc-danger) !important;
+}
+
+/* Pro Club Visual Polish V1 — shared presentation identities. */
+.pro-club-overview-card,
+.pro-club-roster-summary-card {
+  --pc-card-accent: #0891b2;
+  --pc-card-soft: rgba(8, 145, 178, 0.10);
+}
+
+.pro-club-overview-card::before,
+.pro-club-roster-summary-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--pc-card-accent);
+  opacity: 0.9;
+}
+
+.pro-club-overview-card-icon,
+.pro-club-roster-summary-icon {
+  background: var(--pc-card-soft);
+  color: var(--pc-card-accent);
+}
+
+.pro-club-overview-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--pc-card-accent) 38%, var(--pc-border));
+}
+
+.pro-club-overview-card-badge,
+.pro-club-roster-summary-label,
+.pro-club-roster-summary-count {
+  color: var(--pc-card-accent);
+}
+
+.pro-club-overview-card-badge {
+  background: var(--pc-card-soft);
+}
+
+.pro-club-overview-card[data-tone="squad"],
+.pro-club-roster-summary-card[data-tone="total"] {
+  --pc-card-accent: #0891b2;
+  --pc-card-soft: rgba(8, 145, 178, 0.11);
+}
+
+.pro-club-overview-card[data-tone="training"] {
+  --pc-card-accent: #7c3aed;
+  --pc-card-soft: rgba(124, 58, 237, 0.10);
+}
+
+.pro-club-overview-card[data-tone="attendance"],
+.pro-club-roster-summary-card[data-tone="midfielders"] {
+  --pc-card-accent: #059669;
+  --pc-card-soft: rgba(5, 150, 105, 0.10);
+}
+
+.pro-club-overview-card[data-tone="matches"],
+.pro-club-roster-summary-card[data-tone="gk"] {
+  --pc-card-accent: #d97706;
+  --pc-card-soft: rgba(217, 119, 6, 0.11);
+}
+
+.pro-club-roster-summary-card[data-tone="defenders"] {
+  --pc-card-accent: #2563eb;
+  --pc-card-soft: rgba(37, 99, 235, 0.10);
+}
+
+.pro-club-roster-summary-card[data-tone="forwards"] {
+  --pc-card-accent: #e11d48;
+  --pc-card-soft: rgba(225, 29, 72, 0.10);
+}
+
+.pro-club-roster-summary-card {
+  background: var(--pc-surface);
+  border-color: var(--pc-border) !important;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+}
+
+.pro-club-workspace-status > section:has(> svg) {
+  border-color: color-mix(in srgb, var(--pc-success) 25%, var(--pc-border)) !important;
+  border-left: 4px solid var(--pc-success) !important;
+  background: var(--pc-surface) !important;
+  padding: 1rem 1.25rem !important;
+}
+
+.pro-club-workspace-status > section:has(> svg) > svg {
+  float: left;
+  margin-right: 0.75rem;
+  color: var(--pc-success) !important;
+}
+
+.pro-club-workspace-status > section:has(> svg) > h3 {
+  margin-top: 0 !important;
+  color: var(--pc-text) !important;
+}
+
+.pro-club-workspace-status > section:has(> svg) > p {
+  margin-top: 0.25rem !important;
+  color: var(--pc-muted) !important;
+}
+
+[data-pro-club-theme="neon"] .pro-club-overview-card,
+[data-pro-club-theme="neon"] .pro-club-roster-summary-card {
+  background: color-mix(in srgb, var(--pc-surface) 94%, var(--pc-card-accent) 6%);
+  border-color: color-mix(in srgb, var(--pc-card-accent) 24%, var(--pc-border)) !important;
+  box-shadow:
+    0 14px 32px rgba(2, 6, 23, 0.36),
+    0 0 20px color-mix(in srgb, var(--pc-card-accent) 8%, transparent);
+}
+
+[data-pro-club-theme="neon"] .pro-club-overview-card[data-tone="squad"],
+[data-pro-club-theme="neon"] .pro-club-roster-summary-card[data-tone="total"] {
+  --pc-card-accent: #67e8f9;
+}
+
+[data-pro-club-theme="neon"] .pro-club-overview-card[data-tone="training"] {
+  --pc-card-accent: #c4b5fd;
+}
+
+[data-pro-club-theme="neon"] .pro-club-overview-card[data-tone="attendance"],
+[data-pro-club-theme="neon"] .pro-club-roster-summary-card[data-tone="midfielders"] {
+  --pc-card-accent: #6ee7b7;
+}
+
+[data-pro-club-theme="neon"] .pro-club-overview-card[data-tone="matches"],
+[data-pro-club-theme="neon"] .pro-club-roster-summary-card[data-tone="gk"] {
+  --pc-card-accent: #fcd34d;
+}
+
+[data-pro-club-theme="neon"] .pro-club-roster-summary-card[data-tone="defenders"] {
+  --pc-card-accent: #93c5fd;
+}
+
+[data-pro-club-theme="neon"] .pro-club-roster-summary-card[data-tone="forwards"] {
+  --pc-card-accent: #fda4af;
+}
+
+/* Thai weekday color contract — familiar day colors for coaches. */
+.pro-club-weekday-card {
+  --pc-weekday-accent: var(--pc-accent);
+}
+
+.pro-club-weekday-name {
+  color: var(--pc-weekday-accent);
+}
+
+.pro-club-weekday-accent {
+  background: var(--pc-weekday-accent);
+}
+
+[data-pro-club-theme="light"] .pro-club-weekday-card[data-weekday="MONDAY"] {
+  --pc-weekday-accent: #a16207;
+}
+
+[data-pro-club-theme="light"] .pro-club-weekday-card[data-weekday="TUESDAY"] {
+  --pc-weekday-accent: #be185d;
+}
+
+[data-pro-club-theme="light"] .pro-club-weekday-card[data-weekday="WEDNESDAY"] {
+  --pc-weekday-accent: #15803d;
+}
+
+[data-pro-club-theme="light"] .pro-club-weekday-card[data-weekday="THURSDAY"] {
+  --pc-weekday-accent: #c2410c;
+}
+
+[data-pro-club-theme="light"] .pro-club-weekday-card[data-weekday="FRIDAY"] {
+  --pc-weekday-accent: #0369a1;
+}
+
+[data-pro-club-theme="light"] .pro-club-weekday-card[data-weekday="SATURDAY"] {
+  --pc-weekday-accent: #7e22ce;
+}
+
+[data-pro-club-theme="light"] .pro-club-weekday-card[data-weekday="SUNDAY"] {
+  --pc-weekday-accent: #b91c1c;
+}
+
+[data-pro-club-theme="neon"] .pro-club-weekday-card[data-weekday="MONDAY"] {
+  --pc-weekday-accent: #fde047;
+}
+
+[data-pro-club-theme="neon"] .pro-club-weekday-card[data-weekday="TUESDAY"] {
+  --pc-weekday-accent: #f472b6;
+}
+
+[data-pro-club-theme="neon"] .pro-club-weekday-card[data-weekday="WEDNESDAY"] {
+  --pc-weekday-accent: #4ade80;
+}
+
+[data-pro-club-theme="neon"] .pro-club-weekday-card[data-weekday="THURSDAY"] {
+  --pc-weekday-accent: #fb923c;
+}
+
+[data-pro-club-theme="neon"] .pro-club-weekday-card[data-weekday="FRIDAY"] {
+  --pc-weekday-accent: #38bdf8;
+}
+
+[data-pro-club-theme="neon"] .pro-club-weekday-card[data-weekday="SATURDAY"] {
+  --pc-weekday-accent: #c084fc;
+}
+
+[data-pro-club-theme="neon"] .pro-club-weekday-card[data-weekday="SUNDAY"] {
+  --pc-weekday-accent: #f87171;
+}
+
+[data-pro-club-theme="neon"] .pro-club-weekday-name {
+  text-shadow: 0 0 12px color-mix(in srgb, var(--pc-weekday-accent) 42%, transparent);
+}
+
+[data-pro-club-theme="neon"] .pro-club-weekday-accent {
+  box-shadow: 0 0 14px color-mix(in srgb, var(--pc-weekday-accent) 36%, transparent);
+}
+
+/* Tactic Board Line Contrast Polish V1 — keep only pitch markings dark. */
+[aria-label="Weekly Training Tactic Board full-page workspace"] [class*="ring-slate-800"] {
+  --tw-ring-color: #1f2937 !important;
+}
+
+[aria-label="Weekly Training Tactic Board full-page workspace"] [class*="ring-slate-800"] [class*="border-slate-800"] {
+  border-color: #1f2937 !important;
+}
+
+[aria-label="Weekly Training Tactic Board full-page workspace"] [class*="ring-slate-800"] [class*="bg-slate-800"] {
+  background-color: #1f2937 !important;
+}

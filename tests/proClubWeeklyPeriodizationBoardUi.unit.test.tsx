@@ -84,42 +84,31 @@ function visibleText(markup: string): string {
   return markup.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function datePresentations(markup: string, canonicalDate: string): string[] {
-  const escapedDate = canonicalDate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return Array.from(
-    markup.matchAll(
-      new RegExp(
-        `<time\\s+datetime="${escapedDate}"[^>]*>([^<]+)<\\/time>`,
-        "gi",
-      ),
-    ),
-    (match) => match[1].trim(),
-  );
-}
-
-test("renders the read-only microcycle header and canonical objectives", () => {
+test("renders the approved weekly planner header and canonical objectives", () => {
   const text = visibleText(renderBoard());
 
-  assert.match(text, /Weekly Periodization Board/);
-  assert.match(text, /MICROCYCLE/);
-  assert.match(text, /READ ONLY/);
+  assert.match(text, /Weekly Training Plan/);
+  assert.match(text, /7-day microcycle/);
+  assert.match(text, /UI PREVIEW/);
   assert.match(text, /First Team/);
-  assert.match(text, /2026-09-07/);
   assert.match(text, /Build through pressure/);
   assert.match(text, /Protect the central lane after loss/);
+  assert.match(text, /Persistence not enabled/);
 });
 
-test("renders supplied sessions as day cards with load, objective, time, location and total", () => {
+test("renders exactly seven Monday-to-Sunday day cards while preserving saved session detail", () => {
   const markup = renderBoard();
   const text = visibleText(markup);
 
+  assert.equal((markup.match(/data-weekly-planner-day=/g) ?? []).length, 7);
   for (const expected of [
-    "MONDAY",
-    "SATURDAY",
-    "SUNDAY",
-    "2026-09-07",
-    "2026-09-12",
-    "2026-09-13",
+    "MON",
+    "TUE",
+    "WED",
+    "THU",
+    "FRI",
+    "SAT",
+    "SUN",
     "LOW",
     "MODERATE",
     "HIGH",
@@ -133,34 +122,33 @@ test("renders supplied sessions as day cards with load, objective, time, locatio
     "90 min",
     "75 min",
     "GENERAL",
-    "IN_POSSESSION",
-    "TRANSITION_TO_DEFEND",
+    "IN POSSESSION",
+    "TRANSITION TO DEFEND",
     "Restore movement quality",
     "Progress through two pressing lines",
     "Counter-press immediately after loss",
-    "Total session",
+    "Not set",
   ]) {
     assert.match(text, new RegExp(expected));
   }
 
-  assert.match(markup, /aria-label="Weekly microcycle sessions"/);
+  assert.match(markup, /aria-label="Weekly planner days"/);
   assert.equal((markup.match(/role="meter"/g) ?? []).length, 3);
-  for (const canonicalDate of ["2026-09-07", "2026-09-12", "2026-09-13"]) {
-    const presentations = datePresentations(markup, canonicalDate);
-    assert.ok(
-      presentations.some(
-        (presentation) =>
-          presentation.length > 0 && presentation !== canonicalDate,
-      ),
-      `missing localized presentation for ${canonicalDate}`,
-    );
+  for (const canonicalDate of [
+    "2026-09-07",
+    "2026-09-08",
+    "2026-09-09",
+    "2026-09-10",
+    "2026-09-11",
+    "2026-09-12",
+    "2026-09-13",
+  ]) {
+    assert.match(markup, new RegExp(`datetime="${canonicalDate}"`));
   }
-  assert.doesNotMatch(text, /TUESDAY|WEDNESDAY|THURSDAY|FRIDAY/);
 });
 
-test("renders blocks in input order with numbering and optional drill references", () => {
-  const markup = renderBoard();
-  const text = visibleText(markup);
+test("renders saved blocks in input order with optional drill references and coaching points", () => {
+  const text = visibleText(renderBoard());
   const orderedTitles = [
     "1. Movement preparation",
     "2. Passing rhythm",
@@ -187,7 +175,7 @@ test("renders blocks in input order with numbering and optional drill references
   assert.match(text, /Close the nearest forward lane/);
 });
 
-test("does not expose private metadata or mutation controls", () => {
+test("does not expose private saved-plan metadata and keeps saved Training immutable in planner preview", () => {
   const valueWithPrivateMetadata = {
     ...board,
     clubId: "PRIVATE_CLUB_ID",
@@ -198,8 +186,7 @@ test("does not expose private metadata or mutation controls", () => {
     matchDay: "PRIVATE_MATCH_DAY",
     mdLabel: "PRIVATE_MD_LABEL",
   };
-  const markup = renderBoard(valueWithPrivateMetadata);
-  const text = visibleText(markup);
+  const text = visibleText(renderBoard(valueWithPrivateMetadata));
 
   for (const privateValue of [
     "PRIVATE_CLUB_ID",
@@ -214,26 +201,28 @@ test("does not expose private metadata or mutation controls", () => {
   }
 
   assert.doesNotMatch(text, /\bMD(?:-4|-3|-2|-1|\+1)?\b/);
-  assert.doesNotMatch(markup, /<(?:button|input|select|textarea)\b/i);
-  assert.doesNotMatch(
-    text,
-    /\b(?:edit|save|delete|archive|submit|approve|publish|add drill|take attendance)\b/i,
-  );
+  assert.doesNotMatch(text, /Remove activity/);
+  assert.match(text, /\+ Add Activity/);
+  assert.match(text, /Save Plan/);
 });
 
-test("Board source remains presentation-only and Saved-DRAFT wiring preserves the read path", () => {
-  const boardSource = readFileSync(
+test("compatibility wrapper remains presentation-only and Saved-DRAFT wiring preserves the read path", () => {
+  const wrapperSource = readFileSync(
     "src/components/pro-club/operations/WeeklyPeriodizationBoard.tsx",
+    "utf8",
+  );
+  const plannerSource = readFileSync(
+    "src/components/pro-club/operations/WeeklyPlannerBoard.tsx",
     "utf8",
   );
   const savedDraftSource = readFileSync(
     "src/components/pro-club/operations/WeeklyTrainingSavedDrafts.tsx",
     "utf8",
   );
-  const boardImports = Array.from(
-    boardSource.matchAll(/from\s+["']([^"']+)["']/g),
+  const wrapperImports = Array.from(
+    wrapperSource.matchAll(/from\s+["']([^"']+)["']/g),
     (match) => match[1],
-  );
+  ).sort();
   const savedDraftFirestoreImports = Array.from(
     savedDraftSource.matchAll(/from\s+["']([^"']+)["']/g),
     (match) => match[1],
@@ -241,16 +230,17 @@ test("Board source remains presentation-only and Saved-DRAFT wiring preserves th
     .filter((specifier) => specifier.includes("/firestore/"))
     .sort();
 
-  assert.deepEqual(boardImports, [
+  assert.deepEqual(wrapperImports, [
     "../../../lib/proClubWeeklyPeriodizationBoard",
+    "./WeeklyPlannerBoard",
   ]);
-  assert.doesNotMatch(boardSource, /["']en-US["']/);
-  assert.match(boardSource, /\.toLocaleDateString\(undefined,/);
-  assert.match(boardSource, /Date\.UTC\(year, month - 1, day\)/);
-  assert.doesNotMatch(
-    boardSource,
-    /firebase|SavedDraftReadAdapter|runtimeCapabilities|WeeklyTrainingSavedDraftDetail|clubId|actorUid|userId/i,
-  );
+  for (const source of [wrapperSource, plannerSource]) {
+    assert.doesNotMatch(
+      source,
+      /\b(?:setDoc|addDoc|updateDoc|deleteDoc|writeBatch|runTransaction|httpsCallable)\s*\(/,
+    );
+    assert.doesNotMatch(source, /\/firestore\//);
+  }
 
   assert.match(savedDraftSource, /listHeadCoachWeeklyTrainingSavedDrafts\s*\(/);
   assert.match(savedDraftSource, /getHeadCoachWeeklyTrainingSavedDraftDetail\s*\(/);
