@@ -4,6 +4,7 @@ import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import WeeklyPlannerActivityCard from "../src/components/pro-club/operations/WeeklyPlannerActivityCard";
+import WeeklyPlannerBoard from "../src/components/pro-club/operations/WeeklyPlannerBoard";
 import WeeklyPlannerDayCard from "../src/components/pro-club/operations/WeeklyPlannerDayCard";
 import {
   buildWeeklyPlannerState,
@@ -168,10 +169,57 @@ test("saved Training is read-only while local activities can expose remove contr
   assert.match(visibleText(renderDay(localDay)), /Remove activity/i);
 });
 
+test("renders a full seven-day planner with UI-preview and local-only save messaging", () => {
+  const markup = renderToStaticMarkup(<WeeklyPlannerBoard board={board} />);
+  const text = visibleText(markup);
+
+  assert.equal((markup.match(/data-weekly-planner-day=/g) ?? []).length, 7);
+  const weekdays = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+  weekdays.reduce((previousIndex, label) => {
+    const currentIndex = text.indexOf(label);
+    assert.ok(currentIndex > previousIndex, `${label} is out of weekly order`);
+    return currentIndex;
+  }, -1);
+
+  for (const expected of [
+    "Weekly Training Plan",
+    "UI PREVIEW",
+    "7-day microcycle",
+    "Save Plan",
+    "Persistence not enabled",
+    "Training Day",
+    "Not set",
+  ]) {
+    assert.match(text, new RegExp(expected));
+  }
+});
+
+test("supports multiple saved Training sessions on one date in the full board", () => {
+  const twoSessionBoard: ProClubWeeklyPeriodizationBoard = {
+    ...board,
+    sessions: [
+      ...board.sessions,
+      {
+        ...board.sessions[0],
+        startTime: "17:00",
+        objective: "Evening tactical session",
+        durationMinutes: 75,
+      },
+    ],
+  };
+  const text = visibleText(renderToStaticMarkup(<WeeklyPlannerBoard board={twoSessionBoard} />));
+
+  assert.match(text, /2 sessions/);
+  assert.match(text, /08:00/);
+  assert.match(text, /17:00/);
+  assert.match(text, /Evening tactical session/);
+});
+
 test("planner presentation sources do not cross the persistence boundary", () => {
   const sources = [
     "src/components/pro-club/operations/WeeklyPlannerActivityCard.tsx",
     "src/components/pro-club/operations/WeeklyPlannerDayCard.tsx",
+    "src/components/pro-club/operations/WeeklyPlannerBoard.tsx",
   ].map((path) => readFileSync(path, "utf8"));
 
   const forbidden = [
