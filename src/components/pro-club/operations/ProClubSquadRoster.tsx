@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { Edit3, Plus, RefreshCw, Search, ShieldCheck, Users } from "lucide-react";
+import {
+  Activity,
+  Edit3,
+  Plus,
+  RefreshCw,
+  Search,
+  Shield,
+  ShieldCheck,
+  Target,
+  Users,
+} from "lucide-react";
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
 import {
   listProClubSquadRoster,
@@ -30,6 +40,14 @@ const GROUP_LABELS: Record<ProClubSquadPositionGroup, string> = {
   MID: "Midfielders",
   FWD: "Forwards",
 };
+
+const ROSTER_SUMMARY_VISUALS = {
+  ALL: { label: "Total roster", Icon: Users, tone: "total" },
+  GK: { label: "GK", Icon: Shield, tone: "gk" },
+  DEF: { label: "Defenders", Icon: ShieldCheck, tone: "defenders" },
+  MID: { label: "Midfielders", Icon: Activity, tone: "midfielders" },
+  FWD: { label: "Forwards", Icon: Target, tone: "forwards" },
+} as const;
 
 function statusClasses(status: ProClubSquadRosterRecord["status"]): string {
   if (status === "ACTIVE") {
@@ -153,16 +171,31 @@ export default function ProClubSquadRoster({
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <article className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Total roster</p>
-          <p className="mt-2 text-3xl font-black text-white">{records.length}</p>
-        </article>
-        {(["GK", "DEF", "MID", "FWD"] as const).map((item) => (
-          <article key={item} className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-            <p className="text-xs font-bold uppercase tracking-wider text-slate-500">{GROUP_LABELS[item]}</p>
-            <p className="mt-2 text-3xl font-black text-white">{counts[item]}</p>
-          </article>
-        ))}
+        {(["ALL", "GK", "DEF", "MID", "FWD"] as const).map((item) => {
+          const visual = ROSTER_SUMMARY_VISUALS[item];
+          const Icon = visual.Icon;
+          const count = item === "ALL" ? records.length : counts[item];
+
+          return (
+            <article
+              key={item}
+              data-tone={visual.tone}
+              className="pro-club-roster-summary-card relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60 p-4"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="pro-club-roster-summary-icon flex h-9 w-9 items-center justify-center rounded-xl">
+                  <Icon size={18} />
+                </div>
+                <p className="pro-club-roster-summary-label text-[10px] font-black uppercase tracking-[0.14em]">
+                  {visual.label}
+                </p>
+              </div>
+              <p className="pro-club-roster-summary-count mt-4 text-3xl font-black text-white">
+                {count}
+              </p>
+            </article>
+          );
+        })}
       </div>
 
       <div className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 p-4 lg:grid-cols-[minmax(0,1fr)_auto_auto]">
