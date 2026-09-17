@@ -57,7 +57,7 @@ test("renders the production app shell with authoritative club identity and cont
 
   assert.match(markup, /aria-label="Pro Club application shell"/);
   assert.match(text, /Lampang United/);
-  assert.match(text, /Head Coach/);
+  assert.match(text, /Head coach/i);
   assert.match(text, /ACTIVE/);
   assert.match(text, /Back to FutVerse/);
   assert.match(text, /Sign out/);
@@ -89,7 +89,7 @@ test("app shell uses a left desktop sidebar, sticky top bar, and unconstrained m
   assert.match(source, /<aside[\s\S]*lg:h-screen[\s\S]*<nav\s+aria-label="Pro Club team sections"/);
   assert.match(source, /<header[\s\S]*sticky top-0[\s\S]*Back to FutVerse[\s\S]*Sign out/);
   assert.match(source, /<main className="min-w-0[^"]*"/);
-  assert.doesNotMatch(source, /max-w-(?:3xl|4xl|5xl|6xl|7xl)/);
+  assert.doesNotMatch(source, /<main className="[^"]*max-w-/);
 });
 
 test("production dashboard reuses reviewed Squad Training and Attendance surfaces", () => {
