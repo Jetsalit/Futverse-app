@@ -31,7 +31,7 @@ jobs:
         run: |
           set -euo pipefail
           base="bcff4b6fddac13ed879f4785254d20cca854089c"
-          product_head="HEAD^"
+          product_head="HEAD^^"
           mapfile -t changed < <(git diff --name-only "$base" "$product_head" | sort)
           expected=(
             "src/components/pro-club/ProClubPortal.tsx"
@@ -52,17 +52,29 @@ jobs:
           npm ci --ignore-scripts
           npm --prefix functions ci --ignore-scripts
 
-      - name: App Shell and preserved Pro Club contracts
-        run: >-
-          node --experimental-test-module-mocks --import tsx --test
-          tests/proClubTeamDashboardProductionV1.unit.test.tsx
-          tests/proClubPortalDiscoveryLoading.unit.test.ts
-          tests/proClubMembershipDiscoveryPortal.unit.test.tsx
-          tests/proClubHeadCoachWeeklyProductionVisibilityV1.unit.test.tsx
-          tests/proClubWeeklyTrainingSavedDraftUiWiring.test.ts
-          tests/proClubWeeklyTrainingCardBoardProduction.unit.test.ts
-          tests/proClubTrainingTacticBoardIntegration.unit.test.ts
-          tests/drillOwnership.test.ts
+      - name: App Shell contract
+        run: node --experimental-test-module-mocks --import tsx --test tests/proClubTeamDashboardProductionV1.unit.test.tsx
+
+      - name: Portal loading contract
+        run: node --experimental-test-module-mocks --import tsx --test tests/proClubPortalDiscoveryLoading.unit.test.ts
+
+      - name: Membership discovery regression
+        run: node --experimental-test-module-mocks --import tsx --test tests/proClubMembershipDiscoveryPortal.unit.test.tsx
+
+      - name: Weekly visibility regression
+        run: node --experimental-test-module-mocks --import tsx --test tests/proClubHeadCoachWeeklyProductionVisibilityV1.unit.test.tsx
+
+      - name: Saved draft wiring regression
+        run: node --experimental-test-module-mocks --import tsx --test tests/proClubWeeklyTrainingSavedDraftUiWiring.test.ts
+
+      - name: Weekly card board regression
+        run: node --experimental-test-module-mocks --import tsx --test tests/proClubWeeklyTrainingCardBoardProduction.unit.test.ts
+
+      - name: Tactic integration regression
+        run: node --experimental-test-module-mocks --import tsx --test tests/proClubTrainingTacticBoardIntegration.unit.test.ts
+
+      - name: Drill ownership regression
+        run: node --experimental-test-module-mocks --import tsx --test tests/drillOwnership.test.ts
 
       - name: Root TypeScript
         run: npm run lint
@@ -72,4 +84,4 @@ jobs:
 
       - name: Product diff whitespace check
         shell: bash
-        run: git diff --check bcff4b6fddac13ed879f4785254d20cca854089c HEAD^
+        run: git diff --check bcff4b6fddac13ed879f4785254d20cca854089c HEAD^^
