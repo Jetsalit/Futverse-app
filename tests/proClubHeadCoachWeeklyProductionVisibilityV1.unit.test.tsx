@@ -147,17 +147,19 @@ test("reuses the existing Weekly components and source-controlled capabilities",
   );
 });
 
-test("keeps the full Operations dashboard preview-only while routing production through the team dashboard", () => {
+test("routes production through the team dashboard while preserving the existing Weekly surface", () => {
   const portal = readFileSync(files.portal, "utf8");
   const teamDashboard = readFileSync(files.teamDashboard, "utf8");
 
-  assert.match(
-    portal,
-    /PRO_CLUB_OPERATIONS_PREVIEW_AVAILABLE \? \(\s*<ProClubOperationsDashboard authority=\{authority\} \/>\s*\) : \(\s*<ProClubTeamDashboard authority=\{authority\} \/>\s*\)/s,
-  );
+  assert.doesNotMatch(portal, /PRO_CLUB_OPERATIONS_PREVIEW_AVAILABLE/);
+  assert.doesNotMatch(portal, /ProClubOperationsDashboard/);
   assert.match(
     portal,
     /import ProClubTeamDashboard from "\.\/operations\/ProClubTeamDashboard"/,
+  );
+  assert.equal(
+    (portal.match(/<ProClubTeamDashboard\b/g) ?? []).length,
+    1,
   );
   assert.match(
     teamDashboard,
@@ -166,14 +168,6 @@ test("keeps the full Operations dashboard preview-only while routing production 
   assert.match(
     teamDashboard,
     /import ProClubHeadCoachWeeklyProductionWorkspace from "\.\/ProClubHeadCoachWeeklyProductionWorkspace"/,
-  );
-  assert.equal(
-    (portal.match(/<ProClubOperationsDashboard\b/g) ?? []).length,
-    1,
-  );
-  assert.equal(
-    (portal.match(/<ProClubTeamDashboard\b/g) ?? []).length,
-    1,
   );
   assert.equal(
     (teamDashboard.match(/<ProClubSquadRoster\b/g) ?? []).length,
