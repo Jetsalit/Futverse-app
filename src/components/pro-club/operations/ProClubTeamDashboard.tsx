@@ -1,10 +1,12 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   CalendarDays,
   ClipboardCheck,
   Dumbbell,
   Shield,
+  Sparkles,
+  Sun,
   Users,
 } from "lucide-react";
 
@@ -13,6 +15,11 @@ import { staffRoleLabels } from "../../../lib/proClubOnboarding";
 import ProClubAttendance from "./ProClubAttendance";
 import ProClubHeadCoachWeeklyProductionWorkspace from "./ProClubHeadCoachWeeklyProductionWorkspace";
 import ProClubSquadRoster from "./ProClubSquadRoster";
+import {
+  PRO_CLUB_THEME_STORAGE_KEY,
+  resolveProClubTheme,
+  type ProClubTheme,
+} from "./proClubTheme";
 
 export const PRO_CLUB_TEAM_DASHBOARD_TABS = [
   "OVERVIEW",
@@ -24,6 +31,8 @@ export const PRO_CLUB_TEAM_DASHBOARD_TABS = [
 
 type ProClubTeamDashboardTab =
   (typeof PRO_CLUB_TEAM_DASHBOARD_TABS)[number];
+
+type OverviewCardTone = "squad" | "training" | "attendance" | "matches";
 
 const TAB_LABELS: Record<ProClubTeamDashboardTab, string> = {
   OVERVIEW: "Overview",
@@ -46,6 +55,29 @@ export default function ProClubTeamDashboard({
 }) {
   const [activeTab, setActiveTab] =
     useState<ProClubTeamDashboardTab>("OVERVIEW");
+  const [theme, setTheme] = useState<ProClubTheme>("light");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      setTheme(resolveProClubTheme(window.localStorage.getItem(PRO_CLUB_THEME_STORAGE_KEY)));
+    } catch {
+      setTheme("light");
+    }
+  }, []);
+
+  function selectTheme(nextTheme: ProClubTheme) {
+    setTheme(nextTheme);
+
+    if (typeof window === "undefined") return;
+
+    try {
+      window.localStorage.setItem(PRO_CLUB_THEME_STORAGE_KEY, nextTheme);
+    } catch {
+      // Theme selection remains usable for the current session even if storage is unavailable.
+    }
+  }
 
   const attendanceAuthorityKey = [
     authority.organizationId,
@@ -63,9 +95,10 @@ export default function ProClubTeamDashboard({
   return (
     <section
       aria-label="Pro Club application shell"
-      className="min-h-screen bg-slate-950 text-white lg:grid lg:grid-cols-[248px_minmax(0,1fr)]"
+      data-pro-club-theme={theme}
+      className="pro-club-theme-root min-h-screen lg:grid lg:grid-cols-[248px_minmax(0,1fr)]"
     >
-      <aside className="border-b border-slate-800 bg-slate-950 px-4 py-5 sm:px-6 lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r lg:px-4 lg:py-6">
+      <aside className="pro-club-sidebar border-b px-4 py-5 sm:px-6 lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r lg:px-4 lg:py-6">
         <div className="flex items-start justify-between gap-4 lg:block">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-cyan-300">
@@ -130,50 +163,79 @@ export default function ProClubTeamDashboard({
         </nav>
       </aside>
 
-      <div className="min-w-0 bg-slate-100 text-slate-900">
-        <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur sm:px-6 lg:px-8">
+      <div className="pro-club-main min-w-0">
+        <header className="pro-club-topbar sticky top-0 z-30 border-b px-4 py-3 backdrop-blur sm:px-6 lg:px-8">
           <div className="flex min-h-12 flex-wrap items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-4">
               <button
                 type="button"
                 onClick={onBack}
-                className="inline-flex shrink-0 items-center gap-2 text-sm font-bold text-slate-600 transition hover:text-slate-950"
+                className="pro-club-topbar-action inline-flex shrink-0 items-center gap-2 text-sm font-bold transition"
               >
                 <ArrowLeft size={18} />
                 <span className="hidden sm:inline">Back to FutVerse</span>
                 <span className="sm:hidden">Back</span>
               </button>
-              <div className="hidden h-6 w-px bg-slate-200 sm:block" />
+              <div className="pro-club-topbar-divider hidden h-6 w-px sm:block" />
               <div className="min-w-0">
-                <p className="truncate text-sm font-black text-slate-950">
+                <p className="pro-club-heading truncate text-sm font-black">
                   {TAB_LABELS[activeTab]}
                 </p>
-                <p className="hidden truncate text-xs text-slate-500 sm:block">
+                <p className="pro-club-muted hidden truncate text-xs sm:block">
                   {authority.organizationName} · {staffRoleLabel} · {authority.organizationStatus}
                 </p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={onLogout}
-              className="text-sm font-bold text-slate-600 transition hover:text-slate-950"
-            >
-              Sign out
-            </button>
+
+            <div className="flex items-center gap-3">
+              <div
+                aria-label="Pro Club appearance"
+                className="pro-club-theme-toggle inline-flex rounded-xl border p-1"
+              >
+                <button
+                  type="button"
+                  aria-pressed={theme === "light"}
+                  onClick={() => selectTheme("light")}
+                  className="pro-club-theme-option inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-black transition"
+                  data-selected={theme === "light" ? "true" : "false"}
+                >
+                  <Sun size={14} />
+                  <span className="hidden sm:inline">Light</span>
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={theme === "neon"}
+                  onClick={() => selectTheme("neon")}
+                  className="pro-club-theme-option inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-black transition"
+                  data-selected={theme === "neon" ? "true" : "false"}
+                >
+                  <Sparkles size={14} />
+                  <span className="hidden sm:inline">Neon</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={onLogout}
+                className="pro-club-topbar-action text-sm font-bold transition"
+              >
+                Sign out
+              </button>
+            </div>
           </div>
         </header>
 
-        <main className="min-w-0 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+        <main className="min-w-0 pro-club-themed-surface px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
           {activeTab === "OVERVIEW" && (
-            <section aria-labelledby="pro-club-team-overview" className="space-y-6">
+            <section aria-labelledby="pro-club-team-overview" className="pro-club-module-surface space-y-6">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-700">
+                <p className="pro-club-accent text-xs font-bold uppercase tracking-[0.18em]">
                   Overview
                 </p>
-                <h3 id="pro-club-team-overview" className="mt-2 text-2xl font-black text-slate-950">
+                <h3 id="pro-club-team-overview" className="pro-club-heading mt-2 text-2xl font-black">
                   {authority.organizationName} First Team
                 </h3>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                <p className="pro-club-muted mt-2 max-w-3xl text-sm leading-6">
                   Open the reviewed production football surfaces from one team workspace. Each module continues to use its existing authority and persistence contract.
                 </p>
               </div>
@@ -183,41 +245,56 @@ export default function ProClubTeamDashboard({
                   icon={<Users size={20} />}
                   title="Squad"
                   description="First Team roster"
+                  tone="squad"
                 />
                 <OverviewCard
                   icon={<Dumbbell size={20} />}
                   title="Training"
                   description="Weekly Training"
+                  tone="training"
                 />
                 <OverviewCard
                   icon={<ClipboardCheck size={20} />}
                   title="Attendance"
                   description="Training attendance"
+                  tone="attendance"
                 />
                 <OverviewCard
                   icon={<CalendarDays size={20} />}
                   title="Matches"
                   description="Coming soon"
+                  tone="matches"
+                  badge="Coming soon"
                 />
               </div>
 
-              {overviewSupplement && <div className="pt-1">{overviewSupplement}</div>}
+              {overviewSupplement && (
+                <div className="pro-club-workspace-status pt-1">
+                  {overviewSupplement}
+                </div>
+              )}
             </section>
           )}
 
           {activeTab === "SQUAD" && (
-            <ProClubSquadRoster authority={authority} />
+            <div className="pro-club-module-surface">
+              <ProClubSquadRoster authority={authority} />
+            </div>
           )}
 
           {activeTab === "TRAINING" && (
-            <ProClubHeadCoachWeeklyProductionWorkspace authority={authority} />
+            <div className="pro-club-module-surface">
+              <ProClubHeadCoachWeeklyProductionWorkspace authority={authority} />
+            </div>
           )}
 
           {activeTab === "ATTENDANCE" && (
-            <ProClubAttendance
-              key={attendanceAuthorityKey}
-              authority={authority}
-            />
+            <div className="pro-club-module-surface">
+              <ProClubAttendance
+                key={attendanceAuthorityKey}
+                authority={authority}
+              />
+            </div>
           )}
         </main>
       </div>
@@ -229,16 +306,32 @@ function OverviewCard({
   icon,
   title,
   description,
+  tone,
+  badge,
 }: {
   icon: ReactNode;
   title: string;
   description: string;
+  tone: OverviewCardTone;
+  badge?: string;
 }) {
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="text-cyan-700">{icon}</div>
-      <h4 className="mt-3 font-bold text-slate-950">{title}</h4>
-      <p className="mt-1 text-sm text-slate-500">{description}</p>
+    <article
+      data-tone={tone}
+      className="pro-club-overview-card group relative overflow-hidden rounded-2xl border p-4 shadow-sm transition duration-200"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="pro-club-overview-card-icon flex h-10 w-10 items-center justify-center rounded-xl">
+          {icon}
+        </div>
+        {badge && (
+          <span className="pro-club-overview-card-badge rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em]">
+            {badge}
+          </span>
+        )}
+      </div>
+      <h4 className="pro-club-heading mt-4 font-black">{title}</h4>
+      <p className="pro-club-muted mt-1 text-sm">{description}</p>
     </article>
   );
 }

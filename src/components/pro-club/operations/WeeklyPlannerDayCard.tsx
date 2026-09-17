@@ -36,12 +36,17 @@ export default function WeeklyPlannerDayCard({
   return (
     <section
       data-weekly-planner-day={day.date}
-      className="flex min-h-[34rem] min-w-[16rem] max-w-[16rem] flex-col rounded-2xl border border-slate-800 bg-slate-900/75 p-3 shadow-lg shadow-slate-950/20"
+      data-weekday={day.dayOfWeek}
+      className="pro-club-weekday-card relative flex min-h-[34rem] min-w-[16rem] max-w-[16rem] flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/75 p-3 shadow-lg shadow-slate-950/20"
     >
-      <header className="border-b border-slate-800 pb-3">
+      <span
+        aria-hidden="true"
+        className="pro-club-weekday-accent absolute inset-x-0 top-0 h-[3px]"
+      />
+      <header className="border-b border-slate-800 pb-3 pt-0.5">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <p className="text-base font-black tracking-[0.08em] text-white">
+            <p className="pro-club-weekday-name text-base font-black tracking-[0.08em]">
               {day.dayOfWeek.slice(0, 3)}
             </p>
             <time
