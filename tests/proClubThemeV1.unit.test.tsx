@@ -142,3 +142,43 @@ test("visual polish contract adds module identity, roster position identity and 
   assert.match(activitySource, /amber/);
   assert.match(activitySource, /rose/);
 });
+
+test("weekly day headers use the approved Thai weekday color contract in Light and Neon", () => {
+  const dayCardSource = readFileSync(
+    "src/components/pro-club/operations/WeeklyPlannerDayCard.tsx",
+    "utf8",
+  );
+  const css = readFileSync("src/index.css", "utf8");
+
+  assert.match(dayCardSource, /data-weekday=/);
+  assert.match(dayCardSource, /pro-club-weekday-name/);
+  assert.match(dayCardSource, /pro-club-weekday-accent/);
+
+  for (const weekday of [
+    "MONDAY",
+    "TUESDAY",
+    "WEDNESDAY",
+    "THURSDAY",
+    "FRIDAY",
+    "SATURDAY",
+    "SUNDAY",
+  ]) {
+    assert.match(css, new RegExp(`data-weekday=["']${weekday}["']`));
+  }
+
+  assert.match(css, /MONDAY[\s\S]*#a16207/);
+  assert.match(css, /TUESDAY[\s\S]*#be185d/);
+  assert.match(css, /WEDNESDAY[\s\S]*#15803d/);
+  assert.match(css, /THURSDAY[\s\S]*#c2410c/);
+  assert.match(css, /FRIDAY[\s\S]*#0369a1/);
+  assert.match(css, /SATURDAY[\s\S]*#7e22ce/);
+  assert.match(css, /SUNDAY[\s\S]*#b91c1c/);
+
+  assert.match(css, /\[data-pro-club-theme="neon"\][\s\S]*MONDAY/);
+  assert.match(css, /\[data-pro-club-theme="neon"\][\s\S]*TUESDAY/);
+  assert.match(css, /\[data-pro-club-theme="neon"\][\s\S]*WEDNESDAY/);
+  assert.match(css, /\[data-pro-club-theme="neon"\][\s\S]*THURSDAY/);
+  assert.match(css, /\[data-pro-club-theme="neon"\][\s\S]*FRIDAY/);
+  assert.match(css, /\[data-pro-club-theme="neon"\][\s\S]*SATURDAY/);
+  assert.match(css, /\[data-pro-club-theme="neon"\][\s\S]*SUNDAY/);
+});
