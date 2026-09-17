@@ -39,6 +39,10 @@ import {
 
 export interface ProClubAttendanceProps {
   authority: ProClubOrganizationAuthority;
+  initialSlot?: {
+    sessionDate: string;
+    startTime: string;
+  };
   attendanceOps?: ProClubAttendanceRepositoryOps;
   rosterOps?: ProClubSquadRosterRepositoryOps;
 }
@@ -91,6 +95,7 @@ function getIsoDateToday(): string {
 
 export default function ProClubAttendance({
   authority,
+  initialSlot,
   attendanceOps,
   rosterOps,
 }: ProClubAttendanceProps) {
@@ -116,13 +121,87 @@ export default function ProClubAttendance({
   const [playerErrors, setPlayerErrors] = useState<Record<string, string>>({});
 
   // Session form input state
-  const [inputDate, setInputDate] = useState(() => getIsoDateToday());
-  const [inputTime, setInputTime] = useState("09:00");
+  const [inputDate, setInputDate] = useState(
+    () => initialSlot?.sessionDate ?? getIsoDateToday(),
+  );
+  const [inputTime, setInputTime] = useState(
+    () => initialSlot?.startTime ?? "09:00",
+  );
   const [formError, setFormError] = useState<string | null>(null);
   const [creatingSession, setCreatingSession] = useState(false);
 
   // Reload trigger
   const [reloadToken, setReloadToken] = useState(0);
+
+  // Training Day Card handoff: prefill the deterministic attendance slot and
+  // open an existing canonical session when one already exists. This handoff
+  // never creates a session; creation stays behind the existing Head Coach flow.
+  useEffect(() => {
+    if (!initialSlot) return;
+
+    const { sessionDate, startTime } = initialSlot;
+    setInputDate(sessionDate);
+    setInputTime(startTime);
+    setFormError(null);
+    setSelectedSessionId(null);
+
+    if (
+      !isStrictProClubAttendanceDate(sessionDate) ||
+      !isStrictProClubAttendanceTime(startTime)
+    ) {
+      setFormError("Invalid Training attendance slot.");
+      return;
+    }
+
+    const attendanceSessionId =
+      buildProClubAttendanceSessionId(sessionDate, startTime);
+    if (!attendanceSessionId) {
+      setFormError("Invalid Training attendance slot identity.");
+      return;
+    }
+
+    let cancelled = false;
+
+    async function openExistingLinkedSession() {
+      try {
+        const existing = await getProClubAttendanceSession(
+          clubId,
+          attendanceSessionId!,
+          attendanceOps,
+        );
+
+        if (cancelled || !existing) return;
+
+        setSessions((current) => [
+          existing,
+          ...current.filter(
+            (session) =>
+              session.attendanceSessionId !== existing.attendanceSessionId,
+          ),
+        ]);
+        setSelectedSessionId(existing.attendanceSessionId);
+      } catch (err) {
+        if (!cancelled) {
+          setFormError(
+            err instanceof Error
+              ? err.message
+              : "Failed to open linked attendance session.",
+          );
+        }
+      }
+    }
+
+    void openExistingLinkedSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    attendanceOps,
+    clubId,
+    initialSlot?.sessionDate,
+    initialSlot?.startTime,
+  ]);
 
   // Load canonical roster
   useEffect(() => {
