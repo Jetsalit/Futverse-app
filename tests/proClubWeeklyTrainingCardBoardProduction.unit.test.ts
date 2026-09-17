@@ -13,7 +13,7 @@ const savedDrafts = readFileSync(
 
 test("Weekly Training production presents the saved weekly card board before the fresh-DRAFT composer", () => {
   const savedDraftIndex = workspace.indexOf(
-    "<WeeklyTrainingSavedDrafts authority={authority} />",
+    "<WeeklyTrainingSavedDrafts",
   );
   const composerIndex = workspace.indexOf(
     "<WeeklyTrainingDraftComposer authority={authority} />",
