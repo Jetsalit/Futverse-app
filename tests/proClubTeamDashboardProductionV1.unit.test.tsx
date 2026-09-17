@@ -45,13 +45,22 @@ test("freezes the minimal production team navigation", () => {
   ]);
 });
 
-test("renders authoritative club identity and production menu", () => {
+test("renders the production app shell with authoritative club identity and controls", () => {
   const markup = renderToStaticMarkup(
-    <ProClubTeamDashboard authority={authority()} />,
+    <ProClubTeamDashboard
+      authority={authority()}
+      onBack={() => {}}
+      onLogout={() => {}}
+    />,
   );
   const text = visibleText(markup);
 
+  assert.match(markup, /aria-label="Pro Club application shell"/);
   assert.match(text, /Lampang United/);
+  assert.match(text, /Head Coach/);
+  assert.match(text, /ACTIVE/);
+  assert.match(text, /Back to FutVerse/);
+  assert.match(text, /Sign out/);
   assert.match(text, /Overview/);
   assert.match(text, /Squad/);
   assert.match(text, /Training/);
@@ -72,6 +81,17 @@ test("renders authoritative club identity and production menu", () => {
   }
 });
 
+test("app shell uses a left desktop sidebar, sticky top bar, and unconstrained main content", () => {
+  const source = readFileSync(files.dashboard, "utf8");
+
+  assert.match(source, /aria-label="Pro Club application shell"/);
+  assert.match(source, /lg:grid-cols-\[248px_minmax\(0,1fr\)\]/);
+  assert.match(source, /<aside[\s\S]*lg:h-screen[\s\S]*<nav\s+aria-label="Pro Club team sections"/);
+  assert.match(source, /<header[\s\S]*sticky top-0[\s\S]*Back to FutVerse[\s\S]*Sign out/);
+  assert.match(source, /<main className="min-w-0[^"]*"/);
+  assert.doesNotMatch(source, /max-w-(?:3xl|4xl|5xl|6xl|7xl)/);
+});
+
 test("production dashboard reuses reviewed Squad Training and Attendance surfaces", () => {
   const source = readFileSync(files.dashboard, "utf8");
 
@@ -89,35 +109,34 @@ test("production dashboard reuses reviewed Squad Training and Attendance surface
   assert.equal((source.match(/<ProClubAttendance\b/g) ?? []).length, 1);
 });
 
-test("portal mounts the production team dashboard without opening the full preview dashboard", () => {
+test("portal mounts only the production team dashboard for authorized workspaces", () => {
   const portal = readFileSync(files.portal, "utf8");
 
   assert.match(
     portal,
     /import ProClubTeamDashboard from "\.\/operations\/ProClubTeamDashboard"/,
   );
+  assert.doesNotMatch(portal, /PRO_CLUB_OPERATIONS_PREVIEW_AVAILABLE/);
+  assert.doesNotMatch(portal, /ProClubOperationsDashboard/);
   assert.match(
     portal,
-    /PRO_CLUB_OPERATIONS_PREVIEW_AVAILABLE \? \(\s*<ProClubOperationsDashboard authority=\{authority\} \/>\s*\) : \(\s*<ProClubTeamDashboard authority=\{authority\} \/>\s*\)/s,
+    /<ProClubTeamDashboard[\s\S]*authority=\{authority\}[\s\S]*onBack=\{onBack\}[\s\S]*onLogout=\{onLogout\}/,
   );
   assert.equal((portal.match(/<ProClubTeamDashboard\b/g) ?? []).length, 1);
 });
 
-test("authorized workspace becomes the primary page instead of remaining below the entry form", () => {
+test("authorized workspace removes the duplicate Pro Club Workspace card and keeps review content inside the shell", () => {
   const portal = readFileSync(files.portal, "utf8");
 
-  assert.doesNotMatch(
-    portal,
-    /\{authorized\s*&&\s*<ClubWorkspace\b/,
-  );
-  assert.match(
-    portal,
-    /authorized\s*\?\s*\(\s*<ClubWorkspace\b[\s\S]*?\)\s*:\s*\(/,
-  );
+  assert.doesNotMatch(portal, />Pro Club workspace</i);
+  assert.doesNotMatch(portal, /<StatusBadge\b/);
+  assert.match(portal, /overviewSupplement=\{/);
+  assert.match(portal, /<PendingStaffRequests\b/);
+  assert.match(portal, /authorized\s*\?\s*\(\s*<ClubWorkspace\b/);
   assert.match(portal, /Opening your club/i);
 });
 
-test("team navigation is horizontally usable on small screens and returns to a sidebar on desktop", () => {
+test("team navigation is horizontally usable on small screens and becomes a left sidebar on desktop", () => {
   const source = readFileSync(files.dashboard, "utf8");
 
   assert.match(
