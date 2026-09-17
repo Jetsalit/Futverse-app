@@ -6,8 +6,10 @@
   --pc-surface-soft: #f8fafc;
   --pc-border: #dbe3ee;
   --pc-text: #0f172a;
-  --pc-muted: #64748b;
-  --pc-accent: #0891b2;
+  --pc-muted: #475569;
+  --pc-accent: #0e7490;
+  --pc-success: #047857;
+  --pc-warning: #92400e;
   --pc-topbar: rgba(255, 255, 255, 0.96);
   --pc-glow: 0 0 0 rgba(6, 182, 212, 0);
 }
@@ -18,8 +20,10 @@
   --pc-surface-soft: #111827;
   --pc-border: rgba(34, 211, 238, 0.18);
   --pc-text: #f8fafc;
-  --pc-muted: #94a3b8;
-  --pc-accent: #22d3ee;
+  --pc-muted: #cbd5e1;
+  --pc-accent: #67e8f9;
+  --pc-success: #6ee7b7;
+  --pc-warning: #fcd34d;
   --pc-topbar: rgba(2, 6, 23, 0.94);
   --pc-glow: 0 0 24px rgba(34, 211, 238, 0.10);
 }
@@ -96,8 +100,8 @@
 /*
  * Existing Pro Club modules predate the shared theme layer and use Tailwind
  * slate utilities directly. These overrides are intentionally scoped to the
- * Pro Club module container so Light mode can remap those reviewed surfaces
- * without changing their business logic or persistence boundaries.
+ * Pro Club module container so both approved themes can improve readability
+ * without changing business logic or persistence boundaries.
  */
 [data-pro-club-theme="light"] .pro-club-module-surface [class*="bg-slate-950"],
 [data-pro-club-theme="light"] .pro-club-module-surface [class*="bg-slate-900"] {
@@ -129,6 +133,18 @@
   color: var(--pc-muted) !important;
 }
 
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-cyan-"] {
+  color: var(--pc-accent) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-emerald-"] {
+  color: var(--pc-success) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-module-surface [class*="text-amber-"] {
+  color: var(--pc-warning) !important;
+}
+
 [data-pro-club-theme="light"] .pro-club-module-surface input,
 [data-pro-club-theme="light"] .pro-club-module-surface select,
 [data-pro-club-theme="light"] .pro-club-module-surface textarea {
@@ -139,7 +155,7 @@
 
 [data-pro-club-theme="light"] .pro-club-module-surface input::placeholder,
 [data-pro-club-theme="light"] .pro-club-module-surface textarea::placeholder {
-  color: #94a3b8 !important;
+  color: #64748b !important;
 }
 
 [data-pro-club-theme="neon"] .pro-club-module-surface [class*="border-slate-800"],
@@ -150,4 +166,21 @@
 [data-pro-club-theme="neon"] .pro-club-module-surface [class*="bg-slate-950"],
 [data-pro-club-theme="neon"] .pro-club-module-surface [class*="bg-slate-900"] {
   box-shadow: 0 0 18px rgba(34, 211, 238, 0.035);
+}
+
+[data-pro-club-theme="neon"] .pro-club-module-surface [class*="text-slate-500"],
+[data-pro-club-theme="neon"] .pro-club-module-surface [class*="text-slate-600"] {
+  color: var(--pc-muted) !important;
+}
+
+[data-pro-club-theme="neon"] .pro-club-module-surface [class*="text-cyan-"] {
+  color: var(--pc-accent) !important;
+}
+
+[data-pro-club-theme="neon"] .pro-club-module-surface [class*="text-emerald-"] {
+  color: var(--pc-success) !important;
+}
+
+[data-pro-club-theme="neon"] .pro-club-module-surface [class*="text-amber-"] {
+  color: var(--pc-warning) !important;
 }
