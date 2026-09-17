@@ -189,6 +189,28 @@ test("projects the board into exactly seven Monday-to-Sunday days and preserves 
   assert.equal(first.session.blocks[1].drillReference, "drill-passing-rhythm");
 });
 
+test("derives calendar weekday labels from the actual date for legacy non-Monday week starts", () => {
+  const legacyBoard: ProClubWeeklyPeriodizationBoard = {
+    ...board,
+    weekStartDate: "2026-09-15",
+    sessions: [],
+  };
+  const state = buildWeeklyPlannerState(legacyBoard);
+
+  assert.deepEqual(
+    state.days.map((day) => day.dayOfWeek),
+    [
+      "TUESDAY",
+      "WEDNESDAY",
+      "THURSDAY",
+      "FRIDAY",
+      "SATURDAY",
+      "SUNDAY",
+      "MONDAY",
+    ],
+  );
+});
+
 test("derives Training, Recovery, Match and Mixed Day summaries", () => {
   const trainingDay: WeeklyPlannerDay = {
     ...emptyDay(),
