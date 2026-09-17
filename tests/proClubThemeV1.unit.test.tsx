@@ -107,3 +107,38 @@ test("theme contrast contract keeps Light readable and Neon secondary text legib
   assert.match(css, /\[data-pro-club-theme="light"\][\s\S]*text-amber-/);
   assert.match(css, /\[data-pro-club-theme="neon"\][\s\S]*text-slate-500/);
 });
+
+test("visual polish contract adds module identity, roster position identity and readable training metadata", () => {
+  const dashboardSource = readFileSync(
+    "src/components/pro-club/operations/ProClubTeamDashboard.tsx",
+    "utf8",
+  );
+  const rosterSource = readFileSync(
+    "src/components/pro-club/operations/ProClubSquadRoster.tsx",
+    "utf8",
+  );
+  const activitySource = readFileSync(
+    "src/components/pro-club/operations/WeeklyPlannerActivityCard.tsx",
+    "utf8",
+  );
+
+  assert.match(dashboardSource, /pro-club-overview-card-icon/);
+  assert.match(dashboardSource, /pro-club-workspace-status/);
+  assert.match(dashboardSource, /tone="squad"/);
+  assert.match(dashboardSource, /tone="training"/);
+  assert.match(dashboardSource, /tone="attendance"/);
+  assert.match(dashboardSource, /tone="matches"/);
+
+  assert.match(rosterSource, /ROSTER_SUMMARY_VISUALS/);
+  assert.match(rosterSource, /pro-club-roster-summary-card/);
+  assert.match(rosterSource, /Target/);
+  assert.match(rosterSource, /Activity/);
+
+  assert.match(activitySource, /Clock/);
+  assert.match(activitySource, /MapPin/);
+  assert.match(activitySource, /Users/);
+  assert.match(activitySource, /LOAD_VISUALS/);
+  assert.match(activitySource, /emerald/);
+  assert.match(activitySource, /amber/);
+  assert.match(activitySource, /rose/);
+});
