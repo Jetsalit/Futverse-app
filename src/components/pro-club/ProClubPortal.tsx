@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Shield, Users } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useOrganizationRuntime } from "../../contexts/OrganizationRuntimeContext";
-import { PRO_CLUB_OPERATIONS_PREVIEW_AVAILABLE } from "../../config/proClubOperationsCapabilities";
 import { isOrganizationRuntimeAuthorized } from "../../lib/organizationRuntimeSelection";
 import { isValidDocumentIdentifier } from "../../lib/proClubModel";
 import {
@@ -14,14 +13,23 @@ import { onboardingErrorMessage, staffRoleLabels } from "../../lib/proClubOnboar
 import { loadOwnProClubMembershipDiscoveries } from "../../lib/firestore/proClubMembershipDiscoveryRepository";
 import { isProClubReviewer, proClubOnboardingRepository as repository } from "../../lib/firestore/proClubOnboardingRepository";
 import type { ProClubOrganizationAuthority } from "../../lib/firestore/proClubOrganizationAdapter";
-import StaffOnboarding, { buttonClass, inputClass, secondaryClass, StatusBadge } from "./StaffOnboarding";
+import StaffOnboarding, { buttonClass, inputClass, secondaryClass } from "./StaffOnboarding";
 import PendingStaffRequests from "./PendingStaffRequests";
-import ProClubOperationsDashboard from "./operations/ProClubOperationsDashboard";
 import ProClubTeamDashboard from "./operations/ProClubTeamDashboard";
 
 type ProClubDiscoveryState = "DISCOVERING" | "OPENING" | "COMPLETE";
 
-function ClubWorkspace({ clubId, uid }: { clubId: string; uid: string }) {
+function ClubWorkspace({
+  clubId,
+  uid,
+  onBack,
+  onLogout,
+}: {
+  clubId: string;
+  uid: string;
+  onBack: () => void;
+  onLogout: () => void;
+}) {
   const [authority, setAuthority] = useState<ProClubOrganizationAuthority | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -32,22 +40,31 @@ function ClubWorkspace({ clubId, uid }: { clubId: string; uid: string }) {
   }, [clubId, uid]);
   if (error) return <p role="alert" className="rounded-xl bg-rose-50 p-5 text-rose-800">{error}</p>;
   if (!authority) return <p role="status" className="py-12 text-center text-slate-600">Loading your club…</p>;
-  return <div className="space-y-8">
-    <section className="rounded-3xl bg-slate-900 p-6 text-white sm:p-8">
-      <div className="flex flex-wrap items-center justify-between gap-4"><p className="text-xs font-bold uppercase tracking-widest text-emerald-300">Pro Club workspace</p><StatusBadge status="ACTIVE" /></div>
-      <h2 className="mt-4 text-3xl font-black">{authority.organizationName}</h2>
-      <div className="mt-5 flex flex-wrap gap-3 text-sm"><span className="rounded-lg bg-white/10 px-3 py-2">{authority.membershipAuthorizationRole}</span>
-        {authority.staffRole && <span className="rounded-lg bg-white/10 px-3 py-2">{staffRoleLabels[authority.staffRole]}</span>}</div>
-      <p className="mt-5 text-sm text-slate-300">Your club membership is active.</p>
-    </section>
-    {PRO_CLUB_OPERATIONS_PREVIEW_AVAILABLE ? (
-      <ProClubOperationsDashboard authority={authority} />
-    ) : (
-      <ProClubTeamDashboard authority={authority} />
-    )}
-    {isProClubReviewer(authority) ? <PendingStaffRequests clubId={clubId} clubName={authority.organizationName} uid={uid} /> :
-      <section className="rounded-2xl border border-slate-200 bg-white p-6"><Users className="text-emerald-600" /><h3 className="mt-3 text-lg font-bold">Welcome to your club</h3><p className="mt-2 text-sm text-slate-600">You have joined the club as {authority.staffRole ? staffRoleLabels[authority.staffRole].toLowerCase() : "a member"}.</p></section>}
-  </div>;
+
+  return (
+    <ProClubTeamDashboard
+      authority={authority}
+      onBack={onBack}
+      onLogout={onLogout}
+      overviewSupplement={
+        isProClubReviewer(authority) ? (
+          <PendingStaffRequests
+            clubId={clubId}
+            clubName={authority.organizationName}
+            uid={uid}
+          />
+        ) : (
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <Users className="text-emerald-600" />
+            <h3 className="mt-3 text-lg font-bold">Welcome to your club</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              You have joined the club as {authority.staffRole ? staffRoleLabels[authority.staffRole].toLowerCase() : "a member"}.
+            </p>
+          </section>
+        )
+      }
+    />
+  );
 }
 
 export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void; onLogout: () => void }) {
@@ -172,61 +189,70 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
   }
 
   if (!allowed) return <p role="alert">Sign in with your own account to open Pro Club onboarding.</p>;
-  return <div className="min-h-screen bg-slate-50 text-slate-900">
-    <header className="border-b border-slate-200 bg-white"><div className="mx-auto flex w-full max-w-none flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8">
-      <button className="inline-flex items-center gap-2 text-sm font-bold text-slate-600" onClick={leaveProClub}><ArrowLeft size={18} /> Back to FutVerse</button>
-      <div className="flex items-center gap-2 font-black"><Shield size={20} className="text-emerald-600" /> Pro Club</div>
-      <button className="text-sm font-bold text-slate-600" onClick={signOut}>Sign out</button>
-    </div></header>
-    <main className="mx-auto w-full max-w-none space-y-7 px-4 py-7 sm:px-6 sm:py-10 lg:px-8">
-      {authorized ? (
-        <ClubWorkspace key={`${uid}:${runtimeState.generation}`} uid={uid} clubId={runtimeState.selection!.organizationId} />
-      ) : discoveryState !== "COMPLETE" ? (
-        <section className="rounded-3xl border border-slate-200 bg-white px-6 py-14 text-center shadow-sm">
-          <Shield className="mx-auto text-emerald-600" size={28} />
-          <h1 className="mt-4 text-2xl font-black">Opening your club…</h1>
-          <p role="status" className="mt-2 text-sm text-slate-500">Checking your active Pro Club membership and workspace authority.</p>
-        </section>
-      ) : (
-        <>
-          <div><h1 className="text-3xl font-black tracking-tight">Your club starts here</h1><p className="mt-2 text-slate-500">Join your team or open your club workspace.</p></div>
-          <nav aria-label="Pro Club sections" className="flex flex-wrap gap-2">
-            <button className={tab === "join" ? buttonClass : secondaryClass} aria-current={tab === "join" ? "page" : undefined} onClick={openStaffOnboarding}>Staff onboarding</button>
-            <button className={tab === "workspace" ? buttonClass : secondaryClass} aria-current={tab === "workspace" ? "page" : undefined} onClick={() => setTab("workspace")}>Club workspace</button>
-          </nav>
-          {tab === "join" ? <StaffOnboarding key={uid} uid={uid} onOpenClub={openClub} /> : <div className="space-y-7">
-            {runtimeState.status === "RESOLVING" ? (
-              <p role="status" className="py-12 text-center text-slate-600">Opening your club…</p>
-            ) : discoveredAuthorities.length > 1 ? (
-              <section className="rounded-2xl border border-slate-200 bg-white p-5">
-                <h2 className="text-lg font-black">Choose your club</h2>
-                <p className="mt-1 text-sm text-slate-500">Select the team workspace you want to open.</p>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  {discoveredAuthorities.map((authority) => (
-                    <button
-                      key={authority.organizationId}
-                      type="button"
-                      className={`${secondaryClass} justify-start text-left`}
-                      onClick={() => openClub(authority.organizationId)}
-                    >
-                      {authority.organizationName}
-                    </button>
-                  ))}
-                </div>
-              </section>
-            ) : (
-              <form className="rounded-2xl border border-slate-200 bg-white p-5" onSubmit={(event) => { event.preventDefault(); openClub(clubReference.trim()); }}>
-                <label htmlFor="club-workspace-reference" className="block text-sm font-bold">Club workspace reference</label>
-                <p className="mt-1 text-sm text-slate-500">Use the reference provided by your club administrator. Access is checked when you open it.</p>
-                <div className="mt-4 flex flex-col gap-3 sm:flex-row"><input id="club-workspace-reference" className={inputClass} value={clubReference} maxLength={200} onChange={(event) => setClubReference(event.target.value)} required autoComplete="off" />
-                  <button className={`${buttonClass} shrink-0`}>Open workspace</button></div>
-              </form>
-            )}
-            {inputError && <p role="alert" className="text-rose-700">{inputError}</p>}
-            {discoveredAuthorities.length <= 1 && (runtimeState.status === "ERROR" || runtimeState.status === "REJECTED") && <p role="alert" className="rounded-xl bg-amber-50 p-5 text-amber-900">This club workspace is unavailable for your account. Check the reference and your membership, then try again.</p>}
-          </div>}
-        </>
-      )}
-    </main>
-  </div>;
+
+  return authorized ? (
+    <ClubWorkspace
+      key={`${uid}:${runtimeState.generation}`}
+      uid={uid}
+      clubId={runtimeState.selection!.organizationId}
+      onBack={leaveProClub}
+      onLogout={signOut}
+    />
+  ) : (
+    <div className="min-h-screen bg-slate-50 text-slate-900">
+      <header className="border-b border-slate-200 bg-white"><div className="mx-auto flex w-full max-w-none flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8">
+        <button className="inline-flex items-center gap-2 text-sm font-bold text-slate-600" onClick={leaveProClub}><ArrowLeft size={18} /> Back to FutVerse</button>
+        <div className="flex items-center gap-2 font-black"><Shield size={20} className="text-emerald-600" /> Pro Club</div>
+        <button className="text-sm font-bold text-slate-600" onClick={signOut}>Sign out</button>
+      </div></header>
+      <main className="mx-auto w-full max-w-none space-y-7 px-4 py-7 sm:px-6 sm:py-10 lg:px-8">
+        {discoveryState !== "COMPLETE" ? (
+          <section className="rounded-3xl border border-slate-200 bg-white px-6 py-14 text-center shadow-sm">
+            <Shield className="mx-auto text-emerald-600" size={28} />
+            <h1 className="mt-4 text-2xl font-black">Opening your club…</h1>
+            <p role="status" className="mt-2 text-sm text-slate-500">Checking your active Pro Club membership and workspace authority.</p>
+          </section>
+        ) : (
+          <>
+            <div><h1 className="text-3xl font-black tracking-tight">Your club starts here</h1><p className="mt-2 text-slate-500">Join your team or open your club workspace.</p></div>
+            <nav aria-label="Pro Club sections" className="flex flex-wrap gap-2">
+              <button className={tab === "join" ? buttonClass : secondaryClass} aria-current={tab === "join" ? "page" : undefined} onClick={openStaffOnboarding}>Staff onboarding</button>
+              <button className={tab === "workspace" ? buttonClass : secondaryClass} aria-current={tab === "workspace" ? "page" : undefined} onClick={() => setTab("workspace")}>Club workspace</button>
+            </nav>
+            {tab === "join" ? <StaffOnboarding key={uid} uid={uid} onOpenClub={openClub} /> : <div className="space-y-7">
+              {runtimeState.status === "RESOLVING" ? (
+                <p role="status" className="py-12 text-center text-slate-600">Opening your club…</p>
+              ) : discoveredAuthorities.length > 1 ? (
+                <section className="rounded-2xl border border-slate-200 bg-white p-5">
+                  <h2 className="text-lg font-black">Choose your club</h2>
+                  <p className="mt-1 text-sm text-slate-500">Select the team workspace you want to open.</p>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    {discoveredAuthorities.map((authority) => (
+                      <button
+                        key={authority.organizationId}
+                        type="button"
+                        className={`${secondaryClass} justify-start text-left`}
+                        onClick={() => openClub(authority.organizationId)}
+                      >
+                        {authority.organizationName}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              ) : (
+                <form className="rounded-2xl border border-slate-200 bg-white p-5" onSubmit={(event) => { event.preventDefault(); openClub(clubReference.trim()); }}>
+                  <label htmlFor="club-workspace-reference" className="block text-sm font-bold">Club workspace reference</label>
+                  <p className="mt-1 text-sm text-slate-500">Use the reference provided by your club administrator. Access is checked when you open it.</p>
+                  <div className="mt-4 flex flex-col gap-3 sm:flex-row"><input id="club-workspace-reference" className={inputClass} value={clubReference} maxLength={200} onChange={(event) => setClubReference(event.target.value)} required autoComplete="off" />
+                    <button className={`${buttonClass} shrink-0`}>Open workspace</button></div>
+                </form>
+              )}
+              {inputError && <p role="alert" className="text-rose-700">{inputError}</p>}
+              {discoveredAuthorities.length <= 1 && (runtimeState.status === "ERROR" || runtimeState.status === "REJECTED") && <p role="alert" className="rounded-xl bg-amber-50 p-5 text-amber-900">This club workspace is unavailable for your account. Check the reference and your membership, then try again.</p>}
+            </div>}
+          </>
+        )}
+      </main>
+    </div>
+  );
 }
