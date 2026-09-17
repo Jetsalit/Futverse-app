@@ -139,7 +139,9 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
       defaultExport: () => <div>Operations dashboard</div>,
     }),
     t.mock.module("../src/components/pro-club/operations/ProClubTeamDashboard.tsx", {
-      defaultExport: () => <div>Team dashboard</div>,
+      defaultExport: ({ authority }: { authority: Authority }) => (
+        <div>Team dashboard {authority.organizationName}</div>
+      ),
     }),
   ];
 
@@ -320,12 +322,10 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
     await act(async () => {
       root?.unmount();
     });
-    mocks.forEach((mock) => mock.restore());
-    clearProClubWorkspaceSession();
-    for (const [key, original] of originals) {
-      if (original) Object.defineProperty(globalThis, key, original);
-      else delete (globalThis as Record<string, unknown>)[key];
+    for (const mock of mocks.reverse()) mock.restore();
+    for (const [key, descriptor] of originals) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else Reflect.deleteProperty(globalThis, key);
     }
-    dom.window.close();
   }
 });
