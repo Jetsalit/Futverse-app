@@ -310,7 +310,7 @@ export default function ProClubTeamDashboard({
               <ProClubAttendance
                 key={attendanceAuthorityKey}
                 authority={authority}
-                initialSlot={attendanceLaunch ?? undefined}
+                initialSlot={attendanceLaunch}
               />
             </div>
           )}
