@@ -91,14 +91,14 @@ export interface WeeklyPlannerDaySummary {
   readonly detail: string;
 }
 
-const MONDAY_TO_SUNDAY = [
+const DAY_OF_WEEK_BY_UTC_INDEX = [
+  "SUNDAY",
   "MONDAY",
   "TUESDAY",
   "WEDNESDAY",
   "THURSDAY",
   "FRIDAY",
   "SATURDAY",
-  "SUNDAY",
 ] as const satisfies readonly ProClubWeeklyPeriodizationDayOfWeek[];
 
 function parseDateOnly(value: string): Date {
@@ -117,6 +117,10 @@ function addDays(value: string, amount: number): string {
   const date = parseDateOnly(value);
   date.setUTCDate(date.getUTCDate() + amount);
   return formatDateOnly(date);
+}
+
+function deriveDayOfWeek(date: string): ProClubWeeklyPeriodizationDayOfWeek {
+  return DAY_OF_WEEK_BY_UTC_INDEX[parseDateOnly(date).getUTCDay()];
 }
 
 function activityTime(activity: WeeklyPlannerActivity): string {
@@ -169,11 +173,11 @@ export function buildWeeklyPlannerState(
 
   return {
     weekStartDate: board.weekStartDate,
-    days: MONDAY_TO_SUNDAY.map((dayOfWeek, offset) => {
+    days: Array.from({ length: 7 }, (_, offset) => {
       const date = addDays(board.weekStartDate, offset);
       return {
         date,
-        dayOfWeek,
+        dayOfWeek: deriveDayOfWeek(date),
         rest: false,
         activities: sortWeeklyPlannerActivities(savedByDate.get(date) ?? []),
       };
