@@ -137,7 +137,7 @@ export default function ProClubAttendance({
   // open an existing canonical session when one already exists. This handoff
   // never creates a session; creation stays behind the existing Head Coach flow.
   useEffect(() => {
-    if (!initialSlot) return;
+    if (!initialSlot || loadingSessions) return;
 
     const { sessionDate, startTime } = initialSlot;
     setInputDate(sessionDate);
@@ -201,6 +201,7 @@ export default function ProClubAttendance({
     clubId,
     initialSlot?.sessionDate,
     initialSlot?.startTime,
+    loadingSessions,
   ]);
 
   // Load canonical roster
