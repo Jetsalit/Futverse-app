@@ -90,3 +90,20 @@ test("theme CSS defines scoped Light and Professional Neon tokens", () => {
   assert.match(css, /--pc-glow:/);
   assert.match(css, /\.pro-club-themed-surface/);
 });
+
+test("theme contrast contract keeps Light readable and Neon secondary text legible", () => {
+  const css = readFileSync("src/index.css", "utf8");
+
+  assert.match(css, /--pc-success:/);
+  assert.match(css, /--pc-warning:/);
+  assert.match(css, /\[data-pro-club-theme="light"\][\s\S]*--pc-muted:\s*#475569/);
+  assert.match(css, /\[data-pro-club-theme="light"\][\s\S]*--pc-accent:\s*#0e7490/);
+  assert.match(css, /\[data-pro-club-theme="light"\][\s\S]*--pc-success:\s*#047857/);
+  assert.match(css, /\[data-pro-club-theme="light"\][\s\S]*--pc-warning:\s*#92400e/);
+  assert.match(css, /\[data-pro-club-theme="neon"\][\s\S]*--pc-muted:\s*#cbd5e1/);
+  assert.match(css, /\[data-pro-club-theme="neon"\][\s\S]*--pc-accent:\s*#67e8f9/);
+  assert.match(css, /\[data-pro-club-theme="light"\][\s\S]*text-cyan-/);
+  assert.match(css, /\[data-pro-club-theme="light"\][\s\S]*text-emerald-/);
+  assert.match(css, /\[data-pro-club-theme="light"\][\s\S]*text-amber-/);
+  assert.match(css, /\[data-pro-club-theme="neon"\][\s\S]*text-slate-500/);
+});
