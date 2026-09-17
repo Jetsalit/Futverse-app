@@ -1,0 +1,35 @@
+name: Pro Club App Shell V1 RED
+
+on:
+  push:
+    branches:
+      - verify/pro-club-app-shell-v1-red
+
+permissions:
+  contents: read
+
+jobs:
+  red-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Runtime provenance
+        run: |
+          node --version
+          npm --version
+          git rev-parse HEAD
+          git status --short
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+
+      - name: App Shell V1 contract must be RED before implementation
+        run: >-
+          node --experimental-test-module-mocks --import tsx --test
+          tests/proClubTeamDashboardProductionV1.unit.test.tsx
