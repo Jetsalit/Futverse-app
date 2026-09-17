@@ -1,8 +1,10 @@
 import { useState, type ReactNode } from "react";
 import {
+  ArrowLeft,
   CalendarDays,
   ClipboardCheck,
   Dumbbell,
+  Shield,
   Users,
 } from "lucide-react";
 
@@ -33,8 +35,14 @@ const TAB_LABELS: Record<ProClubTeamDashboardTab, string> = {
 
 export default function ProClubTeamDashboard({
   authority,
+  onBack,
+  onLogout,
+  overviewSupplement,
 }: {
   authority: ProClubOrganizationAuthority;
+  onBack: () => void;
+  onLogout: () => void;
+  overviewSupplement?: ReactNode;
 }) {
   const [activeTab, setActiveTab] =
     useState<ProClubTeamDashboardTab>("OVERVIEW");
@@ -48,41 +56,44 @@ export default function ProClubTeamDashboard({
     authority.staffRole ?? "NO_ROLE",
   ].join("|");
 
+  const staffRoleLabel = authority.staffRole
+    ? staffRoleLabels[authority.staffRole]
+    : authority.membershipAuthorizationRole;
+
   return (
-    <section className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 text-white shadow-2xl">
-      <header className="border-b border-slate-800 px-5 py-5 sm:px-7">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-300">
-              FutVerse Pro Club
-            </p>
-            <h2 className="mt-2 text-2xl font-black sm:text-3xl">
+    <section
+      aria-label="Pro Club application shell"
+      className="min-h-screen bg-slate-950 text-white lg:grid lg:grid-cols-[248px_minmax(0,1fr)]"
+    >
+      <aside className="border-b border-slate-800 bg-slate-950 px-4 py-5 sm:px-6 lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r lg:px-4 lg:py-6">
+        <div className="flex items-start justify-between gap-4 lg:block">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-cyan-300">
+              <Shield size={18} />
+              <p className="text-xs font-black uppercase tracking-[0.18em]">
+                FutVerse Pro Club
+              </p>
+            </div>
+            <h2 className="mt-3 truncate text-xl font-black">
               {authority.organizationName}
             </h2>
-            <p className="mt-2 text-sm text-slate-400">
-              First Team dashboard
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2 text-xs">
-            <span className="rounded-lg bg-white/10 px-3 py-2">
-              {authority.organizationLevel}
-            </span>
-            <span className="rounded-lg bg-emerald-400/10 px-3 py-2 text-emerald-300">
-              {authority.organizationStatus}
-            </span>
-            {authority.staffRole && (
-              <span className="rounded-lg bg-white/10 px-3 py-2">
-                {staffRoleLabels[authority.staffRole]}
+            <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold">
+              <span className="rounded-lg bg-white/10 px-2.5 py-1.5 text-slate-200">
+                {staffRoleLabel}
               </span>
-            )}
+              <span className="rounded-lg bg-emerald-400/10 px-2.5 py-1.5 text-emerald-300">
+                {authority.organizationStatus}
+              </span>
+              <span className="rounded-lg bg-white/10 px-2.5 py-1.5 text-slate-300">
+                {authority.organizationLevel}
+              </span>
+            </div>
           </div>
         </div>
-      </header>
 
-      <div className="grid gap-6 p-5 sm:p-7 lg:grid-cols-[210px_minmax(0,1fr)]">
         <nav
           aria-label="Pro Club team sections"
-          className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0"
+          className="mt-5 flex gap-2 overflow-x-auto pb-1 lg:mt-8 lg:flex-col lg:overflow-visible lg:pb-0"
         >
           {PRO_CLUB_TEAM_DASHBOARD_TABS.map((tab) => {
             const disabled = tab === "MATCHES";
@@ -117,18 +128,52 @@ export default function ProClubTeamDashboard({
             );
           })}
         </nav>
+      </aside>
 
-        <div className="min-w-0">
+      <div className="min-w-0 bg-slate-100 text-slate-900">
+        <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur sm:px-6 lg:px-8">
+          <div className="flex min-h-12 flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-4">
+              <button
+                type="button"
+                onClick={onBack}
+                className="inline-flex shrink-0 items-center gap-2 text-sm font-bold text-slate-600 transition hover:text-slate-950"
+              >
+                <ArrowLeft size={18} />
+                <span className="hidden sm:inline">Back to FutVerse</span>
+                <span className="sm:hidden">Back</span>
+              </button>
+              <div className="hidden h-6 w-px bg-slate-200 sm:block" />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-black text-slate-950">
+                  {TAB_LABELS[activeTab]}
+                </p>
+                <p className="hidden truncate text-xs text-slate-500 sm:block">
+                  {authority.organizationName} · {staffRoleLabel} · {authority.organizationStatus}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onLogout}
+              className="text-sm font-bold text-slate-600 transition hover:text-slate-950"
+            >
+              Sign out
+            </button>
+          </div>
+        </header>
+
+        <main className="min-w-0 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
           {activeTab === "OVERVIEW" && (
-            <section aria-labelledby="pro-club-team-overview" className="space-y-5">
+            <section aria-labelledby="pro-club-team-overview" className="space-y-6">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-300">
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-700">
                   Overview
                 </p>
-                <h3 id="pro-club-team-overview" className="mt-2 text-xl font-black">
+                <h3 id="pro-club-team-overview" className="mt-2 text-2xl font-black text-slate-950">
                   {authority.organizationName} First Team
                 </h3>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
                   Open the reviewed production football surfaces from one team workspace. Each module continues to use its existing authority and persistence contract.
                 </p>
               </div>
@@ -155,6 +200,8 @@ export default function ProClubTeamDashboard({
                   description="Coming soon"
                 />
               </div>
+
+              {overviewSupplement && <div className="pt-1">{overviewSupplement}</div>}
             </section>
           )}
 
@@ -172,7 +219,7 @@ export default function ProClubTeamDashboard({
               authority={authority}
             />
           )}
-        </div>
+        </main>
       </div>
     </section>
   );
@@ -188,9 +235,9 @@ function OverviewCard({
   description: string;
 }) {
   return (
-    <article className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-      <div className="text-cyan-300">{icon}</div>
-      <h4 className="mt-3 font-bold">{title}</h4>
+    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="text-cyan-700">{icon}</div>
+      <h4 className="mt-3 font-bold text-slate-950">{title}</h4>
       <p className="mt-1 text-sm text-slate-500">{description}</p>
     </article>
   );
