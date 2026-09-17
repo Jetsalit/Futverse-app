@@ -233,11 +233,16 @@ export function markWeeklyPlannerDayRest(
   state: WeeklyPlannerState,
   date: string,
 ): WeeklyPlannerState {
-  return updateDay(state, date, (day) => ({
-    ...day,
-    rest: true,
-    activities: [],
-  }));
+  return updateDay(state, date, (day) => {
+    if (day.activities.some((activity) => activity.source === "SAVED_TRAINING")) {
+      return day;
+    }
+    return {
+      ...day,
+      rest: true,
+      activities: [],
+    };
+  });
 }
 
 export function clearWeeklyPlannerDayRest(
