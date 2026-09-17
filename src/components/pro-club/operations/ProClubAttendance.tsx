@@ -42,7 +42,7 @@ export interface ProClubAttendanceProps {
   initialSlot?: {
     sessionDate: string;
     startTime: string;
-  };
+  } | null;
   attendanceOps?: ProClubAttendanceRepositoryOps;
   rosterOps?: ProClubSquadRosterRepositoryOps;
 }
