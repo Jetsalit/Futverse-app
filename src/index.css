@@ -330,3 +330,80 @@
 [data-pro-club-theme="neon"] .pro-club-roster-summary-card[data-tone="forwards"] {
   --pc-card-accent: #fda4af;
 }
+
+/* Thai weekday color contract — familiar day colors for coaches. */
+.pro-club-weekday-card {
+  --pc-weekday-accent: var(--pc-accent);
+}
+
+.pro-club-weekday-name {
+  color: var(--pc-weekday-accent);
+}
+
+.pro-club-weekday-accent {
+  background: var(--pc-weekday-accent);
+}
+
+[data-pro-club-theme="light"] .pro-club-weekday-card[data-weekday="MONDAY"] {
+  --pc-weekday-accent: #a16207;
+}
+
+[data-pro-club-theme="light"] .pro-club-weekday-card[data-weekday="TUESDAY"] {
+  --pc-weekday-accent: #be185d;
+}
+
+[data-pro-club-theme="light"] .pro-club-weekday-card[data-weekday="WEDNESDAY"] {
+  --pc-weekday-accent: #15803d;
+}
+
+[data-pro-club-theme="light"] .pro-club-weekday-card[data-weekday="THURSDAY"] {
+  --pc-weekday-accent: #c2410c;
+}
+
+[data-pro-club-theme="light"] .pro-club-weekday-card[data-weekday="FRIDAY"] {
+  --pc-weekday-accent: #0369a1;
+}
+
+[data-pro-club-theme="light"] .pro-club-weekday-card[data-weekday="SATURDAY"] {
+  --pc-weekday-accent: #7e22ce;
+}
+
+[data-pro-club-theme="light"] .pro-club-weekday-card[data-weekday="SUNDAY"] {
+  --pc-weekday-accent: #b91c1c;
+}
+
+[data-pro-club-theme="neon"] .pro-club-weekday-card[data-weekday="MONDAY"] {
+  --pc-weekday-accent: #fde047;
+}
+
+[data-pro-club-theme="neon"] .pro-club-weekday-card[data-weekday="TUESDAY"] {
+  --pc-weekday-accent: #f472b6;
+}
+
+[data-pro-club-theme="neon"] .pro-club-weekday-card[data-weekday="WEDNESDAY"] {
+  --pc-weekday-accent: #4ade80;
+}
+
+[data-pro-club-theme="neon"] .pro-club-weekday-card[data-weekday="THURSDAY"] {
+  --pc-weekday-accent: #fb923c;
+}
+
+[data-pro-club-theme="neon"] .pro-club-weekday-card[data-weekday="FRIDAY"] {
+  --pc-weekday-accent: #38bdf8;
+}
+
+[data-pro-club-theme="neon"] .pro-club-weekday-card[data-weekday="SATURDAY"] {
+  --pc-weekday-accent: #c084fc;
+}
+
+[data-pro-club-theme="neon"] .pro-club-weekday-card[data-weekday="SUNDAY"] {
+  --pc-weekday-accent: #f87171;
+}
+
+[data-pro-club-theme="neon"] .pro-club-weekday-name {
+  text-shadow: 0 0 12px color-mix(in srgb, var(--pc-weekday-accent) 42%, transparent);
+}
+
+[data-pro-club-theme="neon"] .pro-club-weekday-accent {
+  box-shadow: 0 0 14px color-mix(in srgb, var(--pc-weekday-accent) 36%, transparent);
+}
