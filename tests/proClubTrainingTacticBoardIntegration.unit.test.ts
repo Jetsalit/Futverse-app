@@ -11,6 +11,7 @@ const picker = readFileSync(
   "utf8",
 );
 const tacticBoard = readFileSync("src/components/TacticBoard.tsx", "utf8");
+const themeCss = readFileSync("src/index.css", "utf8");
 
 test("Weekly Training block opens the existing Tactic Board integration without changing Weekly schema", () => {
   assert.match(
@@ -54,10 +55,22 @@ test("Tactic Board pitch markings use a dedicated dark line contract across ever
 
   assert.match(pitchMarkings, /fieldType === "full"/);
   assert.match(pitchMarkings, /fieldType === "small"/);
-  assert.match(pitchMarkings, /ring-\[#1f2937\]/);
-  assert.match(pitchMarkings, /bg-\[#1f2937\]/);
-  assert.match(pitchMarkings, /border-\[#1f2937\]/);
-  assert.doesNotMatch(pitchMarkings, /(?:ring|bg|border)-slate-800/);
+  assert.match(pitchMarkings, /ring-slate-800/);
+  assert.match(pitchMarkings, /bg-slate-800/);
+  assert.match(pitchMarkings, /border-slate-800/);
+
+  assert.match(
+    themeCss,
+    /\[aria-label="Weekly Training Tactic Board full-page workspace"\] \[class\*="ring-slate-800"\]\s*\{[\s\S]*?--tw-ring-color:\s*#1f2937\s*!important;/,
+  );
+  assert.match(
+    themeCss,
+    /\[aria-label="Weekly Training Tactic Board full-page workspace"\] \[class\*="ring-slate-800"\] \[class\*="border-slate-800"\]\s*\{[\s\S]*?border-color:\s*#1f2937\s*!important;/,
+  );
+  assert.match(
+    themeCss,
+    /\[aria-label="Weekly Training Tactic Board full-page workspace"\] \[class\*="ring-slate-800"\] \[class\*="bg-slate-800"\]\s*\{[\s\S]*?background-color:\s*#1f2937\s*!important;/,
+  );
 });
 
 test("integration does not introduce a second Weekly Training persistence path", () => {
