@@ -29,8 +29,32 @@ export const PRO_CLUB_TEAM_DASHBOARD_TABS = [
   "MATCHES",
 ] as const;
 
-type ProClubTeamDashboardTab =
+export type ProClubTeamDashboardTab =
   (typeof PRO_CLUB_TEAM_DASHBOARD_TABS)[number];
+
+export const PRO_CLUB_ACTIVE_TAB_SESSION_KEY_PREFIX =
+  "futverse:pro-club-active-tab";
+
+export function resolveProClubActiveTab(
+  value: string | null | undefined,
+): ProClubTeamDashboardTab {
+  switch (value) {
+    case "SQUAD":
+    case "TRAINING":
+    case "ATTENDANCE":
+      return value;
+    case "OVERVIEW":
+    default:
+      return "OVERVIEW";
+  }
+}
+
+function proClubActiveTabSessionKey(
+  organizationId: string,
+  userId: string,
+): string {
+  return `${PRO_CLUB_ACTIVE_TAB_SESSION_KEY_PREFIX}:${organizationId}:${userId}`;
+}
 
 type OverviewCardTone = "squad" | "training" | "attendance" | "matches";
 
@@ -73,6 +97,41 @@ export default function ProClubTeamDashboard({
     }
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      setActiveTab(
+        resolveProClubActiveTab(
+          window.sessionStorage.getItem(
+            proClubActiveTabSessionKey(
+              authority.organizationId,
+              authority.userId,
+            ),
+          ),
+        ),
+      );
+    } catch {
+      setActiveTab("OVERVIEW");
+    }
+  }, [authority.organizationId, authority.userId]);
+
+  function persistActiveTab(nextTab: ProClubTeamDashboardTab) {
+    if (typeof window === "undefined") return;
+
+    try {
+      window.sessionStorage.setItem(
+        proClubActiveTabSessionKey(
+          authority.organizationId,
+          authority.userId,
+        ),
+        nextTab,
+      );
+    } catch {
+      // Refresh persistence is best-effort; navigation remains usable.
+    }
+  }
+
   function selectTheme(nextTheme: ProClubTheme) {
     setTheme(nextTheme);
 
@@ -85,9 +144,21 @@ export default function ProClubTeamDashboard({
     }
   }
 
+  function selectActiveTab(nextTab: ProClubTeamDashboardTab) {
+    if (nextTab === "MATCHES") return;
+
+    if (nextTab === "ATTENDANCE") {
+      setAttendanceLaunch(null);
+    }
+
+    setActiveTab(nextTab);
+    persistActiveTab(nextTab);
+  }
+
   function openAttendanceFromTraining(slot: AttendanceLaunch) {
     setAttendanceLaunch(slot);
     setActiveTab("ATTENDANCE");
+    persistActiveTab("ATTENDANCE");
   }
 
   const attendanceAuthorityKey = [
@@ -149,12 +220,7 @@ export default function ProClubTeamDashboard({
                 type="button"
                 disabled={disabled}
                 aria-current={selected ? "page" : undefined}
-                onClick={() => {
-                  if (!disabled) {
-                    if (tab === "ATTENDANCE") setAttendanceLaunch(null);
-                    setActiveTab(tab);
-                  }
-                }}
+                onClick={() => selectActiveTab(tab)}
                 className={[
                   "flex shrink-0 items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold transition lg:w-full",
                   selected
