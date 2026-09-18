@@ -23,6 +23,20 @@ export interface ProClubSquadRosterFilter {
   group: ProClubSquadPositionGroup;
 }
 
+export interface ProClubSquadRosterPartition {
+  current: ProClubSquadRosterRecord[];
+  released: ProClubSquadRosterRecord[];
+}
+
+export function partitionProClubSquadRoster(
+  records: readonly ProClubSquadRosterRecord[],
+): ProClubSquadRosterPartition {
+  return {
+    current: records.filter((record) => record.status !== "RELEASED"),
+    released: records.filter((record) => record.status === "RELEASED"),
+  };
+}
+
 const DEFENDER_POSITIONS = new Set<PlayerPositionCode>([
   "LB",
   "LWB",
