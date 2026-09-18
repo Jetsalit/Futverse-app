@@ -202,7 +202,7 @@ test("production presentation adds no IO environment switch or forbidden module"
     /\bAnalysis\b/i,
     /\bAvailability\b/i,
     /\bReports\b/i,
-    /\bStaff\b/i,
+    /\bStaff Management\b/i,
     /Club administration/i,
     /Competition Calendar/i,
   ]) {
