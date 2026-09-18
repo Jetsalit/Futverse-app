@@ -302,16 +302,20 @@ function lifecycleAuditIsConsistent(record: Record<string, unknown>): boolean {
     return !hasSubmit && !hasReviewStart && !hasRevision && !hasApproval;
   }
   if (status === "SUBMITTED") {
-    return hasSubmit && !hasReviewStart && !hasRevision && !hasApproval;
+    return (
+      hasSubmit &&
+      !hasApproval &&
+      ((!hasReviewStart && !hasRevision) || (hasReviewStart && hasRevision))
+    );
   }
   if (status === "IN_REVIEW") {
-    return hasSubmit && hasReviewStart && !hasRevision && !hasApproval;
+    return hasSubmit && hasReviewStart && !hasApproval;
   }
   if (status === "NEEDS_REVISION") {
     return hasSubmit && hasReviewStart && hasRevision && !hasApproval;
   }
   if (status === "APPROVED") {
-    return hasSubmit && hasReviewStart && !hasRevision && hasApproval;
+    return hasSubmit && hasReviewStart && hasApproval;
   }
 
   return false;
