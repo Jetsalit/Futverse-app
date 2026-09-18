@@ -136,6 +136,19 @@ test("production dashboard reuses reviewed Squad Training and Attendance surface
   assert.equal((source.match(/<ProClubAttendance\b/g) ?? []).length, 1);
 });
 
+test("overview cards connect directly to the live production tabs", () => {
+  const source = readFileSync(files.dashboard, "utf8");
+
+  assert.match(source, /title="Squad"[\s\S]*onOpen=\{\(\) => selectActiveTab\("SQUAD"\)\}/);
+  assert.match(source, /title="Training"[\s\S]*onOpen=\{\(\) => selectActiveTab\("TRAINING"\)\}/);
+  assert.match(source, /title="Attendance"[\s\S]*onOpen=\{\(\) => selectActiveTab\("ATTENDANCE"\)\}/);
+  assert.match(source, /title="Matches"[\s\S]*badge="Coming soon"/);
+
+  const overviewCardSource = source.slice(source.indexOf("function OverviewCard"));
+  assert.match(overviewCardSource, /if \(onOpen\)/);
+  assert.match(overviewCardSource, /onClick=\{onOpen\}/);
+  assert.match(overviewCardSource, /aria-label=/);
+});
 test("portal mounts only the production team dashboard for authorized workspaces", () => {
   const portal = readFileSync(files.portal, "utf8");
 
