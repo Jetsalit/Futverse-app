@@ -10,6 +10,7 @@ on:
       - src/components/pro-club/operations/ProClubHeadCoachWeeklyProductionWorkspace.tsx
       - tests/proClubStaffSubmissionsUi.unit.test.tsx
       - tests/proClubTeamDashboardProductionV1.unit.test.tsx
+      - tests/proClubHeadCoachWeeklyProductionVisibilityV1.unit.test.tsx
       - .github/workflows/pro-club-staff-submissions-v1-ui-wiring.yml
   pull_request:
     paths:
@@ -18,6 +19,7 @@ on:
       - src/components/pro-club/operations/ProClubHeadCoachWeeklyProductionWorkspace.tsx
       - tests/proClubStaffSubmissionsUi.unit.test.tsx
       - tests/proClubTeamDashboardProductionV1.unit.test.tsx
+      - tests/proClubHeadCoachWeeklyProductionVisibilityV1.unit.test.tsx
       - .github/workflows/pro-club-staff-submissions-v1-ui-wiring.yml
 
 permissions:
@@ -61,6 +63,7 @@ jobs:
           node --experimental-test-module-mocks --import tsx --test
           tests/proClubStaffSubmissionsUi.unit.test.tsx
           tests/proClubTeamDashboardProductionV1.unit.test.tsx
+          tests/proClubHeadCoachWeeklyProductionVisibilityV1.unit.test.tsx
           tests/proClubWorkspaceRefreshPersistence.unit.test.ts
 
       - name: Staff Submissions model/repository regression
