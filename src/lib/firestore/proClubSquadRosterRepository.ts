@@ -434,6 +434,12 @@ export async function releaseProClubSquadRosterPlayer(
   playerKey: string,
   ops: ProClubSquadRosterRepositoryOps = FIRESTORE_OPS,
 ): Promise<ProClubSquadRosterRecord> {
+  requireExactPathIdentity(clubId, "clubId");
+  requireExactPlayerKey(playerKey);
+  const uid = requireAuthenticatedUid(ops);
+  const authority = await resolveRequiredAuthority(clubId, uid, ops);
+  assertHeadCoachAuthority(authority);
+
   const current = await getProClubSquadRosterPlayer(clubId, playerKey, ops);
   if (!current) {
     throw new Error("Pro Club Squad roster player does not exist.");
