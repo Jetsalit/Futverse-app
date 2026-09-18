@@ -88,9 +88,10 @@ test("fails closed when tenant or membership authority is inactive", () => {
 });
 
 test("production UI reuses repository and role-to-worktype contract without direct Firestore writes", () => {
-  assert.match(
-    submissionsSource,
-    /from "../../../lib/firestore/proClubStaffSubmissionsRepository"/,
+  assert.ok(
+    submissionsSource.includes(
+      'from "../../../lib/firestore/proClubStaffSubmissionsRepository"',
+    ),
   );
   assert.match(submissionsSource, /expectedProClubStaffSubmissionWorkType/);
   assert.match(submissionsSource, /createProClubStaffSubmissionDraft/);
