@@ -43,6 +43,7 @@ test("freezes the minimal production team navigation", () => {
     "SQUAD",
     "TRAINING",
     "ATTENDANCE",
+    "SUBMISSIONS",
     "MATCHES",
   ]);
 });
@@ -56,6 +57,7 @@ test("active tab refresh persistence accepts only live production tabs", () => {
   assert.equal(resolveProClubActiveTab("SQUAD"), "SQUAD");
   assert.equal(resolveProClubActiveTab("TRAINING"), "TRAINING");
   assert.equal(resolveProClubActiveTab("ATTENDANCE"), "ATTENDANCE");
+  assert.equal(resolveProClubActiveTab("SUBMISSIONS"), "SUBMISSIONS");
   assert.equal(resolveProClubActiveTab("MATCHES"), "OVERVIEW");
   assert.equal(resolveProClubActiveTab("UNKNOWN"), "OVERVIEW");
   assert.equal(resolveProClubActiveTab(null), "OVERVIEW");
@@ -92,6 +94,7 @@ test("renders the production app shell with authoritative club identity and cont
   assert.match(text, /Squad/);
   assert.match(text, /Training/);
   assert.match(text, /Attendance/);
+  assert.match(text, /ส่งงาน/);
   assert.match(text, /Matches/);
   assert.match(text, /Coming soon/i);
 
@@ -101,7 +104,7 @@ test("renders the production app shell with authoritative club identity and cont
     /Analysis/i,
     /Availability/i,
     /Reports/i,
-    /Staff/i,
+    /Staff administration/i,
     /Club administration/i,
   ]) {
     assert.doesNotMatch(text, forbidden);
@@ -128,12 +131,14 @@ test("production dashboard reuses reviewed Squad Training and Attendance surface
     /import ProClubHeadCoachWeeklyProductionWorkspace from "\.\/ProClubHeadCoachWeeklyProductionWorkspace"/,
   );
   assert.match(source, /import ProClubAttendance from "\.\/ProClubAttendance"/);
+  assert.match(source, /import ProClubStaffSubmissions/);
   assert.equal((source.match(/<ProClubSquadRoster\b/g) ?? []).length, 1);
   assert.equal(
     (source.match(/<ProClubHeadCoachWeeklyProductionWorkspace\b/g) ?? []).length,
     1,
   );
   assert.equal((source.match(/<ProClubAttendance\b/g) ?? []).length, 1);
+  assert.equal((source.match(/<ProClubStaffSubmissions\b/g) ?? []).length, 1);
 });
 
 test("overview cards connect directly to the live production tabs", () => {
