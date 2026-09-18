@@ -160,10 +160,10 @@ test("status options reflect the frozen lifecycle", () => {
   assert.deepEqual(proClubSquadRosterAllowedStatuses("CREATE"), ["ACTIVE"]);
   assert.deepEqual(
     proClubSquadRosterAllowedStatuses("EDIT", "ACTIVE"),
-    ["ACTIVE", "INACTIVE", "RELEASED"],
+    ["ACTIVE", "INACTIVE"],
   );
   assert.deepEqual(
     proClubSquadRosterAllowedStatuses("EDIT", "INACTIVE"),
-    ["ACTIVE", "INACTIVE", "RELEASED"],
+    ["ACTIVE", "INACTIVE"],
   );
 });

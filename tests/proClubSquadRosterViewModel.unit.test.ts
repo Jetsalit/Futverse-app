@@ -5,6 +5,7 @@ import type { ProClubSquadRosterRecord } from "../src/lib/firestore/proClubSquad
 import {
   countProClubSquadRosterByGroup,
   filterProClubSquadRoster,
+  partitionProClubSquadRoster,
   resolveProClubSquadPositionGroup,
 } from "../src/components/pro-club/operations/proClubSquadRosterViewModel";
 
@@ -133,5 +134,31 @@ test("counts canonical roster records by GK DEF MID and FWD", () => {
     DEF: 2,
     MID: 1,
     FWD: 2,
+  });
+});
+
+
+test("partitions current First Team from released player history", () => {
+  const records = [
+    rosterRecord({ playerKey: "active", status: "ACTIVE", position: "GK" }),
+    rosterRecord({ playerKey: "inactive", status: "INACTIVE", position: "CB" }),
+    rosterRecord({ playerKey: "released", status: "RELEASED", position: "ST" }),
+  ];
+
+  const partition = partitionProClubSquadRoster(records);
+
+  assert.deepEqual(
+    partition.current.map((record) => record.playerKey),
+    ["active", "inactive"],
+  );
+  assert.deepEqual(
+    partition.released.map((record) => record.playerKey),
+    ["released"],
+  );
+  assert.deepEqual(countProClubSquadRosterByGroup(partition.current), {
+    GK: 1,
+    DEF: 1,
+    MID: 0,
+    FWD: 0,
   });
 });

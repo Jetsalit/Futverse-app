@@ -6,6 +6,7 @@ import {
   createProClubSquadRosterPlayer,
   getProClubSquadRosterPlayer,
   listProClubSquadRoster,
+  releaseProClubSquadRosterPlayer,
   updateProClubSquadRosterPlayer,
   type ProClubSquadRosterRepositoryOps,
 } from "../src/lib/firestore/proClubSquadRosterRepository";
@@ -325,4 +326,75 @@ test("existing non-null FUTID cannot be replaced", async () => {
   );
   assert.equal(writes.length, 0);
   assert.equal(reads.some((path) => path.startsWith("futIdRegistry/")), false);
+});
+
+
+test("explicit release action preserves the player record and changes only lifecycle/audit update fields", async () => {
+  const pathKey = `proClubs/${CLUB_ID}/players/${PLAYER_KEY}`;
+  const original = rosterDocument({
+    firstName: "Real",
+    lastName: "Player",
+    jerseyNumber: 9,
+    status: "ACTIVE",
+  });
+  const { ops, documents, writes } = makeOps({
+    initial: { [pathKey]: original },
+  });
+
+  const released = await releaseProClubSquadRosterPlayer(
+    CLUB_ID,
+    PLAYER_KEY,
+    ops,
+  );
+
+  assert.equal(released.status, "RELEASED");
+  assert.equal(released.firstName, "Real");
+  assert.equal(released.lastName, "Player");
+  assert.equal(released.jerseyNumber, 9);
+  assert.equal(released.createdBy, HEAD_COACH_UID);
+  assert.deepEqual(released.createdAt, original.createdAt);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0]?.kind, "update");
+  assert.equal(writes[0]?.path, pathKey);
+  assert.equal(writes[0]?.data.status, "RELEASED");
+  assert.equal(documents.has(pathKey), true);
+});
+
+test("explicit release is idempotent for an already RELEASED record and never deletes data", async () => {
+  const pathKey = `proClubs/${CLUB_ID}/players/${PLAYER_KEY}`;
+  const { ops, documents, writes } = makeOps({
+    initial: {
+      [pathKey]: rosterDocument({ status: "RELEASED" }),
+    },
+  });
+
+  const released = await releaseProClubSquadRosterPlayer(
+    CLUB_ID,
+    PLAYER_KEY,
+    ops,
+  );
+
+  assert.equal(released.status, "RELEASED");
+  assert.equal(writes.length, 0);
+  assert.equal(documents.has(pathKey), true);
+});
+
+
+test("explicit release action rejects non-Head-Coach authority before any write", async () => {
+  const assistantAuthority: ProClubOrganizationAuthority = {
+    ...activeHeadCoachAuthority,
+    staffRole: "ASSISTANT_COACH",
+  };
+  const { ops, writes } = makeOps({
+    authority: assistantAuthority,
+    initial: {
+      [`proClubs/${CLUB_ID}/players/${PLAYER_KEY}`]: rosterDocument(),
+    },
+  });
+
+  await assert.rejects(
+    () => releaseProClubSquadRosterPlayer(CLUB_ID, PLAYER_KEY, ops),
+    /HEAD_COACH/,
+  );
+  assert.equal(writes.length, 0);
 });

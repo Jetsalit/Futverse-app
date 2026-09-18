@@ -93,7 +93,11 @@ export function proClubSquadRosterAllowedStatuses(
     return [];
   }
 
-  return (["ACTIVE", "INACTIVE", "RELEASED"] as const).filter((status) =>
+  if (currentStatus === "RELEASED") {
+    return ["RELEASED"];
+  }
+
+  return (["ACTIVE", "INACTIVE"] as const).filter((status) =>
     canTransitionProClubSquadRosterStatus(currentStatus, status),
   );
 }

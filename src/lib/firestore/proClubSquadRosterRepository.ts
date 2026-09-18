@@ -429,6 +429,43 @@ export async function createProClubSquadRosterPlayer(
   return record;
 }
 
+export async function releaseProClubSquadRosterPlayer(
+  clubId: string,
+  playerKey: string,
+  ops: ProClubSquadRosterRepositoryOps = FIRESTORE_OPS,
+): Promise<ProClubSquadRosterRecord> {
+  requireExactPathIdentity(clubId, "clubId");
+  requireExactPlayerKey(playerKey);
+  const uid = requireAuthenticatedUid(ops);
+  const authority = await resolveRequiredAuthority(clubId, uid, ops);
+  assertHeadCoachAuthority(authority);
+
+  const current = await getProClubSquadRosterPlayer(clubId, playerKey, ops);
+  if (!current) {
+    throw new Error("Pro Club Squad roster player does not exist.");
+  }
+
+  if (current.status === "RELEASED") {
+    return current;
+  }
+
+  return updateProClubSquadRosterPlayer(
+    clubId,
+    playerKey,
+    {
+      futId: current.futId,
+      firstName: current.firstName,
+      lastName: current.lastName,
+      position: current.position,
+      additionalPositions: [...current.additionalPositions],
+      jerseyNumber: current.jerseyNumber,
+      squadLabel: current.squadLabel,
+      status: "RELEASED",
+    },
+    ops,
+  );
+}
+
 export async function updateProClubSquadRosterPlayer(
   clubId: string,
   playerKey: string,

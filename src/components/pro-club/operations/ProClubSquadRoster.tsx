@@ -2,22 +2,26 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   Edit3,
+  History,
   Plus,
   RefreshCw,
   Search,
   Shield,
   ShieldCheck,
   Target,
+  UserMinus,
   Users,
 } from "lucide-react";
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
 import {
   listProClubSquadRoster,
+  releaseProClubSquadRosterPlayer,
   type ProClubSquadRosterRecord,
 } from "../../../lib/firestore/proClubSquadRosterRepository";
 import {
   countProClubSquadRosterByGroup,
   filterProClubSquadRoster,
+  partitionProClubSquadRoster,
   PRO_CLUB_SQUAD_POSITION_GROUPS,
   resolveProClubSquadPositionGroup,
   type ProClubSquadPositionGroup,
@@ -30,7 +34,6 @@ const STATUS_OPTIONS: readonly ProClubSquadStatusFilter[] = [
   "ALL",
   "ACTIVE",
   "INACTIVE",
-  "RELEASED",
 ];
 
 const GROUP_LABELS: Record<ProClubSquadPositionGroup, string> = {
@@ -75,6 +78,9 @@ export default function ProClubSquadRoster({
   const [reloadToken, setReloadToken] = useState(0);
   const [createPlayerKey, setCreatePlayerKey] = useState<string | null>(null);
   const [editingPlayer, setEditingPlayer] = useState<ProClubSquadRosterRecord | null>(null);
+  const [releasingPlayer, setReleasingPlayer] = useState<ProClubSquadRosterRecord | null>(null);
+  const [releasing, setReleasing] = useState(false);
+  const [showReleasedHistory, setShowReleasedHistory] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -108,14 +114,19 @@ export default function ProClubSquadRoster({
     };
   }, [authority.organizationId, reloadToken]);
 
+  const { current: currentRoster, released: releasedRoster } = useMemo(
+    () => partitionProClubSquadRoster(records),
+    [records],
+  );
+
   const filtered = useMemo(
-    () => filterProClubSquadRoster(records, { search, status, group }),
-    [records, search, status, group],
+    () => filterProClubSquadRoster(currentRoster, { search, status, group }),
+    [currentRoster, search, status, group],
   );
 
   const counts = useMemo(
-    () => countProClubSquadRosterByGroup(records),
-    [records],
+    () => countProClubSquadRosterByGroup(currentRoster),
+    [currentRoster],
   );
 
   const canWrite = authority.staffRole === "HEAD_COACH";
@@ -135,6 +146,29 @@ export default function ProClubSquadRoster({
     setCreatePlayerKey(null);
     setEditingPlayer(null);
     setError(null);
+  };
+
+  const confirmRelease = async () => {
+    if (!canWrite || !releasingPlayer || releasing) return;
+
+    setReleasing(true);
+    setError(null);
+
+    try {
+      const released = await releaseProClubSquadRosterPlayer(
+        authority.organizationId,
+        releasingPlayer.playerKey,
+      );
+      setRecords((previous) => previous.map((record) =>
+        record.playerKey === released.playerKey ? released : record,
+      ));
+      setReleasingPlayer(null);
+    } catch (caught) {
+      console.error("Pro Club Squad player release failed:", caught);
+      setError(caught instanceof Error ? caught.message : "Player could not be released.");
+    } finally {
+      setReleasing(false);
+    }
   };
 
   return (
@@ -174,7 +208,7 @@ export default function ProClubSquadRoster({
         {(["ALL", "GK", "DEF", "MID", "FWD"] as const).map((item) => {
           const visual = ROSTER_SUMMARY_VISUALS[item];
           const Icon = visual.Icon;
-          const count = item === "ALL" ? records.length : counts[item];
+          const count = item === "ALL" ? currentRoster.length : counts[item];
 
           return (
             <article
@@ -240,7 +274,7 @@ export default function ProClubSquadRoster({
             </div>
           </div>
         </article>
-      ) : records.length === 0 ? (
+      ) : currentRoster.length === 0 ? (
         <article className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/40 p-8 text-center">
           <Users className="mx-auto text-slate-600" size={28} />
           <h4 className="mt-3 font-bold text-white">No First Team players yet</h4>
@@ -288,18 +322,119 @@ export default function ProClubSquadRoster({
                   <span className="text-right text-slate-300">{player.additionalPositions.length > 0 ? player.additionalPositions.join(" · ") : "—"}</span>
                 </div>
                 {canWrite && (
-                  <button
-                    type="button"
-                    onClick={() => setEditingPlayer(player)}
-                    className="mt-1 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-cyan-500/40 hover:text-cyan-200"
-                  >
-                    <Edit3 size={14} />
-                    Edit roster record
-                  </button>
+                  <div className="mt-1 grid gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditingPlayer(player)}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-cyan-500/40 hover:text-cyan-200"
+                    >
+                      <Edit3 size={14} />
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReleasingPlayer(player)}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-rose-800/70 px-3 py-2 text-xs font-bold text-rose-300 hover:bg-rose-950/30"
+                    >
+                      <UserMinus size={14} />
+                      Release Player
+                    </button>
+                  </div>
                 )}
               </div>
             </article>
           ))}
+        </div>
+      )}
+
+      <section className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
+        <button
+          type="button"
+          onClick={() => setShowReleasedHistory((value) => !value)}
+          className="flex w-full items-center justify-between gap-4 text-left"
+        >
+          <span className="flex items-center gap-2 text-sm font-black text-slate-200">
+            <History size={16} />
+            Released Players / History
+          </span>
+          <span className="rounded-full bg-slate-800 px-2.5 py-1 text-xs font-black text-slate-300">
+            {releasedRoster.length}
+          </span>
+        </button>
+
+        {showReleasedHistory && (
+          releasedRoster.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-500">No released players in this club history.</p>
+          ) : (
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {releasedRoster.map((player) => (
+                <article
+                  key={player.playerKey}
+                  className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h4 className="font-black text-slate-200">{player.firstName} {player.lastName}</h4>
+                      <p className="mt-1 text-xs text-slate-500">
+                        #{player.jerseyNumber} · {player.position} · {player.squadLabel}
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-slate-700 bg-slate-800 px-2.5 py-1 text-[10px] font-black tracking-wider text-slate-400">
+                      RELEASED
+                    </span>
+                  </div>
+                  <p className="mt-3 font-mono text-xs text-slate-500">
+                    FUTID: {player.futId ?? "Not bound"}
+                  </p>
+                </article>
+              ))}
+            </div>
+          )
+        )}
+      </section>
+
+      {releasingPlayer && canWrite && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <button
+            type="button"
+            aria-label="Cancel player release"
+            onClick={() => !releasing && setReleasingPlayer(null)}
+            className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm"
+          />
+          <section className="relative z-10 w-full max-w-lg rounded-3xl border border-rose-900/60 bg-slate-900 p-6 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <div className="rounded-xl bg-rose-500/10 p-2 text-rose-300">
+                <UserMinus size={20} />
+              </div>
+              <div>
+                <h4 className="text-lg font-black text-white">Release Player?</h4>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  {releasingPlayer.firstName} {releasingPlayer.lastName} will disappear from the current First Team, but the roster record and historical data will be preserved.
+                </p>
+                <p className="mt-2 text-xs font-bold text-amber-300">
+                  RELEASED is terminal in V1 and cannot be returned to ACTIVE or INACTIVE.
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                disabled={releasing}
+                onClick={() => setReleasingPlayer(null)}
+                className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-bold text-slate-300 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={releasing}
+                onClick={() => void confirmRelease()}
+                className="rounded-xl bg-rose-500 px-4 py-2 text-sm font-black text-white hover:bg-rose-400 disabled:opacity-50"
+              >
+                {releasing ? "Releasing…" : "Confirm Release"}
+              </button>
+            </div>
+          </section>
         </div>
       )}
 
