@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import loginFootballerHero from "../assets/login-footballer-hero.svg";
+import loginFootballerHero from "../assets/login-footballer-photo-hero.webp";
 import { auth, db } from "../lib/firebase";
 import {
   createUserWithEmailAndPassword,
@@ -260,9 +260,9 @@ export default function Login() {
             src={loginFootballerHero}
             alt=""
             aria-hidden="true"
-            className="absolute bottom-0 right-[-2%] h-[94%] w-auto max-w-none object-contain object-bottom opacity-95 drop-shadow-[0_30px_70px_rgba(14,165,233,0.22)]"
+            className="absolute inset-0 h-full w-full object-cover object-center opacity-100"
           />
-          <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/45 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/20 to-transparent" />
         </div>
         <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.98)_0%,rgba(2,6,23,0.92)_38%,rgba(2,6,23,0.58)_62%,rgba(2,6,23,0.16)_100%)]" />
 

@@ -54,8 +54,8 @@ test("responsive login keeps a mobile brand surface and desktop football hero", 
   assert.match(source, /Pathway/);
 });
 
-test("login hero uses the owned FutVerse footballer asset and no remote hero image", () => {
-  assert.match(source, /import loginFootballerHero from "\.\.\/assets\/login-footballer-hero\.svg"/);
-  assert.match(source, /src=\{loginFootballerHero\}/);
+test("login hero uses the owned photorealistic FutVerse footballer asset and no remote hero image", () => {
+  assert.match(source, /import loginFootballerHero from "\.\.\/assets\/login-footballer-photo-hero\.webp"/);
+  assert.match(source, /src={loginFootballerHero}/);
   assert.doesNotMatch(source, /images\.unsplash\.com/);
 });
