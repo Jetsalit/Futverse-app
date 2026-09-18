@@ -257,7 +257,7 @@ export default function Login() {
           className="absolute inset-0 bg-cover bg-center"
           style={{
             backgroundImage:
-              "url('https://images.unsplash.com/photo-1518091043644-c1d4457512c6?auto=format&fit=crop&q=88&w=2200')",
+              "url('https://images.unsplash.com/photo-1518605368461-1ee71abfbeb4?auto=format&fit=crop&q=88&w=2200')",
           }}
         />
         <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.98)_0%,rgba(2,6,23,0.90)_42%,rgba(2,6,23,0.58)_72%,rgba(2,6,23,0.46)_100%)]" />
