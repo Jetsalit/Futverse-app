@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   CalendarDays,
   ClipboardCheck,
+  ClipboardList,
   Dumbbell,
   Shield,
   Sparkles,
@@ -15,6 +16,9 @@ import { staffRoleLabels } from "../../../lib/proClubOnboarding";
 import ProClubAttendance from "./ProClubAttendance";
 import ProClubHeadCoachWeeklyProductionWorkspace from "./ProClubHeadCoachWeeklyProductionWorkspace";
 import ProClubSquadRoster from "./ProClubSquadRoster";
+import ProClubStaffSubmissions, {
+  canOpenProClubStaffSubmissions,
+} from "./ProClubStaffSubmissions";
 import {
   PRO_CLUB_THEME_STORAGE_KEY,
   resolveProClubTheme,
@@ -26,6 +30,7 @@ export const PRO_CLUB_TEAM_DASHBOARD_TABS = [
   "SQUAD",
   "TRAINING",
   "ATTENDANCE",
+  "SUBMISSIONS",
   "MATCHES",
 ] as const;
 
@@ -42,6 +47,7 @@ export function resolveProClubActiveTab(
     case "SQUAD":
     case "TRAINING":
     case "ATTENDANCE":
+    case "SUBMISSIONS":
       return value;
     case "OVERVIEW":
     default:
@@ -56,7 +62,12 @@ function proClubActiveTabSessionKey(
   return `${PRO_CLUB_ACTIVE_TAB_SESSION_KEY_PREFIX}:${organizationId}:${userId}`;
 }
 
-type OverviewCardTone = "squad" | "training" | "attendance" | "matches";
+type OverviewCardTone =
+  | "squad"
+  | "training"
+  | "attendance"
+  | "submissions"
+  | "matches";
 
 type AttendanceLaunch = {
   sessionDate: string;
@@ -68,6 +79,7 @@ const TAB_LABELS: Record<ProClubTeamDashboardTab, string> = {
   SQUAD: "Squad",
   TRAINING: "Training",
   ATTENDANCE: "Attendance",
+  SUBMISSIONS: "ส่งงาน",
   MATCHES: "Matches",
 };
 
@@ -86,6 +98,7 @@ export default function ProClubTeamDashboard({
     useState<ProClubTeamDashboardTab>("OVERVIEW");
   const [theme, setTheme] = useState<ProClubTheme>("light");
   const [attendanceLaunch, setAttendanceLaunch] = useState<AttendanceLaunch | null>(null);
+  const staffSubmissionsAvailable = canOpenProClubStaffSubmissions(authority);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -101,20 +114,27 @@ export default function ProClubTeamDashboard({
     if (typeof window === "undefined") return;
 
     try {
-      setActiveTab(
-        resolveProClubActiveTab(
-          window.sessionStorage.getItem(
-            proClubActiveTabSessionKey(
-              authority.organizationId,
-              authority.userId,
-            ),
+      const restored = resolveProClubActiveTab(
+        window.sessionStorage.getItem(
+          proClubActiveTabSessionKey(
+            authority.organizationId,
+            authority.userId,
           ),
         ),
+      );
+      setActiveTab(
+        restored === "SUBMISSIONS" && !staffSubmissionsAvailable
+          ? "OVERVIEW"
+          : restored,
       );
     } catch {
       setActiveTab("OVERVIEW");
     }
-  }, [authority.organizationId, authority.userId]);
+  }, [
+    authority.organizationId,
+    authority.userId,
+    staffSubmissionsAvailable,
+  ]);
 
   function persistActiveTab(nextTab: ProClubTeamDashboardTab) {
     if (typeof window === "undefined") return;
@@ -210,7 +230,9 @@ export default function ProClubTeamDashboard({
           aria-label="Pro Club team sections"
           className="mt-5 flex gap-2 overflow-x-auto pb-1 lg:mt-8 lg:flex-col lg:overflow-visible lg:pb-0"
         >
-          {PRO_CLUB_TEAM_DASHBOARD_TABS.map((tab) => {
+          {PRO_CLUB_TEAM_DASHBOARD_TABS.filter(
+            (tab) => tab !== "SUBMISSIONS" || staffSubmissionsAvailable,
+          ).map((tab) => {
             const disabled = tab === "MATCHES";
             const selected = activeTab === tab;
 
@@ -320,7 +342,7 @@ export default function ProClubTeamDashboard({
                 </p>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                 <OverviewCard
                   icon={<Users size={20} />}
                   title="Squad"
@@ -342,6 +364,20 @@ export default function ProClubTeamDashboard({
                   tone="attendance"
                   onOpen={() => selectActiveTab("ATTENDANCE")}
                 />
+                {staffSubmissionsAvailable && (
+                  <OverviewCard
+                    icon={<ClipboardList size={20} />}
+                    title="ส่งงาน"
+                    description={
+                      authority.staffRole === "HEAD_COACH" ||
+                      authority.staffRole === "TECHNICAL_DIRECTOR"
+                        ? "Staff submissions & review"
+                        : "My Work & submissions"
+                    }
+                    tone="submissions"
+                    onOpen={() => selectActiveTab("SUBMISSIONS")}
+                  />
+                )}
                 <OverviewCard
                   icon={<CalendarDays size={20} />}
                   title="Matches"
@@ -370,6 +406,11 @@ export default function ProClubTeamDashboard({
               <ProClubHeadCoachWeeklyProductionWorkspace
                 authority={authority}
                 onTakeAttendance={openAttendanceFromTraining}
+                onOpenSubmissions={
+                  staffSubmissionsAvailable
+                    ? () => selectActiveTab("SUBMISSIONS")
+                    : undefined
+                }
               />
             </div>
           )}
@@ -380,6 +421,19 @@ export default function ProClubTeamDashboard({
                 key={attendanceAuthorityKey}
                 authority={authority}
                 initialSlot={attendanceLaunch}
+              />
+            </div>
+          )}
+
+          {activeTab === "SUBMISSIONS" && staffSubmissionsAvailable && (
+            <div className="pro-club-module-surface">
+              <ProClubStaffSubmissions
+                authority={authority}
+                onOpenTraining={
+                  authority.staffRole === "HEAD_COACH"
+                    ? () => selectActiveTab("TRAINING")
+                    : undefined
+                }
               />
             </div>
           )}
