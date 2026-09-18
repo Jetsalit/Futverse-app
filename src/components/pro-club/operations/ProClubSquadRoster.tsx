@@ -14,6 +14,12 @@ import {
 } from "lucide-react";
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
 import {
+  listProClubPlayerPhotos,
+  upsertProClubPlayerPhoto,
+  type ProClubPlayerPhotoRecord,
+} from "../../../lib/firestore/proClubPlayerPhotoRepository";
+import type { ProClubPlayerPhotoInput } from "../../../lib/proClubPlayerPhoto";
+import {
   listProClubSquadRoster,
   releaseProClubSquadRosterPlayer,
   type ProClubSquadRosterRecord,
@@ -70,6 +76,7 @@ export default function ProClubSquadRoster({
   authority: ProClubOrganizationAuthority;
 }) {
   const [records, setRecords] = useState<ProClubSquadRosterRecord[]>([]);
+  const [photos, setPhotos] = useState<Record<string, ProClubPlayerPhotoRecord>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -91,13 +98,25 @@ export default function ProClubSquadRoster({
 
       try {
         const next = await listProClubSquadRoster(authority.organizationId);
+        let nextPhotos: ProClubPlayerPhotoRecord[] = [];
+
+        try {
+          nextPhotos = await listProClubPlayerPhotos(authority.organizationId);
+        } catch (photoError) {
+          console.warn("Pro Club player photos could not be loaded:", photoError);
+        }
+
         if (!cancelled) {
           setRecords(next);
+          setPhotos(Object.fromEntries(
+            nextPhotos.map((photo) => [photo.playerKey, photo]),
+          ));
         }
       } catch (caught) {
         console.error("Pro Club Squad roster load failed:", caught);
         if (!cancelled) {
           setRecords([]);
+          setPhotos({});
           setError("First-team squad could not be loaded from the authoritative Pro Club roster.");
         }
       } finally {
@@ -136,16 +155,38 @@ export default function ProClubSquadRoster({
     setCreatePlayerKey(generateProvisionalPlayerKey(crypto.randomUUID()));
   };
 
-  const handleSaved = (saved: ProClubSquadRosterRecord) => {
+  const handleSaved = async (
+    saved: ProClubSquadRosterRecord,
+    photoInput?: ProClubPlayerPhotoInput,
+  ) => {
     setRecords((previous) => {
       const withoutSaved = previous.filter(
         (record) => record.playerKey !== saved.playerKey,
       );
       return [...withoutSaved, saved];
     });
+
+    if (photoInput) {
+      try {
+        const photo = await upsertProClubPlayerPhoto(
+          authority.organizationId,
+          saved.playerKey,
+          photoInput,
+        );
+        setPhotos((previous) => ({
+          ...previous,
+          [photo.playerKey]: photo,
+        }));
+      } catch (photoError) {
+        console.error("Player saved but photo could not be saved:", photoError);
+        setError("Player saved, but the photo could not be saved. Edit the player and upload the photo again.");
+      }
+    } else {
+      setError(null);
+    }
+
     setCreatePlayerKey(null);
     setEditingPlayer(null);
-    setError(null);
   };
 
   const confirmRelease = async () => {
@@ -297,8 +338,21 @@ export default function ProClubSquadRoster({
             <article key={player.playerKey} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/70">
               <div className="flex items-start justify-between gap-4 border-b border-slate-800 px-5 py-4">
                 <div className="flex min-w-0 items-center gap-4">
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-cyan-400/20 bg-cyan-400/10 text-2xl font-black text-cyan-200">
-                    {player.jerseyNumber}
+                  <div className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-cyan-400/20 bg-cyan-400/10 text-2xl font-black text-cyan-200">
+                    {photos[player.playerKey] ? (
+                      <img
+                        src={photos[player.playerKey].dataUrl}
+                        alt={`${player.firstName} ${player.lastName}`}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      player.jerseyNumber
+                    )}
+                    {photos[player.playerKey] && (
+                      <span className="absolute bottom-0 right-0 rounded-tl-lg bg-slate-950/85 px-1.5 py-0.5 text-[10px] font-black text-white">
+                        #{player.jerseyNumber}
+                      </span>
+                    )}
                   </div>
                   <div className="min-w-0">
                     <h4 className="truncate font-black text-white">{player.firstName} {player.lastName}</h4>
@@ -373,11 +427,24 @@ export default function ProClubSquadRoster({
                   className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4"
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-700 bg-slate-900 text-xs font-black text-slate-400">
+                        {photos[player.playerKey] ? (
+                          <img
+                            src={photos[player.playerKey].dataUrl}
+                            alt={`${player.firstName} ${player.lastName}`}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          `#${player.jerseyNumber}`
+                        )}
+                      </div>
+                      <div className="min-w-0">
                       <h4 className="font-black text-slate-200">{player.firstName} {player.lastName}</h4>
                       <p className="mt-1 text-xs text-slate-500">
                         #{player.jerseyNumber} · {player.position} · {player.squadLabel}
                       </p>
+                      </div>
                     </div>
                     <span className="rounded-full border border-slate-700 bg-slate-800 px-2.5 py-1 text-[10px] font-black tracking-wider text-slate-400">
                       RELEASED
@@ -454,6 +521,7 @@ export default function ProClubSquadRoster({
           mode="EDIT"
           playerKey={editingPlayer.playerKey}
           current={editingPlayer}
+          currentPhotoDataUrl={photos[editingPlayer.playerKey]?.dataUrl ?? null}
           onClose={() => setEditingPlayer(null)}
           onSaved={handleSaved}
         />

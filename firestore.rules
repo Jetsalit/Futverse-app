@@ -2817,6 +2817,68 @@ service cloud.firestore {
         && data.get('updatedBy', '') == request.auth.uid;
     }
 
+    // Pro Club Player Photo V1 — compact Firestore Data URL, no Storage bucket.
+    function proClubPlayerPhotoHasCanonicalKeysV1(data) {
+      return data.keys().hasAll([
+          'schemaVersion', 'dataUrl', 'mimeType', 'width', 'height', 'byteSize',
+          'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+        ])
+        && data.keys().hasOnly([
+          'schemaVersion', 'dataUrl', 'mimeType', 'width', 'height', 'byteSize',
+          'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+        ]);
+    }
+
+    function proClubPlayerPhotoValidDataV1(clubId, playerKey, data) {
+      let playerPath =
+        /databases/$(database)/documents/proClubs/$(clubId)/players/$(playerKey);
+      return validPlayerIdentityKeyV1(playerKey)
+        && exists(playerPath)
+        && proClubPlayerPhotoHasCanonicalKeysV1(data)
+        && data.get('schemaVersion', 0) == 1
+        && data.get('mimeType', '') == 'image/webp'
+        && data.get('dataUrl', '') is string
+        && data.get('dataUrl', '').size() > 23
+        && data.get('dataUrl', '').size() <= 90000
+        && data.get('dataUrl', '').matches('^data:image/webp;base64,.*$')
+        && data.get('width', 0) is int
+        && data.get('height', 0) is int
+        && data.get('width', 0) >= 1
+        && data.get('height', 0) >= 1
+        && data.get('width', 0) <= 256
+        && data.get('height', 0) <= 256
+        && data.get('byteSize', 0) is int
+        && data.get('byteSize', 0) >= 1
+        && data.get('byteSize', 0) <= 61440
+        && data.get('createdAt', null) is timestamp
+        && exactDocumentId(data.get('createdBy', ''))
+        && data.get('updatedAt', null) is timestamp
+        && exactDocumentId(data.get('updatedBy', ''));
+    }
+
+    function proClubPlayerPhotoValidCreateV1(clubId, playerKey) {
+      let data = request.resource.data;
+      return proClubSquadRosterActiveHeadCoachV1(clubId)
+        && proClubPlayerPhotoValidDataV1(clubId, playerKey, data)
+        && data.get('createdAt', null) == request.time
+        && data.get('updatedAt', null) == request.time
+        && data.get('createdBy', '') == request.auth.uid
+        && data.get('updatedBy', '') == request.auth.uid;
+    }
+
+    function proClubPlayerPhotoValidUpdateV1(clubId, playerKey) {
+      let data = request.resource.data;
+      let previous = resource.data;
+      return proClubSquadRosterActiveHeadCoachV1(clubId)
+        && proClubPlayerPhotoValidDataV1(clubId, playerKey, data)
+        && proClubPlayerPhotoHasCanonicalKeysV1(previous)
+        && previous.get('schemaVersion', 0) == 1
+        && data.get('createdAt', null) == previous.get('createdAt', null)
+        && data.get('createdBy', '') == previous.get('createdBy', '')
+        && data.get('updatedAt', null) == request.time
+        && data.get('updatedBy', '') == request.auth.uid;
+    }
+
     // Pro Club Weekly Training V1 — root Firestore Rules integration.
 //
 // This intentionally opens only the reviewed DRAFT persistence surface.
@@ -3779,6 +3841,19 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           ? validProClubSuperAdminApprovalProofCreateV1(clubId, uid)
           : validProClubApprovalProofCreateV1(clubId, uid);
         allow update, delete: if false;
+      }
+
+      // Pro Club Player Photo V1 — compact profile image stored separately
+      // from the frozen canonical roster document.
+      match /playerPhotos/{playerKey} {
+        allow get, list: if proClubSquadRosterActiveStaffV1(clubId);
+        allow create: if proClubPlayerPhotoValidCreateV1(clubId, playerKey);
+        allow update: if proClubPlayerPhotoValidUpdateV1(clubId, playerKey);
+        allow delete: if false;
+
+        match /{document=**} {
+          allow read, write: if false;
+        }
       }
 
       // Pro Club Squad Roster V1 — canonical tenant roster path.

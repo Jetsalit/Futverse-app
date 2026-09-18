@@ -1,5 +1,7 @@
-import { useState, type FormEvent } from "react";
-import { ShieldCheck, X } from "lucide-react";
+import { useState, type ChangeEvent, type FormEvent } from "react";
+import { ShieldCheck, Upload, UserCircle, X } from "lucide-react";
+import { compressProClubPlayerPhoto } from "../../../lib/proClubPlayerPhotoBrowser";
+import type { ProClubPlayerPhotoInput } from "../../../lib/proClubPlayerPhoto";
 import {
   PLAYER_POSITION_CODES,
   type PlayerPositionCode,
@@ -29,6 +31,7 @@ export default function ProClubSquadRosterEditor({
   mode,
   playerKey,
   current,
+  currentPhotoDataUrl,
   onClose,
   onSaved,
 }: {
@@ -36,8 +39,12 @@ export default function ProClubSquadRosterEditor({
   mode: ProClubSquadRosterEditorMode;
   playerKey: string;
   current?: ProClubSquadRosterRecord;
+  currentPhotoDataUrl?: string | null;
   onClose: () => void;
-  onSaved: (record: ProClubSquadRosterRecord) => void;
+  onSaved: (
+    record: ProClubSquadRosterRecord,
+    photo?: ProClubPlayerPhotoInput,
+  ) => Promise<void> | void;
 }) {
   const [draft, setDraft] = useState<ProClubSquadRosterEditorDraft>(() =>
     mode === "EDIT" && current
@@ -46,6 +53,11 @@ export default function ProClubSquadRosterEditor({
   );
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
+  const [photoInput, setPhotoInput] = useState<ProClubPlayerPhotoInput | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(
+    currentPhotoDataUrl ?? null,
+  );
+  const [photoProcessing, setPhotoProcessing] = useState(false);
 
   const allowedStatuses = proClubSquadRosterAllowedStatuses(
     mode,
@@ -64,6 +76,28 @@ export default function ProClubSquadRosterEditor({
     const next = [...draft.additionalPositions];
     next[index] = value;
     setField("additionalPositions", next);
+  };
+
+  const handlePhotoSelected = async (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setPhotoProcessing(true);
+    setErrors([]);
+
+    try {
+      const compressed = await compressProClubPlayerPhoto(file);
+      setPhotoInput(compressed);
+      setPhotoPreview(compressed.dataUrl);
+    } catch (error) {
+      setPhotoInput(null);
+      setErrors([errorMessage(error)]);
+    } finally {
+      setPhotoProcessing(false);
+      event.target.value = "";
+    }
   };
 
   const submit = async (event: FormEvent) => {
@@ -96,7 +130,7 @@ export default function ProClubSquadRosterEditor({
             built.input,
           );
 
-      onSaved(saved);
+      await onSaved(saved, photoInput ?? undefined);
     } catch (error) {
       setErrors([errorMessage(error)]);
     } finally {
@@ -154,6 +188,46 @@ export default function ProClubSquadRosterEditor({
               </ul>
             </div>
           )}
+
+          <div className="mb-5 rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+              <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 text-slate-500">
+                {photoPreview ? (
+                  <img
+                    src={photoPreview}
+                    alt="Player preview"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <UserCircle size={42} />
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-black uppercase tracking-wider text-slate-400">
+                  Player photo
+                </p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Optional. The browser reduces the image to WebP up to 256×256 and about 60 KB before saving to Firestore. No Firebase Storage is used.
+                </p>
+                <label className="mt-3 inline-flex cursor-pointer items-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-black text-cyan-200 hover:bg-cyan-500/15">
+                  <Upload size={14} />
+                  {photoProcessing ? "Processing…" : photoPreview ? "Change photo" : "Upload photo"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={photoProcessing || saving}
+                    onChange={(event) => void handlePhotoSelected(event)}
+                    className="sr-only"
+                  />
+                </label>
+                {photoInput && (
+                  <p className="mt-2 text-[11px] text-emerald-300">
+                    Ready: {photoInput.width}×{photoInput.height} · {Math.ceil(photoInput.byteSize / 1024)} KB
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="sm:col-span-2">
@@ -278,14 +352,14 @@ export default function ProClubSquadRosterEditor({
             <button
               type="button"
               onClick={onClose}
-              disabled={saving}
+              disabled={saving || photoProcessing}
               className="rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-bold text-slate-300 hover:bg-slate-800 disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || photoProcessing}
               className="rounded-xl bg-cyan-400 px-4 py-2.5 text-sm font-black text-slate-950 hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving ? "Saving…" : mode === "CREATE" ? "Add player" : "Save changes"}
