@@ -59,3 +59,10 @@ test("login hero uses the owned photorealistic FutVerse footballer asset and no 
   assert.match(source, /src={loginFootballerHero}/);
   assert.doesNotMatch(source, /images\.unsplash\.com/);
 });
+
+test("login hero keeps the footballer visible above the background and below content", () => {
+  assert.match(source, /right-0 z-\[1\] w-\[66%\]/);
+  assert.match(source, /object-\[58%_center\]/);
+  assert.match(source, /z-\[2\] bg-\[linear-gradient/);
+  assert.match(source, /relative z-10 flex w-full flex-col/);
+});
