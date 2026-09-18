@@ -254,17 +254,16 @@ export default function Login() {
     <div className="min-h-screen w-full bg-slate-950 lg:grid lg:grid-cols-[minmax(0,1.6fr)_minmax(460px,0.85fr)]">
       {/* Football Intelligence hero */}
       <section className="relative hidden min-h-screen overflow-hidden bg-slate-950 lg:flex lg:items-stretch">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_34%,rgba(14,165,233,0.20),transparent_28%),radial-gradient(circle_at_82%_78%,rgba(34,197,94,0.14),transparent_24%),linear-gradient(135deg,#020617_0%,#071426_55%,#020617_100%)]" />
-        <div className="absolute inset-y-0 right-0 w-[58%] overflow-hidden">
+        <div className="absolute inset-0 z-0 bg-[radial-gradient(circle_at_70%_34%,rgba(14,165,233,0.20),transparent_28%),radial-gradient(circle_at_82%_78%,rgba(34,197,94,0.14),transparent_24%),linear-gradient(135deg,#020617_0%,#071426_55%,#020617_100%)]" />
+        <div className="absolute inset-y-0 right-0 z-[1] w-[66%] overflow-hidden">
           <img
             src={loginFootballerHero}
             alt=""
             aria-hidden="true"
-            className="absolute inset-0 h-full w-full object-cover object-center opacity-100"
+            className="absolute inset-0 h-full w-full object-cover object-[58%_center] opacity-100"
           />
-          <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/20 to-transparent" />
         </div>
-        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.98)_0%,rgba(2,6,23,0.92)_38%,rgba(2,6,23,0.58)_62%,rgba(2,6,23,0.16)_100%)]" />
+        <div className="absolute inset-0 z-[2] bg-[linear-gradient(90deg,rgba(2,6,23,0.98)_0%,rgba(2,6,23,0.88)_34%,rgba(2,6,23,0.30)_56%,rgba(2,6,23,0.04)_100%)]" />
 
         <div className="relative z-10 flex w-full flex-col justify-between px-10 py-9 xl:px-16 xl:py-12">
           <div className="flex items-start justify-between gap-8">
