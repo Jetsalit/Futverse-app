@@ -326,18 +326,21 @@ export default function ProClubTeamDashboard({
                   title="Squad"
                   description="First Team roster"
                   tone="squad"
+                  onOpen={() => selectActiveTab("SQUAD")}
                 />
                 <OverviewCard
                   icon={<Dumbbell size={20} />}
                   title="Training"
                   description="Weekly Training"
                   tone="training"
+                  onOpen={() => selectActiveTab("TRAINING")}
                 />
                 <OverviewCard
                   icon={<ClipboardCheck size={20} />}
                   title="Attendance"
                   description="Training attendance"
                   tone="attendance"
+                  onOpen={() => selectActiveTab("ATTENDANCE")}
                 />
                 <OverviewCard
                   icon={<CalendarDays size={20} />}
@@ -392,18 +395,17 @@ function OverviewCard({
   description,
   tone,
   badge,
+  onOpen,
 }: {
   icon: ReactNode;
   title: string;
   description: string;
   tone: OverviewCardTone;
   badge?: string;
+  onOpen?: () => void;
 }) {
-  return (
-    <article
-      data-tone={tone}
-      className="pro-club-overview-card group relative overflow-hidden rounded-2xl border p-4 shadow-sm transition duration-200"
-    >
+  const content = (
+    <>
       <div className="flex items-start justify-between gap-3">
         <div className="pro-club-overview-card-icon flex h-10 w-10 items-center justify-center rounded-xl">
           {icon}
@@ -416,6 +418,31 @@ function OverviewCard({
       </div>
       <h4 className="pro-club-heading mt-4 font-black">{title}</h4>
       <p className="pro-club-muted mt-1 text-sm">{description}</p>
+    </>
+  );
+
+  const className = [
+    "pro-club-overview-card group relative w-full overflow-hidden rounded-2xl border p-4 text-left shadow-sm transition duration-200",
+    onOpen ? "cursor-pointer hover:-translate-y-0.5" : "cursor-default",
+  ].join(" ");
+
+  if (onOpen) {
+    return (
+      <button
+        type="button"
+        data-tone={tone}
+        aria-label={`Open ${title}`}
+        onClick={onOpen}
+        className={className}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <article data-tone={tone} className={className}>
+      {content}
     </article>
   );
 }
