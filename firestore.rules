@@ -3623,6 +3623,364 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
     // Membership/Staff reads are preserved for runtime classification. Client
     // writes are opened only for the reviewed invite/claim approval lifecycle.
     match /proClubs/{clubId} {
+      // Pro Club Staff Submissions V1 — shared football staff work-review boundary.
+      function proClubStaffSubmissionActiveAuthorV1(clubId) {
+        let staffPath =
+          /databases/$(database)/documents/proClubs/$(clubId)/staff/$(request.auth.uid);
+        return proClubSquadRosterActiveStaffV1(clubId)
+          && get(staffPath).data.get('staffRole', '') in [
+            'ASSISTANT_COACH',
+            'GK_COACH',
+            'FITNESS_COACH',
+            'ANALYST',
+            'PHYSIO'
+          ];
+      }
+
+      function proClubStaffSubmissionActorRoleV1(clubId) {
+        return get(
+          /databases/$(database)/documents/proClubs/$(clubId)/staff/$(request.auth.uid)
+        ).data.get('staffRole', '');
+      }
+
+      function proClubStaffSubmissionWorkTypeMatchesRoleV1(role, workType) {
+        return (
+            role == 'ASSISTANT_COACH' && workType == 'TRAINING_SUPPORT'
+          ) || (
+            role == 'GK_COACH' && workType == 'GK_TRAINING'
+          ) || (
+            role == 'FITNESS_COACH' && workType == 'FITNESS'
+          ) || (
+            role == 'ANALYST' && workType == 'ANALYSIS'
+          ) || (
+            role == 'PHYSIO' && workType == 'PHYSIO'
+          );
+      }
+
+      function proClubStaffSubmissionActorIsTechnicalAuthorityV1(clubId) {
+        let authorityPath =
+          /databases/$(database)/documents/proClubs/$(clubId)/technicalGovernance/current;
+        let authority = get(authorityPath).data;
+        return proClubSquadRosterActiveStaffV1(clubId)
+          && proClubWeeklyTrainingCurrentAuthorityIsValidV1(clubId)
+          && authority.get('authorityUid', '') == request.auth.uid
+          && authority.get('authorityRole', '')
+            == proClubStaffSubmissionActorRoleV1(clubId);
+      }
+
+      function proClubStaffSubmissionValidNullableIdV1(value) {
+        return value == null || exactDocumentId(value);
+      }
+
+      function proClubStaffSubmissionValidNullableDateV1(value) {
+        return value == null
+          || proClubWeeklyTrainingStrictCalendarDateV1(value);
+      }
+
+      function proClubStaffSubmissionValidNullableReviewRoleV1(value) {
+        return value == null
+          || value in ['TECHNICAL_DIRECTOR', 'HEAD_COACH'];
+      }
+
+      function proClubStaffSubmissionValidNullableReviewNoteV1(value) {
+        return value == null
+          || (
+            value is string
+            && value.size() > 0
+            && value.size() <= 2000
+            && value.trim() == value
+          );
+      }
+
+      function proClubStaffSubmissionValidNullableActorV1(value) {
+        return value == null || exactDocumentId(value);
+      }
+
+      function proClubStaffSubmissionHasCanonicalKeysV1(data) {
+        return data.keys().hasAll([
+            'schemaVersion',
+            'authorUid',
+            'authorRole',
+            'workType',
+            'title',
+            'summary',
+            'module',
+            'targetPlanId',
+            'targetSessionDate',
+            'status',
+            'reviewerUid',
+            'reviewerRole',
+            'reviewNote',
+            'createdAt',
+            'createdBy',
+            'updatedAt',
+            'updatedBy',
+            'submittedAt',
+            'submittedBy',
+            'reviewStartedAt',
+            'reviewStartedBy',
+            'revisionRequestedAt',
+            'revisionRequestedBy',
+            'approvedAt',
+            'approvedBy'
+          ])
+          && data.keys().hasOnly([
+            'schemaVersion',
+            'authorUid',
+            'authorRole',
+            'workType',
+            'title',
+            'summary',
+            'module',
+            'targetPlanId',
+            'targetSessionDate',
+            'status',
+            'reviewerUid',
+            'reviewerRole',
+            'reviewNote',
+            'createdAt',
+            'createdBy',
+            'updatedAt',
+            'updatedBy',
+            'submittedAt',
+            'submittedBy',
+            'reviewStartedAt',
+            'reviewStartedBy',
+            'revisionRequestedAt',
+            'revisionRequestedBy',
+            'approvedAt',
+            'approvedBy'
+          ]);
+      }
+
+      function proClubStaffSubmissionValidBaseDataV1(data) {
+        return proClubStaffSubmissionHasCanonicalKeysV1(data)
+          && data.get('schemaVersion', 0) == 1
+          && exactDocumentId(data.get('authorUid', ''))
+          && data.get('authorRole', '') in [
+            'ASSISTANT_COACH',
+            'GK_COACH',
+            'FITNESS_COACH',
+            'ANALYST',
+            'PHYSIO'
+          ]
+          && proClubStaffSubmissionWorkTypeMatchesRoleV1(
+            data.get('authorRole', ''),
+            data.get('workType', '')
+          )
+          && proClubWeeklyTrainingNormalizedTextV1(
+            data.get('title', ''),
+            160
+          )
+          && proClubWeeklyTrainingNormalizedTextV1(
+            data.get('summary', ''),
+            5000
+          )
+          && data.get('module', '') == 'TRAINING'
+          && proClubStaffSubmissionValidNullableIdV1(
+            data.get('targetPlanId', null)
+          )
+          && proClubStaffSubmissionValidNullableDateV1(
+            data.get('targetSessionDate', null)
+          )
+          && (
+            data.get('targetSessionDate', null) == null
+            || data.get('targetPlanId', null) != null
+          )
+          && data.get('status', '') in [
+            'DRAFT',
+            'SUBMITTED',
+            'IN_REVIEW',
+            'NEEDS_REVISION',
+            'APPROVED'
+          ]
+          && proClubStaffSubmissionValidNullableIdV1(
+            data.get('reviewerUid', null)
+          )
+          && proClubStaffSubmissionValidNullableReviewRoleV1(
+            data.get('reviewerRole', null)
+          )
+          && (
+            (data.get('reviewerUid', null) == null
+              && data.get('reviewerRole', null) == null)
+            || (
+              data.get('reviewerUid', null) != null
+              && data.get('reviewerRole', null) != null
+            )
+          )
+          && proClubStaffSubmissionValidNullableReviewNoteV1(
+            data.get('reviewNote', null)
+          )
+          && data.get('createdAt', null) is timestamp
+          && exactDocumentId(data.get('createdBy', ''))
+          && data.get('createdBy', '') == data.get('authorUid', '')
+          && data.get('updatedAt', null) is timestamp
+          && exactDocumentId(data.get('updatedBy', ''))
+          && proClubStaffSubmissionValidNullableActorV1(
+            data.get('submittedBy', null)
+          )
+          && proClubStaffSubmissionValidNullableActorV1(
+            data.get('reviewStartedBy', null)
+          )
+          && proClubStaffSubmissionValidNullableActorV1(
+            data.get('revisionRequestedBy', null)
+          )
+          && proClubStaffSubmissionValidNullableActorV1(
+            data.get('approvedBy', null)
+          );
+      }
+
+      function proClubStaffSubmissionValidCreateV1(data) {
+        return proClubStaffSubmissionActiveAuthorV1(clubId)
+          && proClubStaffSubmissionValidBaseDataV1(data)
+          && data.get('authorUid', '') == request.auth.uid
+          && data.get('authorRole', '')
+            == proClubStaffSubmissionActorRoleV1(clubId)
+          && data.get('status', '') == 'DRAFT'
+          && data.get('reviewerUid', null) == null
+          && data.get('reviewerRole', null) == null
+          && data.get('reviewNote', null) == null
+          && data.get('createdAt', null) == request.time
+          && data.get('updatedAt', null) == request.time
+          && data.get('createdBy', '') == request.auth.uid
+          && data.get('updatedBy', '') == request.auth.uid
+          && data.get('submittedAt', null) == null
+          && data.get('submittedBy', null) == null
+          && data.get('reviewStartedAt', null) == null
+          && data.get('reviewStartedBy', null) == null
+          && data.get('revisionRequestedAt', null) == null
+          && data.get('revisionRequestedBy', null) == null
+          && data.get('approvedAt', null) == null
+          && data.get('approvedBy', null) == null;
+      }
+
+      function proClubStaffSubmissionAuthorOwnsV1(data) {
+        return proClubStaffSubmissionActiveAuthorV1(clubId)
+          && data.get('authorUid', '') == request.auth.uid
+          && data.get('authorRole', '')
+            == proClubStaffSubmissionActorRoleV1(clubId);
+      }
+
+      function proClubStaffSubmissionValidAuthorContentEditV1(data, previous) {
+        return proClubStaffSubmissionAuthorOwnsV1(previous)
+          && previous.get('status', '') in ['DRAFT', 'NEEDS_REVISION']
+          && data.get('status', '') == previous.get('status', '')
+          && data.diff(previous).affectedKeys().hasOnly([
+            'workType',
+            'title',
+            'summary',
+            'targetPlanId',
+            'targetSessionDate',
+            'updatedAt',
+            'updatedBy'
+          ])
+          && data.get('authorUid', '') == previous.get('authorUid', '')
+          && data.get('authorRole', '') == previous.get('authorRole', '')
+          && proClubStaffSubmissionWorkTypeMatchesRoleV1(
+            data.get('authorRole', ''),
+            data.get('workType', '')
+          )
+          && data.get('updatedAt', null) == request.time
+          && data.get('updatedBy', '') == request.auth.uid
+          && proClubStaffSubmissionValidBaseDataV1(data);
+      }
+
+      function proClubStaffSubmissionValidAuthorSubmitV1(data, previous) {
+        return proClubStaffSubmissionAuthorOwnsV1(previous)
+          && previous.get('status', '') in ['DRAFT', 'NEEDS_REVISION']
+          && data.get('status', '') == 'SUBMITTED'
+          && data.diff(previous).affectedKeys().hasOnly([
+            'status',
+            'submittedAt',
+            'submittedBy',
+            'updatedAt',
+            'updatedBy'
+          ])
+          && data.get('submittedAt', null) == request.time
+          && data.get('submittedBy', '') == request.auth.uid
+          && data.get('updatedAt', null) == request.time
+          && data.get('updatedBy', '') == request.auth.uid
+          && proClubStaffSubmissionValidBaseDataV1(data);
+      }
+
+      function proClubStaffSubmissionValidReviewStartV1(data, previous) {
+        return proClubStaffSubmissionActorIsTechnicalAuthorityV1(clubId)
+          && previous.get('authorUid', '') != request.auth.uid
+          && previous.get('status', '') == 'SUBMITTED'
+          && data.get('status', '') == 'IN_REVIEW'
+          && data.diff(previous).affectedKeys().hasOnly([
+            'status',
+            'reviewerUid',
+            'reviewerRole',
+            'reviewStartedAt',
+            'reviewStartedBy',
+            'updatedAt',
+            'updatedBy'
+          ])
+          && data.get('reviewerUid', '') == request.auth.uid
+          && data.get('reviewerRole', '')
+            == proClubStaffSubmissionActorRoleV1(clubId)
+          && data.get('reviewStartedAt', null) == request.time
+          && data.get('reviewStartedBy', '') == request.auth.uid
+          && data.get('updatedAt', null) == request.time
+          && data.get('updatedBy', '') == request.auth.uid
+          && proClubStaffSubmissionValidBaseDataV1(data);
+      }
+
+      function proClubStaffSubmissionValidRevisionRequestV1(data, previous) {
+        return proClubStaffSubmissionActorIsTechnicalAuthorityV1(clubId)
+          && previous.get('authorUid', '') != request.auth.uid
+          && previous.get('status', '') == 'IN_REVIEW'
+          && previous.get('reviewerUid', '') == request.auth.uid
+          && previous.get('reviewerRole', '')
+            == proClubStaffSubmissionActorRoleV1(clubId)
+          && data.get('status', '') == 'NEEDS_REVISION'
+          && data.diff(previous).affectedKeys().hasOnly([
+            'status',
+            'reviewNote',
+            'revisionRequestedAt',
+            'revisionRequestedBy',
+            'updatedAt',
+            'updatedBy'
+          ])
+          && proClubStaffSubmissionValidNullableReviewNoteV1(
+            data.get('reviewNote', null)
+          )
+          && data.get('reviewNote', null) != null
+          && data.get('revisionRequestedAt', null) == request.time
+          && data.get('revisionRequestedBy', '') == request.auth.uid
+          && data.get('updatedAt', null) == request.time
+          && data.get('updatedBy', '') == request.auth.uid
+          && proClubStaffSubmissionValidBaseDataV1(data);
+      }
+
+      function proClubStaffSubmissionValidApprovalV1(data, previous) {
+        return proClubStaffSubmissionActorIsTechnicalAuthorityV1(clubId)
+          && previous.get('authorUid', '') != request.auth.uid
+          && previous.get('status', '') == 'IN_REVIEW'
+          && previous.get('reviewerUid', '') == request.auth.uid
+          && previous.get('reviewerRole', '')
+            == proClubStaffSubmissionActorRoleV1(clubId)
+          && data.get('status', '') == 'APPROVED'
+          && data.diff(previous).affectedKeys().hasOnly([
+            'status',
+            'reviewNote',
+            'approvedAt',
+            'approvedBy',
+            'updatedAt',
+            'updatedBy'
+          ])
+          && proClubStaffSubmissionValidNullableReviewNoteV1(
+            data.get('reviewNote', null)
+          )
+          && data.get('reviewNote', null) != null
+          && data.get('approvedAt', null) == request.time
+          && data.get('approvedBy', '') == request.auth.uid
+          && data.get('updatedAt', null) == request.time
+          && data.get('updatedBy', '') == request.auth.uid
+          && proClubStaffSubmissionValidBaseDataV1(data);
+      }
+
       // Pro Club Attendance V1 — Spark direct Firestore boundary.
       function proClubAttendanceValidSessionKeysV1(data) {
         return data.keys().hasAll([
@@ -3841,6 +4199,61 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           ? validProClubSuperAdminApprovalProofCreateV1(clubId, uid)
           : validProClubApprovalProofCreateV1(clubId, uid);
         allow update, delete: if false;
+      }
+
+      // Pro Club Staff Submissions V1 — no delete; technical approval remains
+      // bound to technicalGovernance/current rather than OWNER/ADMIN membership.
+      match /staffSubmissions/{submissionId} {
+        allow get: if exactDocumentId(submissionId)
+          && (
+            (
+              proClubStaffSubmissionActiveAuthorV1(clubId)
+              && resource.data.get('authorUid', '') == request.auth.uid
+            )
+            || proClubStaffSubmissionActorIsTechnicalAuthorityV1(clubId)
+          );
+
+        // Author lists require an authorUid == request.auth.uid query constraint.
+        // Exact technical authority may list the tenant review inbox.
+        allow list: if (
+            proClubStaffSubmissionActiveAuthorV1(clubId)
+            && resource.data.get('authorUid', '') == request.auth.uid
+          )
+          || proClubStaffSubmissionActorIsTechnicalAuthorityV1(clubId);
+
+        allow create: if exactDocumentId(submissionId)
+          && proClubStaffSubmissionValidCreateV1(request.resource.data);
+
+        allow update: if exactDocumentId(submissionId)
+          && resource != null
+          && (
+            proClubStaffSubmissionValidAuthorContentEditV1(
+              request.resource.data,
+              resource.data
+            )
+            || proClubStaffSubmissionValidAuthorSubmitV1(
+              request.resource.data,
+              resource.data
+            )
+            || proClubStaffSubmissionValidReviewStartV1(
+              request.resource.data,
+              resource.data
+            )
+            || proClubStaffSubmissionValidRevisionRequestV1(
+              request.resource.data,
+              resource.data
+            )
+            || proClubStaffSubmissionValidApprovalV1(
+              request.resource.data,
+              resource.data
+            )
+          );
+
+        allow delete: if false;
+
+        match /{document=**} {
+          allow read, write: if false;
+        }
       }
 
       // Pro Club Player Photo V1 — compact profile image stored separately
