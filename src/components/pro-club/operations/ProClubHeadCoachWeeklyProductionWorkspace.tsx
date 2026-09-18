@@ -1,4 +1,4 @@
-import { ShieldCheck } from "lucide-react";
+import { ClipboardList, ShieldCheck } from "lucide-react";
 import {
   WEEKLY_TRAINING_SAVED_DRAFT_READ_AVAILABLE,
   WEEKLY_TRAINING_SAVED_DRAFT_READ_UNAVAILABLE_MESSAGE,
@@ -43,9 +43,11 @@ function SavedDraftReadPending() {
 export default function ProClubHeadCoachWeeklyProductionWorkspace({
   authority,
   onTakeAttendance,
+  onOpenSubmissions,
 }: {
   authority: ProClubOrganizationAuthority;
   onTakeAttendance?: (slot: { sessionDate: string; startTime: string }) => void;
+  onOpenSubmissions?: () => void;
 }) {
   if (!canRenderHeadCoachWeeklyProductionWorkspace(authority)) return null;
 
@@ -67,6 +69,16 @@ export default function ProClubHeadCoachWeeklyProductionWorkspace({
         <p className="mt-2 text-sm leading-6 text-slate-400">
           Review the current weekly microcycle and Weekly Training history first, then create or revise a DRAFT when needed.
         </p>
+        {onOpenSubmissions && (
+          <button
+            type="button"
+            onClick={onOpenSubmissions}
+            className="mt-4 inline-flex items-center gap-2 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-sm font-black text-cyan-200 transition hover:bg-cyan-500/20"
+          >
+            <ClipboardList size={16} />
+            งานที่ส่งมา / Staff Submissions
+          </button>
+        )}
       </header>
 
       {WEEKLY_TRAINING_SAVED_DRAFT_READ_AVAILABLE ? (
