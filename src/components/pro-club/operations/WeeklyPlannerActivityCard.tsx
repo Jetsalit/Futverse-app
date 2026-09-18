@@ -86,8 +86,12 @@ function LoadMeter({ load }: { load: "LOW" | "MODERATE" | "HIGH" }) {
 
 export default function WeeklyPlannerActivityCard({
   activity,
+  sessionDate,
+  onTakeAttendance,
 }: {
   activity: WeeklyPlannerActivity;
+  sessionDate?: string;
+  onTakeAttendance?: (slot: { sessionDate: string; startTime: string }) => void;
 }) {
   if (activity.source === "SAVED_TRAINING") {
     const { session } = activity;
@@ -117,6 +121,21 @@ export default function WeeklyPlannerActivityCard({
         </div>
 
         <LoadMeter load={session.plannedLoad} />
+
+        {sessionDate && onTakeAttendance && (
+          <button
+            type="button"
+            onClick={() =>
+              onTakeAttendance({
+                sessionDate,
+                startTime: session.startTime,
+              })
+            }
+            className="w-full rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-[11px] font-black text-emerald-200 transition hover:bg-emerald-400/20"
+          >
+            Take Attendance
+          </button>
+        )}
 
         <div className="space-y-2 border-t border-slate-800 pt-2">
           {session.blocks.map((block, index) => (

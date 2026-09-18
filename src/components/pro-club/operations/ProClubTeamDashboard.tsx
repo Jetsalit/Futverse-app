@@ -34,6 +34,11 @@ type ProClubTeamDashboardTab =
 
 type OverviewCardTone = "squad" | "training" | "attendance" | "matches";
 
+type AttendanceLaunch = {
+  sessionDate: string;
+  startTime: string;
+};
+
 const TAB_LABELS: Record<ProClubTeamDashboardTab, string> = {
   OVERVIEW: "Overview",
   SQUAD: "Squad",
@@ -56,6 +61,7 @@ export default function ProClubTeamDashboard({
   const [activeTab, setActiveTab] =
     useState<ProClubTeamDashboardTab>("OVERVIEW");
   const [theme, setTheme] = useState<ProClubTheme>("light");
+  const [attendanceLaunch, setAttendanceLaunch] = useState<AttendanceLaunch | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -77,6 +83,11 @@ export default function ProClubTeamDashboard({
     } catch {
       // Theme selection remains usable for the current session even if storage is unavailable.
     }
+  }
+
+  function openAttendanceFromTraining(slot: AttendanceLaunch) {
+    setAttendanceLaunch(slot);
+    setActiveTab("ATTENDANCE");
   }
 
   const attendanceAuthorityKey = [
@@ -139,7 +150,10 @@ export default function ProClubTeamDashboard({
                 disabled={disabled}
                 aria-current={selected ? "page" : undefined}
                 onClick={() => {
-                  if (!disabled) setActiveTab(tab);
+                  if (!disabled) {
+                    if (tab === "ATTENDANCE") setAttendanceLaunch(null);
+                    setActiveTab(tab);
+                  }
                 }}
                 className={[
                   "flex shrink-0 items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold transition lg:w-full",
@@ -284,7 +298,10 @@ export default function ProClubTeamDashboard({
 
           {activeTab === "TRAINING" && (
             <div className="pro-club-module-surface">
-              <ProClubHeadCoachWeeklyProductionWorkspace authority={authority} />
+              <ProClubHeadCoachWeeklyProductionWorkspace
+                authority={authority}
+                onTakeAttendance={openAttendanceFromTraining}
+              />
             </div>
           )}
 
@@ -293,6 +310,7 @@ export default function ProClubTeamDashboard({
               <ProClubAttendance
                 key={attendanceAuthorityKey}
                 authority={authority}
+                initialSlot={attendanceLaunch}
               />
             </div>
           )}

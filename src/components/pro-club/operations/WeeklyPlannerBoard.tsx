@@ -63,8 +63,10 @@ function activityLoad(activity: ReturnType<typeof buildWeeklyPlannerState>["days
 
 export default function WeeklyPlannerBoard({
   board,
+  onTakeAttendance,
 }: {
   board: ProClubWeeklyPeriodizationBoard;
+  onTakeAttendance?: (slot: { sessionDate: string; startTime: string }) => void;
 }) {
   const [planner, setPlanner] = useState(() => buildWeeklyPlannerState(board));
   const [composerDate, setComposerDate] = useState<string | null>(null);
@@ -417,6 +419,7 @@ export default function WeeklyPlannerBoard({
                 setPlanner((current) => removeWeeklyPlannerLocalActivity(current, date, activityId));
                 setStatus("Local activity removed — persistence is still disabled.");
               }}
+              onTakeAttendance={onTakeAttendance}
             />
           ))}
         </div>

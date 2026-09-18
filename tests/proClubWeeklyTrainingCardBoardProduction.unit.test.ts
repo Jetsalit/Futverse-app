@@ -13,7 +13,7 @@ const savedDrafts = readFileSync(
 
 test("Weekly Training production presents the saved weekly card board before the fresh-DRAFT composer", () => {
   const savedDraftIndex = workspace.indexOf(
-    "<WeeklyTrainingSavedDrafts authority={authority} />",
+    "<WeeklyTrainingSavedDrafts",
   );
   const composerIndex = workspace.indexOf(
     "<WeeklyTrainingDraftComposer authority={authority} />",
@@ -48,4 +48,73 @@ test("current weekly periodization board renders before the saved-week chooser",
     detailIndex < chooserIndex,
     "current weekly board must render before the saved-week chooser",
   );
+});
+
+
+test("Day Card Take Attendance reuses the existing Attendance surface and passes the training slot only", () => {
+  const teamDashboard = readFileSync(
+    "src/components/pro-club/operations/ProClubTeamDashboard.tsx",
+    "utf8",
+  );
+  const periodizationBoard = readFileSync(
+    "src/components/pro-club/operations/WeeklyPeriodizationBoard.tsx",
+    "utf8",
+  );
+  const plannerBoard = readFileSync(
+    "src/components/pro-club/operations/WeeklyPlannerBoard.tsx",
+    "utf8",
+  );
+  const dayCard = readFileSync(
+    "src/components/pro-club/operations/WeeklyPlannerDayCard.tsx",
+    "utf8",
+  );
+  const activityCard = readFileSync(
+    "src/components/pro-club/operations/WeeklyPlannerActivityCard.tsx",
+    "utf8",
+  );
+  const attendance = readFileSync(
+    "src/components/pro-club/operations/ProClubAttendance.tsx",
+    "utf8",
+  );
+
+  assert.match(teamDashboard, /onTakeAttendance/);
+  assert.match(teamDashboard, /setActiveTab\("ATTENDANCE"\)/);
+  assert.match(teamDashboard, /initialSlot=\{attendanceLaunch\}/);
+
+  assert.match(workspace, /onTakeAttendance/);
+  assert.match(savedDrafts, /onTakeAttendance/);
+  assert.match(periodizationBoard, /onTakeAttendance/);
+  assert.match(plannerBoard, /onTakeAttendance/);
+  assert.match(dayCard, /onTakeAttendance/);
+
+  assert.match(activityCard, /activity\.source === "SAVED_TRAINING"/);
+  assert.match(activityCard, /Take Attendance/);
+  assert.equal(
+    (activityCard.match(/Take Attendance/g) ?? []).length,
+    1,
+    "only authoritative saved Training may launch Attendance",
+  );
+  const localTrainingBlock = activityCard.slice(
+    activityCard.indexOf('if (activity.activityType === "TRAINING")'),
+    activityCard.indexOf('if (activity.activityType === "RECOVERY")'),
+  );
+  assert.doesNotMatch(localTrainingBlock, /Take Attendance/);
+
+  assert.match(attendance, /initialSlot\?:/);
+  assert.match(attendance, /sessionDate:\s*string/);
+  assert.match(attendance, /startTime:\s*string/);
+  assert.match(attendance, /getProClubAttendanceSession/);
+
+  for (const forbidden of [
+    /setDoc\(/,
+    /addDoc\(/,
+    /updateDoc\(/,
+    /writeBatch\(/,
+    /runTransaction\(/,
+  ]) {
+    assert.doesNotMatch(activityCard, forbidden);
+    assert.doesNotMatch(dayCard, forbidden);
+    assert.doesNotMatch(plannerBoard, forbidden);
+    assert.doesNotMatch(teamDashboard, forbidden);
+  }
 });

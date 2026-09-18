@@ -23,12 +23,14 @@ export default function WeeklyPlannerDayCard({
   onMarkRest,
   onClearRest,
   onRemoveLocalActivity,
+  onTakeAttendance,
 }: {
   day: WeeklyPlannerDay;
   onAddActivity: (date: string) => void;
   onMarkRest: (date: string) => void;
   onClearRest: (date: string) => void;
   onRemoveLocalActivity: (date: string, activityId: string) => void;
+  onTakeAttendance?: (slot: { sessionDate: string; startTime: string }) => void;
 }) {
   const summary = summarizeWeeklyPlannerDay(day);
   const sortedActivities = sortWeeklyPlannerActivities(day.activities);
@@ -81,7 +83,11 @@ export default function WeeklyPlannerDayCard({
         ) : (
           sortedActivities.map((activity) => (
             <div key={activity.id} className="space-y-1.5">
-              <WeeklyPlannerActivityCard activity={activity} />
+              <WeeklyPlannerActivityCard
+                activity={activity}
+                sessionDate={day.date}
+                onTakeAttendance={onTakeAttendance}
+              />
               {activity.source === "LOCAL_UI" && (
                 <button
                   type="button"

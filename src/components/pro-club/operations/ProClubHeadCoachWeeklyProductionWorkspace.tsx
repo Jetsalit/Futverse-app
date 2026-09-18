@@ -42,8 +42,10 @@ function SavedDraftReadPending() {
 
 export default function ProClubHeadCoachWeeklyProductionWorkspace({
   authority,
+  onTakeAttendance,
 }: {
   authority: ProClubOrganizationAuthority;
+  onTakeAttendance?: (slot: { sessionDate: string; startTime: string }) => void;
 }) {
   if (!canRenderHeadCoachWeeklyProductionWorkspace(authority)) return null;
 
@@ -68,7 +70,10 @@ export default function ProClubHeadCoachWeeklyProductionWorkspace({
       </header>
 
       {WEEKLY_TRAINING_SAVED_DRAFT_READ_AVAILABLE ? (
-        <WeeklyTrainingSavedDrafts authority={authority} />
+        <WeeklyTrainingSavedDrafts
+          authority={authority}
+          onTakeAttendance={onTakeAttendance}
+        />
       ) : (
         <SavedDraftReadPending />
       )}
