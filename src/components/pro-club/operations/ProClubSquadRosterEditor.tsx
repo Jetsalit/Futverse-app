@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState, type ChangeEvent, type FormEvent } from "react";
 import { ShieldCheck, Upload, UserCircle, X } from "lucide-react";
 import { compressProClubPlayerPhoto } from "../../../lib/proClubPlayerPhotoBrowser";
 import type { ProClubPlayerPhotoInput } from "../../../lib/proClubPlayerPhoto";
@@ -79,7 +79,7 @@ export default function ProClubSquadRosterEditor({
   };
 
   const handlePhotoSelected = async (
-    event: React.ChangeEvent<HTMLInputElement>,
+    event: ChangeEvent<HTMLInputElement>,
   ) => {
     const file = event.target.files?.[0];
     if (!file) return;
