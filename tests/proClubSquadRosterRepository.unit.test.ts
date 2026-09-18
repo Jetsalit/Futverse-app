@@ -378,3 +378,23 @@ test("explicit release is idempotent for an already RELEASED record and never de
   assert.equal(writes.length, 0);
   assert.equal(documents.has(pathKey), true);
 });
+
+
+test("explicit release action rejects non-Head-Coach authority before any write", async () => {
+  const assistantAuthority: ProClubOrganizationAuthority = {
+    ...activeHeadCoachAuthority,
+    staffRole: "ASSISTANT_COACH",
+  };
+  const { ops, writes } = makeOps({
+    authority: assistantAuthority,
+    initial: {
+      [`proClubs/${CLUB_ID}/players/${PLAYER_KEY}`]: rosterDocument(),
+    },
+  });
+
+  await assert.rejects(
+    () => releaseProClubSquadRosterPlayer(CLUB_ID, PLAYER_KEY, ops),
+    /HEAD_COACH/,
+  );
+  assert.equal(writes.length, 0);
+});
