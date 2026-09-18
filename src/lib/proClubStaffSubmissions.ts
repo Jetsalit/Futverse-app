@@ -376,7 +376,7 @@ export function parseProClubStaffSubmissionRecord(
     schemaVersion: 1,
     authorUid: raw.authorUid,
     authorRole: raw.authorRole,
-    workType: raw.workType,
+    workType: raw.workType as ProClubStaffSubmissionWorkType,
     title: raw.title,
     summary: raw.summary,
     module: "TRAINING",
