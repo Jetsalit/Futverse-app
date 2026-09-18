@@ -4,7 +4,9 @@ import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import ProClubTeamDashboard, {
+  PRO_CLUB_ACTIVE_TAB_SESSION_KEY_PREFIX,
   PRO_CLUB_TEAM_DASHBOARD_TABS,
+  resolveProClubActiveTab,
 } from "../src/components/pro-club/operations/ProClubTeamDashboard";
 import type { ProClubOrganizationAuthority } from "../src/lib/firestore/proClubOrganizationAdapter";
 
@@ -43,6 +45,31 @@ test("freezes the minimal production team navigation", () => {
     "ATTENDANCE",
     "MATCHES",
   ]);
+});
+
+test("active tab refresh persistence accepts only live production tabs", () => {
+  assert.equal(
+    PRO_CLUB_ACTIVE_TAB_SESSION_KEY_PREFIX,
+    "futverse:pro-club-active-tab",
+  );
+  assert.equal(resolveProClubActiveTab("OVERVIEW"), "OVERVIEW");
+  assert.equal(resolveProClubActiveTab("SQUAD"), "SQUAD");
+  assert.equal(resolveProClubActiveTab("TRAINING"), "TRAINING");
+  assert.equal(resolveProClubActiveTab("ATTENDANCE"), "ATTENDANCE");
+  assert.equal(resolveProClubActiveTab("MATCHES"), "OVERVIEW");
+  assert.equal(resolveProClubActiveTab("UNKNOWN"), "OVERVIEW");
+  assert.equal(resolveProClubActiveTab(null), "OVERVIEW");
+});
+
+test("dashboard persists the active production tab in sessionStorage only", () => {
+  const source = readFileSync(files.dashboard, "utf8");
+
+  assert.match(source, /sessionStorage\.getItem/);
+  assert.match(source, /sessionStorage\.setItem/);
+  assert.match(source, /authority\.organizationId/);
+  assert.match(source, /authority\.userId/);
+  assert.match(source, /persistActiveTab\("ATTENDANCE"\)/);
+  assert.doesNotMatch(source, /localStorage\.setItem\([^)]*active-tab/i);
 });
 
 test("renders the production app shell with authoritative club identity and controls", () => {
