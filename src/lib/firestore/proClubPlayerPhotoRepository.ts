@@ -148,7 +148,7 @@ function parsePhoto(playerKey: string, raw: unknown): ProClubPlayerPhotoRecord {
     height: raw.height,
     byteSize: raw.byteSize,
   });
-  if (!validation.ok) {
+  if (validation.ok === false) {
     throw new Error(`Invalid Pro Club player photo: ${validation.errors.join(" ")}`);
   }
 
@@ -259,7 +259,7 @@ export async function upsertProClubPlayerPhoto(
   requirePlayerKey(playerKey);
 
   const validation = validateProClubPlayerPhotoInput(input);
-  if (!validation.ok) {
+  if (validation.ok === false) {
     throw new Error(`Invalid player photo input: ${validation.errors.join(" ")}`);
   }
 
