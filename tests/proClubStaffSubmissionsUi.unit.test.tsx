@@ -139,6 +139,41 @@ test("reviewer redesign adds KPI summary, filters, search and stable staff ident
   assert.doesNotMatch(submissionsSource, /authorDisplayName/);
 });
 
+test("reviewer V2 connects KPI cards to filters and uses shared themed surfaces", () => {
+  for (const filter of ["ALL", "PENDING", "REVISION", "APPROVED"]) {
+    assert.match(
+      submissionsSource,
+      new RegExp(`filter="${filter}"[\\s\\S]*onSelect=\\{setReviewerFilter\\}`),
+      filter,
+    );
+  }
+
+  assert.match(submissionsSource, /aria-pressed=\{active\}/);
+  assert.match(submissionsSource, /data-reviewer-filter=\{filter\}/);
+  assert.match(submissionsSource, /bg-\[var\(--pc-surface\)\]/);
+  assert.match(submissionsSource, /shadow-\[var\(--pc-glow\)\]/);
+  assert.match(submissionsSource, /reviewerFilter === value/);
+  assert.match(submissionsSource, /reviewerQuery\.trim\(\)/);
+});
+
+test("reviewer V2 remains presentation-only and preserves frozen persistence boundaries", () => {
+  for (const forbidden of [
+    /authorDisplayName/,
+    /from\s+["'][^"']*firebase\/firestore[^"']*["']/,
+    /\bsetDoc\b/,
+    /\bupdateDoc\b/,
+    /\bdeleteDoc\b/,
+    /\bwriteBatch\b/,
+    /\brunTransaction\b/,
+  ]) {
+    assert.doesNotMatch(submissionsSource, forbidden);
+  }
+
+  assert.match(submissionsSource, /beginProClubStaffSubmissionReview/);
+  assert.match(submissionsSource, /requestProClubStaffSubmissionRevision/);
+  assert.match(submissionsSource, /approveProClubStaffSubmission/);
+});
+
 test("review UI exposes only the frozen technical review transitions", () => {
   assert.match(submissionsSource, /record.status === "SUBMITTED"/);
   assert.match(submissionsSource, /เริ่มตรวจ/);
