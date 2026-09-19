@@ -124,9 +124,12 @@ export function buildProClubSquadRosterEditorSubmission(
 
   const futIdText = draft.futId.trim().toUpperCase();
   const positionText = draft.position.trim().toUpperCase();
-  const additionalPositions = draft.additionalPositions
-    .map((value) => value.trim().toUpperCase())
-    .filter((value) => value.length > 0);
+  const position = positionText.length > 0 ? positionText : null;
+  const additionalPositions = position === null
+    ? []
+    : draft.additionalPositions
+        .map((value) => value.trim().toUpperCase())
+        .filter((value) => value.length > 0);
   const status = draft.status.trim().toUpperCase();
   const jerseyText = draft.jerseyNumber.trim();
   const jerseyNumber = /^\d{1,2}$/.test(jerseyText)
@@ -137,7 +140,7 @@ export function buildProClubSquadRosterEditorSubmission(
     futId: futIdText ? futIdText : null,
     firstName: draft.firstName.trim(),
     lastName: draft.lastName.trim(),
-    position: positionText ? positionText : null,
+    position,
     additionalPositions,
     jerseyNumber,
     squadLabel: draft.squadLabel.trim(),

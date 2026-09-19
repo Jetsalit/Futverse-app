@@ -186,6 +186,24 @@ test("blank primary position builds a canonical null position with no additional
   }
 });
 
+test("blank primary position discards stale additional positions before validation", () => {
+  const draft = {
+    ...createProClubSquadRosterEditorDraft("provisional-stale-additional"),
+    firstName: "Real",
+    lastName: "Player",
+    position: "",
+    additionalPositions: ["LB", "RB", ""],
+    jerseyNumber: "3",
+  };
+
+  const result = buildProClubSquadRosterEditorSubmission("CREATE", draft);
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.equal(result.input.position, null);
+    assert.deepEqual(result.input.additionalPositions, []);
+  }
+});
+
 test("record-to-editor mapping renders null primary position as blank", () => {
   const draft = proClubSquadRosterEditorDraftFromRecord(
     record({ position: null, additionalPositions: [] }),
