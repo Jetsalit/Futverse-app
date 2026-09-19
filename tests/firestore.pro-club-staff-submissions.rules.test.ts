@@ -252,6 +252,18 @@ test("anonymous outsider inactive account and OWNER-without-football-role fail c
   }
 });
 
+test("eligible author may list an empty My Work query with exact authorUid constraint", async () => {
+  const db = authedDb(ASSISTANT);
+  const ownQuery = query(
+    collection(db, "proClubs", CLUB_A, "staffSubmissions"),
+    where("authorUid", "==", ASSISTANT),
+  );
+
+  const snapshot = await assertSucceeds(getDocs(ownQuery));
+  assert.equal(snapshot.empty, true);
+  assert.equal(snapshot.docs.length, 0);
+});
+
 test("author may get own work and list only with authorUid constraint", async () => {
   await seed([
     [
