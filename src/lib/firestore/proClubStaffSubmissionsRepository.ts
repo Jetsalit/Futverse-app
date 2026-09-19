@@ -327,11 +327,10 @@ export async function createProClubStaffSubmissionDraft(
   }
 
   const path = submissionPath(clubId, submissionId);
-  const existing = await ops.readDocument(path);
-  if (existing.exists) {
-    throw new Error("Pro Club Staff Submission already exists.");
-  }
 
+  // Do not pre-read a newly generated submission id. Firestore evaluates a
+  // missing-document get against the read rule before the create can happen,
+  // while the create rule already fails closed if the document exists.
   const timestamp = ops.timestamp();
   await ops.createDocument(path, {
     schemaVersion: validation.value.schemaVersion,
