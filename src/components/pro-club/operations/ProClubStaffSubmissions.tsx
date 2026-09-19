@@ -134,15 +134,15 @@ function normalizeInput(
 function statusClass(status: ProClubStaffSubmissionRecord["status"]): string {
   switch (status) {
     case "APPROVED":
-      return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700";
+      return "border-emerald-500/30 bg-emerald-500/10 text-emerald-500";
     case "NEEDS_REVISION":
-      return "border-amber-500/30 bg-amber-500/10 text-amber-700";
+      return "border-amber-500/30 bg-amber-500/10 text-amber-500";
     case "IN_REVIEW":
-      return "border-cyan-500/30 bg-cyan-500/10 text-cyan-700";
+      return "border-cyan-500/30 bg-cyan-500/10 text-cyan-500";
     case "SUBMITTED":
-      return "border-blue-500/30 bg-blue-500/10 text-blue-700";
+      return "border-blue-500/30 bg-blue-500/10 text-blue-500";
     default:
-      return "border-slate-400/30 bg-slate-500/10 text-slate-600";
+      return "border-slate-400/30 bg-slate-500/10 text-[color:var(--pc-muted)]";
   }
 }
 
@@ -469,7 +469,7 @@ export default function ProClubStaffSubmissions({
             type="button"
             onClick={() => void load()}
             disabled={loading}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-xl border border-[color:var(--pc-border)] bg-[var(--pc-surface-soft)] px-3 py-2 text-sm font-bold text-[color:var(--pc-text)] transition hover:border-cyan-400/50 hover:bg-[var(--pc-surface)] disabled:opacity-50"
           >
             <RefreshCw size={16} />
             Refresh
@@ -693,23 +693,44 @@ export default function ProClubStaffSubmissions({
                   </div>
                 </div>
 
-                <div className={mode === "REVIEWER" ? "mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-[color:var(--pc-muted)]" : "mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500"}>
+                <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs">
                   {mode === "REVIEWER" && (
-                    <span>
+                    <span className="text-[color:var(--pc-muted)]">
                       ผู้ส่งงาน:{" "}
-                      <strong>{record.authorRole.split("_").join(" ")}</strong>
-                      <span className={mode === "REVIEWER" ? "ml-1 font-mono text-[10px] text-cyan-400/70" : "ml-1 font-mono text-[10px] text-slate-400"}>
+                      <strong className="font-semibold text-emerald-500">
+                        {record.authorRole.split("_").join(" ")}
+                      </strong>
+
+                      <span className="ml-1 font-mono text-[10px] text-cyan-400">
                         · {record.authorUid.slice(0, 8)}
                       </span>
                     </span>
                   )}
-                  <span>
+
+                  <span className="text-[color:var(--pc-muted)]">
                     Training plan:{" "}
-                    <strong>{record.targetPlanId ?? "Not linked"}</strong>
+                    <strong
+                      className={
+                        record.targetPlanId
+                          ? "font-semibold text-emerald-500"
+                          : "font-semibold text-rose-500"
+                      }
+                    >
+                      {record.targetPlanId ?? "Not linked"}
+                    </strong>
                   </span>
-                  <span>
+
+                  <span className="text-[color:var(--pc-muted)]">
                     Session date:{" "}
-                    <strong>{record.targetSessionDate ?? "Not linked"}</strong>
+                    <strong
+                      className={
+                        record.targetSessionDate
+                          ? "font-semibold text-emerald-500"
+                          : "font-semibold text-amber-500"
+                      }
+                    >
+                      {record.targetSessionDate ?? "Not linked"}
+                    </strong>
                   </span>
                 </div>
 
