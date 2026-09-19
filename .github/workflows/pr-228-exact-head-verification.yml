@@ -1,0 +1,60 @@
+name: PR 228 Exact Head Verification
+
+on:
+  push:
+    branches:
+      - verify/pr-228-exact-head
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: f10e148aeea103918d414304d564d8e2b4078861
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Exact HEAD provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="f10e148aeea103918d414304d564d8e2b4078861"
+          actual="$(git rev-parse HEAD)"
+          echo "EXPECTED_HEAD=$expected"
+          echo "ACTUAL_HEAD=$actual"
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain)"
+          echo "EXACT_HEAD_GATE=PASS"
+
+      - name: Install locked dependencies
+        run: |
+          npm ci --ignore-scripts
+          npm --prefix functions ci --ignore-scripts
+
+      - name: Targeted Squad editor and model tests
+        run: >-
+          node --import tsx --test
+          tests/proClubSquadRosterEditorModel.unit.test.ts
+          tests/proClubSquadRosterModel.unit.test.ts
+          tests/proClubSquadRosterViewModel.unit.test.ts
+          tests/proClubSquadRosterRepository.unit.test.ts
+          tests/proClubSquadReleasePlayerV1.unit.test.ts
+          tests/proClubSquadRosterPositionOptionalV1Contract.test.ts
+
+      - name: TypeScript
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Diff whitespace check
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check 2c5cd69aa6d5c1796b76d760b9d375f00d334c32 f10e148aeea103918d414304d564d8e2b4078861
