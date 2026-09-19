@@ -4206,7 +4206,7 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
         // Exact technical authority may list the tenant review inbox.
         allow list: if (
             proClubStaffSubmissionActiveAuthorV1(clubId)
-            && resource.data.get('authorUid', '') == request.auth.uid
+            && resource.data.authorUid == request.auth.uid
           )
           || proClubStaffSubmissionActorIsTechnicalAuthorityV1(clubId);
 
