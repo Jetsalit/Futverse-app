@@ -85,6 +85,7 @@ function makeOps(options?: {
   uid?: string;
   authority?: ProClubOrganizationAuthority;
   initial?: Record<string, DocumentData>;
+  denyMissingRead?: boolean;
 }) {
   const documents = new Map<string, DocumentData>(
     Object.entries(options?.initial ?? {}),
@@ -95,6 +96,7 @@ function makeOps(options?: {
     data: DocumentData;
   }> = [];
   const listFilters: unknown[] = [];
+  const events: string[] = [];
   let tick = 10;
 
   const uid = options?.uid ?? AUTHOR_UID;
@@ -109,7 +111,12 @@ function makeOps(options?: {
       return { state: "FOUND", value: actorAuthority };
     },
     async readDocument(path) {
-      const data = documents.get(key(path));
+      const pathKey = key(path);
+      const data = documents.get(pathKey);
+      events.push(`read:${pathKey}`);
+      if (data === undefined && options?.denyMissingRead) {
+        throw new Error("Missing-document read denied.");
+      }
       return {
         id: path[path.length - 1] ?? "",
         exists: data !== undefined,
@@ -137,6 +144,7 @@ function makeOps(options?: {
     },
     async createDocument(path, data) {
       const pathKey = key(path);
+      events.push(`create:${pathKey}`);
       writes.push({ kind: "create", path: pathKey, data });
       documents.set(pathKey, { ...data });
     },
@@ -153,7 +161,7 @@ function makeOps(options?: {
     },
   };
 
-  return { ops, documents, writes, listFilters };
+  return { ops, documents, writes, listFilters, events };
 }
 
 test("eligible staff creates only own role-compatible DRAFT", async () => {
@@ -179,6 +187,32 @@ test("eligible staff creates only own role-compatible DRAFT", async () => {
     writes[0]?.path,
     `proClubs/${CLUB_ID}/staffSubmissions/${SUBMISSION_ID}`,
   );
+});
+
+test("draft create does not pre-read a missing submission document", async () => {
+  const { ops, events } = makeOps({ denyMissingRead: true });
+
+  const created = await createProClubStaffSubmissionDraft(
+    CLUB_ID,
+    SUBMISSION_ID,
+    {
+      workType: "FITNESS",
+      title: "Conditioning",
+      summary: "MD-3 conditioning support.",
+      targetPlanId: null,
+      targetSessionDate: null,
+    },
+    ops,
+  );
+
+  const path =
+    `proClubs/${CLUB_ID}/staffSubmissions/${SUBMISSION_ID}`;
+
+  assert.equal(created.status, "DRAFT");
+  assert.deepEqual(events, [
+    `create:${path}`,
+    `read:${path}`,
+  ]);
 });
 
 test("role cannot impersonate another department work type", async () => {
