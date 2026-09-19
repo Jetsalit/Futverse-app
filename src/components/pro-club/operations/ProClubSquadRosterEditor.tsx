@@ -72,6 +72,17 @@ export default function ProClubSquadRosterEditor({
     setErrors([]);
   };
 
+  const setPrimaryPosition = (value: string) => {
+    setDraft((previous) => ({
+      ...previous,
+      position: value,
+      additionalPositions: value
+        ? previous.additionalPositions
+        : previous.additionalPositions.map(() => ""),
+    }));
+    setErrors([]);
+  };
+
   const setAdditionalPosition = (index: number, value: string) => {
     const next = [...draft.additionalPositions];
     next[index] = value;
@@ -286,16 +297,20 @@ export default function ProClubSquadRosterEditor({
             <label>
               <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Primary position</span>
               <select
-                required
                 value={draft.position}
-                onChange={(event) => setField("position", event.target.value)}
+                onChange={(event) => setPrimaryPosition(event.target.value)}
                 className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-500"
               >
-                <option value="">Select position</option>
+                <option value="">Not set / ยังไม่ระบุ</option>
                 {PLAYER_POSITION_CODES.map((position) => (
                   <option key={position} value={position}>{position}</option>
                 ))}
               </select>
+              {!draft.position && (
+                <p className="mt-1.5 text-xs leading-5 text-slate-500">
+                  เลือกภายหลังได้เมื่อทีมยืนยันตำแหน่งผู้เล่น
+                </p>
+              )}
             </label>
 
             <label>
@@ -336,8 +351,9 @@ export default function ProClubSquadRosterEditor({
                 <select
                   key={`additional-${index}`}
                   value={value}
+                  disabled={!draft.position}
                   onChange={(event) => setAdditionalPosition(index, event.target.value)}
-                  className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-500"
+                  className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-500 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <option value="">Optional</option>
                   {PLAYER_POSITION_CODES.map((position: PlayerPositionCode) => (

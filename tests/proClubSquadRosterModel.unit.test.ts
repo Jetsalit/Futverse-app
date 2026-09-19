@@ -131,3 +131,37 @@ test("FUTID binding allows only exact null-to-registry binding or immutable exis
     false,
   );
 });
+
+test("accepts null primary position only when additional positions are empty", () => {
+  const unconfirmed = validateProClubSquadRosterFootballInput({
+    ...validInput,
+    position: null,
+    additionalPositions: [],
+  });
+  assert.equal(unconfirmed.ok, true);
+  if (unconfirmed.ok) {
+    assert.equal(unconfirmed.value.position, null);
+    assert.deepEqual(unconfirmed.value.additionalPositions, []);
+  }
+
+  const invalidAdditional = validateProClubSquadRosterFootballInput({
+    ...validInput,
+    position: null,
+    additionalPositions: ["DM"],
+  });
+  assert.equal(invalidAdditional.ok, false);
+  if (invalidAdditional.ok === false) {
+    assert.match(invalidAdditional.errors.join(" "), /primary position/i);
+  }
+
+  for (const position of ["", "UNKNOWN", "UNSPECIFIED", "MIDFIELDER"]) {
+    assert.equal(
+      validateProClubSquadRosterFootballInput({
+        ...validInput,
+        position,
+        additionalPositions: [],
+      }).ok,
+      false,
+    );
+  }
+});

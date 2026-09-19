@@ -61,8 +61,12 @@ const FORWARD_POSITIONS = new Set<PlayerPositionCode>([
 ]);
 
 export function resolveProClubSquadPositionGroup(
-  position: PlayerPositionCode,
-): Exclude<ProClubSquadPositionGroup, "ALL"> {
+  position: PlayerPositionCode | null,
+): Exclude<ProClubSquadPositionGroup, "ALL"> | null {
+  if (position === null) {
+    return null;
+  }
+
   if (position === "GK") {
     return "GK";
   }
@@ -115,7 +119,7 @@ export function filterProClubSquadRoster(
         `${record.firstName} ${record.lastName}`,
         record.futId ?? "",
         String(record.jerseyNumber),
-        record.position,
+        record.position ?? "",
         record.squadLabel,
       ]
         .join(" ")
@@ -145,7 +149,10 @@ export function countProClubSquadRosterByGroup(
   };
 
   for (const record of records) {
-    counts[resolveProClubSquadPositionGroup(record.position)] += 1;
+    const group = resolveProClubSquadPositionGroup(record.position);
+    if (group !== null) {
+      counts[group] += 1;
+    }
   }
 
   return counts;

@@ -2654,6 +2654,11 @@ service cloud.firestore {
       ];
     }
 
+    function proClubSquadRosterValidPrimaryPositionV1(value) {
+      return value == null
+        || proClubSquadRosterValidPositionV1(value);
+    }
+
     function proClubSquadRosterNormalizedTextV1(value, maxLength, allowEmpty) {
       return value is string
         && value.size() <= maxLength
@@ -2663,7 +2668,11 @@ service cloud.firestore {
 
     function proClubSquadRosterValidAdditionalPositionsV1(primary, positions) {
       return positions is list
-        && proClubSquadRosterValidAdditionalPositionsListV1(primary, positions);
+        && (
+          primary == null
+            ? positions.size() == 0
+            : proClubSquadRosterValidAdditionalPositionsListV1(primary, positions)
+        );
     }
 
     function proClubSquadRosterValidAdditionalPositionsListV1(primary, positions) {
@@ -2750,9 +2759,9 @@ service cloud.firestore {
         && proClubSquadRosterFutIdCompatibleV1(playerKey, data.get('futId', null))
         && proClubSquadRosterNormalizedTextV1(data.get('firstName', ''), 80, false)
         && proClubSquadRosterNormalizedTextV1(data.get('lastName', ''), 80, true)
-        && proClubSquadRosterValidPositionV1(data.get('position', ''))
+        && proClubSquadRosterValidPrimaryPositionV1(data.get('position', null))
         && proClubSquadRosterValidAdditionalPositionsV1(
-          data.get('position', ''),
+          data.get('position', null),
           data.get('additionalPositions', [])
         )
         && data.get('jerseyNumber', -1) is int

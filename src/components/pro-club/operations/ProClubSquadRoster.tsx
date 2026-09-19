@@ -356,7 +356,11 @@ export default function ProClubSquadRoster({
                   </div>
                   <div className="min-w-0">
                     <h4 className="truncate font-black text-white">{player.firstName} {player.lastName}</h4>
-                    <p className="mt-1 text-xs font-bold uppercase tracking-wider text-cyan-300">{player.position} · {resolveProClubSquadPositionGroup(player.position)}</p>
+                    <p className={`mt-1 text-xs font-bold uppercase tracking-wider ${player.position ? "text-cyan-300" : "text-slate-400"}`}>
+                      {player.position
+                        ? `${player.position} · ${resolveProClubSquadPositionGroup(player.position)}`
+                        : "Position not set"}
+                    </p>
                   </div>
                 </div>
                 <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black tracking-wider ${statusClasses(player.status)}`}>{player.status}</span>
@@ -442,7 +446,7 @@ export default function ProClubSquadRoster({
                       <div className="min-w-0">
                       <h4 className="font-black text-slate-200">{player.firstName} {player.lastName}</h4>
                       <p className="mt-1 text-xs text-slate-500">
-                        #{player.jerseyNumber} · {player.position} · {player.squadLabel}
+                        #{player.jerseyNumber} · {player.position ?? "Position not set"} · {player.squadLabel}
                       </p>
                       </div>
                     </div>
