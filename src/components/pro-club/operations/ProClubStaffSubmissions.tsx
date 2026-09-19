@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   CheckCircle2,
+  Clock3,
   ClipboardList,
   ExternalLink,
   FilePlus2,
   Loader2,
   RefreshCw,
   RotateCcw,
+  Search,
   Send,
   ShieldCheck,
 } from "lucide-react";
@@ -31,6 +33,7 @@ import {
 } from "../../../lib/proClubStaffSubmissions";
 
 type Mode = "AUTHOR" | "REVIEWER";
+type ReviewerFilter = "ALL" | "PENDING" | "REVISION" | "APPROVED";
 
 const STATUS_LABELS: Record<ProClubStaffSubmissionRecord["status"], string> = {
   DRAFT: "Draft",
@@ -143,6 +146,24 @@ function statusClass(status: ProClubStaffSubmissionRecord["status"]): string {
   }
 }
 
+function submissionAccentClass(
+  status: ProClubStaffSubmissionRecord["status"],
+): string {
+  switch (status) {
+    case "APPROVED":
+    case "PUBLISHED":
+      return "border-l-emerald-500";
+    case "NEEDS_REVISION":
+      return "border-l-amber-500";
+    case "SUBMITTED":
+      return "border-l-blue-500";
+    case "IN_REVIEW":
+      return "border-l-cyan-500";
+    default:
+      return "border-l-slate-300";
+  }
+}
+
 function sortByStatus(records: readonly ProClubStaffSubmissionRecord[]) {
   const weight: Record<ProClubStaffSubmissionRecord["status"], number> = {
     SUBMITTED: 0,
@@ -179,6 +200,8 @@ export default function ProClubStaffSubmissions({
     authorWorkType ? emptyInput(authorWorkType) : null,
   );
   const [composerOpen, setComposerOpen] = useState(false);
+  const [reviewerFilter, setReviewerFilter] = useState<ReviewerFilter>("ALL");
+  const [reviewerQuery, setReviewerQuery] = useState("");
 
   const load = useCallback(async () => {
     if (!mode) {
@@ -222,6 +245,55 @@ export default function ProClubStaffSubmissions({
         : records,
     [mode, records],
   );
+
+  const reviewerStats = useMemo(() => {
+    if (mode !== "REVIEWER") {
+      return { total: 0, pending: 0, revision: 0, approved: 0 };
+    }
+
+    return visibleRecords.reduce(
+      (stats, record) => {
+        stats.total += 1;
+        if (record.status === "SUBMITTED" || record.status === "IN_REVIEW") {
+          stats.pending += 1;
+        }
+        if (record.status === "NEEDS_REVISION") stats.revision += 1;
+        if (record.status === "APPROVED" || record.status === "PUBLISHED") {
+          stats.approved += 1;
+        }
+        return stats;
+      },
+      { total: 0, pending: 0, revision: 0, approved: 0 },
+    );
+  }, [mode, visibleRecords]);
+
+  const displayRecords = useMemo(() => {
+    if (mode !== "REVIEWER") return visibleRecords;
+
+    const query = reviewerQuery.trim().toLocaleLowerCase();
+    return visibleRecords.filter((record) => {
+      const matchesFilter =
+        reviewerFilter === "ALL" ||
+        (reviewerFilter === "PENDING" &&
+          (record.status === "SUBMITTED" || record.status === "IN_REVIEW")) ||
+        (reviewerFilter === "REVISION" && record.status === "NEEDS_REVISION") ||
+        (reviewerFilter === "APPROVED" &&
+          (record.status === "APPROVED" || record.status === "PUBLISHED"));
+
+      if (!matchesFilter) return false;
+      if (!query) return true;
+
+      return [
+        record.title,
+        record.summary,
+        record.authorRole,
+        record.authorUid,
+        WORK_TYPE_LABELS[record.workType],
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLocaleLowerCase().includes(query));
+    });
+  }, [mode, reviewerFilter, reviewerQuery, visibleRecords]);
 
   if (!mode || !canOpenProClubStaffSubmissions(authority)) {
     return (
@@ -421,6 +493,89 @@ export default function ProClubStaffSubmissions({
         </div>
       </header>
 
+      {mode === "REVIEWER" && (
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <ReviewerSummaryCard
+              label="งานทั้งหมด"
+              value={reviewerStats.total}
+              hint="งานจาก Staff ในทีม"
+              icon={<ClipboardList size={18} />}
+              tone="slate"
+            />
+            <ReviewerSummaryCard
+              label="รอตรวจ (Submitted)"
+              value={reviewerStats.pending}
+              hint="รอการเปิดตรวจโดยโค้ช"
+              icon={<Clock3 size={18} />}
+              tone="blue"
+            />
+            <ReviewerSummaryCard
+              label="ขอแก้ไข (Revision)"
+              value={reviewerStats.revision}
+              hint="รอ Staff ปรับปรุงส่งใหม่"
+              icon={<RotateCcw size={18} />}
+              tone="amber"
+            />
+            <ReviewerSummaryCard
+              label="อนุมัติแล้ว (Approved)"
+              value={reviewerStats.approved}
+              hint="พร้อมนำไปใช้ในเซสชันฝึก"
+              icon={<CheckCircle2 size={18} />}
+              tone="emerald"
+            />
+          </div>
+
+          <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+            <div
+              role="tablist"
+              aria-label="กรอง Staff Submissions"
+              className="flex flex-wrap gap-1"
+            >
+              {(
+                [
+                  ["ALL", `ทั้งหมด (${reviewerStats.total})`],
+                  ["PENDING", `รอตรวจ (${reviewerStats.pending})`],
+                  ["REVISION", `ขอแก้ไข (${reviewerStats.revision})`],
+                  ["APPROVED", `อนุมัติแล้ว (${reviewerStats.approved})`],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="tab"
+                  aria-selected={reviewerFilter === value}
+                  onClick={() => setReviewerFilter(value)}
+                  className={
+                    reviewerFilter === value
+                      ? "rounded-xl border border-cyan-300 bg-cyan-50 px-3 py-2 text-xs font-black text-cyan-700"
+                      : "rounded-xl border border-transparent px-3 py-2 text-xs font-bold text-slate-500 hover:bg-slate-50"
+                  }
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <label className="relative block w-full lg:max-w-sm">
+              <span className="sr-only">ค้นหางานหรือ Staff</span>
+              <Search
+                aria-hidden="true"
+                size={16}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+              <input
+                type="search"
+                value={reviewerQuery}
+                onChange={(event) => setReviewerQuery(event.target.value)}
+                placeholder="ค้นหาชื่องาน หรือสตาฟฟ์..."
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none focus:border-cyan-400 focus:bg-white"
+              />
+            </label>
+          </div>
+        </div>
+      )}
+
       {error && (
         <p
           role="alert"
@@ -454,7 +609,7 @@ export default function ProClubStaffSubmissions({
           <Loader2 className="animate-spin" size={18} />
           กำลังโหลด Staff Submissions…
         </div>
-      ) : visibleRecords.length === 0 ? (
+      ) : displayRecords.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
           <ClipboardList className="mx-auto text-slate-400" size={28} />
           <p className="mt-3 font-bold text-slate-700">
@@ -465,7 +620,7 @@ export default function ProClubStaffSubmissions({
         </div>
       ) : (
         <div className="grid gap-4">
-          {visibleRecords.map((record) => {
+          {displayRecords.map((record) => {
             const editing = editingId === record.submissionId;
             const busy = busyId === record.submissionId;
 
@@ -489,7 +644,7 @@ export default function ProClubStaffSubmissions({
             return (
               <article
                 key={record.submissionId}
-                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+                className={`rounded-2xl border border-slate-200 bg-white p-5 shadow-sm ${mode === "REVIEWER" ? "border-l-4 " + submissionAccentClass(record.status) : ""}`}
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -515,7 +670,11 @@ export default function ProClubStaffSubmissions({
                 <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500">
                   {mode === "REVIEWER" && (
                     <span>
-                      Staff: <strong>{record.authorRole}</strong>
+                      ผู้ส่งงาน:{" "}
+                      <strong>{record.authorRole.split("_").join(" ")}</strong>
+                      <span className="ml-1 font-mono text-[10px] text-slate-400">
+                        · {record.authorUid.slice(0, 8)}
+                      </span>
                     </span>
                   )}
                   <span>
@@ -649,6 +808,38 @@ export default function ProClubStaffSubmissions({
         </div>
       )}
     </section>
+  );
+}
+
+function ReviewerSummaryCard({
+  label,
+  value,
+  hint,
+  icon,
+  tone,
+}: {
+  label: string;
+  value: number;
+  hint: string;
+  icon: ReactNode;
+  tone: "slate" | "blue" | "amber" | "emerald";
+}) {
+  const toneClass = {
+    slate: "border-slate-200 bg-white text-slate-700",
+    blue: "border-blue-200 bg-blue-50/60 text-blue-700",
+    amber: "border-amber-200 bg-amber-50/60 text-amber-700",
+    emerald: "border-emerald-200 bg-emerald-50/60 text-emerald-700",
+  }[tone];
+
+  return (
+    <div className={`rounded-2xl border p-4 shadow-sm ${toneClass}`}>
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-xs font-black">{label}</p>
+        <span className="rounded-xl bg-white/70 p-2">{icon}</span>
+      </div>
+      <p className="mt-2 text-3xl font-black tabular-nums">{value}</p>
+      <p className="mt-1 text-xs opacity-80">{hint}</p>
+    </div>
   );
 }
 

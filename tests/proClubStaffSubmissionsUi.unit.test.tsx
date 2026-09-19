@@ -123,6 +123,22 @@ test("author UI fixes the work type from active role and exposes Draft edit/resu
   assert.doesNotMatch(submissionsSource, /<select[^>]*workType/i);
 });
 
+test("reviewer redesign adds KPI summary, filters, search and stable staff identity without changing persistence", () => {
+  for (const label of [
+    "งานทั้งหมด",
+    "รอตรวจ (Submitted)",
+    "ขอแก้ไข (Revision)",
+    "อนุมัติแล้ว (Approved)",
+  ]) {
+    assert.ok(submissionsSource.includes(label), label);
+  }
+  assert.match(submissionsSource, /reviewerFilter/);
+  assert.match(submissionsSource, /reviewerQuery/);
+  assert.match(submissionsSource, /ค้นหาชื่องาน หรือสตาฟฟ์/);
+  assert.match(submissionsSource, /record\.authorUid\.slice\(0, 8\)/);
+  assert.doesNotMatch(submissionsSource, /authorDisplayName/);
+});
+
 test("review UI exposes only the frozen technical review transitions", () => {
   assert.match(submissionsSource, /record.status === "SUBMITTED"/);
   assert.match(submissionsSource, /เริ่มตรวจ/);
