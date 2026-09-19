@@ -398,3 +398,52 @@ test("explicit release action rejects non-Head-Coach authority before any write"
   );
   assert.equal(writes.length, 0);
 });
+
+test("repository creates, updates and releases a roster player with an unconfirmed position", async () => {
+  const pathKey = `proClubs/${CLUB_ID}/players/position-pending`;
+  const { ops, documents } = makeOps();
+
+  const created = await createProClubSquadRosterPlayer(
+    CLUB_ID,
+    "position-pending",
+    {
+      ...validInput,
+      futId: null,
+      position: null,
+      additionalPositions: [],
+      jerseyNumber: 3,
+    },
+    ops,
+  );
+  assert.equal(created.position, null);
+  assert.deepEqual(created.additionalPositions, []);
+
+  const updated = await updateProClubSquadRosterPlayer(
+    CLUB_ID,
+    "position-pending",
+    {
+      ...validInput,
+      futId: null,
+      position: "LB",
+      additionalPositions: [],
+      jerseyNumber: 3,
+    },
+    ops,
+  );
+  assert.equal(updated.position, "LB");
+
+  documents.set(pathKey, {
+    ...documents.get(pathKey),
+    position: null,
+    additionalPositions: [],
+  });
+
+  const released = await releaseProClubSquadRosterPlayer(
+    CLUB_ID,
+    "position-pending",
+    ops,
+  );
+  assert.equal(released.status, "RELEASED");
+  assert.equal(released.position, null);
+  assert.deepEqual(released.additionalPositions, []);
+});

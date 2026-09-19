@@ -162,3 +162,51 @@ test("partitions current First Team from released player history", () => {
     FWD: 0,
   });
 });
+
+test("null primary position remains visible in ALL without entering canonical position groups", () => {
+  const records = [
+    rosterRecord({
+      playerKey: "position-pending",
+      futId: null,
+      firstName: "Pending",
+      lastName: "Position",
+      position: null,
+      additionalPositions: [],
+      jerseyNumber: 3,
+    }),
+    rosterRecord({ playerKey: "known-mid", position: "CM", jerseyNumber: 8 }),
+  ];
+
+  assert.equal(resolveProClubSquadPositionGroup(null), null);
+
+  const all = filterProClubSquadRoster(records, {
+    search: "",
+    status: "ALL",
+    group: "ALL",
+  });
+  assert.deepEqual(all.map((record) => record.playerKey), [
+    "position-pending",
+    "known-mid",
+  ]);
+
+  const midfielders = filterProClubSquadRoster(records, {
+    search: "",
+    status: "ALL",
+    group: "MID",
+  });
+  assert.deepEqual(midfielders.map((record) => record.playerKey), ["known-mid"]);
+
+  assert.deepEqual(countProClubSquadRosterByGroup(records), {
+    GK: 0,
+    DEF: 0,
+    MID: 1,
+    FWD: 0,
+  });
+
+  const byName = filterProClubSquadRoster(records, {
+    search: "Pending",
+    status: "ALL",
+    group: "ALL",
+  });
+  assert.deepEqual(byName.map((record) => record.playerKey), ["position-pending"]);
+});

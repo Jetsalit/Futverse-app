@@ -23,7 +23,7 @@ export interface ProClubSquadRosterFootballInput {
   futId: string | null;
   firstName: string;
   lastName: string;
-  position: PlayerPositionCode;
+  position: PlayerPositionCode | null;
   additionalPositions: PlayerPositionCode[];
   jerseyNumber: number;
   squadLabel: string;
@@ -138,7 +138,10 @@ export function validateProClubSquadRosterFootballInput(
     errors.push("Invalid lastName.");
   }
 
-  if (!isPlayerPositionCode(input.position)) {
+  if (
+    input.position !== null &&
+    !isPlayerPositionCode(input.position)
+  ) {
     errors.push("Invalid primary position.");
   }
 
@@ -148,6 +151,10 @@ export function validateProClubSquadRosterFootballInput(
 
   if (additionalPositions === null) {
     errors.push("additionalPositions must be an array.");
+  } else if (input.position === null) {
+    if (additionalPositions.length > 0) {
+      errors.push("Additional positions require a primary position.");
+    }
   } else {
     const positionValidation = validatePositionSelection({
       primary:
@@ -202,7 +209,7 @@ export function validateProClubSquadRosterFootballInput(
       futId: input.futId as string | null,
       firstName: input.firstName as string,
       lastName: input.lastName as string,
-      position: input.position as PlayerPositionCode,
+      position: input.position as PlayerPositionCode | null,
       additionalPositions: [...canonicalAdditionalPositions],
       jerseyNumber: input.jerseyNumber as number,
       squadLabel: input.squadLabel as string,

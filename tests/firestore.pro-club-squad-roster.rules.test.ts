@@ -440,3 +440,54 @@ test("FUTID registry remains non-readable to client roster actors", async () => 
     getDoc(doc(authedDb(HEAD_COACH), "futIdRegistry", FUT_1)),
   );
 });
+
+test("Head Coach may create and update roster records with a null unconfirmed primary position", async () => {
+  const db = authedDb(HEAD_COACH);
+  const pendingPath = doc(db, "proClubs", CLUB_A, "players", "position-pending");
+
+  await assertSucceeds(
+    setDoc(
+      pendingPath,
+      freshRosterData(null, {
+        position: null,
+        additionalPositions: [],
+        jerseyNumber: 3,
+      }),
+    ),
+  );
+
+  await assertSucceeds(
+    updateDoc(pendingPath, {
+      position: "LB",
+      additionalPositions: [],
+      updatedAt: serverTimestamp(),
+      updatedBy: HEAD_COACH,
+    }),
+  );
+});
+
+test("null primary position rejects additional positions and fake position sentinels", async () => {
+  const db = authedDb(HEAD_COACH);
+
+  await assertFails(
+    setDoc(
+      doc(db, "proClubs", CLUB_A, "players", "null-with-additional"),
+      freshRosterData(null, {
+        position: null,
+        additionalPositions: ["LB"],
+      }),
+    ),
+  );
+
+  for (const position of ["", "UNKNOWN", "UNSPECIFIED", "MIDFIELDER"]) {
+    await assertFails(
+      setDoc(
+        doc(db, "proClubs", CLUB_A, "players", `fake-${position || "empty"}`),
+        freshRosterData(null, {
+          position,
+          additionalPositions: [],
+        }),
+      ),
+    );
+  }
+});

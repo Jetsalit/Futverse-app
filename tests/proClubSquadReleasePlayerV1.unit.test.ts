@@ -41,3 +41,8 @@ test("RELEASED cannot be selected casually from the active editor status options
     /currentStatus === "RELEASED"[\s\S]*return \["RELEASED"\]/,
   );
 });
+
+test("release flow preserves nullable position and roster UI labels it without inventing a position", () => {
+  assert.match(repositorySource, /position:\s*current\.position/);
+  assert.match(rosterSource, /Position not set/);
+});
