@@ -213,3 +213,40 @@ test("OWNER is never translated into a technical approval control in the UI", ()
     /authority\.staffRole === "HEAD_COACH"[\s\S]*authority\.staffRole === "TECHNICAL_DIRECTOR"/,
   );
 });
+
+test("reviewer light and neon text colors follow targeted UI contract", () => {
+  // REFRESH_THEME_COLOR
+  assert.match(
+    submissionsSource,
+    /border-\[color:var\(--pc-border\)\].*bg-\[var\(--pc-surface-soft\)\].*text-\[color:var\(--pc-text\)\]/,
+  );
+
+  // STATUS_SEMANTIC_COLORS
+  assert.match(submissionsSource, /case "APPROVED":[\s\S]*text-emerald-500/);
+  assert.match(submissionsSource, /case "NEEDS_REVISION":[\s\S]*text-amber-500/);
+  assert.match(submissionsSource, /case "IN_REVIEW":[\s\S]*text-cyan-500/);
+  assert.match(submissionsSource, /case "SUBMITTED":[\s\S]*text-blue-500/);
+  assert.match(submissionsSource, /default:[\s\S]*text-\[color:var\(--pc-muted\)\]/);
+
+  // AUTHOR_ROLE_GREEN & AUTHOR_UID_CYAN
+  assert.match(
+    submissionsSource,
+    /<strong className="font-semibold text-emerald-500">[\s\S]*record\.authorRole/,
+  );
+  assert.match(
+    submissionsSource,
+    /text-cyan-400">[\s\S]*record\.authorUid\.slice\(0, 8\)/,
+  );
+
+  // UNLINKED_PLAN_RED & LINKED_VALUES_GREEN
+  assert.match(
+    submissionsSource,
+    /record\.targetPlanId[\s\S]*\? "font-semibold text-emerald-500"[\s\S]*: "font-semibold text-rose-500"/,
+  );
+
+  // UNLINKED_SESSION_AMBER & LINKED_VALUES_GREEN
+  assert.match(
+    submissionsSource,
+    /record\.targetSessionDate[\s\S]*\? "font-semibold text-emerald-500"[\s\S]*: "font-semibold text-amber-500"/,
+  );
+});
