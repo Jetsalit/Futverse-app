@@ -502,6 +502,9 @@ export default function ProClubStaffSubmissions({
               hint="งานจาก Staff ในทีม"
               icon={<ClipboardList size={18} />}
               tone="slate"
+              filter="ALL"
+              active={reviewerFilter === "ALL"}
+              onSelect={setReviewerFilter}
             />
             <ReviewerSummaryCard
               label="รอตรวจ (Submitted)"
@@ -509,6 +512,9 @@ export default function ProClubStaffSubmissions({
               hint="รอการเปิดตรวจโดยโค้ช"
               icon={<Clock3 size={18} />}
               tone="blue"
+              filter="PENDING"
+              active={reviewerFilter === "PENDING"}
+              onSelect={setReviewerFilter}
             />
             <ReviewerSummaryCard
               label="ขอแก้ไข (Revision)"
@@ -516,6 +522,9 @@ export default function ProClubStaffSubmissions({
               hint="รอ Staff ปรับปรุงส่งใหม่"
               icon={<RotateCcw size={18} />}
               tone="amber"
+              filter="REVISION"
+              active={reviewerFilter === "REVISION"}
+              onSelect={setReviewerFilter}
             />
             <ReviewerSummaryCard
               label="อนุมัติแล้ว (Approved)"
@@ -523,10 +532,13 @@ export default function ProClubStaffSubmissions({
               hint="พร้อมนำไปใช้ในเซสชันฝึก"
               icon={<CheckCircle2 size={18} />}
               tone="emerald"
+              filter="APPROVED"
+              active={reviewerFilter === "APPROVED"}
+              onSelect={setReviewerFilter}
             />
           </div>
 
-          <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-3 rounded-2xl border border-[color:var(--pc-border)] bg-[var(--pc-surface)] p-3 shadow-[var(--pc-glow)] lg:flex-row lg:items-center lg:justify-between">
             <div
               role="tablist"
               aria-label="กรอง Staff Submissions"
@@ -548,8 +560,8 @@ export default function ProClubStaffSubmissions({
                   onClick={() => setReviewerFilter(value)}
                   className={
                     reviewerFilter === value
-                      ? "rounded-xl border border-cyan-300 bg-cyan-50 px-3 py-2 text-xs font-black text-cyan-700"
-                      : "rounded-xl border border-transparent px-3 py-2 text-xs font-bold text-slate-500 hover:bg-slate-50"
+                      ? "rounded-xl border border-cyan-400/50 bg-cyan-400/10 px-3 py-2 text-xs font-black text-cyan-500 shadow-[0_0_18px_rgba(34,211,238,0.10)]"
+                      : "rounded-xl border border-transparent px-3 py-2 text-xs font-bold text-[color:var(--pc-muted)] transition hover:border-[color:var(--pc-border)] hover:bg-[var(--pc-surface-soft)] hover:text-[color:var(--pc-text)]"
                   }
                 >
                   {label}
@@ -562,14 +574,14 @@ export default function ProClubStaffSubmissions({
               <Search
                 aria-hidden="true"
                 size={16}
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--pc-muted)]"
               />
               <input
                 type="search"
                 value={reviewerQuery}
                 onChange={(event) => setReviewerQuery(event.target.value)}
                 placeholder="ค้นหาชื่องาน หรือสตาฟฟ์..."
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none focus:border-cyan-400 focus:bg-white"
+                className="w-full rounded-xl border border-[color:var(--pc-border)] bg-[var(--pc-surface-soft)] py-2.5 pl-9 pr-3 text-sm text-[color:var(--pc-text)] outline-none transition placeholder:text-[color:var(--pc-muted)] focus:border-cyan-400/70 focus:bg-[var(--pc-surface)] focus:shadow-[0_0_18px_rgba(34,211,238,0.10)]"
               />
             </label>
           </div>
@@ -604,15 +616,25 @@ export default function ProClubStaffSubmissions({
       {loading ? (
         <div
           role="status"
-          className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600"
+          className={
+            mode === "REVIEWER"
+              ? "flex items-center gap-2 rounded-2xl border border-[color:var(--pc-border)] bg-[var(--pc-surface)] p-5 text-sm text-[color:var(--pc-muted)] shadow-[var(--pc-glow)]"
+              : "flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600"
+          }
         >
           <Loader2 className="animate-spin" size={18} />
           กำลังโหลด Staff Submissions…
         </div>
       ) : displayRecords.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
+        <div
+          className={
+            mode === "REVIEWER"
+              ? "rounded-2xl border border-dashed border-[color:var(--pc-border)] bg-[var(--pc-surface)] p-8 text-center shadow-[var(--pc-glow)]"
+              : "rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center"
+          }
+        >
           <ClipboardList className="mx-auto text-slate-400" size={28} />
-          <p className="mt-3 font-bold text-slate-700">
+          <p className={mode === "REVIEWER" ? "mt-3 font-bold text-[color:var(--pc-text)]" : "mt-3 font-bold text-slate-700"}>
             {mode === "AUTHOR"
               ? "ยังไม่มีงานใน My Work"
               : "ยังไม่มีงานที่ส่งเข้ามา"}
@@ -644,7 +666,11 @@ export default function ProClubStaffSubmissions({
             return (
               <article
                 key={record.submissionId}
-                className={`rounded-2xl border border-slate-200 bg-white p-5 shadow-sm ${mode === "REVIEWER" ? "border-l-4 " + submissionAccentClass(record.status) : ""}`}
+                className={
+                  mode === "REVIEWER"
+                    ? `rounded-2xl border border-[color:var(--pc-border)] bg-[var(--pc-surface)] p-5 shadow-[var(--pc-glow)] transition hover:border-cyan-400/30 hover:shadow-[0_16px_40px_rgba(2,6,23,0.28),0_0_24px_rgba(34,211,238,0.08)] border-l-4 ${submissionAccentClass(record.status)}`
+                    : "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+                }
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -654,25 +680,25 @@ export default function ProClubStaffSubmissions({
                       >
                         {STATUS_LABELS[record.status]}
                       </span>
-                      <span className="text-xs font-bold text-slate-500">
+                      <span className={mode === "REVIEWER" ? "text-xs font-bold text-[color:var(--pc-muted)]" : "text-xs font-bold text-slate-500"}>
                         {WORK_TYPE_LABELS[record.workType]}
                       </span>
                     </div>
-                    <h4 className="mt-3 text-lg font-black text-slate-900">
+                    <h4 className={mode === "REVIEWER" ? "mt-3 text-lg font-black text-[color:var(--pc-text)]" : "mt-3 text-lg font-black text-slate-900"}>
                       {record.title}
                     </h4>
-                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">
+                    <p className={mode === "REVIEWER" ? "mt-2 whitespace-pre-wrap text-sm leading-6 text-[color:var(--pc-muted)]" : "mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600"}>
                       {record.summary}
                     </p>
                   </div>
                 </div>
 
-                <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500">
+                <div className={mode === "REVIEWER" ? "mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-[color:var(--pc-muted)]" : "mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500"}>
                   {mode === "REVIEWER" && (
                     <span>
                       ผู้ส่งงาน:{" "}
                       <strong>{record.authorRole.split("_").join(" ")}</strong>
-                      <span className="ml-1 font-mono text-[10px] text-slate-400">
+                      <span className={mode === "REVIEWER" ? "ml-1 font-mono text-[10px] text-cyan-400/70" : "ml-1 font-mono text-[10px] text-slate-400"}>
                         · {record.authorUid.slice(0, 8)}
                       </span>
                     </span>
@@ -688,7 +714,7 @@ export default function ProClubStaffSubmissions({
                 </div>
 
                 {record.reviewNote && (
-                  <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                  <div className="mt-4 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 shadow-[0_0_18px_rgba(251,191,36,0.05)]">
                     <p className="text-xs font-black uppercase tracking-wide text-amber-800">
                       Review note
                     </p>
@@ -756,10 +782,10 @@ export default function ProClubStaffSubmissions({
                 </div>
 
                 {mode === "REVIEWER" && record.status === "IN_REVIEW" && (
-                  <div className="mt-4 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="mt-4 space-y-3 rounded-xl border border-[color:var(--pc-border)] bg-[var(--pc-surface-soft)] p-4">
                     <label
                       htmlFor={`review-note-${record.submissionId}`}
-                      className="text-sm font-black text-slate-700"
+                      className="text-sm font-black text-[color:var(--pc-text)]"
                     >
                       Review note
                     </label>
@@ -774,7 +800,7 @@ export default function ProClubStaffSubmissions({
                       }
                       maxLength={2000}
                       rows={3}
-                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                      className="w-full rounded-xl border border-[color:var(--pc-border)] bg-[var(--pc-surface)] px-3 py-2 text-sm text-[color:var(--pc-text)] outline-none focus:border-cyan-400/70"
                     />
                     <div className="flex flex-wrap gap-2">
                       <button
@@ -817,29 +843,58 @@ function ReviewerSummaryCard({
   hint,
   icon,
   tone,
+  filter,
+  active,
+  onSelect,
 }: {
   label: string;
   value: number;
   hint: string;
   icon: ReactNode;
   tone: "slate" | "blue" | "amber" | "emerald";
+  filter: ReviewerFilter;
+  active: boolean;
+  onSelect: (filter: ReviewerFilter) => void;
 }) {
   const toneClass = {
-    slate: "border-slate-200 bg-white text-slate-700",
-    blue: "border-blue-200 bg-blue-50/60 text-blue-700",
-    amber: "border-amber-200 bg-amber-50/60 text-amber-700",
-    emerald: "border-emerald-200 bg-emerald-50/60 text-emerald-700",
+    slate: "text-slate-500 hover:border-slate-400/50",
+    blue: "text-blue-500 hover:border-blue-400/50",
+    amber: "text-amber-500 hover:border-amber-400/50",
+    emerald: "text-emerald-500 hover:border-emerald-400/50",
+  }[tone];
+
+  const activeClass = {
+    slate: "border-slate-400/60 ring-slate-400/20",
+    blue: "border-blue-400/60 ring-blue-400/20 shadow-[0_0_24px_rgba(59,130,246,0.12)]",
+    amber: "border-amber-400/60 ring-amber-400/20 shadow-[0_0_24px_rgba(251,191,36,0.12)]",
+    emerald: "border-emerald-400/60 ring-emerald-400/20 shadow-[0_0_24px_rgba(52,211,153,0.12)]",
   }[tone];
 
   return (
-    <div className={`rounded-2xl border p-4 shadow-sm ${toneClass}`}>
+    <button
+      type="button"
+      data-reviewer-filter={filter}
+      data-active={active ? "true" : "false"}
+      aria-pressed={active}
+      onClick={() => onSelect(filter)}
+      className={[
+        "group rounded-2xl border bg-[var(--pc-surface)] p-4 text-left shadow-[var(--pc-glow)] transition duration-200",
+        "border-[color:var(--pc-border)] hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50",
+        toneClass,
+        active ? `ring-1 ${activeClass}` : "",
+      ].join(" ")}
+    >
       <div className="flex items-start justify-between gap-3">
         <p className="text-xs font-black">{label}</p>
-        <span className="rounded-xl bg-white/70 p-2">{icon}</span>
+        <span className="rounded-xl border border-current/15 bg-current/10 p-2 transition group-hover:scale-105">
+          {icon}
+        </span>
       </div>
-      <p className="mt-2 text-3xl font-black tabular-nums">{value}</p>
-      <p className="mt-1 text-xs opacity-80">{hint}</p>
-    </div>
+      <p className="mt-2 text-3xl font-black tabular-nums text-[color:var(--pc-text)]">
+        {value}
+      </p>
+      <p className="mt-1 text-xs text-[color:var(--pc-muted)]">{hint}</p>
+    </button>
   );
 }
 
