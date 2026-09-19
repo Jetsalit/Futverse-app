@@ -1,0 +1,88 @@
+name: PR 227 Exact Head Verification
+
+on:
+  push:
+    branches:
+      - verify/pr-227-exact-head
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: e20677d8447004aaa6b88566d8e420bae055f1f4
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Exact HEAD provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="e20677d8447004aaa6b88566d8e420bae055f1f4"
+          actual="$(git rev-parse HEAD)"
+          echo "EXPECTED_HEAD=$expected"
+          echo "ACTUAL_HEAD=$actual"
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain)"
+          echo "EXACT_HEAD_GATE=PASS"
+
+      - name: Select Java 21
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$JAVA_HOME_21_X64"
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
+          "$JAVA_HOME_21_X64/bin/java" -version
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Targeted squad unit tests
+        run: >-
+          node --import tsx --test
+          tests/proClubSquadRosterModel.unit.test.ts
+          tests/proClubSquadRosterEditorModel.unit.test.ts
+          tests/proClubSquadRosterViewModel.unit.test.ts
+          tests/proClubSquadRosterRepository.unit.test.ts
+          tests/proClubSquadReleasePlayerV1.unit.test.ts
+          tests/proClubSquadRosterPositionOptionalV1Contract.test.ts
+
+      - name: Dedicated squad rules emulator
+        run: >-
+          npx --no-install firebase emulators:exec
+          --project demo-futverse-pro-club-squad-roster-v1
+          --only firestore
+          "node --import tsx --test --test-concurrency=1 tests/firestore.pro-club-squad-roster.rules.test.ts"
+
+      - name: Reject Firestore expression-budget exhaustion
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f firestore-debug.log
+          if grep -Fq "maximum of 1000 expressions to evaluate has been reached" firestore-debug.log; then
+            echo "FIRESTORE_EXPRESSION_BUDGET=FAIL"
+            exit 1
+          fi
+          echo "FIRESTORE_EXPRESSION_BUDGET=PASS"
+
+      - name: Existing Pro Club emulator regression
+        run: npm run test:pro-club-emulator-regression
+
+      - name: TypeScript
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Diff whitespace check
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check 59b3e271debbdafd474bcdfa9c01a560a8b10b36 e20677d8447004aaa6b88566d8e420bae055f1f4
