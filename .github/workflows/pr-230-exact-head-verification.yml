@@ -1,0 +1,71 @@
+name: PR 230 Exact Head Verification
+
+on:
+  push:
+    branches:
+      - verify/pr-230-exact-head
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 30d1c3c220d528d141295947d276d239d0f14670
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Exact HEAD provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="30d1c3c220d528d141295947d276d239d0f14670"
+          actual="$(git rev-parse HEAD)"
+          echo "EXPECTED_HEAD=$expected"
+          echo "ACTUAL_HEAD=$actual"
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain)"
+          echo "EXACT_HEAD_GATE=PASS"
+
+      - name: Install locked dependencies
+        run: |
+          npm ci --ignore-scripts
+          npm --prefix functions ci --ignore-scripts
+
+      - name: Targeted contract tests
+        run: >-
+          node --import tsx --test
+          tests/proClubTechnicalDirectorFullFootballAuthority.unit.test.ts
+          tests/proClubTechnicalDirectorFullFootballAuthorityV1Contract.test.ts
+          tests/proClubTechnicalGovernance.unit.test.ts
+          tests/proClubStaffSubmissionsModel.unit.test.ts
+          tests/proClubStaffSubmissionsRepository.unit.test.ts
+
+      - name: Scope guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="24e08239af7c749a3b15009f0887897e884d73b4"
+          head="30d1c3c220d528d141295947d276d239d0f14670"
+          changed="$(git diff --name-only "$base" "$head")"
+          echo "$changed"
+          if echo "$changed" | grep -Eq '^(firestore\.rules|firebase\.json|firebase\.spark\.json|src/components/|src/lib/firestore/)'; then
+            echo "SCOPE_GUARD=FAIL"
+            exit 1
+          fi
+          echo "SCOPE_GUARD=PASS"
+
+      - name: TypeScript
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Diff whitespace check
+        shell: bash
+        run: git diff --check 24e08239af7c749a3b15009f0887897e884d73b4 30d1c3c220d528d141295947d276d239d0f14670
