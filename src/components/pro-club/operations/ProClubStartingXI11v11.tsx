@@ -12,6 +12,10 @@ import {
 } from "lucide-react";
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
 import type { ProClubSquadRosterRecord } from "../../../lib/firestore/proClubSquadRosterRepository";
+import type {
+  ProClubPersistedShootoutPlan,
+  ProClubPersistedStartingXIPlan,
+} from "../../../lib/proClubMatchStartingXI";
 import {
   PRO_CLUB_GAME_MODEL_PHASES,
   PRO_CLUB_SET_PIECE_DUTIES,
@@ -85,25 +89,56 @@ function displayPhaseTone(phase: (typeof PRO_CLUB_GAME_MODEL_PHASES)[number]): s
 export default function ProClubStartingXI11v11({
   authority,
   roster,
+  initialStartingXI = null,
+  initialShootout = null,
+  saving = false,
+  saveMessage = null,
+  onSaveStartingXI,
+  onSaveShootout,
 }: {
   authority: ProClubOrganizationAuthority;
   roster: readonly ProClubSquadRosterRecord[];
+  initialStartingXI?: ProClubPersistedStartingXIPlan | null;
+  initialShootout?: ProClubPersistedShootoutPlan | null;
+  saving?: boolean;
+  saveMessage?: string | null;
+  onSaveStartingXI?: (plan: ProClubPersistedStartingXIPlan) => void | Promise<void>;
+  onSaveShootout?: (plan: ProClubPersistedShootoutPlan) => void | Promise<void>;
 }) {
-  const [formation, setFormation] = useState<ProClubStartingXIFixedFormation>("4-3-3");
-  const [slotPlayerKeys, setSlotPlayerKeys] = useState<(string | null)[]>(
-    () => [...createEmptyProClubStartingXIDraft("4-3-3").slotPlayerKeys],
+  const persistedFixedFormation =
+    initialStartingXI &&
+    (PRO_CLUB_STARTING_XI_FIXED_FORMATIONS as readonly string[]).includes(
+      initialStartingXI.formation,
+    )
+      ? initialStartingXI.formation as ProClubStartingXIFixedFormation
+      : "4-3-3";
+  const initialDraft = createEmptyProClubStartingXIDraft(persistedFixedFormation);
+  const [formation, setFormation] = useState<ProClubStartingXIFixedFormation>(
+    persistedFixedFormation,
   );
-  const [substitutePlayerKeys, setSubstitutePlayerKeys] = useState<string[]>([]);
+  const [slotPlayerKeys, setSlotPlayerKeys] = useState<(string | null)[]>(
+    () => [...(initialStartingXI?.slotPlayerKeys ?? initialDraft.slotPlayerKeys)],
+  );
+  const [substitutePlayerKeys, setSubstitutePlayerKeys] = useState<string[]>(
+    () => [...(initialStartingXI?.substitutePlayerKeys ?? [])],
+  );
   const [activeSlot, setActiveSlot] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [roleAssignments, setRoleAssignments] = useState<(string | null)[]>(
-    () => [...createEmptyProClubStartingXIDraft("4-3-3").positionRoleAssignments],
+    () => [...(initialStartingXI?.positionRoleAssignments ?? initialDraft.positionRoleAssignments)],
   );
-  const [penaltyPrimary, setPenaltyPrimary] = useState<string[]>([]);
-  const [penaltyBackups, setPenaltyBackups] = useState<string[]>([]);
-  const [coachNotes, setCoachNotes] = useState("");
+  const [setPieceAssignments, setSetPieceAssignments] = useState(
+    () => ({ ...(initialStartingXI?.setPieceAssignments ?? initialDraft.setPieceAssignments) }),
+  );
+  const [penaltyPrimary, setPenaltyPrimary] = useState<string[]>(
+    () => [...(initialShootout?.primaryTakers ?? [])],
+  );
+  const [penaltyBackups, setPenaltyBackups] = useState<string[]>(
+    () => [...(initialShootout?.backupTakers ?? [])],
+  );
+  const [coachNotes, setCoachNotes] = useState(initialStartingXI?.coachNotes ?? "");
 
-  const editable = canAuthorProClubStartingXI(authority);
+  const editable = canAuthorProClubStartingXI(authority) && !saving;
   const players = useMemo(() => buildProClubStartingXIPlayerViews(roster), [roster]);
   const slotViews = useMemo(
     () => buildProClubStartingXISlotViews(formation, slotPlayerKeys, players),
@@ -175,6 +210,36 @@ export default function ProClubStartingXI11v11({
     });
   }
 
+  function assignSetPiece(duty: ProClubSetPieceDuty, playerKey: string) {
+    if (!editable) return;
+    setSetPieceAssignments((current) => ({
+      ...current,
+      [duty]: playerKey || null,
+    }));
+  }
+
+  async function saveStartingXI() {
+    if (!editable || !onSaveStartingXI) return;
+    await onSaveStartingXI({
+      schemaVersion: 1,
+      formation,
+      slotPlayerKeys: [...slotPlayerKeys],
+      substitutePlayerKeys: [...substitutePlayerKeys],
+      positionRoleAssignments: [...roleAssignments],
+      setPieceAssignments: { ...setPieceAssignments },
+      coachNotes,
+    });
+  }
+
+  async function saveShootout() {
+    if (!editable || !onSaveShootout) return;
+    await onSaveShootout({
+      schemaVersion: 1,
+      primaryTakers: [...penaltyPrimary],
+      backupTakers: [...penaltyBackups],
+    });
+  }
+
   function appendPenaltyTaker(playerKey: string, target: "PRIMARY" | "BACKUP") {
     if (!editable) return;
     if ([...penaltyPrimary, ...penaltyBackups].includes(playerKey)) return;
@@ -203,7 +268,9 @@ export default function ProClubStartingXI11v11({
               Pro Club 11v11
             </p>
             <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-amber-300">
-              UI Adapter Preview · Persistence disabled
+              {onSaveStartingXI || onSaveShootout
+                ? "Persistence connected"
+                : "UI Adapter Preview · Persistence disabled"}
             </span>
           </div>
           <h3 id="pro-club-starting-xi-title" className="mt-2 text-2xl font-black text-white">
@@ -213,10 +280,17 @@ export default function ProClubStartingXI11v11({
             จัดตัวจริง · ตัวสำรอง · แผนการเล่น · หน้าที่รายตำแหน่ง · จุดโทษตัดสิน · เตรียมข้อมูลก่อนส่งถึงนักกีฬา
           </p>
         </div>
-        <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/5 px-3 py-2 text-xs text-cyan-200">
-          {editable
-            ? String(authority.staffRole) + " local authoring preview"
-            : "Read-only preview for this staff role"}
+        <div className="space-y-2 text-right">
+          <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/5 px-3 py-2 text-xs text-cyan-200">
+            {editable
+              ? String(authority.staffRole) + " authoring"
+              : saving
+                ? "Saving canonical Match plan…"
+                : "Read-only for this staff role"}
+          </div>
+          {saveMessage && (
+            <p className="max-w-sm text-xs text-slate-400">{saveMessage}</p>
+          )}
         </div>
       </header>
 
@@ -509,15 +583,37 @@ export default function ProClubStartingXI11v11({
             <h4 className="font-black text-white">Set-Piece Duties</h4>
             <div className="mt-3 space-y-1.5">
               {PRO_CLUB_SET_PIECE_DUTIES.map((duty) => (
-                <div key={duty} className="flex items-center justify-between gap-3 rounded-lg bg-slate-900/70 px-3 py-2 text-xs">
+                <label key={duty} className="flex items-center justify-between gap-3 rounded-lg bg-slate-900/70 px-3 py-2 text-xs">
                   <span className="text-slate-400">{DUTY_LABELS[duty]}</span>
-                  <span className="font-semibold text-slate-500">Not assigned</span>
-                </div>
+                  <select
+                    value={setPieceAssignments[duty] ?? ""}
+                    disabled={!editable}
+                    onChange={(event) => assignSetPiece(duty, event.target.value)}
+                    className="max-w-40 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-200"
+                  >
+                    <option value="">Not assigned</option>
+                    {selectedSquadKeys.map((playerKey) => {
+                      const player = byKey.get(playerKey);
+                      return player ? (
+                        <option key={playerKey} value={playerKey}>
+                          #{player.jerseyNumber} {player.shortName}
+                        </option>
+                      ) : null;
+                    })}
+                  </select>
+                </label>
               ))}
             </div>
-            <p className="mt-3 text-[10px] leading-4 text-slate-600">
-              Assignment persistence remains outside this UI adapter slice.
-            </p>
+            {onSaveStartingXI && (
+              <button
+                type="button"
+                disabled={!editable}
+                onClick={() => void saveStartingXI()}
+                className="mt-3 w-full rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-xs font-black text-emerald-200 disabled:opacity-40"
+              >
+                Save Starting XI
+              </button>
+            )}
           </section>
 
           <section className="rounded-2xl border border-slate-800 bg-slate-950/65 p-4">
@@ -556,6 +652,17 @@ export default function ProClubStartingXI11v11({
                 </div>
               </div>
             </div>
+
+            {onSaveShootout && (
+              <button
+                type="button"
+                disabled={!editable}
+                onClick={() => void saveShootout()}
+                className="mt-3 w-full rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs font-black text-amber-200 disabled:opacity-40"
+              >
+                Save Shootout Order
+              </button>
+            )}
 
             {editable && selectedSquadKeys.length > 0 && (
               <div className="mt-3 space-y-2 border-t border-slate-800 pt-3">
