@@ -37,6 +37,7 @@
     "verify:pro-club-audit:local": "node --import tsx scripts/verifyProClubAuditLocal.ts",
     "resolve:pro-club-staff:local": "node --import tsx scripts/resolveProClubStaffCandidateLocal.ts",
     "rename:pro-club:local": "node --import tsx scripts/renameProClubLocal.ts",
+    "assign:pro-club-owner-technical-director:local": "node --import tsx scripts/assignProClubOwnerTechnicalDirectorLocal.ts",
     "test:spark-trusted-local-operations": "node --import tsx --test tests/localTrustedProClubOperations.unit.test.ts"
   },
   "dependencies": {
