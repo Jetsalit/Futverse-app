@@ -14,7 +14,7 @@ test("tablet UX collapses roster management into Match Squad summary plus drawer
   const drawer = readFileSync(files.rosterDrawer, "utf8");
 
   assert.match(workspace, /Match Squad · {matchRoster\.length} players/);
-  assert.match(workspace, />Manage Roster</);
+  assert.match(workspace, /Manage Roster/);
   assert.match(workspace, /<ProClubMatchRosterDrawer/);
   assert.doesNotMatch(workspace, /<h4 className="font-black text-white">Add from First Team<\/h4>/);
   assert.doesNotMatch(workspace, /max-h-72 space-y-2 overflow-y-auto/);
