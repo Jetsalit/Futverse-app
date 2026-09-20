@@ -311,13 +311,15 @@ function parseMatch(matchId: string, raw: unknown): ProClubMatchRecord {
   }
   requireNonNegativeInteger(raw.rosterRevision, "rosterRevision");
 
-  const rosterMutationPlayerKey =
-    raw.rosterMutationPlayerKey === null ? null : raw.rosterMutationPlayerKey;
-  if (
-    rosterMutationPlayerKey !== null &&
-    (typeof rosterMutationPlayerKey !== "string" || !isExactPlayerKey(rosterMutationPlayerKey))
-  ) {
-    throw new Error("Invalid Pro Club Match roster mutation playerKey.");
+  let rosterMutationPlayerKey: string | null = null;
+  if (raw.rosterMutationPlayerKey !== null) {
+    if (
+      typeof raw.rosterMutationPlayerKey !== "string" ||
+      !isExactPlayerKey(raw.rosterMutationPlayerKey)
+    ) {
+      throw new Error("Invalid Pro Club Match roster mutation playerKey.");
+    }
+    rosterMutationPlayerKey = raw.rosterMutationPlayerKey;
   }
   if (
     raw.rosterMutationKind !== null &&
