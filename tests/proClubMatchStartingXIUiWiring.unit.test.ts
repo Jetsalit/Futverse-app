@@ -62,13 +62,19 @@ test("workspace owns repository access while the Starting XI editor stays presen
   }
 });
 
-test("wiring exposes canonical Match roster control and fixed-formation persistence only", () => {
+test("wiring exposes compact Match Squad management and fixed-formation persistence only", () => {
   const workspace = readFileSync(files.workspace, "utf8");
   const editor = readFileSync(files.editor, "utf8");
 
-  assert.match(workspace, /Match roster/);
-  assert.match(workspace, /Add from First Team/);
+  assert.match(workspace, /ProClubMatchRosterDrawer/);
+  assert.match(workspace, /Match Squad/);
+  assert.match(workspace, /Manage Roster/);
+  assert.doesNotMatch(workspace, /<h4 className="font-black text-white">Add from First Team<\/h4>/);
   assert.match(workspace, /CUSTOM formation/);
+
+  assert.match(editor, /ProClubStartingXIPlayerPicker/);
+  assert.match(editor, /\+ Add Substitute/);
+  assert.doesNotMatch(editor, />Available Players</);
   assert.match(editor, /Save Starting XI/);
   assert.match(editor, /Save Shootout Order/);
   assert.match(editor, /setPieceAssignments/);
