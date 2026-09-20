@@ -3993,14 +3993,12 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           /databases/$(database)/documents/proClubs/$(clubId)/members/$(request.auth.uid);
         let staffPath =
           /databases/$(database)/documents/proClubs/$(clubId)/staff/$(request.auth.uid);
+        // Direct status/role reads imply document existence and fail closed
+        // when any canonical authority document is missing.
         return isSignedIn()
-          && exists(userPath)
           && get(userPath).data.get('status', '') in ['Active', 'ACTIVE']
-          && exists(clubPath)
           && get(clubPath).data.get('status', '') == 'ACTIVE'
-          && exists(membershipPath)
           && get(membershipPath).data.get('status', '') == 'ACTIVE'
-          && exists(staffPath)
           && get(staffPath).data.get('status', '') == 'ACTIVE'
           && get(staffPath).data.get('staffRole', '')
             in ['HEAD_COACH', 'TECHNICAL_DIRECTOR'];
@@ -4064,13 +4062,14 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
       }
 
       function proClubMatchRosterIndexStateV1(data) {
+        let rosterPlayerKeys = data.get('rosterPlayerKeys', []);
+        let rosterRevision = data.get('rosterRevision', -1);
         return data.get('schemaVersion', 0) == 1
-          && data.get('rosterPlayerKeys', []) is list
-          && data.get('rosterPlayerKeys', []).size() <= 64
-          && data.get('rosterPlayerKeys', []).toSet().size()
-            == data.get('rosterPlayerKeys', []).size()
-          && data.get('rosterRevision', -1) is int
-          && data.get('rosterRevision', -1) >= 0;
+          && rosterPlayerKeys is list
+          && rosterPlayerKeys.size() <= 64
+          && rosterPlayerKeys.toSet().size() == rosterPlayerKeys.size()
+          && rosterRevision is int
+          && rosterRevision >= 0;
       }
 
       function proClubMatchValidDataV1(data) {
@@ -4386,15 +4385,7 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
 
       function proClubMatchValidSetPiecesV1(assignments, selected) {
         return assignments is map
-          && assignments.keys().hasAll([
-            'CORNER_LEFT',
-            'CORNER_RIGHT',
-            'FREE_KICK_LEFT',
-            'FREE_KICK_RIGHT',
-            'THROW_IN_LEFT',
-            'THROW_IN_RIGHT',
-            'PENALTY'
-          ])
+          && assignments.keys().size() == 7
           && assignments.keys().hasOnly([
             'CORNER_LEFT',
             'CORNER_RIGHT',
@@ -4461,23 +4452,8 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
       }
 
       function proClubMatchStartingXIKeysV1(data) {
-        return data.keys().hasAll([
-            'schemaVersion',
-            'formation',
-            'slotPlayerKeys',
-            'substitutePlayerKeys',
-            'positionRoleAssignments',
-            'setPieceAssignments',
-            'coachNotes',
-            'matchRosterRevision',
-            'revision',
-            'createdAt',
-            'createdBy',
-            'createdByRole',
-            'updatedAt',
-            'updatedBy',
-            'updatedByRole'
-          ])
+        // Exact key contract with one membership scan instead of hasAll+hasOnly.
+        return data.keys().size() == 15
           && data.keys().hasOnly([
             'schemaVersion',
             'formation',
@@ -4501,19 +4477,10 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
         let starters = data.get('slotPlayerKeys', []).removeAll([null]);
         let substitutes = data.get('substitutePlayerKeys', []);
         let selected = starters.concat(substitutes);
-        return proClubMatchStartingXIKeysV1(data)
-          && data.get('schemaVersion', 0) == 1
-          && data.get('formation', '') in [
-            '4-3-3',
-            '4-2-3-1',
-            '4-4-2',
-            '3-5-2',
-            'CUSTOM'
-          ]
-          && data.get('slotPlayerKeys', []) is list
+        return data.get('slotPlayerKeys', []) is list
           && data.get('slotPlayerKeys', []).size() == 11
           && substitutes is list
-          // Fast-fail value validation before set/list-heavy roster checks.
+          // Fast semantic guards run before the exact-key scan.
           && proClubMatchValidRoleAssignmentsV1(
             data.get('positionRoleAssignments', [])
           )
@@ -4522,6 +4489,15 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           && starters.toSet().intersection(substitutes.toSet()).size() == 0
           && rosterPlayerKeys.hasAll(starters)
           && rosterPlayerKeys.hasAll(substitutes)
+          && proClubMatchStartingXIKeysV1(data)
+          && data.get('schemaVersion', 0) == 1
+          && data.get('formation', '') in [
+            '4-3-3',
+            '4-2-3-1',
+            '4-4-2',
+            '3-5-2',
+            'CUSTOM'
+          ]
           && proClubMatchValidSetPiecesV1(
             data.get('setPieceAssignments', {}),
             selected
