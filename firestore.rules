@@ -4434,6 +4434,32 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           );
       }
 
+      function proClubMatchValidRoleAssignmentV1(value) {
+        return value == null
+          || (
+            value is string
+            && value.size() > 0
+            && value.size() <= 160
+            && value.trim() == value
+          );
+      }
+
+      function proClubMatchValidRoleAssignmentsV1(roles) {
+        return roles is list
+          && roles.size() == 11
+          && proClubMatchValidRoleAssignmentV1(roles[0])
+          && proClubMatchValidRoleAssignmentV1(roles[1])
+          && proClubMatchValidRoleAssignmentV1(roles[2])
+          && proClubMatchValidRoleAssignmentV1(roles[3])
+          && proClubMatchValidRoleAssignmentV1(roles[4])
+          && proClubMatchValidRoleAssignmentV1(roles[5])
+          && proClubMatchValidRoleAssignmentV1(roles[6])
+          && proClubMatchValidRoleAssignmentV1(roles[7])
+          && proClubMatchValidRoleAssignmentV1(roles[8])
+          && proClubMatchValidRoleAssignmentV1(roles[9])
+          && proClubMatchValidRoleAssignmentV1(roles[10]);
+      }
+
       function proClubMatchStartingXIKeysV1(data) {
         return data.keys().hasAll([
             'schemaVersion',
@@ -4492,8 +4518,9 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           && substitutes.toSet().size() == substitutes.size()
           && rosterPlayerKeys.hasAll(substitutes)
           && starters.toSet().intersection(substitutes.toSet()).size() == 0
-          && data.get('positionRoleAssignments', []) is list
-          && data.get('positionRoleAssignments', []).size() == 11
+          && proClubMatchValidRoleAssignmentsV1(
+            data.get('positionRoleAssignments', [])
+          )
           && proClubMatchValidSetPiecesV1(
             data.get('setPieceAssignments', {}),
             selected
