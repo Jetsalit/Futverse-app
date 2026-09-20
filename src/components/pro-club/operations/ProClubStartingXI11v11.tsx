@@ -4,7 +4,6 @@ import {
   ClipboardList,
   Goal,
   RotateCcw,
-  Search,
   Send,
   ShieldCheck,
   Sparkles,
@@ -30,8 +29,10 @@ import {
   availableProClubStartingXIPlayers,
   buildProClubStartingXIPlayerViews,
   buildProClubStartingXISlotViews,
-  filterProClubStartingXIPlayerViews,
 } from "./proClubStartingXIViewModel";
+import ProClubStartingXIPlayerPicker, {
+  type ProClubPlayerPickerMode,
+} from "./ProClubStartingXIPlayerPicker";
 
 const GAME_MODEL_COPY: Record<(typeof PRO_CLUB_GAME_MODEL_PHASES)[number], readonly string[]> = {
   IN_POSSESSION: [
@@ -127,7 +128,10 @@ export default function ProClubStartingXI11v11({
     () => [...(initialStartingXI?.substitutePlayerKeys ?? [])],
   );
   const [activeSlot, setActiveSlot] = useState<number | null>(null);
-  const [search, setSearch] = useState("");
+  const [playerPickerMode, setPlayerPickerMode] = useState<ProClubPlayerPickerMode | null>(null);
+  const [activeTacticalPanel, setActiveTacticalPanel] = useState<
+    "ROLES" | "GAME_MODEL" | "SET_PIECES" | "SHOOTOUT"
+  >("ROLES");
   const [roleAssignments, setRoleAssignments] = useState<(string | null)[]>(
     () => [...(initialStartingXI?.positionRoleAssignments ?? initialDraft.positionRoleAssignments)],
   );
@@ -178,15 +182,12 @@ export default function ProClubStartingXI11v11({
   );
   const availablePlayers = useMemo(
     () =>
-      filterProClubStartingXIPlayerViews(
-        availableProClubStartingXIPlayers(
-          players,
-          slotPlayerKeys,
-          substitutePlayerKeys,
-        ),
-        search,
+      availableProClubStartingXIPlayers(
+        players,
+        slotPlayerKeys,
+        substitutePlayerKeys,
       ),
-    [players, slotPlayerKeys, substitutePlayerKeys, search],
+    [players, slotPlayerKeys, substitutePlayerKeys],
   );
   const byKey = useMemo(
     () => new Map(players.map((player) => [player.playerKey, player] as const)),
@@ -196,6 +197,7 @@ export default function ProClubStartingXI11v11({
   function selectFormation(next: ProClubStartingXIFixedFormation) {
     setFormation(next);
     setActiveSlot(null);
+    setPlayerPickerMode(null);
   }
 
   function assignStarter(playerKey: string) {
@@ -209,6 +211,7 @@ export default function ProClubStartingXI11v11({
     });
     setSubstitutePlayerKeys((current) => current.filter((key) => key !== playerKey));
     setActiveSlot(null);
+    setPlayerPickerMode(null);
   }
 
   function removeStarter(slotIndex: number) {
@@ -226,6 +229,7 @@ export default function ProClubStartingXI11v11({
     setSubstitutePlayerKeys((current) =>
       current.includes(playerKey) ? current : [...current, playerKey],
     );
+    setPlayerPickerMode(null);
   }
 
   function removeSubstitute(playerKey: string) {
@@ -332,7 +336,7 @@ export default function ProClubStartingXI11v11({
         </div>
       </header>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(320px,0.75fr)]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.75fr)]">
         <div className="space-y-4">
           <section className="rounded-2xl border border-slate-800 bg-slate-950/65 p-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -365,7 +369,7 @@ export default function ProClubStartingXI11v11({
               </button>
             </div>
 
-            <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+            <div className="mt-4">
               <div className="relative min-h-[610px] overflow-hidden rounded-2xl border border-emerald-400/20 bg-[linear-gradient(180deg,rgba(4,120,87,.82),rgba(6,78,59,.92))] shadow-inner">
                 <div className="absolute inset-4 border-2 border-white/40" />
                 <div className="absolute left-4 right-4 top-1/2 h-px bg-white/40" />
@@ -383,9 +387,10 @@ export default function ProClubStartingXI11v11({
                     <button
                       type="button"
                       disabled={!startingXIEditable}
-                      onClick={() => setActiveSlot((current) =>
-                        current === slot.slotIndex ? null : slot.slotIndex,
-                      )}
+                      onClick={() => {
+                        setActiveSlot(slot.slotIndex);
+                        setPlayerPickerMode("STARTER");
+                      }}
                       className={[
                         "mx-auto flex h-11 w-11 items-center justify-center rounded-full border-2 text-sm font-black shadow-lg transition",
                         activeSlot === slot.slotIndex
@@ -416,117 +421,59 @@ export default function ProClubStartingXI11v11({
                 ))}
               </div>
 
-              <aside className="space-y-3">
-                <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-                  <div className="flex items-center gap-2 text-cyan-300">
-                    <Sparkles size={15} />
-                    <h4 className="text-xs font-black uppercase tracking-[0.12em]">Game Model</h4>
-                  </div>
-                  <div className="mt-3 space-y-2">
-                    {PRO_CLUB_GAME_MODEL_PHASES.map((phase) => (
-                      <article
-                        key={phase}
-                        className={["rounded-lg border p-2", displayPhaseTone(phase)].join(" ")}
-                      >
-                        <p className="text-[10px] font-black uppercase tracking-wide">
-                          {PHASE_LABELS[phase]}
-                        </p>
-                        <ul className="mt-1 space-y-0.5 text-[10px] leading-4 text-slate-300">
-                          {GAME_MODEL_COPY[phase].map((line) => (
-                            <li key={line}>• {line}</li>
-                          ))}
-                        </ul>
-                      </article>
-                    ))}
-                  </div>
-                </div>
-              </aside>
             </div>
           </section>
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <section className="rounded-2xl border border-slate-800 bg-slate-950/65 p-4">
-              <div className="flex items-center justify-between gap-3">
+          <section className="rounded-2xl border border-slate-800 bg-slate-950/65 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
                 <h4 className="flex items-center gap-2 font-black text-white">
                   <Users size={17} className="text-emerald-300" />
                   Substitutes
                 </h4>
-                <span className="text-xs font-bold text-slate-500">
-                  {substitutePlayerKeys.length} selected
-                </span>
+                <p className="mt-1 text-xs text-slate-500">
+                  {substitutePlayerKeys.length} selected from Match Squad
+                </p>
               </div>
-              <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-                {substitutePlayerKeys.length === 0 ? (
-                  <p className="text-sm text-slate-500">No substitutes selected in this local preview.</p>
-                ) : (
-                  substitutePlayerKeys.map((playerKey) => {
-                    const player = byKey.get(playerKey);
-                    if (!player) return null;
-                    return (
-                      <button
-                        key={playerKey}
-                        type="button"
-                        onClick={() => removeSubstitute(playerKey)}
-                        className="min-w-24 rounded-xl border border-slate-700 bg-slate-900 p-2 text-left"
-                      >
-                        <p className="text-lg font-black text-cyan-200">#{player.jerseyNumber}</p>
-                        <p className="truncate text-xs font-bold text-white">{player.shortName}</p>
-                        <p className="mt-1 text-[10px] text-slate-500">{player.positionLabel}</p>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            </section>
 
-            <section className="rounded-2xl border border-slate-800 bg-slate-950/65 p-4">
-              <h4 className="font-black text-white">Available Players</h4>
-              <label className="relative mt-3 block">
-                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                <input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search player, jersey, position or FUTID..."
-                  className="w-full rounded-xl border border-slate-700 bg-slate-900 py-2 pl-9 pr-3 text-xs text-white outline-none focus:border-cyan-400/50"
-                />
-              </label>
-              <div className="mt-3 max-h-52 space-y-2 overflow-y-auto pr-1">
-                {availablePlayers.map((player) => (
-                  <article key={player.playerKey} className="rounded-xl border border-slate-800 bg-slate-900/70 p-2.5">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-xs font-black text-white">
-                          #{player.jerseyNumber} · {player.fullName}
-                        </p>
-                        <p className="mt-0.5 text-[10px] text-slate-500">
-                          {player.positionLabel} · FUTID {player.futIdLabel}
-                        </p>
-                      </div>
-                      {startingXIEditable && (
-                        <div className="flex shrink-0 gap-1">
-                          <button
-                            type="button"
-                            disabled={activeSlot === null}
-                            onClick={() => assignStarter(player.playerKey)}
-                            className="rounded-lg border border-cyan-400/30 px-2 py-1 text-[10px] font-bold text-cyan-200 disabled:opacity-30"
-                          >
-                            Place
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => addSubstitute(player.playerKey)}
-                            className="rounded-lg border border-emerald-400/30 px-2 py-1 text-[10px] font-bold text-emerald-200"
-                          >
-                            Bench
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </section>
-          </div>
+              {startingXIEditable && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveSlot(null);
+                    setPlayerPickerMode("SUBSTITUTE");
+                  }}
+                  className="min-h-11 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-xs font-black text-emerald-200"
+                >
+                  + Add Substitute
+                </button>
+              )}
+            </div>
+
+            <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+              {substitutePlayerKeys.length === 0 ? (
+                <p className="py-3 text-sm text-slate-500">No substitutes selected.</p>
+              ) : (
+                substitutePlayerKeys.map((playerKey) => {
+                  const player = byKey.get(playerKey);
+                  if (!player) return null;
+                  return (
+                    <button
+                      key={playerKey}
+                      type="button"
+                      disabled={!startingXIEditable}
+                      onClick={() => removeSubstitute(playerKey)}
+                      className="min-h-16 min-w-28 rounded-xl border border-slate-700 bg-slate-900 p-2 text-left disabled:opacity-60"
+                    >
+                      <p className="text-lg font-black text-cyan-200">#{player.jerseyNumber}</p>
+                      <p className="truncate text-xs font-bold text-white">{player.shortName}</p>
+                      <p className="mt-1 text-[10px] text-slate-500">{player.positionLabel}</p>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </section>
 
           <div className="grid gap-4 lg:grid-cols-3">
             <section className="rounded-2xl border border-slate-800 bg-slate-950/65 p-4">
@@ -583,190 +530,272 @@ export default function ProClubStartingXI11v11({
           </div>
         </div>
 
-        <aside className="space-y-4">
-          <section className="rounded-2xl border border-slate-800 bg-slate-950/65 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <h4 className="font-black text-white">Position Role Assignments</h4>
-              <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">11 slots</span>
-            </div>
-            <div className="mt-3 space-y-2">
-              {PRO_CLUB_STARTING_XI_FIXED_SLOTS[formation].map((slot) => {
-                const playerKey = slotPlayerKeys[slot.slotIndex];
-                const player = playerKey ? byKey.get(playerKey) : null;
-                return (
-                  <label key={slot.slotIndex} className="block rounded-xl border border-slate-800 bg-slate-900/70 p-2.5">
-                    <span className="flex items-center justify-between gap-2 text-[10px]">
-                      <strong className="rounded-md bg-cyan-400/10 px-1.5 py-0.5 text-cyan-300">
-                        {slot.position}
-                      </strong>
-                      <span className="truncate text-slate-500">
-                        {player ? "#" + player.jerseyNumber + " " + player.shortName : "Player not selected"}
-                      </span>
-                    </span>
-                    <input
-                      value={roleAssignments[slot.slotIndex] ?? ""}
-                      disabled={!startingXIEditable}
-                      maxLength={160}
-                      onChange={(event) => assignRole(slot.slotIndex, event.target.value)}
-                      placeholder="Assign positional duty..."
-                      className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-cyan-400/50 disabled:opacity-50"
-                    />
-                  </label>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="rounded-2xl border border-slate-800 bg-slate-950/65 p-4">
-            <h4 className="font-black text-white">Set-Piece Duties</h4>
-            <div className="mt-3 space-y-1.5">
-              {PRO_CLUB_SET_PIECE_DUTIES.map((duty) => (
-                <label key={duty} className="flex items-center justify-between gap-3 rounded-lg bg-slate-900/70 px-3 py-2 text-xs">
-                  <span className="text-slate-400">{DUTY_LABELS[duty]}</span>
-                  <select
-                    value={setPieceAssignments[duty] ?? ""}
-                    disabled={!startingXIEditable}
-                    onChange={(event) => assignSetPiece(duty, event.target.value)}
-                    className="max-w-40 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-200"
-                  >
-                    <option value="">Not assigned</option>
-                    {selectedSquadKeys.map((playerKey) => {
-                      const player = byKey.get(playerKey);
-                      return player ? (
-                        <option key={playerKey} value={playerKey}>
-                          #{player.jerseyNumber} {player.shortName}
-                        </option>
-                      ) : null;
-                    })}
-                  </select>
-                </label>
+        <aside className="space-y-4 lg:sticky lg:top-4 lg:self-start">
+          <section className="rounded-2xl border border-slate-800 bg-slate-950/65 p-3">
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-900 p-1 2xl:grid-cols-4">
+              {([
+                ["ROLES", "Roles"],
+                ["GAME_MODEL", "Game Model"],
+                ["SET_PIECES", "Set Pieces"],
+                ["SHOOTOUT", "Shootout"],
+              ] as const).map(([panel, label]) => (
+                <button
+                  key={panel}
+                  type="button"
+                  aria-pressed={activeTacticalPanel === panel}
+                  onClick={() => setActiveTacticalPanel(panel)}
+                  className={[
+                    "min-h-10 rounded-lg px-2 py-2 text-[10px] font-black transition",
+                    activeTacticalPanel === panel
+                      ? "bg-cyan-400/15 text-cyan-200"
+                      : "text-slate-500 hover:text-slate-300",
+                  ].join(" ")}
+                >
+                  {label}
+                </button>
               ))}
             </div>
-            {onSaveStartingXI && (
-              <button
-                type="button"
-                disabled={!startingXIEditable}
-                onClick={() => void saveStartingXI()}
-                className="mt-3 w-full rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-xs font-black text-emerald-200 disabled:opacity-40"
-              >
-                Save Starting XI
-              </button>
-            )}
           </section>
 
-          <section className="rounded-2xl border border-slate-800 bg-slate-950/65 p-4">
-            <h4 className="flex items-center gap-2 font-black text-white">
-              <Goal size={17} className="text-amber-300" />
-              Penalty Shootout Order
-            </h4>
-            <p className="mt-1 text-[10px] text-slate-500">
-              For competitions requiring kicks from the penalty mark after a draw.
-            </p>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-wide text-cyan-300">Primary 1–5</p>
-                <div className="mt-2 space-y-1.5">
-                  {Array.from({ length: 5 }, (_, index) => {
-                    const player = byKey.get(penaltyPrimary[index] ?? "");
-                    return (
-                      <div key={index} className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 px-2 py-1.5 text-xs text-slate-300">
-                        <span>{index + 1}. {player ? "#" + player.jerseyNumber + " " + player.shortName : "Not set"}</span>
-                        {player && shootoutEditable && (
-                          <button
-                            type="button"
-                            onClick={() => removePenaltyTaker(player.playerKey)}
-                            className="text-[9px] font-bold uppercase tracking-wide text-rose-300"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+          {activeTacticalPanel === "ROLES" && (
+            <section className="rounded-2xl border border-slate-800 bg-slate-950/65 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <h4 className="font-black text-white">Position Role Assignments</h4>
+                <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                  11 slots
+                </span>
               </div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-wide text-violet-300">Backups</p>
-                <div className="mt-2 space-y-1.5">
-                  {Array.from({ length: 5 }, (_, index) => {
-                    const player = byKey.get(penaltyBackups[index] ?? "");
-                    return (
-                      <div key={index} className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 px-2 py-1.5 text-xs text-slate-300">
-                        <span>B{index + 1}. {player ? "#" + player.jerseyNumber + " " + player.shortName : "Not set"}</span>
-                        {player && shootoutEditable && (
-                          <button
-                            type="button"
-                            onClick={() => removePenaltyTaker(player.playerKey)}
-                            className="text-[9px] font-bold uppercase tracking-wide text-rose-300"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {onSaveShootout && (
-              <button
-                type="button"
-                disabled={!shootoutEditable}
-                onClick={() => void saveShootout()}
-                className="mt-3 w-full rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs font-black text-amber-200 disabled:opacity-40"
-              >
-                Save Shootout Order
-              </button>
-            )}
-
-            {shootoutEditable && selectedSquadKeys.length > 0 && (
-              <div className="mt-3 space-y-2 border-t border-slate-800 pt-3">
-                <p className="text-[10px] font-bold text-slate-500">Add selected match-squad player</p>
-                <div className="max-h-32 space-y-1 overflow-y-auto">
-                  {selectedSquadKeys.map((playerKey) => {
-                    const player = byKey.get(playerKey);
-                    if (!player) return null;
-                    return (
-                      <div key={playerKey} className="flex items-center justify-between gap-2 text-[10px]">
-                        <span className="truncate text-slate-300">
-                          #{player.jerseyNumber} {player.shortName}
+              <div className="mt-3 max-h-[66vh] space-y-2 overflow-y-auto pr-1">
+                {PRO_CLUB_STARTING_XI_FIXED_SLOTS[formation].map((slot) => {
+                  const playerKey = slotPlayerKeys[slot.slotIndex];
+                  const player = playerKey ? byKey.get(playerKey) : null;
+                  return (
+                    <label key={slot.slotIndex} className="block rounded-xl border border-slate-800 bg-slate-900/70 p-2.5">
+                      <span className="flex items-center justify-between gap-2 text-[10px]">
+                        <strong className="rounded-md bg-cyan-400/10 px-1.5 py-0.5 text-cyan-300">
+                          {slot.position}
+                        </strong>
+                        <span className="truncate text-slate-500">
+                          {player ? "#" + player.jerseyNumber + " " + player.shortName : "Player not selected"}
                         </span>
-                        <div className="flex gap-1">
-                          <button
-                            type="button"
-                            onClick={() => appendPenaltyTaker(playerKey, "PRIMARY")}
-                            className="rounded-md border border-cyan-400/20 px-1.5 py-1 font-bold text-cyan-300"
-                          >
-                            1–5
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => appendPenaltyTaker(playerKey, "BACKUP")}
-                            className="rounded-md border border-violet-400/20 px-1.5 py-1 font-bold text-violet-300"
-                          >
-                            Backup
-                          </button>
+                      </span>
+                      <input
+                        value={roleAssignments[slot.slotIndex] ?? ""}
+                        disabled={!startingXIEditable}
+                        maxLength={160}
+                        onChange={(event) => assignRole(slot.slotIndex, event.target.value)}
+                        placeholder="Assign positional duty..."
+                        className="mt-2 min-h-10 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-cyan-400/50 disabled:opacity-50"
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {activeTacticalPanel === "GAME_MODEL" && (
+            <section className="rounded-2xl border border-slate-800 bg-slate-950/65 p-4">
+              <div className="flex items-center gap-2 text-cyan-300">
+                <Sparkles size={15} />
+                <h4 className="font-black text-white">Game Model</h4>
+              </div>
+              <div className="mt-3 space-y-2">
+                {PRO_CLUB_GAME_MODEL_PHASES.map((phase) => (
+                  <article
+                    key={phase}
+                    className={["rounded-xl border p-3", displayPhaseTone(phase)].join(" ")}
+                  >
+                    <p className="text-[10px] font-black uppercase tracking-wide">
+                      {PHASE_LABELS[phase]}
+                    </p>
+                    <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-300">
+                      {GAME_MODEL_COPY[phase].map((line) => (
+                        <li key={line}>• {line}</li>
+                      ))}
+                    </ul>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {activeTacticalPanel === "SET_PIECES" && (
+            <section className="rounded-2xl border border-slate-800 bg-slate-950/65 p-4">
+              <h4 className="font-black text-white">Set-Piece Duties</h4>
+              <div className="mt-3 space-y-2">
+                {PRO_CLUB_SET_PIECE_DUTIES.map((duty) => (
+                  <label key={duty} className="flex min-h-11 items-center justify-between gap-3 rounded-lg bg-slate-900/70 px-3 py-2 text-xs">
+                    <span className="text-slate-400">{DUTY_LABELS[duty]}</span>
+                    <select
+                      value={setPieceAssignments[duty] ?? ""}
+                      disabled={!startingXIEditable}
+                      onChange={(event) => assignSetPiece(duty, event.target.value)}
+                      className="max-w-44 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200"
+                    >
+                      <option value="">Not assigned</option>
+                      {selectedSquadKeys.map((playerKey) => {
+                        const player = byKey.get(playerKey);
+                        return player ? (
+                          <option key={playerKey} value={playerKey}>
+                            #{player.jerseyNumber} {player.shortName}
+                          </option>
+                        ) : null;
+                      })}
+                    </select>
+                  </label>
+                ))}
+              </div>
+              {onSaveStartingXI && (
+                <button
+                  type="button"
+                  disabled={!startingXIEditable}
+                  onClick={() => void saveStartingXI()}
+                  className="mt-4 min-h-11 w-full rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-xs font-black text-emerald-200 disabled:opacity-40"
+                >
+                  Save Starting XI
+                </button>
+              )}
+            </section>
+          )}
+
+          {activeTacticalPanel === "SHOOTOUT" && (
+            <section className="rounded-2xl border border-slate-800 bg-slate-950/65 p-4">
+              <h4 className="flex items-center gap-2 font-black text-white">
+                <Goal size={17} className="text-amber-300" />
+                Penalty Shootout Order
+              </h4>
+              <p className="mt-1 text-[10px] text-slate-500">
+                For competitions requiring kicks from the penalty mark after a draw.
+              </p>
+
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-wide text-cyan-300">
+                    Primary 1–5
+                  </p>
+                  <div className="mt-2 space-y-1.5">
+                    {Array.from({ length: 5 }, (_, index) => {
+                      const player = byKey.get(penaltyPrimary[index] ?? "");
+                      return (
+                        <div key={index} className="flex min-h-10 items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 px-2 py-1.5 text-xs text-slate-300">
+                          <span>{index + 1}. {player ? "#" + player.jerseyNumber + " " + player.shortName : "Not set"}</span>
+                          {player && shootoutEditable && (
+                            <button
+                              type="button"
+                              onClick={() => removePenaltyTaker(player.playerKey)}
+                              className="text-[9px] font-bold uppercase tracking-wide text-rose-300"
+                            >
+                              Remove
+                            </button>
+                          )}
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-wide text-violet-300">
+                    Backups
+                  </p>
+                  <div className="mt-2 space-y-1.5">
+                    {Array.from({ length: 5 }, (_, index) => {
+                      const player = byKey.get(penaltyBackups[index] ?? "");
+                      return (
+                        <div key={index} className="flex min-h-10 items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 px-2 py-1.5 text-xs text-slate-300">
+                          <span>B{index + 1}. {player ? "#" + player.jerseyNumber + " " + player.shortName : "Not set"}</span>
+                          {player && shootoutEditable && (
+                            <button
+                              type="button"
+                              onClick={() => removePenaltyTaker(player.playerKey)}
+                              className="text-[9px] font-bold uppercase tracking-wide text-rose-300"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
-            )}
-          </section>
 
-          <section className="rounded-2xl border border-slate-800 bg-slate-950/65 p-4">
-            <h4 className="flex items-center gap-2 font-black text-white">
-              <ShieldCheck size={17} className="text-emerald-300" />
-              Live Change Log / Audit Trail
-            </h4>
-            <p className="mt-3 rounded-xl border border-dashed border-slate-700 p-3 text-xs leading-5 text-slate-500">
-              No persisted changes in this UI adapter preview. Audit persistence will be activated only with a reviewed Pro Club Match contract.
-            </p>
-          </section>
+              {onSaveShootout && (
+                <button
+                  type="button"
+                  disabled={!shootoutEditable}
+                  onClick={() => void saveShootout()}
+                  className="mt-4 min-h-11 w-full rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs font-black text-amber-200 disabled:opacity-40"
+                >
+                  Save Shootout Order
+                </button>
+              )}
+
+              {shootoutEditable && selectedSquadKeys.length > 0 && (
+                <div className="mt-4 space-y-2 border-t border-slate-800 pt-3">
+                  <p className="text-[10px] font-bold text-slate-500">
+                    Add selected Match Squad player
+                  </p>
+                  <div className="max-h-44 space-y-1 overflow-y-auto">
+                    {selectedSquadKeys.map((playerKey) => {
+                      const player = byKey.get(playerKey);
+                      if (!player) return null;
+                      return (
+                        <div key={playerKey} className="flex min-h-10 items-center justify-between gap-2 text-[10px]">
+                          <span className="truncate text-slate-300">
+                            #{player.jerseyNumber} {player.shortName}
+                          </span>
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => appendPenaltyTaker(playerKey, "PRIMARY")}
+                              className="rounded-md border border-cyan-400/20 px-2 py-1.5 font-bold text-cyan-300"
+                            >
+                              1–5
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => appendPenaltyTaker(playerKey, "BACKUP")}
+                              className="rounded-md border border-violet-400/20 px-2 py-1.5 font-bold text-violet-300"
+                            >
+                              Backup
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
         </aside>
       </div>
+
+      <ProClubStartingXIPlayerPicker
+        open={playerPickerMode !== null}
+        mode={playerPickerMode ?? "STARTER"}
+        slotLabel={
+          activeSlot === null
+            ? null
+            : PRO_CLUB_STARTING_XI_FIXED_SLOTS[formation].find(
+            (slot) => slot.slotIndex === activeSlot,
+          )?.position ?? null
+        }
+        players={availablePlayers}
+        onClose={() => {
+          setPlayerPickerMode(null);
+          setActiveSlot(null);
+        }}
+        onSelect={(playerKey) => {
+          if (playerPickerMode === "SUBSTITUTE") {
+            addSubstitute(playerKey);
+          } else {
+            assignStarter(playerKey);
+          }
+        }}
+      />
     </section>
   );
 }
