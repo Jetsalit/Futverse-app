@@ -67,6 +67,40 @@ test("tablet landscape gives pitch primary space and tactical tools one tabbed s
   assert.match(editor, /lg:sticky lg:top-4/);
 });
 
+test("roster drawer remains mounted independently of fixed or CUSTOM formation rendering", () => {
+  const workspace = readFileSync(files.workspace, "utf8");
+
+  const drawerIndex = workspace.indexOf("<ProClubMatchRosterDrawer");
+  const loadingBranchIndex = workspace.indexOf("{loadingMatch ? (");
+  const customBranchIndex = workspace.indexOf('startingXI?.formation === "CUSTOM"');
+
+  assert.notEqual(drawerIndex, -1);
+  assert.notEqual(loadingBranchIndex, -1);
+  assert.notEqual(customBranchIndex, -1);
+  assert.equal(
+    drawerIndex < loadingBranchIndex,
+    true,
+    "Manage Roster drawer must mount outside formation-specific rendering",
+  );
+});
+
+test("Starting XI save action is persistent across tactical tabs instead of living inside Set Pieces", () => {
+  const editor = readFileSync(files.editor, "utf8");
+
+  const tabsIndex = editor.indexOf('["ROLES", "Roles"]');
+  const saveIndex = editor.indexOf("Save Starting XI");
+  const rolesBranchIndex = editor.indexOf('activeTacticalPanel === "ROLES"');
+  const setPiecesBranchIndex = editor.indexOf('activeTacticalPanel === "SET_PIECES"');
+
+  assert.notEqual(tabsIndex, -1);
+  assert.notEqual(saveIndex, -1);
+  assert.notEqual(rolesBranchIndex, -1);
+  assert.notEqual(setPiecesBranchIndex, -1);
+  assert.equal(saveIndex < rolesBranchIndex, true);
+  assert.equal(saveIndex < setPiecesBranchIndex, true);
+  assert.equal((editor.match(/Save Starting XI/g) ?? []).length, 1);
+});
+
 test("tablet interaction surfaces keep touch-sized controls and persistence separation", () => {
   const workspace = readFileSync(files.workspace, "utf8");
   const editor = readFileSync(files.editor, "utf8");
