@@ -251,6 +251,67 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
         assert.equal(resolutionRequests.length, 1, "previous entry must not authorize this entry");
       }
     });
+    await t.test("slow discovery shows retry and stale first response cannot reopen the wrong attempt", async () => {
+      resetScenario();
+
+      const originalSetTimeout = globalThis.setTimeout;
+      const originalClearTimeout = globalThis.clearTimeout;
+      Object.defineProperty(globalThis, "setTimeout", {
+        configurable: true,
+        writable: true,
+        value: ((handler: TimerHandler, timeout?: number, ...args: unknown[]) =>
+          originalSetTimeout(handler, timeout === 4000 ? 0 : timeout, ...args)) as typeof setTimeout,
+      });
+      Object.defineProperty(globalThis, "clearTimeout", {
+        configurable: true,
+        writable: true,
+        value: originalClearTimeout,
+      });
+
+      let releaseFirst!: () => void;
+      waitForDiscovery = new Promise(resolve => { releaseFirst = resolve; });
+      discoveryRows = [{ clubId: "club-beta" }];
+
+      try {
+        await mountPortal();
+        await settle();
+        assert.match(text(), /This is taking longer than usual/);
+        const retryButton = findButtonContaining("Try again");
+        assert.ok(retryButton);
+        assert.ok(findButtonContaining("Back"));
+        assert.doesNotMatch(text(), /Team dashboard/);
+
+        waitForDiscovery = null;
+        discoveryRows = [{ clubId: "club-alpha" }];
+
+        await act(async () => {
+          retryButton.click();
+        });
+        await settle();
+
+        assert.match(text(), /Team dashboard Alpha United/);
+        assert.equal(resolutionRequests.at(-1)?.organizationId, "club-alpha");
+
+        releaseFirst();
+        await settle();
+
+        assert.match(text(), /Team dashboard Alpha United/);
+        assert.doesNotMatch(text(), /Beta City/);
+        assert.equal(resolutionRequests.filter(({ organizationId }) => organizationId === "club-beta").length, 0);
+      } finally {
+        Object.defineProperty(globalThis, "setTimeout", {
+          configurable: true,
+          writable: true,
+          value: originalSetTimeout,
+        });
+        Object.defineProperty(globalThis, "clearTimeout", {
+          configurable: true,
+          writable: true,
+          value: originalClearTimeout,
+        });
+      }
+    });
+
     await t.test("restored re-entry waits for a new authority generation", async () => {
       resetScenario();
       discoveryRows = [{ clubId: "club-alpha" }];
