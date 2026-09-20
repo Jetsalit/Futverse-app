@@ -7,6 +7,7 @@ import {
 
 import {
   resolveProClubOrganizationAuthority,
+  type ProClubOrganizationAuthority,
 } from "./firestore/proClubOrganizationAdapter";
 
 import type {
@@ -16,6 +17,7 @@ import type {
 
 
 export interface ProClubRuntimeAuthorityBridgeResult {
+  readonly authority: Readonly<ProClubOrganizationAuthority> | null;
   readonly sourceState: ProClubReadState | null;
   readonly runtimeResult: OrganizationResolutionResult | null;
 }
@@ -25,8 +27,10 @@ function createBridgeResult(
   sourceState: ProClubReadState,
   request: unknown,
   status: OrganizationResolutionStatus,
+  authority: Readonly<ProClubOrganizationAuthority> | null = null,
 ): ProClubRuntimeAuthorityBridgeResult {
   return Object.freeze({
+    authority,
     sourceState,
     runtimeResult:
       createOrganizationResolutionResult(
@@ -59,6 +63,7 @@ export async function resolveProClubRuntimeAuthority(
     return Object.freeze({
       sourceState: null,
       runtimeResult: null,
+      authority: null,
     });
   }
 
@@ -79,6 +84,7 @@ export async function resolveProClubRuntimeAuthority(
     return Object.freeze({
       sourceState: null,
       runtimeResult: trustedFailureResult,
+      authority: null,
     });
   }
 
@@ -173,6 +179,7 @@ export async function resolveProClubRuntimeAuthority(
       "FOUND",
       request,
       "AUTHORIZED",
+      Object.freeze({ ...authorityResult.value }),
     );
   }
 

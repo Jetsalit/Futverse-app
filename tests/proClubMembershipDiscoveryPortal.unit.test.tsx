@@ -19,7 +19,7 @@ interface Authority {
   membershipStatus: "ACTIVE";
   membershipAuthorizationRole: "MEMBER";
   hasMembershipAuthority: true;
-  staffRole: "HEAD_COACH";
+  staffRole: "HEAD_COACH" | null;
 }
 
 test("Pro Club Membership Discovery V1 portal contract", async (t) => {
@@ -48,6 +48,10 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
   let discoveryRows: DiscoveryRow[] = [];
   let discoveryCalls: string[] = [];
   let workspaceLoads: string[] = [];
+  let supportPresentation = false;
+  let waitForAuthority: Promise<void> | null = null;
+  let waitForDiscovery: Promise<void> | null = null;
+  let discoveryFails = false;
   const resolutionRequests: Array<{ uid: string; organizationId: string }> = [];
 
   function authority(
@@ -101,7 +105,7 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
       namedExports: {
         useAuth: () => ({
           actualUser: { uid },
-          currentUser: { uid, supportPresentation: false },
+          currentUser: { uid, supportPresentation },
         }),
       },
     }),
@@ -115,6 +119,8 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
       namedExports: {
         loadOwnProClubMembershipDiscoveries: async (requestedUid: string) => {
           discoveryCalls.push(requestedUid);
+          if (waitForDiscovery) await waitForDiscovery;
+          if (discoveryFails) throw new Error("Discovery unavailable");
           return discoveryRows;
         },
       },
@@ -125,10 +131,12 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
           request: { uid: string; organizationId: string },
         ) => {
           resolutionRequests.push(request);
+          if (waitForAuthority) await waitForAuthority;
           const result = authorities.has(request.organizationId)
             ? "AUTHORIZED"
             : "REJECTED";
           return {
+            authority: authorities.get(request.organizationId) ?? null,
             sourceState: result === "AUTHORIZED" ? "FOUND" : "MISSING",
             runtimeResult: createOrganizationResolutionResult(request, result),
           };
@@ -209,6 +217,10 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
     discoveryCalls = [];
     workspaceLoads = [];
     resolutionRequests.length = 0;
+    supportPresentation = false;
+    waitForAuthority = null;
+    waitForDiscovery = null;
+    discoveryFails = false;
   }
 
   function findButtonContaining(label: string): HTMLButtonElement | undefined {
@@ -218,6 +230,72 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
   }
 
   try {
+    await t.test("re-entry cannot display retained authority during empty, failed or multiple-club discovery", async () => {
+      for (const scenario of ["empty", "failed", "multiple"] as const) {
+        resetScenario();
+        discoveryRows = [{ clubId: "club-alpha" }];
+        await mountPortal();
+        assert.match(text(), /Team dashboard Alpha United/);
+        await act(async () => root!.render(<OrganizationRuntimeProvider><div>FutVerse</div></OrganizationRuntimeProvider>));
+        clearProClubWorkspaceSession();
+        let release!: () => void;
+        waitForDiscovery = new Promise(resolve => { release = resolve; });
+        discoveryRows = scenario === "multiple" ? [{ clubId: "club-alpha" }, { clubId: "club-beta" }] : [];
+        discoveryFails = scenario === "failed";
+        await act(async () => root!.render(<OrganizationRuntimeProvider><ProClubPortal onBack={() => {}} onLogout={() => {}} /></OrganizationRuntimeProvider>));
+        assert.doesNotMatch(text(), /Team dashboard/);
+        assert.ok(container.querySelector('[role="status"]'));
+        release(); await settle();
+        assert.doesNotMatch(text(), /Team dashboard/);
+        assert.match(text(), scenario === "multiple" ? /Choose your club/ : /Staff onboarding/);
+        assert.equal(resolutionRequests.length, 1, "previous entry must not authorize this entry");
+      }
+    });
+    await t.test("restored re-entry waits for a new authority generation", async () => {
+      resetScenario();
+      discoveryRows = [{ clubId: "club-alpha" }];
+      await mountPortal();
+      await act(async () => root!.render(<OrganizationRuntimeProvider><div>FutVerse</div></OrganizationRuntimeProvider>));
+      let release!: () => void;
+      waitForAuthority = new Promise(resolve => { release = resolve; });
+      await act(async () => root!.render(<OrganizationRuntimeProvider><ProClubPortal onBack={() => {}} onLogout={() => {}} /></OrganizationRuntimeProvider>));
+      assert.doesNotMatch(text(), /Team dashboard/);
+      assert.equal(resolutionRequests.length, 2);
+      release(); await settle();
+      assert.match(text(), /Team dashboard Alpha United/);
+      assert.deepEqual(workspaceLoads, []);
+    });
+    await t.test("pending restored authority shows only progress and safe navigation", async () => {
+      resetScenario();
+      let release!: () => void;
+      waitForAuthority = new Promise(resolve => { release = resolve; });
+      rememberProClubWorkspaceSession("club-remembered");
+      await mountPortal();
+      assert.ok(container.querySelector('[role="status"]'));
+      assert.ok(findButtonContaining("Back to FutVerse"));
+      assert.ok(findButtonContaining("Sign out"));
+      assert.doesNotMatch(text(), /Your club starts here|Staff onboarding|Team dashboard/);
+      release();
+      await settle();
+      assert.match(text(), /Remembered United/);
+    });
+    await t.test("active member without a staff role can enter", async () => {
+      resetScenario();
+      const player = { ...authority("club-player", "Player Club"), staffRole: null };
+      authorities.set("club-player", player);
+      discoveryRows = [{ clubId: "club-player" }];
+      await mountPortal();
+      assert.match(text(), /Player Club/);
+      assert.deepEqual(workspaceLoads, []);
+    });
+    await t.test("support presentation cannot discover or enter a club", async () => {
+      resetScenario();
+      supportPresentation = true;
+      await mountPortal();
+      assert.match(text(), /Sign in with your own account/);
+      assert.deepEqual(discoveryCalls, []);
+      assert.deepEqual(resolutionRequests, []);
+    });
     await t.test("remembered valid club remains the fastest canonical path", async () => {
       resetScenario();
       discoveryRows = [{ clubId: "club-alpha" }];
@@ -226,6 +304,7 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
       await mountPortal();
 
       assert.equal(discoveryCalls.length, 0);
+      assert.deepEqual(workspaceLoads, []);
       assert.equal(resolutionRequests.length, 1);
       assert.equal(resolutionRequests[0]?.uid, uid);
       assert.equal(resolutionRequests[0]?.organizationId, "club-remembered");
@@ -239,7 +318,7 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
       await mountPortal();
 
       assert.deepEqual(discoveryCalls, [uid]);
-      assert.ok(workspaceLoads.includes("club-alpha"));
+      assert.deepEqual(workspaceLoads, []);
       assert.equal(resolutionRequests.length, 1);
       assert.equal(resolutionRequests[0]?.organizationId, "club-alpha");
       assert.match(text(), /Alpha United/);
@@ -263,8 +342,8 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
       await mountPortal();
 
       assert.deepEqual(discoveryCalls, [uid]);
-      assert.deepEqual(workspaceLoads, ["club-stale"]);
-      assert.equal(resolutionRequests.length, 0);
+      assert.deepEqual(workspaceLoads, []);
+      assert.equal(resolutionRequests.length, 1);
       assert.match(text(), /Staff onboarding/);
       assert.match(text(), /Club workspace/);
     });

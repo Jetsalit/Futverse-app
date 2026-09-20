@@ -154,6 +154,38 @@ function createResolvingRuntime(
 test(
   "Organization Runtime Pro Club Authority Bridge V1",
   async (t) => {
+    await t.test("returns an immutable verified authority without repeating server reads", async () => {
+      const { request } = createResolvingRuntime("PRO_CLUB", "club", "actor");
+      const reads: string[] = [];
+      const result = await resolveProClubRuntimeAuthority(request, makeOps({
+        "proClubs/club": activeClub("club"),
+        "proClubs/club/members/actor": membership("actor", "MEMBER", "ACTIVE"),
+      }, reads));
+      assert.equal(result.authority?.organizationId, "club");
+      assert.equal(result.authority?.userId, "actor");
+      assert.equal(result.authority?.hasMembershipAuthority, true);
+      assert.equal(Object.isFrozen(result.authority), true);
+      assert.equal(reads.length, 3);
+    });
+
+    await t.test("never exposes authority for denied or untrusted requests", async () => {
+      const { request } = createResolvingRuntime("PRO_CLUB", "club", "actor");
+      for (const status of ["INACTIVE", "LEFT", "REVOKED"] as const) {
+        const result = await resolveProClubRuntimeAuthority(request, makeOps({
+          "proClubs/club": activeClub("club"),
+          "proClubs/club/members/actor": membership("actor", "MEMBER", status),
+        }));
+        assert.equal(result.authority, null);
+      }
+      assert.equal((await resolveProClubRuntimeAuthority({ ...request }, makeOps({}))).authority, null);
+      assert.equal((await resolveProClubRuntimeAuthority(request, makeOps({}))).authority, null);
+      for (const code of ["permission-denied", "unavailable"]) {
+        const result = await resolveProClubRuntimeAuthority(request, {
+          readDocument: async () => { throw { code }; },
+        });
+        assert.equal(result.authority, null);
+      }
+    });
 
     await t.test(
       "authorizes only an exact active canonical Pro Club membership",
