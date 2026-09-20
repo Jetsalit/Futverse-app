@@ -143,7 +143,7 @@ test(
       );
       assert.match(
         contextSource,
-        /resolveProClubRuntimeAuthority\(request\)/,
+        /resolveProClubRuntimeAuthority\(\s*request,\s*undefined,\s*\(event\)\s*=>/s,
       );
     });
 
@@ -164,7 +164,7 @@ test(
     await t.test("context surface exposes runtimeState and narrow Pro Club selection only", () => {
       assert.match(
         contextSource,
-        /interface OrganizationRuntimeContextValue\s*\{\s*readonly proClubAuthority: ProClubRuntimeAuthorityBridgeResult\["authority"\];\s*readonly runtimeState: OrganizationRuntimeState;\s*readonly selectProClub: \(organizationId: string\) => void;\s*\}/s,
+        /interface OrganizationRuntimeContextValue\s*\{\s*readonly proClubAuthority: ProClubRuntimeAuthorityBridgeResult\["authority"\];\s*readonly proClubEntryProgress: ProClubMobileEntryProgress;\s*readonly runtimeState: OrganizationRuntimeState;\s*readonly selectProClub: \(organizationId: string\) => void;\s*\}/s,
       );
       assert.doesNotMatch(
         contextSource,
