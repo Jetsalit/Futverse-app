@@ -12,6 +12,10 @@ import {
 
 import { auth, db } from "../firebase";
 import { isExactPlayerKey } from "../playerIdentityFoundation";
+import {
+  validatePositionSelection,
+  type PlayerPositionCode,
+} from "../playerPositionSelection";
 import { isValidDocumentIdentifier } from "../proClubModel";
 import {
   canAuthorProClubMatchStartingXI,
@@ -370,6 +374,26 @@ function parseRoster(playerKey: string, raw: unknown): ProClubMatchRosterRecord 
     throw new Error("Invalid Pro Club Match roster snapshot shape.");
   }
 
+  if (!Array.isArray(raw.additionalPositions)) {
+    throw new Error("Invalid Pro Club Match roster additionalPositions.");
+  }
+
+  const position = raw.position as ProClubMatchRosterSnapshot["position"];
+  const additionalPositions = [...raw.additionalPositions];
+  if (
+    position === null
+      ? additionalPositions.length !== 0
+      : !validatePositionSelection({
+          primary: position,
+          additional: additionalPositions.filter(
+            (value): value is string => typeof value === "string",
+          ),
+        }).valid ||
+        additionalPositions.some((value) => typeof value !== "string")
+  ) {
+    throw new Error("Invalid Pro Club Match roster additionalPositions.");
+  }
+
   const snapshot: ProClubMatchRosterSnapshot = {
     schemaVersion: raw.schemaVersion as 1,
     playerKey: raw.playerKey as string,
@@ -377,10 +401,8 @@ function parseRoster(playerKey: string, raw: unknown): ProClubMatchRosterRecord 
     firstName: raw.firstName as string,
     lastName: raw.lastName as string,
     jerseyNumber: raw.jerseyNumber as number,
-    position: raw.position as ProClubMatchRosterSnapshot["position"],
-    additionalPositions: Array.isArray(raw.additionalPositions)
-      ? [...raw.additionalPositions] as ProClubMatchRosterSnapshot["additionalPositions"]
-      : [],
+    position,
+    additionalPositions: additionalPositions as PlayerPositionCode[],
   };
 
   if (snapshot.playerKey !== playerKey) {
