@@ -610,8 +610,41 @@ test("Starting XI fails closed for a canonical player outside the Match roster a
 });
 
 test("Starting XI rejects invalid Position Role Assignment values", async () => {
+  await seedMatch("match-role-valid", "DRAFT");
+
+  // Positive pair: a trimmed non-empty role value is contract-valid.
+  await assertSucceeds(
+    setDoc(
+      doc(
+        authedDb(HEAD),
+        "proClubs",
+        CLUB_A,
+        "matches",
+        "match-role-valid",
+        "startingXI",
+        "current",
+      ),
+      startingXIData(HEAD, "HEAD_COACH", {
+        positionRoleAssignments: [
+          "Build Up",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+        ],
+      }),
+    ),
+  );
+
   await seedMatch("match-role-invalid", "DRAFT");
 
+  // Negative pair: the same field fails on the explicit trim predicate.
   await assertFails(
     setDoc(
       doc(
