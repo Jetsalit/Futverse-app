@@ -1,0 +1,96 @@
+name: PR 233 Exact Head Verification
+
+on:
+  push:
+    branches:
+      - verify/pr-233-exact-head
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 00777a2f7e9e906c93e6ae6f9b04d3e9478d0ecd
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Exact HEAD provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="00777a2f7e9e906c93e6ae6f9b04d3e9478d0ecd"
+          actual="$(git rev-parse HEAD)"
+          echo "EXPECTED_HEAD=$expected"
+          echo "ACTUAL_HEAD=$actual"
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain)"
+          echo "EXACT_HEAD_GATE=PASS"
+
+      - name: Install locked dependencies
+        run: |
+          npm ci --ignore-scripts
+          npm --prefix functions ci --ignore-scripts
+
+      - name: Targeted Match + Starting XI contract tests
+        run: >-
+          node --import tsx --test
+          tests/proClubMatchStartingXI.unit.test.ts
+          tests/proClubMatchStartingXIPersistenceV1Contract.test.ts
+          tests/proClubStartingXI11v11.unit.test.ts
+          tests/proClubStartingXI11v11V1Contract.test.ts
+          tests/proClubStartingXIViewModel.unit.test.ts
+          tests/proClubStartingXIUi.unit.test.tsx
+          tests/matchFoundation.test.ts
+
+      - name: Scope guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="c2800eec3e31708b67896000d10305e0f3ac289e"
+          head="00777a2f7e9e906c93e6ae6f9b04d3e9478d0ecd"
+          changed="$(git diff --name-only "$base" "$head")"
+          echo "$changed"
+          if echo "$changed" | grep -Eq '^(firestore\.rules|firebase\.json|firebase\.spark\.json|src/lib/firestore/|src/components/|src/lib/matchFoundation\.ts|src/components/StartingXIBuilder\.tsx)'; then
+            echo "SCOPE_GUARD=FAIL"
+            exit 1
+          fi
+          echo "SCOPE_GUARD=PASS"
+
+      - name: No persistence implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="src/lib/proClubMatchStartingXI.ts"
+          if grep -Eq 'firebase/firestore|setDoc|addDoc|updateDoc|deleteDoc|writeBatch|runTransaction|httpsCallable' "$src"; then
+            echo "DIRECT_WRITE_GUARD=FAIL"
+            exit 1
+          fi
+          echo "NO_PERSISTENCE_IMPLEMENTATION=PASS"
+
+      - name: Protected Academy/production files unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="c2800eec3e31708b67896000d10305e0f3ac289e"
+          head="00777a2f7e9e906c93e6ae6f9b04d3e9478d0ecd"
+          for path in             src/lib/firestore/matchRepository.ts             src/components/StartingXIBuilder.tsx             src/components/pro-club/operations/ProClubTeamDashboard.tsx             firestore.rules
+          do
+            test "$(git rev-parse "$base:$path")" = "$(git rev-parse "$head:$path")"
+          done
+          echo "PROTECTED_FILES_PRESERVED=PASS"
+
+      - name: TypeScript
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Diff whitespace check
+        shell: bash
+        run: git diff --check c2800eec3e31708b67896000d10305e0f3ac289e 00777a2f7e9e906c93e6ae6f9b04d3e9478d0ecd
