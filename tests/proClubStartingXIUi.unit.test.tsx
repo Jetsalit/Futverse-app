@@ -39,7 +39,11 @@ function roster(playerKey: string, jerseyNumber: number): ProClubSquadRosterReco
 }
 
 function text(markup: string): string {
-  return markup.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  return markup
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/\\s+/g, " ")
+    .trim();
 }
 
 test("renders approved Pro Club 11v11 command-center sections without Academy 7v7 or leadership group", () => {
