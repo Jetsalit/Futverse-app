@@ -226,11 +226,6 @@ export default function ProClubMatchStartingXIWorkspace({
     [matchRoster],
   );
 
-  async function refreshSelectedMatch(message?: string) {
-    setReloadToken((current) => current + 1);
-    if (message) setSaveMessage(message);
-  }
-
   async function handleCreateMatch() {
     if (!canMutate || creatingMatch) return;
 
