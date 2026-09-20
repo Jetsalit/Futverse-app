@@ -554,6 +554,17 @@ export default function ProClubStartingXI11v11({
                 </button>
               ))}
             </div>
+
+            {onSaveStartingXI && (
+              <button
+                type="button"
+                disabled={!startingXIEditable}
+                onClick={() => void saveStartingXI()}
+                className="mt-3 min-h-11 w-full rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-xs font-black text-emerald-200 disabled:opacity-40"
+              >
+                Save Starting XI
+              </button>
+            )}
           </section>
 
           {activeTacticalPanel === "ROLES" && (
@@ -645,16 +656,6 @@ export default function ProClubStartingXI11v11({
                   </label>
                 ))}
               </div>
-              {onSaveStartingXI && (
-                <button
-                  type="button"
-                  disabled={!startingXIEditable}
-                  onClick={() => void saveStartingXI()}
-                  className="mt-4 min-h-11 w-full rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-xs font-black text-emerald-200 disabled:opacity-40"
-                >
-                  Save Starting XI
-                </button>
-              )}
             </section>
           )}
 
