@@ -609,6 +609,39 @@ test("Starting XI fails closed for a canonical player outside the Match roster a
   );
 });
 
+test("Starting XI rejects invalid Position Role Assignment values", async () => {
+  await seedMatch("match-role-invalid", "DRAFT");
+
+  await assertFails(
+    setDoc(
+      doc(
+        authedDb(HEAD),
+        "proClubs",
+        CLUB_A,
+        "matches",
+        "match-role-invalid",
+        "startingXI",
+        "current",
+      ),
+      startingXIData(HEAD, "HEAD_COACH", {
+        positionRoleAssignments: [
+          "Build Up",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "  not-trimmed  ",
+        ],
+      }),
+    ),
+  );
+});
+
 test("Technical Director can author Starting XI but wrong-club Head Coach and outsider cannot", async () => {
   await seedMatch("match-authority", "DRAFT");
 
