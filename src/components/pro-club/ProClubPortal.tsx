@@ -332,7 +332,27 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
             </nav>
             {tab === "join" ? <StaffOnboarding key={uid} uid={uid} onOpenClub={openClub} /> : <div className="space-y-7">
               {runtimeState.status === "RESOLVING" ? (
-                <p role="status" className="py-12 text-center text-slate-600">Opening your club…</p>
+                <section className="rounded-2xl border border-slate-200 bg-white px-5 py-10 text-center">
+                  <p role="status" className="text-slate-600">
+                    {pendingStage === "CLUB"
+                      ? "Reading the club workspace."
+                      : pendingStage === "MEMBERSHIP"
+                        ? "Checking your membership."
+                        : pendingStage === "STAFF_ROLE"
+                          ? "Checking your football role."
+                          : "Opening your club…"}
+                  </p>
+                  {isTakingLonger && (
+                    <div className="mx-auto mt-5 max-w-md rounded-2xl bg-amber-50 p-4 text-amber-950">
+                      <p className="font-bold">This is taking longer than usual.</p>
+                      <p className="mt-1 text-sm">You will not enter the club until the current account and club authority checks succeed.</p>
+                      <div className="mt-4 flex flex-wrap justify-center gap-3">
+                        <button type="button" className={buttonClass} onClick={retryCurrentEntry}>Try again</button>
+                        <button type="button" className={secondaryClass} onClick={leaveProClub}>Back</button>
+                      </div>
+                    </div>
+                  )}
+                </section>
               ) : discoveredAuthorities.length > 1 ? (
                 <section className="rounded-2xl border border-slate-200 bg-white p-5">
                   <h2 className="text-lg font-black">Choose your club</h2>
