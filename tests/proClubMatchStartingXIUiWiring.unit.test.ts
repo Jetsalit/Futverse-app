@@ -13,7 +13,7 @@ test("MATCHES production tab mounts the reviewed Match Starting XI workspace", (
 
   assert.match(
     dashboard,
-    /import ProClubMatchStartingXIWorkspace from "./ProClubMatchStartingXIWorkspace"/,
+    /import ProClubMatchStartingXIWorkspace from "\.\/ProClubMatchStartingXIWorkspace"/,
   );
   assert.match(
     dashboard,
