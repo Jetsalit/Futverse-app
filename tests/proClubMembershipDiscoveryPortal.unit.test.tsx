@@ -129,9 +129,16 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
       namedExports: {
         resolveProClubRuntimeAuthority: async (
           request: { uid: string; organizationId: string },
+          _ops?: unknown,
+          observeTiming?: (event:
+            | { stage: "CLUB" | "MEMBERSHIP" | "STAFF_ROLE"; state: "STARTED" }
+            | { stage: "CLUB" | "MEMBERSHIP" | "STAFF_ROLE"; state: "COMPLETED"; durationMs: number }
+          ) => void,
         ) => {
           resolutionRequests.push(request);
+          observeTiming?.({ stage: "CLUB", state: "STARTED" });
           if (waitForAuthority) await waitForAuthority;
+          observeTiming?.({ stage: "CLUB", state: "COMPLETED", durationMs: 10 });
           const result = authorities.has(request.organizationId)
             ? "AUTHORIZED"
             : "REJECTED";
@@ -251,6 +258,67 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
         assert.equal(resolutionRequests.length, 1, "previous entry must not authorize this entry");
       }
     });
+    await t.test("slow discovery shows retry and stale first response cannot reopen the wrong attempt", async () => {
+      resetScenario();
+
+      const originalSetTimeout = globalThis.setTimeout;
+      const originalClearTimeout = globalThis.clearTimeout;
+      Object.defineProperty(globalThis, "setTimeout", {
+        configurable: true,
+        writable: true,
+        value: ((handler: TimerHandler, timeout?: number, ...args: unknown[]) =>
+          originalSetTimeout(handler, timeout === 4000 ? 0 : timeout, ...args)) as typeof setTimeout,
+      });
+      Object.defineProperty(globalThis, "clearTimeout", {
+        configurable: true,
+        writable: true,
+        value: originalClearTimeout,
+      });
+
+      let releaseFirst!: () => void;
+      waitForDiscovery = new Promise(resolve => { releaseFirst = resolve; });
+      discoveryRows = [{ clubId: "club-beta" }];
+
+      try {
+        await mountPortal();
+        await settle();
+        assert.match(text(), /This is taking longer than usual/);
+        const retryButton = findButtonContaining("Try again");
+        assert.ok(retryButton);
+        assert.ok(findButtonContaining("Back"));
+        assert.doesNotMatch(text(), /Team dashboard/);
+
+        waitForDiscovery = null;
+        discoveryRows = [{ clubId: "club-alpha" }];
+
+        await act(async () => {
+          retryButton.click();
+        });
+        await settle();
+
+        assert.match(text(), /Team dashboard Alpha United/);
+        assert.equal(resolutionRequests.at(-1)?.organizationId, "club-alpha");
+
+        releaseFirst();
+        await settle();
+
+        assert.match(text(), /Team dashboard Alpha United/);
+        assert.doesNotMatch(text(), /Beta City/);
+        assert.equal(resolutionRequests.filter(({ organizationId }) => organizationId === "club-beta").length, 0);
+      } finally {
+        Object.defineProperty(globalThis, "setTimeout", {
+          configurable: true,
+          writable: true,
+          value: originalSetTimeout,
+        });
+        Object.defineProperty(globalThis, "clearTimeout", {
+          configurable: true,
+          writable: true,
+          value: originalClearTimeout,
+        });
+      }
+    });
+
     await t.test("restored re-entry waits for a new authority generation", async () => {
       resetScenario();
       discoveryRows = [{ clubId: "club-alpha" }];
@@ -362,6 +430,77 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
         workspaceButton.click();
       });
       assert.ok(container.querySelector("#club-workspace-reference"));
+    });
+
+    await t.test("club selection authority hang exposes retry without refresh and stale completion cannot override retry", async () => {
+      resetScenario();
+
+      const originalSetTimeout = globalThis.setTimeout;
+      const originalClearTimeout = globalThis.clearTimeout;
+      Object.defineProperty(globalThis, "setTimeout", {
+        configurable: true,
+        writable: true,
+        value: ((handler: TimerHandler, timeout?: number, ...args: unknown[]) =>
+          originalSetTimeout(handler, timeout === 4000 ? 0 : timeout, ...args)) as typeof setTimeout,
+      });
+      Object.defineProperty(globalThis, "clearTimeout", {
+        configurable: true,
+        writable: true,
+        value: originalClearTimeout,
+      });
+
+      discoveryRows = [
+        { clubId: "club-alpha" },
+        { clubId: "club-beta" },
+      ];
+      await mountPortal();
+
+      const betaButton = findButtonContaining("Beta City");
+      assert.ok(betaButton);
+
+      let releaseFirst!: () => void;
+      waitForAuthority = new Promise(resolve => { releaseFirst = resolve; });
+
+      try {
+        await act(async () => {
+          betaButton.click();
+        });
+        await settle();
+
+        assert.match(text(), /This is taking longer than usual/);
+        const retryButton = findButtonContaining("Try again");
+        assert.ok(retryButton);
+        assert.ok(findButtonContaining("Back"));
+        assert.doesNotMatch(text(), /Team dashboard/);
+
+        waitForAuthority = null;
+
+        await act(async () => {
+          retryButton.click();
+        });
+        await settle();
+
+        assert.match(text(), /Team dashboard Beta City/);
+        const requestsAfterRetry = resolutionRequests.length;
+        assert.ok(requestsAfterRetry >= 2);
+
+        releaseFirst();
+        await settle();
+
+        assert.match(text(), /Team dashboard Beta City/);
+        assert.equal(resolutionRequests.length, requestsAfterRetry);
+      } finally {
+        Object.defineProperty(globalThis, "setTimeout", {
+          configurable: true,
+          writable: true,
+          value: originalSetTimeout,
+        });
+        Object.defineProperty(globalThis, "clearTimeout", {
+          configurable: true,
+          writable: true,
+          value: originalClearTimeout,
+        });
+      }
     });
 
     await t.test("multiple canonical clubs require an authoritative-name choice", async () => {

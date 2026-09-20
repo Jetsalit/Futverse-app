@@ -19,6 +19,23 @@ import ProClubTeamDashboard from "./operations/ProClubTeamDashboard";
 
 type ProClubDiscoveryState = "DISCOVERING" | "OPENING" | "COMPLETE";
 
+type ProClubMobileEntryStage =
+  | "DISCOVERY"
+  | "CLUB"
+  | "MEMBERSHIP"
+  | "STAFF_ROLE";
+
+interface ProClubMobileEntryMeasurement {
+  readonly stage: ProClubMobileEntryStage;
+  readonly durationMs: number;
+}
+
+const SLOW_ENTRY_THRESHOLD_MS = 4_000;
+
+function monotonicNow(): number {
+  return globalThis.performance?.now?.() ?? Date.now();
+}
+
 function ClubWorkspace({
   authority,
   onBack,
@@ -59,7 +76,12 @@ function ClubWorkspace({
 
 export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void; onLogout: () => void }) {
   const { actualUser, currentUser } = useAuth();
-  const { runtimeState, selectProClub, proClubAuthority } = useOrganizationRuntime();
+  const {
+    runtimeState,
+    selectProClub,
+    proClubAuthority,
+    proClubEntryProgress,
+  } = useOrganizationRuntime();
   // The provider survives navigation. A previous entry's verified authority
   // cannot open this entry while discovery or restored selection is pending.
   const [entryGeneration] = useState(runtimeState.generation);
@@ -70,9 +92,18 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
   const [shouldDiscover, setShouldDiscover] = useState(!restoredClubReference);
   const [discoveryState, setDiscoveryState] = useState<ProClubDiscoveryState>(restoredClubReference ? "OPENING" : "DISCOVERING");
   const [discoveredAuthorities, setDiscoveredAuthorities] = useState<ProClubOrganizationAuthority[]>([]);
+  const [discoveryAttempt, setDiscoveryAttempt] = useState(0);
+  const [measurements, setMeasurements] = useState<ProClubMobileEntryMeasurement[]>([]);
+  const [isTakingLonger, setIsTakingLonger] = useState(false);
   const discoveryStarted = useRef(false);
   const uid = actualUser?.uid;
   const allowed = uid && currentUser?.uid === uid && !currentUser.supportPresentation;
+  const pendingStage: ProClubMobileEntryStage | null =
+    discoveryState === "DISCOVERING"
+      ? "DISCOVERY"
+      : runtimeState.status === "RESOLVING"
+        ? proClubEntryProgress.stage
+        : null;
   const authorized = allowed && runtimeState.generation > entryGeneration && runtimeState.uid === uid && isOrganizationRuntimeAuthorized(runtimeState) && runtimeState.selection?.organizationType === "PRO_CLUB" &&
     proClubAuthority?.hasMembershipAuthority === true && proClubAuthority.userId === uid &&
     proClubAuthority.organizationType === "PRO_CLUB" && proClubAuthority.organizationId === runtimeState.selection.organizationId;
@@ -103,10 +134,18 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
     if (!allowed || !uid || !shouldDiscover || discoveryStarted.current) return;
     discoveryStarted.current = true;
     setDiscoveryState("DISCOVERING");
+    setIsTakingLonger(false);
+    const startedAt = monotonicNow();
     let mounted = true;
 
     void loadOwnProClubMembershipDiscoveries(uid)
       .then(async (discoveries) => {
+        if (mounted) {
+          setMeasurements((current) => [
+            ...current.filter(({ stage }) => stage !== "DISCOVERY"),
+            { stage: "DISCOVERY", durationMs: Math.max(0, monotonicNow() - startedAt) },
+          ]);
+        }
         if (!mounted) return;
         if (discoveries.length === 1) {
           const clubId = discoveries[0].clubId;
@@ -154,7 +193,7 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
       mounted = false;
       discoveryStarted.current = false;
     };
-  }, [allowed, selectProClub, shouldDiscover, uid]);
+  }, [allowed, discoveryAttempt, selectProClub, shouldDiscover, uid]);
 
   useEffect(() => {
     if (discoveryState !== "OPENING") return;
@@ -167,6 +206,52 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
     if (!authorized || runtimeState.selection?.organizationType !== "PRO_CLUB") return;
     rememberProClubWorkspaceSession(runtimeState.selection.organizationId);
   }, [authorized, runtimeState.selection]);
+
+  function retryCurrentEntry() {
+    setIsTakingLonger(false);
+
+    if (discoveryState === "DISCOVERING") {
+      discoveryStarted.current = false;
+      setMeasurements((current) => current.filter(({ stage }) => stage !== "DISCOVERY"));
+      setDiscoveryAttempt((current) => current + 1);
+      return;
+    }
+
+    const targetClubId =
+      runtimeState.selection?.organizationType === "PRO_CLUB"
+        ? runtimeState.selection.organizationId
+        : clubReference.trim();
+
+    if (isValidDocumentIdentifier(targetClubId)) {
+      selectProClub(targetClubId);
+    }
+  }
+
+  useEffect(() => {
+    if (pendingStage === null) {
+      setIsTakingLonger(false);
+      return;
+    }
+
+    setIsTakingLonger(false);
+    const timer = globalThis.setTimeout(() => {
+      setIsTakingLonger(true);
+    }, SLOW_ENTRY_THRESHOLD_MS);
+
+    return () => globalThis.clearTimeout(timer);
+  }, [pendingStage, discoveryAttempt, runtimeState.generation]);
+
+  useEffect(() => {
+    const durations = proClubEntryProgress.completedDurationsMs;
+    setMeasurements((current) => {
+      const retained = current.filter(({ stage }) => stage === "DISCOVERY");
+      for (const stage of ["CLUB", "MEMBERSHIP", "STAFF_ROLE"] as const) {
+        const durationMs = durations[stage];
+        if (typeof durationMs === "number") retained.push({ stage, durationMs });
+      }
+      return retained;
+    });
+  }, [proClubEntryProgress.completedDurationsMs]);
 
   function openClub(clubId: string) {
     if (!isValidDocumentIdentifier(clubId)) { setInputError("Enter the club workspace reference provided by your club."); return; }
@@ -213,7 +298,30 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
           <section className="rounded-3xl border border-slate-200 bg-white px-6 py-14 text-center shadow-sm">
             <Shield className="mx-auto text-emerald-600" size={28} />
             <h1 className="mt-4 text-2xl font-black">Opening your club…</h1>
-            <p role="status" className="mt-2 text-sm text-slate-500">Checking your active Pro Club membership and workspace authority.</p>
+            <p role="status" className="mt-2 text-sm text-slate-500">
+              {pendingStage === "DISCOVERY"
+                ? "Finding your Pro Club membership."
+                : pendingStage === "CLUB"
+                  ? "Reading the club workspace."
+                  : pendingStage === "MEMBERSHIP"
+                    ? "Checking your membership."
+                    : pendingStage === "STAFF_ROLE"
+                      ? "Checking your football role."
+                      : "Checking your active Pro Club membership and workspace authority."}
+            </p>
+            {isTakingLonger && (
+              <div className="mx-auto mt-5 max-w-md rounded-2xl bg-amber-50 p-4 text-amber-950">
+                <p className="font-bold">This is taking longer than usual.</p>
+                <p className="mt-1 text-sm">You will not enter the club until the current account and club authority checks succeed.</p>
+                <div className="mt-4 flex flex-wrap justify-center gap-3">
+                  <button type="button" className={buttonClass} onClick={retryCurrentEntry}>Try again</button>
+                  <button type="button" className={secondaryClass} onClick={leaveProClub}>Back</button>
+                </div>
+              </div>
+            )}
+            <span className="sr-only" aria-hidden="true">
+              {measurements.map(({ stage, durationMs }) => `${stage}:${Math.round(durationMs)}ms`).join(" ")}
+            </span>
           </section>
         ) : (
           <>
@@ -224,7 +332,27 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
             </nav>
             {tab === "join" ? <StaffOnboarding key={uid} uid={uid} onOpenClub={openClub} /> : <div className="space-y-7">
               {runtimeState.status === "RESOLVING" ? (
-                <p role="status" className="py-12 text-center text-slate-600">Opening your club…</p>
+                <section className="rounded-2xl border border-slate-200 bg-white px-5 py-10 text-center">
+                  <p role="status" className="text-slate-600">
+                    {pendingStage === "CLUB"
+                      ? "Reading the club workspace."
+                      : pendingStage === "MEMBERSHIP"
+                        ? "Checking your membership."
+                        : pendingStage === "STAFF_ROLE"
+                          ? "Checking your football role."
+                          : "Opening your club…"}
+                  </p>
+                  {isTakingLonger && (
+                    <div className="mx-auto mt-5 max-w-md rounded-2xl bg-amber-50 p-4 text-amber-950">
+                      <p className="font-bold">This is taking longer than usual.</p>
+                      <p className="mt-1 text-sm">You will not enter the club until the current account and club authority checks succeed.</p>
+                      <div className="mt-4 flex flex-wrap justify-center gap-3">
+                        <button type="button" className={buttonClass} onClick={retryCurrentEntry}>Try again</button>
+                        <button type="button" className={secondaryClass} onClick={leaveProClub}>Back</button>
+                      </div>
+                    </div>
+                  )}
+                </section>
               ) : discoveredAuthorities.length > 1 ? (
                 <section className="rounded-2xl border border-slate-200 bg-white p-5">
                   <h2 className="text-lg font-black">Choose your club</h2>
