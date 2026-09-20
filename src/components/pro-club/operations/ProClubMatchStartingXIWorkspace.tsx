@@ -4,8 +4,7 @@ import {
   Plus,
   RefreshCw,
   ShieldAlert,
-  UserMinus,
-  UserPlus,
+  Users,
 } from "lucide-react";
 
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
@@ -35,6 +34,7 @@ import {
   type ProClubPersistedShootoutPlan,
   type ProClubPersistedStartingXIPlan,
 } from "../../../lib/proClubMatchStartingXI";
+import ProClubMatchRosterDrawer from "./ProClubMatchRosterDrawer";
 import ProClubStartingXI11v11 from "./ProClubStartingXI11v11";
 
 function createMatchId(): string {
@@ -99,6 +99,7 @@ export default function ProClubMatchStartingXIWorkspace({
   const [competitionName, setCompetitionName] = useState("");
   const [opponentName, setOpponentName] = useState("");
   const [creatingMatch, setCreatingMatch] = useState(false);
+  const [rosterDrawerOpen, setRosterDrawerOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -209,16 +210,6 @@ export default function ProClubMatchStartingXIWorkspace({
   const matchRosterKeys = useMemo(
     () => new Set(matchRoster.map((player) => player.playerKey)),
     [matchRoster],
-  );
-
-  const availableCanonicalRoster = useMemo(
-    () =>
-      canonicalRoster.filter(
-        (player) =>
-          player.status === "ACTIVE" &&
-          !matchRosterKeys.has(player.playerKey),
-      ),
-    [canonicalRoster, matchRosterKeys],
   );
 
   const uiMatchRoster = useMemo(
@@ -452,85 +443,29 @@ export default function ProClubMatchStartingXIWorkspace({
 
       {match && (
         <>
-          <section className="grid gap-4 xl:grid-cols-2">
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-              <h4 className="font-black text-white">
-                Match roster · {matchRoster.length}
-              </h4>
-              <p className="mt-1 text-xs text-slate-500">
-                Canonical snapshot revision {match.rosterRevision}
-              </p>
-              <div className="mt-3 max-h-72 space-y-2 overflow-y-auto">
-                {matchRoster.length === 0 ? (
-                  <p className="text-sm text-slate-500">No Match roster players yet.</p>
-                ) : (
-                  matchRoster.map((player) => (
-                    <div
-                      key={player.playerKey}
-                      className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/70 p-2.5"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-bold text-white">
-                          #{player.jerseyNumber} · {player.firstName} {player.lastName}
-                        </p>
-                        <p className="text-[10px] text-slate-500">
-                          {player.position ?? "Position not set"} · {player.futId ?? "FUTID not bound"}
-                        </p>
-                      </div>
-                      {canMutate && (match.status === "DRAFT" || match.status === "SCHEDULED") && (
-                        <button
-                          type="button"
-                          disabled={saving}
-                          onClick={() => void removeRosterPlayer(player.playerKey)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-rose-400/20 px-2 py-1 text-[10px] font-bold text-rose-300 disabled:opacity-40"
-                        >
-                          <UserMinus size={12} />
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                  ))
-                )}
+          <section className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-cyan-400/20 bg-cyan-400/10 text-cyan-300">
+                  <Users size={18} />
+                </div>
+                <div className="min-w-0">
+                  <h4 className="font-black text-white">
+                    Match Squad · {matchRoster.length} players
+                  </h4>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Canonical snapshot revision {match.rosterRevision}
+                  </p>
+                </div>
               </div>
-            </div>
 
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-              <h4 className="font-black text-white">Add from First Team</h4>
-              <p className="mt-1 text-xs text-slate-500">
-                Only ACTIVE canonical Pro Club roster players can be snapshotted.
-              </p>
-              <div className="mt-3 max-h-72 space-y-2 overflow-y-auto">
-                {availableCanonicalRoster.length === 0 ? (
-                  <p className="text-sm text-slate-500">No additional ACTIVE players available.</p>
-                ) : (
-                  availableCanonicalRoster.map((player) => (
-                    <div
-                      key={player.playerKey}
-                      className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/70 p-2.5"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-bold text-white">
-                          #{player.jerseyNumber} · {player.firstName} {player.lastName}
-                        </p>
-                        <p className="text-[10px] text-slate-500">
-                          {player.position ?? "Position not set"} · {player.futId ?? "FUTID not bound"}
-                        </p>
-                      </div>
-                      {canMutate && (match.status === "DRAFT" || match.status === "SCHEDULED") && (
-                        <button
-                          type="button"
-                          disabled={saving}
-                          onClick={() => void addRosterPlayer(player.playerKey)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-emerald-400/20 px-2 py-1 text-[10px] font-bold text-emerald-300 disabled:opacity-40"
-                        >
-                          <UserPlus size={12} />
-                          Add
-                        </button>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
+              <button
+                type="button"
+                onClick={() => setRosterDrawerOpen(true)}
+                className="min-h-11 rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-xs font-black text-cyan-200"
+              >
+                Manage Roster
+              </button>
             </div>
           </section>
 
@@ -541,6 +476,18 @@ export default function ProClubMatchStartingXIWorkspace({
               This Match contains a CUSTOM formation. Custom formation editing remains outside the reviewed fixed-formation UI slice.
             </div>
           ) : (
+          <ProClubMatchRosterDrawer
+            open={rosterDrawerOpen}
+            canMutate={canMutate}
+            saving={saving}
+            matchStatus={match.status}
+            matchRoster={matchRoster}
+            firstTeamRoster={canonicalRoster}
+            onClose={() => setRosterDrawerOpen(false)}
+            onAdd={addRosterPlayer}
+            onRemove={removeRosterPlayer}
+          />
+
             <ProClubStartingXI11v11
               key={`${match.matchId}:${match.rosterRevision}`}
               authority={authority}
