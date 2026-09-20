@@ -4512,15 +4512,16 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           ]
           && data.get('slotPlayerKeys', []) is list
           && data.get('slotPlayerKeys', []).size() == 11
-          && starters.toSet().size() == starters.size()
-          && rosterPlayerKeys.hasAll(starters)
           && substitutes is list
-          && substitutes.toSet().size() == substitutes.size()
-          && rosterPlayerKeys.hasAll(substitutes)
-          && starters.toSet().intersection(substitutes.toSet()).size() == 0
+          // Fast-fail value validation before set/list-heavy roster checks.
           && proClubMatchValidRoleAssignmentsV1(
             data.get('positionRoleAssignments', [])
           )
+          && starters.toSet().size() == starters.size()
+          && substitutes.toSet().size() == substitutes.size()
+          && starters.toSet().intersection(substitutes.toSet()).size() == 0
+          && rosterPlayerKeys.hasAll(starters)
+          && rosterPlayerKeys.hasAll(substitutes)
           && proClubMatchValidSetPiecesV1(
             data.get('setPieceAssignments', {}),
             selected
@@ -4541,8 +4542,7 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           /databases/$(database)/documents/proClubs/$(clubId)/matches/$(matchId);
         let matchData = get(matchPath).data;
         let actorRole = proClubMatchActorRoleV1(clubId);
-        return proClubMatchFootballAuthorityV1(clubId)
-          && exists(matchPath)
+        return exists(matchPath)
           && proClubMatchRosterIndexStateV1(matchData)
           && matchData.get('status', '') in ['DRAFT', 'SCHEDULED']
           && proClubMatchValidStartingXIDataV1(
@@ -4567,8 +4567,7 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           /databases/$(database)/documents/proClubs/$(clubId)/matches/$(matchId);
         let matchData = get(matchPath).data;
         let actorRole = proClubMatchActorRoleV1(clubId);
-        return proClubMatchFootballAuthorityV1(clubId)
-          && exists(matchPath)
+        return exists(matchPath)
           && proClubMatchRosterIndexStateV1(matchData)
           && matchData.get('status', '') in ['DRAFT', 'SCHEDULED']
           && previous.get('schemaVersion', 0) == 1
@@ -4852,8 +4851,12 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
         match /startingXI/current {
           allow get: if proClubSquadRosterActiveStaffV1(clubId);
           allow list: if false;
-          allow create: if proClubMatchValidStartingXICreateV1(matchId);
-          allow update: if proClubMatchValidStartingXIUpdateV1(matchId);
+          // Keep authority as an outer short-circuit so unauthorized writes
+          // never enter the larger Starting XI contract validator.
+          allow create: if proClubMatchFootballAuthorityV1(clubId)
+            && proClubMatchValidStartingXICreateV1(matchId);
+          allow update: if proClubMatchFootballAuthorityV1(clubId)
+            && proClubMatchValidStartingXIUpdateV1(matchId);
           allow delete: if false;
         }
 
