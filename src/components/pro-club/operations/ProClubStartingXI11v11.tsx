@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeftRight,
   ClipboardList,
@@ -93,6 +93,8 @@ export default function ProClubStartingXI11v11({
   initialShootout = null,
   saving = false,
   saveMessage = null,
+  startingXIWritable = true,
+  shootoutWritable = true,
   onSaveStartingXI,
   onSaveShootout,
 }: {
@@ -102,6 +104,8 @@ export default function ProClubStartingXI11v11({
   initialShootout?: ProClubPersistedShootoutPlan | null;
   saving?: boolean;
   saveMessage?: string | null;
+  startingXIWritable?: boolean;
+  shootoutWritable?: boolean;
   onSaveStartingXI?: (plan: ProClubPersistedStartingXIPlan) => void | Promise<void>;
   onSaveShootout?: (plan: ProClubPersistedShootoutPlan) => void | Promise<void>;
 }) {
@@ -138,7 +142,35 @@ export default function ProClubStartingXI11v11({
   );
   const [coachNotes, setCoachNotes] = useState(initialStartingXI?.coachNotes ?? "");
 
-  const editable = canAuthorProClubStartingXI(authority) && !saving;
+  const authorCanEdit = canAuthorProClubStartingXI(authority) && !saving;
+  const startingXIEditable = authorCanEdit && startingXIWritable;
+  const shootoutEditable = authorCanEdit && shootoutWritable;
+
+  useEffect(() => {
+    if (!initialStartingXI) return;
+
+    const nextFormation =
+      (PRO_CLUB_STARTING_XI_FIXED_FORMATIONS as readonly string[]).includes(
+        initialStartingXI.formation,
+      )
+        ? initialStartingXI.formation as ProClubStartingXIFixedFormation
+        : "4-3-3";
+
+    setFormation(nextFormation);
+    setSlotPlayerKeys([...initialStartingXI.slotPlayerKeys]);
+    setSubstitutePlayerKeys([...initialStartingXI.substitutePlayerKeys]);
+    setRoleAssignments([...initialStartingXI.positionRoleAssignments]);
+    setSetPieceAssignments({ ...initialStartingXI.setPieceAssignments });
+    setCoachNotes(initialStartingXI.coachNotes);
+    setActiveSlot(null);
+  }, [initialStartingXI]);
+
+  useEffect(() => {
+    if (!initialShootout) return;
+    setPenaltyPrimary([...initialShootout.primaryTakers]);
+    setPenaltyBackups([...initialShootout.backupTakers]);
+  }, [initialShootout]);
+
   const players = useMemo(() => buildProClubStartingXIPlayerViews(roster), [roster]);
   const slotViews = useMemo(
     () => buildProClubStartingXISlotViews(formation, slotPlayerKeys, players),
@@ -167,7 +199,7 @@ export default function ProClubStartingXI11v11({
   }
 
   function assignStarter(playerKey: string) {
-    if (!editable || activeSlot === null) return;
+    if (!startingXIEditable || activeSlot === null) return;
 
     setSlotPlayerKeys((current) => {
       if (current.includes(playerKey)) return current;
@@ -180,7 +212,7 @@ export default function ProClubStartingXI11v11({
   }
 
   function removeStarter(slotIndex: number) {
-    if (!editable) return;
+    if (!startingXIEditable) return;
     setSlotPlayerKeys((current) => {
       const next = [...current];
       next[slotIndex] = null;
@@ -189,7 +221,7 @@ export default function ProClubStartingXI11v11({
   }
 
   function addSubstitute(playerKey: string) {
-    if (!editable) return;
+    if (!startingXIEditable) return;
     setSlotPlayerKeys((current) => current.map((key) => key === playerKey ? null : key));
     setSubstitutePlayerKeys((current) =>
       current.includes(playerKey) ? current : [...current, playerKey],
@@ -197,12 +229,12 @@ export default function ProClubStartingXI11v11({
   }
 
   function removeSubstitute(playerKey: string) {
-    if (!editable) return;
+    if (!startingXIEditable) return;
     setSubstitutePlayerKeys((current) => current.filter((key) => key !== playerKey));
   }
 
   function assignRole(slotIndex: number, value: string) {
-    if (!editable) return;
+    if (!startingXIEditable) return;
     setRoleAssignments((current) => {
       const next = [...current];
       next[slotIndex] = value.trim() ? value : null;
@@ -211,7 +243,7 @@ export default function ProClubStartingXI11v11({
   }
 
   function assignSetPiece(duty: ProClubSetPieceDuty, playerKey: string) {
-    if (!editable) return;
+    if (!startingXIEditable) return;
     setSetPieceAssignments((current) => ({
       ...current,
       [duty]: playerKey || null,
@@ -241,7 +273,7 @@ export default function ProClubStartingXI11v11({
   }
 
   function appendPenaltyTaker(playerKey: string, target: "PRIMARY" | "BACKUP") {
-    if (!editable) return;
+    if (!shootoutEditable) return;
     if ([...penaltyPrimary, ...penaltyBackups].includes(playerKey)) return;
 
     if (target === "PRIMARY") {
@@ -252,6 +284,12 @@ export default function ProClubStartingXI11v11({
 
     if (penaltyBackups.length >= 5) return;
     setPenaltyBackups((current) => [...current, playerKey]);
+  }
+
+  function removePenaltyTaker(playerKey: string) {
+    if (!shootoutEditable) return;
+    setPenaltyPrimary((current) => current.filter((key) => key !== playerKey));
+    setPenaltyBackups((current) => current.filter((key) => key !== playerKey));
   }
 
   const selectedSquadKeys = [
@@ -282,11 +320,11 @@ export default function ProClubStartingXI11v11({
         </div>
         <div className="space-y-2 text-right">
           <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/5 px-3 py-2 text-xs text-cyan-200">
-            {editable
+            {startingXIEditable || shootoutEditable
               ? String(authority.staffRole) + " authoring"
               : saving
                 ? "Saving canonical Match plan…"
-                : "Read-only for this staff role"}
+                : "Read-only at this Match status"}
           </div>
           {saveMessage && (
             <p className="max-w-sm text-xs text-slate-400">{saveMessage}</p>
@@ -344,7 +382,7 @@ export default function ProClubStartingXI11v11({
                   >
                     <button
                       type="button"
-                      disabled={!editable}
+                      disabled={!startingXIEditable}
                       onClick={() => setActiveSlot((current) =>
                         current === slot.slotIndex ? null : slot.slotIndex,
                       )}
@@ -365,7 +403,7 @@ export default function ProClubStartingXI11v11({
                       </p>
                       <p className="mt-0.5 font-bold text-cyan-300">{slot.position}</p>
                     </div>
-                    {slot.player && editable && (
+                    {slot.player && startingXIEditable && (
                       <button
                         type="button"
                         onClick={() => removeStarter(slot.slotIndex)}
@@ -464,7 +502,7 @@ export default function ProClubStartingXI11v11({
                           {player.positionLabel} · FUTID {player.futIdLabel}
                         </p>
                       </div>
-                      {editable && (
+                      {startingXIEditable && (
                         <div className="flex shrink-0 gap-1">
                           <button
                             type="button"
@@ -495,7 +533,7 @@ export default function ProClubStartingXI11v11({
               <h4 className="font-black text-white">Head Coach / Technical Director Notes</h4>
               <textarea
                 value={coachNotes}
-                disabled={!editable}
+                disabled={!startingXIEditable}
                 onChange={(event) => setCoachNotes(event.target.value)}
                 placeholder="Local preview notes only. Persistence is not enabled."
                 className="mt-3 min-h-36 w-full resize-none rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm text-slate-200 outline-none focus:border-cyan-400/50 disabled:opacity-60"
@@ -567,7 +605,7 @@ export default function ProClubStartingXI11v11({
                     </span>
                     <input
                       value={roleAssignments[slot.slotIndex] ?? ""}
-                      disabled={!editable}
+                      disabled={!startingXIEditable}
                       maxLength={160}
                       onChange={(event) => assignRole(slot.slotIndex, event.target.value)}
                       placeholder="Assign positional duty..."
@@ -587,7 +625,7 @@ export default function ProClubStartingXI11v11({
                   <span className="text-slate-400">{DUTY_LABELS[duty]}</span>
                   <select
                     value={setPieceAssignments[duty] ?? ""}
-                    disabled={!editable}
+                    disabled={!startingXIEditable}
                     onChange={(event) => assignSetPiece(duty, event.target.value)}
                     className="max-w-40 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-200"
                   >
@@ -607,7 +645,7 @@ export default function ProClubStartingXI11v11({
             {onSaveStartingXI && (
               <button
                 type="button"
-                disabled={!editable}
+                disabled={!startingXIEditable}
                 onClick={() => void saveStartingXI()}
                 className="mt-3 w-full rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-xs font-black text-emerald-200 disabled:opacity-40"
               >
@@ -631,8 +669,17 @@ export default function ProClubStartingXI11v11({
                   {Array.from({ length: 5 }, (_, index) => {
                     const player = byKey.get(penaltyPrimary[index] ?? "");
                     return (
-                      <div key={index} className="rounded-lg border border-slate-800 bg-slate-900 px-2 py-1.5 text-xs text-slate-300">
-                        {index + 1}. {player ? "#" + player.jerseyNumber + " " + player.shortName : "Not set"}
+                      <div key={index} className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 px-2 py-1.5 text-xs text-slate-300">
+                        <span>{index + 1}. {player ? "#" + player.jerseyNumber + " " + player.shortName : "Not set"}</span>
+                        {player && shootoutEditable && (
+                          <button
+                            type="button"
+                            onClick={() => removePenaltyTaker(player.playerKey)}
+                            className="text-[9px] font-bold uppercase tracking-wide text-rose-300"
+                          >
+                            Remove
+                          </button>
+                        )}
                       </div>
                     );
                   })}
@@ -644,8 +691,17 @@ export default function ProClubStartingXI11v11({
                   {Array.from({ length: 5 }, (_, index) => {
                     const player = byKey.get(penaltyBackups[index] ?? "");
                     return (
-                      <div key={index} className="rounded-lg border border-slate-800 bg-slate-900 px-2 py-1.5 text-xs text-slate-300">
-                        B{index + 1}. {player ? "#" + player.jerseyNumber + " " + player.shortName : "Not set"}
+                      <div key={index} className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 px-2 py-1.5 text-xs text-slate-300">
+                        <span>B{index + 1}. {player ? "#" + player.jerseyNumber + " " + player.shortName : "Not set"}</span>
+                        {player && shootoutEditable && (
+                          <button
+                            type="button"
+                            onClick={() => removePenaltyTaker(player.playerKey)}
+                            className="text-[9px] font-bold uppercase tracking-wide text-rose-300"
+                          >
+                            Remove
+                          </button>
+                        )}
                       </div>
                     );
                   })}
@@ -656,7 +712,7 @@ export default function ProClubStartingXI11v11({
             {onSaveShootout && (
               <button
                 type="button"
-                disabled={!editable}
+                disabled={!shootoutEditable}
                 onClick={() => void saveShootout()}
                 className="mt-3 w-full rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs font-black text-amber-200 disabled:opacity-40"
               >
