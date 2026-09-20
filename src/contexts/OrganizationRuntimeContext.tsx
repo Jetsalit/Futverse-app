@@ -90,6 +90,7 @@ function RuntimeActorOwner({
     const request = getOrganizationResolutionRequest(runtimeState);
     if (request === null || request.organizationType !== "PRO_CLUB") return;
 
+    let mounted = true;
     let authorityRequest = authorityRequests.current.get(request);
     if (authorityRequest === undefined) {
       authorityRequest = resolveProClubRuntimeAuthority(
@@ -132,7 +133,6 @@ function RuntimeActorOwner({
       authorityRequests.current.set(request, authorityRequest);
     }
 
-    let mounted = true;
 
     void authorityRequest
       .then((bridgeResult) => {
