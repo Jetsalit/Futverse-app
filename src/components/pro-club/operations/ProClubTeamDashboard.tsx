@@ -15,6 +15,7 @@ import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClu
 import { staffRoleLabels } from "../../../lib/proClubOnboarding";
 import ProClubAttendance from "./ProClubAttendance";
 import ProClubHeadCoachWeeklyProductionWorkspace from "./ProClubHeadCoachWeeklyProductionWorkspace";
+import ProClubMatchStartingXIWorkspace from "./ProClubMatchStartingXIWorkspace";
 import ProClubSquadRoster from "./ProClubSquadRoster";
 import ProClubStaffSubmissions, {
   canOpenProClubStaffSubmissions,
@@ -48,6 +49,7 @@ export function resolveProClubActiveTab(
     case "TRAINING":
     case "ATTENDANCE":
     case "SUBMISSIONS":
+    case "MATCHES":
       return value;
     case "OVERVIEW":
     default:
@@ -165,8 +167,6 @@ export default function ProClubTeamDashboard({
   }
 
   function selectActiveTab(nextTab: ProClubTeamDashboardTab) {
-    if (nextTab === "MATCHES") return;
-
     if (nextTab === "ATTENDANCE") {
       setAttendanceLaunch(null);
     }
@@ -233,14 +233,12 @@ export default function ProClubTeamDashboard({
           {PRO_CLUB_TEAM_DASHBOARD_TABS.filter(
             (tab) => tab !== "SUBMISSIONS" || staffSubmissionsAvailable,
           ).map((tab) => {
-            const disabled = tab === "MATCHES";
             const selected = activeTab === tab;
 
             return (
               <button
                 key={tab}
                 type="button"
-                disabled={disabled}
                 aria-current={selected ? "page" : undefined}
                 onClick={() => selectActiveTab(tab)}
                 className={[
@@ -248,17 +246,9 @@ export default function ProClubTeamDashboard({
                   selected
                     ? "bg-cyan-400/10 text-cyan-200"
                     : "text-slate-400 hover:bg-white/5 hover:text-white",
-                  disabled
-                    ? "cursor-not-allowed opacity-45 hover:bg-transparent hover:text-slate-400"
-                    : "",
                 ].join(" ")}
               >
                 <span>{TAB_LABELS[tab]}</span>
-                {disabled && (
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-600">
-                    Soon
-                  </span>
-                )}
               </button>
             );
           })}
@@ -381,9 +371,9 @@ export default function ProClubTeamDashboard({
                 <OverviewCard
                   icon={<CalendarDays size={20} />}
                   title="Matches"
-                  description="Coming soon"
+                  description="Match & Starting XI"
                   tone="matches"
-                  badge="Coming soon"
+                  onOpen={() => selectActiveTab("MATCHES")}
                 />
               </div>
 
@@ -435,6 +425,12 @@ export default function ProClubTeamDashboard({
                     : undefined
                 }
               />
+            </div>
+          )}
+
+          {activeTab === "MATCHES" && (
+            <div className="pro-club-module-surface">
+              <ProClubMatchStartingXIWorkspace authority={authority} />
             </div>
           )}
         </main>
