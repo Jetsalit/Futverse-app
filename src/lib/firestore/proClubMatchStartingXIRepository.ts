@@ -669,6 +669,24 @@ export async function getProClubMatch(
   return parseMatch(matchId, snapshot.data);
 }
 
+export async function listProClubMatches(
+  clubId: string,
+  ops: ProClubMatchStartingXIRepositoryOps = FIRESTORE_OPS,
+): Promise<ProClubMatchRecord[]> {
+  requireDocumentId(clubId, "clubId");
+  const uid = requireAuthenticatedUid(ops);
+  const authority = await resolveRequiredAuthority(clubId, uid, ops);
+  assertActiveStaff(authority);
+
+  const snapshot = await ops.listDocuments(["proClubs", clubId, "matches"]);
+  return snapshot.documents.map((item) => {
+    if (!item.exists) {
+      throw new Error("Pro Club Match list returned a missing document.");
+    }
+    return parseMatch(item.id, item.data);
+  });
+}
+
 export async function createProClubMatch(
   clubId: string,
   matchId: string,

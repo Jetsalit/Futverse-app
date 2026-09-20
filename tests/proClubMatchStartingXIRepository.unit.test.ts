@@ -6,6 +6,7 @@ import {
   createProClubMatch,
   getProClubShootout,
   getProClubStartingXI,
+  listProClubMatches,
   listProClubMatchRoster,
   removeProClubMatchRosterPlayer,
   saveProClubShootout,
@@ -225,6 +226,28 @@ async function createMatchWithRoster(
 
   return harness;
 }
+
+test("list Matches returns canonical tenant Match records", async () => {
+  const { ops } = createHarness();
+  await createProClubMatch(CLUB, "match-one", MATCH_CORE, ops);
+  await createProClubMatch(
+    CLUB,
+    "match-two",
+    { ...MATCH_CORE, competitionName: "Cup" },
+    ops,
+  );
+
+  const matches = await listProClubMatches(CLUB, ops);
+
+  assert.deepEqual(
+    matches.map((item) => item.matchId).sort(),
+    ["match-one", "match-two"],
+  );
+  assert.deepEqual(
+    matches.map((item) => item.competitionName).sort(),
+    ["Cup", "League"],
+  );
+});
 
 test("create Match starts with empty roster revision zero and canonical audit", async () => {
   const { ops, docs } = createHarness();
