@@ -464,6 +464,18 @@ export default function ProClubMatchStartingXIWorkspace({
             </div>
           </section>
 
+          <ProClubMatchRosterDrawer
+            open={rosterDrawerOpen}
+            canMutate={canMutate}
+            saving={saving}
+            matchStatus={match.status}
+            matchRoster={matchRoster}
+            firstTeamRoster={canonicalRoster}
+            onClose={() => setRosterDrawerOpen(false)}
+            onAdd={addRosterPlayer}
+            onRemove={removeRosterPlayer}
+          />
+
           {loadingMatch ? (
             <p className="text-sm text-slate-500">Loading Match plan…</p>
           ) : startingXI?.formation === "CUSTOM" ? (
@@ -471,20 +483,7 @@ export default function ProClubMatchStartingXIWorkspace({
               This Match contains a CUSTOM formation. Custom formation editing remains outside the reviewed fixed-formation UI slice.
             </div>
           ) : (
-            <>
-              <ProClubMatchRosterDrawer
-                open={rosterDrawerOpen}
-                canMutate={canMutate}
-                saving={saving}
-                matchStatus={match.status}
-                matchRoster={matchRoster}
-                firstTeamRoster={canonicalRoster}
-                onClose={() => setRosterDrawerOpen(false)}
-                onAdd={addRosterPlayer}
-                onRemove={removeRosterPlayer}
-              />
-
-              <ProClubStartingXI11v11
+            <ProClubStartingXI11v11
                 key={`${match.matchId}:${match.rosterRevision}`}
                 authority={authority}
                 roster={uiMatchRoster}
@@ -501,9 +500,8 @@ export default function ProClubMatchStartingXIWorkspace({
                   match.status === "IN_PROGRESS"
                 }
                 onSaveStartingXI={persistStartingXI}
-                onSaveShootout={persistShootout}
-              />
-            </>
+              onSaveShootout={persistShootout}
+            />
           )}
         </>
       )}
