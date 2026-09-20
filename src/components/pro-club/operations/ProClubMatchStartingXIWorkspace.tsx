@@ -207,11 +207,6 @@ export default function ProClubMatchStartingXIWorkspace({
     };
   }, [clubId, selectedMatchId, reloadToken]);
 
-  const matchRosterKeys = useMemo(
-    () => new Set(matchRoster.map((player) => player.playerKey)),
-    [matchRoster],
-  );
-
   const uiMatchRoster = useMemo(
     () => matchRoster.map(matchRosterToUiRoster),
     [matchRoster],
