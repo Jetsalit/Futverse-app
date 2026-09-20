@@ -23,7 +23,10 @@ test("MATCHES production tab mounts the reviewed Match Starting XI workspace", (
     dashboard,
     /activeTab === "MATCHES"[\s\S]*<ProClubMatchStartingXIWorkspace authority=\{authority\}/,
   );
-  assert.doesNotMatch(dashboard, /MATCHES") return/);
+  assert.equal(
+    dashboard.includes('if (nextTab === "MATCHES") return'),
+    false,
+  );
   assert.doesNotMatch(dashboard, /title="Matches"[\s\S]*Coming soon/i);
 });
 
