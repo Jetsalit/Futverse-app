@@ -457,11 +457,17 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
       let releaseFirst!: () => void;
       waitForAuthority = new Promise(resolve => { releaseFirst = resolve; });
 
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        dom.window.HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      assert.ok(valueSetter);
+
       await act(async () => {
-        input.value = "club-alpha";
+        valueSetter.call(input, "club-alpha");
         input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
-        input.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
       });
+      assert.equal(input.value, "club-alpha");
 
       const form = input.closest("form");
       assert.ok(form);
