@@ -5,7 +5,6 @@ import {
   Goal,
   RotateCcw,
   Send,
-  ShieldCheck,
   Sparkles,
   Users,
 } from "lucide-react";
