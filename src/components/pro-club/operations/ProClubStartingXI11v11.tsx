@@ -720,7 +720,7 @@ export default function ProClubStartingXI11v11({
               </button>
             )}
 
-            {editable && selectedSquadKeys.length > 0 && (
+            {shootoutEditable && selectedSquadKeys.length > 0 && (
               <div className="mt-3 space-y-2 border-t border-slate-800 pt-3">
                 <p className="text-[10px] font-bold text-slate-500">Add selected match-squad player</p>
                 <div className="max-h-32 space-y-1 overflow-y-auto">
