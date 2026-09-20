@@ -6,6 +6,7 @@ import {
   createProClubMatch,
   getProClubShootout,
   getProClubStartingXI,
+  listProClubMatchRoster,
   removeProClubMatchRosterPlayer,
   saveProClubShootout,
   saveProClubStartingXI,
@@ -259,6 +260,53 @@ test("roster add is one atomic Match-index + canonical snapshot write", async ()
   assert.equal(result.match.rosterRevision, 1);
   assert.equal(result.roster[0]!.playerKey, "p1");
   assert.equal(result.roster[0]!.firstName, "Player p1");
+});
+
+test("roster parser fails closed on malformed additionalPositions", async () => {
+  const { ops, docs } = createHarness();
+  await createProClubMatch(CLUB, MATCH, MATCH_CORE, ops);
+
+  docs.set(
+    `proClubs/${CLUB}/matches/${MATCH}`,
+    {
+      id: MATCH,
+      data: {
+        ...docs.get(`proClubs/${CLUB}/matches/${MATCH}`)!.data,
+        rosterPlayerKeys: ["p1"],
+        rosterRevision: 1,
+        rosterMutationPlayerKey: "p1",
+        rosterMutationKind: "ADD",
+      },
+    },
+  );
+
+  docs.set(
+    `proClubs/${CLUB}/matches/${MATCH}/roster/p1`,
+    {
+      id: "p1",
+      data: {
+        schemaVersion: 1,
+        playerKey: "p1",
+        futId: null,
+        firstName: "Player p1",
+        lastName: "",
+        jerseyNumber: 1,
+        position: "CM",
+        additionalPositions: "RW",
+        createdAt: new Date(),
+        createdBy: HEAD,
+        createdByRole: "HEAD_COACH",
+        updatedAt: new Date(),
+        updatedBy: HEAD,
+        updatedByRole: "HEAD_COACH",
+      },
+    },
+  );
+
+  await assert.rejects(
+    listProClubMatchRoster(CLUB, MATCH, ops),
+    /additionalPositions/,
+  );
 });
 
 test("roster mutation rejects stale expected revision before any atomic write", async () => {
