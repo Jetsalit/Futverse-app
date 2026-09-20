@@ -233,7 +233,7 @@ test(
         const context = await render("uid-a");
         assert.deepEqual(
           Object.keys(context).sort(),
-          ["runtimeState", "selectProClub", "proClubAuthority"].sort(),
+          ["runtimeState", "selectProClub", "proClubAuthority", "proClubEntryProgress"].sort(),
         );
         assert.equal(context.runtimeState.status, "UNSELECTED");
         assert.equal(isOrganizationRuntimeAuthorized(context.runtimeState), false);
@@ -357,6 +357,32 @@ test(
         assert.strictEqual(latestContext!.runtimeState, authorizedB);
         assert.equal(latestContext!.runtimeState.selection?.organizationId, "club-b");
         assert.equal(latestContext!.proClubAuthority?.organizationId, "club-b");
+      });
+
+      await t.test("same-club retry ignores the older completion", async () => {
+        await reset();
+        const first = deferredAuthority();
+        const retry = deferredAuthority();
+        resolveAuthority = () =>
+          authorityRequests.length === 1 ? first.promise : retry.promise;
+
+        await render("uid-a");
+        await selectProClub("club-a");
+        const firstRequest = authorityRequests[0];
+
+        await selectProClub("club-a");
+        const retryRequest = authorityRequests[1];
+        assert.notStrictEqual(firstRequest, retryRequest);
+        assert.equal(latestContext!.proClubAuthority, null);
+
+        await complete(retry, retryRequest, "AUTHORIZED");
+        const retryAuthorized = latestContext!.runtimeState;
+        assert.equal(retryAuthorized.status, "AUTHORIZED");
+        assert.equal(latestContext!.proClubAuthority?.organizationId, "club-a");
+
+        await complete(first, firstRequest, "AUTHORIZED");
+        assert.strictEqual(latestContext!.runtimeState, retryAuthorized);
+        assert.equal(latestContext!.proClubAuthority?.organizationId, "club-a");
       });
 
       await t.test("ignores pending completion after logout", async () => {
