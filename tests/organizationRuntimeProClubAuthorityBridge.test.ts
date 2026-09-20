@@ -168,6 +168,46 @@ test(
       assert.equal(reads.length, 3);
     });
 
+    await t.test("reports stage timings without identity or credential fields", async () => {
+      const { request } = createResolvingRuntime("PRO_CLUB", "club", "actor");
+      const events: Array<Record<string, unknown>> = [];
+
+      const result = await resolveProClubRuntimeAuthority(
+        request,
+        makeOps({
+          "proClubs/club": activeClub("club"),
+          "proClubs/club/members/actor": membership("actor", "MEMBER", "ACTIVE"),
+          "proClubs/club/staff/actor": staff("actor"),
+        }),
+        (event) => events.push({ ...event }),
+      );
+
+      assert.equal(result.runtimeResult?.status, "AUTHORIZED");
+      assert.deepEqual(
+        events.map(({ stage, state }) => [stage, state]),
+        [
+          ["CLUB", "STARTED"],
+          ["CLUB", "COMPLETED"],
+          ["MEMBERSHIP", "STARTED"],
+          ["MEMBERSHIP", "COMPLETED"],
+          ["STAFF_ROLE", "STARTED"],
+          ["STAFF_ROLE", "COMPLETED"],
+        ],
+      );
+
+      for (const event of events) {
+        assert.equal("uid" in event, false);
+        assert.equal("clubId" in event, false);
+        assert.equal("name" in event, false);
+        assert.equal("email" in event, false);
+        assert.equal("token" in event, false);
+        if (event.state === "COMPLETED") {
+          assert.equal(typeof event.durationMs, "number");
+          assert.ok((event.durationMs as number) >= 0);
+        }
+      }
+    });
+
     await t.test("never exposes authority for denied or untrusted requests", async () => {
       const { request } = createResolvingRuntime("PRO_CLUB", "club", "actor");
       for (const status of ["INACTIVE", "LEFT", "REVOKED"] as const) {
