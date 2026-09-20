@@ -4384,6 +4384,7 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
       }
 
       function proClubMatchValidSetPiecesV1(assignments, selected) {
+        let assignedPlayerKeys = assignments.values().removeAll([null]);
         return assignments is map
           && assignments.keys().size() == 7
           && assignments.keys().hasOnly([
@@ -4395,34 +4396,7 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
             'THROW_IN_RIGHT',
             'PENALTY'
           ])
-          && (
-            assignments.get('CORNER_LEFT', null) == null
-            || selected.hasAny([assignments.get('CORNER_LEFT', null)])
-          )
-          && (
-            assignments.get('CORNER_RIGHT', null) == null
-            || selected.hasAny([assignments.get('CORNER_RIGHT', null)])
-          )
-          && (
-            assignments.get('FREE_KICK_LEFT', null) == null
-            || selected.hasAny([assignments.get('FREE_KICK_LEFT', null)])
-          )
-          && (
-            assignments.get('FREE_KICK_RIGHT', null) == null
-            || selected.hasAny([assignments.get('FREE_KICK_RIGHT', null)])
-          )
-          && (
-            assignments.get('THROW_IN_LEFT', null) == null
-            || selected.hasAny([assignments.get('THROW_IN_LEFT', null)])
-          )
-          && (
-            assignments.get('THROW_IN_RIGHT', null) == null
-            || selected.hasAny([assignments.get('THROW_IN_RIGHT', null)])
-          )
-          && (
-            assignments.get('PENALTY', null) == null
-            || selected.hasAny([assignments.get('PENALTY', null)])
-          );
+          && selected.hasAll(assignedPlayerKeys);
       }
 
       function proClubMatchValidRoleAssignmentV1(value) {
@@ -4474,21 +4448,19 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
       }
 
       function proClubMatchValidStartingXIDataV1(data, rosterPlayerKeys) {
-        let starters = data.get('slotPlayerKeys', []).removeAll([null]);
+        let slotPlayerKeys = data.get('slotPlayerKeys', []);
+        let starters = slotPlayerKeys.removeAll([null]);
         let substitutes = data.get('substitutePlayerKeys', []);
         let selected = starters.concat(substitutes);
-        return data.get('slotPlayerKeys', []) is list
-          && data.get('slotPlayerKeys', []).size() == 11
+        return slotPlayerKeys is list
+          && slotPlayerKeys.size() == 11
           && substitutes is list
-          // Fast semantic guards run before the exact-key scan.
+          // One selected-player set proves uniqueness and no overlap.
           && proClubMatchValidRoleAssignmentsV1(
             data.get('positionRoleAssignments', [])
           )
-          && starters.toSet().size() == starters.size()
-          && substitutes.toSet().size() == substitutes.size()
-          && starters.toSet().intersection(substitutes.toSet()).size() == 0
-          && rosterPlayerKeys.hasAll(starters)
-          && rosterPlayerKeys.hasAll(substitutes)
+          && selected.toSet().size() == selected.size()
+          && rosterPlayerKeys.hasAll(selected)
           && proClubMatchStartingXIKeysV1(data)
           && data.get('schemaVersion', 0) == 1
           && data.get('formation', '') in [
@@ -4518,8 +4490,8 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           /databases/$(database)/documents/proClubs/$(clubId)/matches/$(matchId);
         let matchData = get(matchPath).data;
         let actorRole = proClubMatchActorRoleV1(clubId);
-        return exists(matchPath)
-          && proClubMatchRosterIndexStateV1(matchData)
+        // matchData validation fails closed when Match is absent.
+        return proClubMatchRosterIndexStateV1(matchData)
           && matchData.get('status', '') in ['DRAFT', 'SCHEDULED']
           && proClubMatchValidStartingXIDataV1(
             data,
@@ -4543,8 +4515,8 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           /databases/$(database)/documents/proClubs/$(clubId)/matches/$(matchId);
         let matchData = get(matchPath).data;
         let actorRole = proClubMatchActorRoleV1(clubId);
-        return exists(matchPath)
-          && proClubMatchRosterIndexStateV1(matchData)
+        // matchData validation fails closed when Match is absent.
+        return proClubMatchRosterIndexStateV1(matchData)
           && matchData.get('status', '') in ['DRAFT', 'SCHEDULED']
           && previous.get('schemaVersion', 0) == 1
           && proClubMatchValidStartingXIDataV1(
