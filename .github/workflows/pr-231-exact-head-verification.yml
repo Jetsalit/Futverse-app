@@ -1,0 +1,79 @@
+name: PR 231 Exact Head Verification
+
+on:
+  push:
+    branches:
+      - verify/pr-231-exact-head
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 2021313f62e7ad22b5f427d5cb05b52d5e43a36a
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Exact HEAD provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="2021313f62e7ad22b5f427d5cb05b52d5e43a36a"
+          actual="$(git rev-parse HEAD)"
+          echo "EXPECTED_HEAD=$expected"
+          echo "ACTUAL_HEAD=$actual"
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain)"
+          echo "EXACT_HEAD_GATE=PASS"
+
+      - name: Install locked dependencies
+        run: |
+          npm ci --ignore-scripts
+          npm --prefix functions ci --ignore-scripts
+
+      - name: Targeted Starting XI foundation tests
+        run: >-
+          node --import tsx --test
+          tests/proClubStartingXI11v11.unit.test.ts
+          tests/proClubStartingXI11v11V1Contract.test.ts
+          tests/proClubSquadRosterModel.unit.test.ts
+          tests/proClubSquadRosterRepository.unit.test.ts
+
+      - name: Scope guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="24e08239af7c749a3b15009f0887897e884d73b4"
+          head="2021313f62e7ad22b5f427d5cb05b52d5e43a36a"
+          changed="$(git diff --name-only "$base" "$head")"
+          echo "$changed"
+          if echo "$changed" | grep -Eq '^(firestore\.rules|firebase\.json|firebase\.spark\.json|src/components/|src/lib/firestore/)'; then
+            echo "SCOPE_GUARD=FAIL"
+            exit 1
+          fi
+          echo "SCOPE_GUARD=PASS"
+
+      - name: Protected Academy Starting XI unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="24e08239af7c749a3b15009f0887897e884d73b4"
+          head="2021313f62e7ad22b5f427d5cb05b52d5e43a36a"
+          test "$(git rev-parse "$base:src/components/StartingXIBuilder.tsx")" = "$(git rev-parse "$head:src/components/StartingXIBuilder.tsx")"
+          echo "ACADEMY_STARTING_XI_PRESERVED=PASS"
+
+      - name: TypeScript
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Diff whitespace check
+        shell: bash
+        run: git diff --check 24e08239af7c749a3b15009f0887897e884d73b4 2021313f62e7ad22b5f427d5cb05b52d5e43a36a
