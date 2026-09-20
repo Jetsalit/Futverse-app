@@ -129,9 +129,16 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
       namedExports: {
         resolveProClubRuntimeAuthority: async (
           request: { uid: string; organizationId: string },
+          _ops?: unknown,
+          observeTiming?: (event:
+            | { stage: "CLUB" | "MEMBERSHIP" | "STAFF_ROLE"; state: "STARTED" }
+            | { stage: "CLUB" | "MEMBERSHIP" | "STAFF_ROLE"; state: "COMPLETED"; durationMs: number }
+          ) => void,
         ) => {
           resolutionRequests.push(request);
+          observeTiming?.({ stage: "CLUB", state: "STARTED" });
           if (waitForAuthority) await waitForAuthority;
+          observeTiming?.({ stage: "CLUB", state: "COMPLETED", durationMs: 10 });
           const result = authorities.has(request.organizationId)
             ? "AUTHORIZED"
             : "REJECTED";
@@ -425,7 +432,7 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
       assert.ok(container.querySelector("#club-workspace-reference"));
     });
 
-    await t.test("manual club authority hang exposes retry without refresh and stale completion cannot override retry", async () => {
+    await t.test("club selection authority hang exposes retry without refresh and stale completion cannot override retry", async () => {
       resetScenario();
 
       const originalSetTimeout = globalThis.setTimeout;
@@ -442,39 +449,21 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
         value: originalClearTimeout,
       });
 
-      discoveryRows = [];
+      discoveryRows = [
+        { clubId: "club-alpha" },
+        { clubId: "club-beta" },
+      ];
       await mountPortal();
 
-      const workspaceButton = findButtonContaining("Club workspace");
-      assert.ok(workspaceButton);
-      await act(async () => {
-        workspaceButton.click();
-      });
-
-      const input = container.querySelector("#club-workspace-reference") as HTMLInputElement | null;
-      assert.ok(input);
+      const betaButton = findButtonContaining("Beta City");
+      assert.ok(betaButton);
 
       let releaseFirst!: () => void;
       waitForAuthority = new Promise(resolve => { releaseFirst = resolve; });
 
-      const valueSetter = Object.getOwnPropertyDescriptor(
-        dom.window.HTMLInputElement.prototype,
-        "value",
-      )?.set;
-      assert.ok(valueSetter);
-
-      await act(async () => {
-        valueSetter.call(input, "club-alpha");
-        input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
-      });
-      assert.equal(input.value, "club-alpha");
-
-      const form = input.closest("form");
-      assert.ok(form);
-
       try {
         await act(async () => {
-          form.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
+          betaButton.click();
         });
         await settle();
 
@@ -491,14 +480,14 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
         });
         await settle();
 
-        assert.match(text(), /Team dashboard Alpha United/);
+        assert.match(text(), /Team dashboard Beta City/);
         const requestsAfterRetry = resolutionRequests.length;
         assert.ok(requestsAfterRetry >= 2);
 
         releaseFirst();
         await settle();
 
-        assert.match(text(), /Team dashboard Alpha United/);
+        assert.match(text(), /Team dashboard Beta City/);
         assert.equal(resolutionRequests.length, requestsAfterRetry);
       } finally {
         Object.defineProperty(globalThis, "setTimeout", {
