@@ -542,13 +542,21 @@ export default function ProClubMatchStartingXIWorkspace({
             </div>
           ) : (
             <ProClubStartingXI11v11
-              key={`${match.matchId}:${startingXI?.revision ?? 0}:${shootout?.revision ?? 0}:${match.rosterRevision}`}
+              key={`${match.matchId}:${match.rosterRevision}`}
               authority={authority}
               roster={uiMatchRoster}
               initialStartingXI={startingXI}
               initialShootout={shootout}
               saving={saving}
               saveMessage={saveMessage}
+              startingXIWritable={
+                match.status === "DRAFT" || match.status === "SCHEDULED"
+              }
+              shootoutWritable={
+                match.status === "DRAFT" ||
+                match.status === "SCHEDULED" ||
+                match.status === "IN_PROGRESS"
+              }
               onSaveStartingXI={persistStartingXI}
               onSaveShootout={persistShootout}
             />
