@@ -76,3 +76,40 @@ test("wiring exposes canonical Match roster control and fixed-formation persiste
   assert.doesNotMatch(workspace, /startingXIAudit/);
   assert.doesNotMatch(workspace, /Player Communication.*save/is);
 });
+
+
+test("workspace applies lifecycle-specific editability and does not remount on saved revision changes", () => {
+  const workspace = readFileSync(files.workspace, "utf8");
+
+  assert.match(
+    workspace,
+    /startingXIWritable=\{[\s\S]*match\.status === "DRAFT"[\s\S]*match\.status === "SCHEDULED"/,
+  );
+  assert.match(
+    workspace,
+    /shootoutWritable=\{[\s\S]*match\.status === "IN_PROGRESS"/,
+  );
+  assert.match(
+    workspace,
+    /key=\{\`\$\{match\.matchId\}:\$\{match\.rosterRevision\}\`\}/,
+  );
+  assert.doesNotMatch(
+    workspace,
+    /key=\{[^}]*startingXI\?\.revision/,
+  );
+  assert.doesNotMatch(
+    workspace,
+    /key=\{[^}]*shootout\?\.revision/,
+  );
+});
+
+test("editor separates Starting XI and shootout guards and allows saved shootout removal", () => {
+  const editor = readFileSync(files.editor, "utf8");
+
+  assert.match(editor, /const startingXIEditable = authorCanEdit && startingXIWritable/);
+  assert.match(editor, /const shootoutEditable = authorCanEdit && shootoutWritable/);
+  assert.match(editor, /if \(!startingXIEditable \|\| !onSaveStartingXI\) return/);
+  assert.match(editor, /if \(!shootoutEditable \|\| !onSaveShootout\) return/);
+  assert.match(editor, /function removePenaltyTaker\(playerKey: string\)/);
+  assert.match(editor, /onClick=\{\(\) => removePenaltyTaker\(player\.playerKey\)\}/);
+});
