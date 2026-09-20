@@ -251,7 +251,7 @@ export default function ProClubStartingXI11v11({
   }
 
   async function saveStartingXI() {
-    if (!editable || !onSaveStartingXI) return;
+    if (!startingXIEditable || !onSaveStartingXI) return;
     await onSaveStartingXI({
       schemaVersion: 1,
       formation,
@@ -264,7 +264,7 @@ export default function ProClubStartingXI11v11({
   }
 
   async function saveShootout() {
-    if (!editable || !onSaveShootout) return;
+    if (!shootoutEditable || !onSaveShootout) return;
     await onSaveShootout({
       schemaVersion: 1,
       primaryTakers: [...penaltyPrimary],
