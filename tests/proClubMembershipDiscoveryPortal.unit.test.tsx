@@ -425,6 +425,89 @@ test("Pro Club Membership Discovery V1 portal contract", async (t) => {
       assert.ok(container.querySelector("#club-workspace-reference"));
     });
 
+    await t.test("manual club authority hang exposes retry without refresh and stale completion cannot override retry", async () => {
+      resetScenario();
+
+      const originalSetTimeout = globalThis.setTimeout;
+      const originalClearTimeout = globalThis.clearTimeout;
+      Object.defineProperty(globalThis, "setTimeout", {
+        configurable: true,
+        writable: true,
+        value: ((handler: TimerHandler, timeout?: number, ...args: unknown[]) =>
+          originalSetTimeout(handler, timeout === 4000 ? 0 : timeout, ...args)) as typeof setTimeout,
+      });
+      Object.defineProperty(globalThis, "clearTimeout", {
+        configurable: true,
+        writable: true,
+        value: originalClearTimeout,
+      });
+
+      discoveryRows = [];
+      await mountPortal();
+
+      const workspaceButton = findButtonContaining("Club workspace");
+      assert.ok(workspaceButton);
+      await act(async () => {
+        workspaceButton.click();
+      });
+
+      const input = container.querySelector("#club-workspace-reference") as HTMLInputElement | null;
+      assert.ok(input);
+
+      let releaseFirst!: () => void;
+      waitForAuthority = new Promise(resolve => { releaseFirst = resolve; });
+
+      await act(async () => {
+        input.value = "club-alpha";
+        input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+        input.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+      });
+
+      const form = input.closest("form");
+      assert.ok(form);
+
+      try {
+        await act(async () => {
+          form.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
+        });
+        await settle();
+
+        assert.match(text(), /This is taking longer than usual/);
+        const retryButton = findButtonContaining("Try again");
+        assert.ok(retryButton);
+        assert.ok(findButtonContaining("Back"));
+        assert.doesNotMatch(text(), /Team dashboard/);
+
+        waitForAuthority = null;
+
+        await act(async () => {
+          retryButton.click();
+        });
+        await settle();
+
+        assert.match(text(), /Team dashboard Alpha United/);
+        const requestsAfterRetry = resolutionRequests.length;
+        assert.ok(requestsAfterRetry >= 2);
+
+        releaseFirst();
+        await settle();
+
+        assert.match(text(), /Team dashboard Alpha United/);
+        assert.equal(resolutionRequests.length, requestsAfterRetry);
+      } finally {
+        Object.defineProperty(globalThis, "setTimeout", {
+          configurable: true,
+          writable: true,
+          value: originalSetTimeout,
+        });
+        Object.defineProperty(globalThis, "clearTimeout", {
+          configurable: true,
+          writable: true,
+          value: originalClearTimeout,
+        });
+      }
+    });
+
     await t.test("multiple canonical clubs require an authoritative-name choice", async () => {
       resetScenario();
       discoveryRows = [
