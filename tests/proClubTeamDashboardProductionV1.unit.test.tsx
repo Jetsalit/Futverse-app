@@ -58,7 +58,7 @@ test("active tab refresh persistence accepts only live production tabs", () => {
   assert.equal(resolveProClubActiveTab("TRAINING"), "TRAINING");
   assert.equal(resolveProClubActiveTab("ATTENDANCE"), "ATTENDANCE");
   assert.equal(resolveProClubActiveTab("SUBMISSIONS"), "SUBMISSIONS");
-  assert.equal(resolveProClubActiveTab("MATCHES"), "OVERVIEW");
+  assert.equal(resolveProClubActiveTab("MATCHES"), "MATCHES");
   assert.equal(resolveProClubActiveTab("UNKNOWN"), "OVERVIEW");
   assert.equal(resolveProClubActiveTab(null), "OVERVIEW");
 });
@@ -96,7 +96,7 @@ test("renders the production app shell with authoritative club identity and cont
   assert.match(text, /Attendance/);
   assert.match(text, /ส่งงาน/);
   assert.match(text, /Matches/);
-  assert.match(text, /Coming soon/i);
+  assert.doesNotMatch(text, /Coming soon/i);
 
   for (const forbidden of [
     /DEV PREVIEW/i,
@@ -132,6 +132,7 @@ test("production dashboard reuses reviewed Squad Training and Attendance surface
   );
   assert.match(source, /import ProClubAttendance from "\.\/ProClubAttendance"/);
   assert.match(source, /import ProClubStaffSubmissions/);
+  assert.match(source, /import ProClubMatchStartingXIWorkspace from "\.\/ProClubMatchStartingXIWorkspace"/);
   assert.equal((source.match(/<ProClubSquadRoster\b/g) ?? []).length, 1);
   assert.equal(
     (source.match(/<ProClubHeadCoachWeeklyProductionWorkspace\b/g) ?? []).length,
@@ -139,6 +140,7 @@ test("production dashboard reuses reviewed Squad Training and Attendance surface
   );
   assert.equal((source.match(/<ProClubAttendance\b/g) ?? []).length, 1);
   assert.equal((source.match(/<ProClubStaffSubmissions\b/g) ?? []).length, 1);
+  assert.equal((source.match(/<ProClubMatchStartingXIWorkspace\b/g) ?? []).length, 1);
 });
 
 test("overview cards connect directly to the live production tabs", () => {
@@ -147,7 +149,7 @@ test("overview cards connect directly to the live production tabs", () => {
   assert.match(source, /title="Squad"[\s\S]*onOpen=\{\(\) => selectActiveTab\("SQUAD"\)\}/);
   assert.match(source, /title="Training"[\s\S]*onOpen=\{\(\) => selectActiveTab\("TRAINING"\)\}/);
   assert.match(source, /title="Attendance"[\s\S]*onOpen=\{\(\) => selectActiveTab\("ATTENDANCE"\)\}/);
-  assert.match(source, /title="Matches"[\s\S]*badge="Coming soon"/);
+  assert.match(source, /title="Matches"[\s\S]*onOpen=\{\(\) => selectActiveTab\("MATCHES"\)\}/);
 
   const overviewCardSource = source.slice(source.indexOf("function OverviewCard"));
   assert.match(overviewCardSource, /if \(onOpen\)/);
