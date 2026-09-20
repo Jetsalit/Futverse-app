@@ -471,37 +471,39 @@ export default function ProClubMatchStartingXIWorkspace({
               This Match contains a CUSTOM formation. Custom formation editing remains outside the reviewed fixed-formation UI slice.
             </div>
           ) : (
-          <ProClubMatchRosterDrawer
-            open={rosterDrawerOpen}
-            canMutate={canMutate}
-            saving={saving}
-            matchStatus={match.status}
-            matchRoster={matchRoster}
-            firstTeamRoster={canonicalRoster}
-            onClose={() => setRosterDrawerOpen(false)}
-            onAdd={addRosterPlayer}
-            onRemove={removeRosterPlayer}
-          />
+            <>
+              <ProClubMatchRosterDrawer
+                open={rosterDrawerOpen}
+                canMutate={canMutate}
+                saving={saving}
+                matchStatus={match.status}
+                matchRoster={matchRoster}
+                firstTeamRoster={canonicalRoster}
+                onClose={() => setRosterDrawerOpen(false)}
+                onAdd={addRosterPlayer}
+                onRemove={removeRosterPlayer}
+              />
 
-            <ProClubStartingXI11v11
-              key={`${match.matchId}:${match.rosterRevision}`}
-              authority={authority}
-              roster={uiMatchRoster}
-              initialStartingXI={startingXI}
-              initialShootout={shootout}
-              saving={saving}
-              saveMessage={saveMessage}
-              startingXIWritable={
-                match.status === "DRAFT" || match.status === "SCHEDULED"
-              }
-              shootoutWritable={
-                match.status === "DRAFT" ||
-                match.status === "SCHEDULED" ||
-                match.status === "IN_PROGRESS"
-              }
-              onSaveStartingXI={persistStartingXI}
-              onSaveShootout={persistShootout}
-            />
+              <ProClubStartingXI11v11
+                key={`${match.matchId}:${match.rosterRevision}`}
+                authority={authority}
+                roster={uiMatchRoster}
+                initialStartingXI={startingXI}
+                initialShootout={shootout}
+                saving={saving}
+                saveMessage={saveMessage}
+                startingXIWritable={
+                  match.status === "DRAFT" || match.status === "SCHEDULED"
+                }
+                shootoutWritable={
+                  match.status === "DRAFT" ||
+                  match.status === "SCHEDULED" ||
+                  match.status === "IN_PROGRESS"
+                }
+                onSaveStartingXI={persistStartingXI}
+                onSaveShootout={persistShootout}
+              />
+            </>
           )}
         </>
       )}
