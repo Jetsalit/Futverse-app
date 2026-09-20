@@ -38,7 +38,10 @@ test("Pro Club module delivery respects eligibility, progress and recovery", asy
     const result = await build({ entryPoints: [resolve("src/App.tsx")], bundle: true, splitting: true,
       format: "esm", platform: "node", outdir: dir, outExtension: { ".js": ".mjs" }, write: false, jsx: "automatic",
       plugins: [{ name: "entry-boundaries", setup(b) {
-        b.onResolve({ filter: /^(react|react\/jsx-runtime|lucide-react)$/ }, args => ({ path: require.resolve(args.path), external: true }));
+        b.onResolve({ filter: /^(react|react\/jsx-runtime|lucide-react)$/ }, args => ({
+          path: pathToFileURL(require.resolve(args.path)).href,
+          external: true,
+        }));
         b.onResolve({ filter: /contexts\/|hooks\/useNetworkStatus/ }, args => {
           const name = args.path.split("/").at(-1)!;
           return mocks[name] ? { path: name, namespace: "fixture" } : undefined;
