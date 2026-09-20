@@ -13,6 +13,7 @@ import type { ProClubRuntimeAuthorityBridgeResult } from "../src/lib/organizatio
 
 type AuthActor = { uid: string } | null;
 type RuntimeContextValue = {
+  readonly proClubAuthority: ProClubRuntimeAuthorityBridgeResult["authority"];
   readonly runtimeState: OrganizationRuntimeState;
   readonly selectProClub: (organizationId: string) => void;
 };
@@ -31,6 +32,18 @@ function bridgeResult(
   assert.ok(runtimeResult, "bridge mock must receive a trusted production request");
 
   return Object.freeze({
+    authority: status === "AUTHORIZED" ? Object.freeze({
+      organizationType: "PRO_CLUB" as const,
+      organizationId: runtimeResult.organizationId,
+      userId: runtimeResult.uid,
+      organizationName: "Verified Club",
+      organizationLevel: "T3" as const,
+      organizationStatus: "ACTIVE" as const,
+      membershipAuthorizationRole: "MEMBER" as const,
+      membershipStatus: "ACTIVE" as const,
+      hasMembershipAuthority: true,
+      staffRole: null,
+    }) : null,
     sourceState:
       status === "AUTHORIZED" ? "FOUND" :
       status === "REJECTED" ? "MISSING" : "ERROR",
@@ -189,12 +202,38 @@ test(
     };
 
     try {
+      await t.test("clears authority immediately on same-club refresh", async () => {
+        await reset();
+        resolveAuthority = async request => bridgeResult(request, "AUTHORIZED");
+        await render("uid-a");
+        await selectProClub("club-a");
+        assert.equal(latestContext!.proClubAuthority?.userId, "uid-a");
+        const pending = deferredAuthority();
+        resolveAuthority = () => pending.promise;
+        await selectProClub("club-a");
+        assert.equal(latestContext!.proClubAuthority, null);
+        await complete(pending, authorityRequests[1], "REJECTED");
+        assert.equal(latestContext!.proClubAuthority, null);
+      });
+      await t.test("rejects mismatched or absent authority even with an authorized result", async () => {
+        for (const change of [{ userId: "other" }, { organizationId: "other" }, { hasMembershipAuthority: false }, null]) {
+          await reset();
+          resolveAuthority = async request => {
+            const valid = bridgeResult(request, "AUTHORIZED");
+            return { ...valid, authority: change === null ? null : { ...valid.authority!, ...change } };
+          };
+          await render("uid-a");
+          const state = await selectProClub("club-a");
+          assert.equal(state.status, "ERROR");
+          assert.equal(latestContext!.proClubAuthority, null);
+        }
+      });
       await t.test("exposes only runtime state and narrow Pro Club intent", async () => {
         await reset();
         const context = await render("uid-a");
         assert.deepEqual(
           Object.keys(context).sort(),
-          ["runtimeState", "selectProClub"].sort(),
+          ["runtimeState", "selectProClub", "proClubAuthority"].sort(),
         );
         assert.equal(context.runtimeState.status, "UNSELECTED");
         assert.equal(isOrganizationRuntimeAuthorized(context.runtimeState), false);
@@ -249,10 +288,11 @@ test(
         resolveAuthority = async () => Object.freeze({
           sourceState: null,
           runtimeResult: null,
+          authority: null,
         });
         await render("uid-a");
         const state = await selectProClub("club-a");
-        assert.equal(state.status, "RESOLVING");
+        assert.equal(state.status, "ERROR");
         assert.equal(state.authorizationProof, null);
         assert.equal(isOrganizationRuntimeAuthorized(state), false);
         assert.equal(authorityRequests.length, 1);
@@ -265,7 +305,7 @@ test(
         };
         await render("uid-a");
         const state = await selectProClub("club-a");
-        assert.equal(state.status, "RESOLVING");
+        assert.equal(state.status, "ERROR");
         assert.equal(state.authorizationProof, null);
         assert.equal(isOrganizationRuntimeAuthorized(state), false);
         assert.equal(authorityRequests.length, 1);
@@ -316,6 +356,7 @@ test(
         await complete(pendingA, requestA, "AUTHORIZED");
         assert.strictEqual(latestContext!.runtimeState, authorizedB);
         assert.equal(latestContext!.runtimeState.selection?.organizationId, "club-b");
+        assert.equal(latestContext!.proClubAuthority?.organizationId, "club-b");
       });
 
       await t.test("ignores pending completion after logout", async () => {
@@ -330,6 +371,7 @@ test(
         const loggedOut = latestContext!.runtimeState;
         assert.equal(loggedOut.status, "UNSELECTED");
         assert.equal(loggedOut.uid, null);
+        assert.equal(latestContext!.proClubAuthority, null);
         await complete(pending, request, "AUTHORIZED");
         assert.strictEqual(latestContext!.runtimeState, loggedOut);
         assert.equal(isOrganizationRuntimeAuthorized(loggedOut), false);
@@ -347,6 +389,7 @@ test(
         const actorB = latestContext!.runtimeState;
         assert.equal(actorB.status, "UNSELECTED");
         assert.equal(actorB.uid, "uid-b");
+        assert.equal(latestContext!.proClubAuthority, null);
         await complete(pending, request, "AUTHORIZED");
         assert.strictEqual(latestContext!.runtimeState, actorB);
         assert.equal(isOrganizationRuntimeAuthorized(actorB), false);

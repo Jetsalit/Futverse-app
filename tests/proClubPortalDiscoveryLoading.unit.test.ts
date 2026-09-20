@@ -9,7 +9,7 @@ const portal = readFileSync(
 
 test("fresh Pro Club discovery owns an explicit loading state before onboarding fallback renders", () => {
   assert.match(portal, /type ProClubDiscoveryState = "DISCOVERING" \| "OPENING" \| "COMPLETE"/);
-  assert.match(portal, /useState<ProClubDiscoveryState>\(restoredClubReference \? "COMPLETE" : "DISCOVERING"\)/);
+  assert.match(portal, /useState<ProClubDiscoveryState>\(restoredClubReference \? "OPENING" : "DISCOVERING"\)/);
   assert.match(portal, /setDiscoveryState\("OPENING"\)/);
   assert.match(portal, /setDiscoveryState\("COMPLETE"\)/);
 });

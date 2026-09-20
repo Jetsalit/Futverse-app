@@ -14,6 +14,8 @@ import {
   beginOrganizationResolution,
   bindOrganizationRuntimeUid,
   createOrganizationRuntime,
+  createOrganizationResolutionResult,
+  isOrganizationRuntimeAuthorized,
   getOrganizationResolutionRequest,
   selectOrganization,
   type OrganizationRuntimeState,
@@ -24,6 +26,7 @@ import {
 } from "../lib/organizationRuntimeProClubAuthorityBridge";
 
 interface OrganizationRuntimeContextValue {
+  readonly proClubAuthority: ProClubRuntimeAuthorityBridgeResult["authority"];
   readonly runtimeState: OrganizationRuntimeState;
   readonly selectProClub: (organizationId: string) => void;
 }
@@ -38,9 +41,13 @@ function RuntimeActorOwner({
   actorUid: string | null;
   children: ReactNode;
 }) {
-  const [runtimeState, setRuntimeState] = useState<OrganizationRuntimeState>(() =>
-    bindOrganizationRuntimeUid(createOrganizationRuntime(), actorUid),
-  );
+  const [{ runtimeState, proClubAuthority }, setRuntimeState] = useState<{
+    runtimeState: OrganizationRuntimeState;
+    proClubAuthority: ProClubRuntimeAuthorityBridgeResult["authority"];
+  }>(() => ({
+    runtimeState: bindOrganizationRuntimeUid(createOrganizationRuntime(), actorUid),
+    proClubAuthority: null,
+  }));
   const authorityRequests = useRef(
     new WeakMap<object, Promise<ProClubRuntimeAuthorityBridgeResult>>(),
   );
@@ -48,12 +55,12 @@ function RuntimeActorOwner({
   const selectProClub = useCallback((organizationId: string) => {
     setRuntimeState((current) => {
       const selected = selectOrganization(
-        current,
+        current.runtimeState,
         "PRO_CLUB",
         organizationId,
       );
 
-      return beginOrganizationResolution(selected);
+      return { runtimeState: beginOrganizationResolution(selected), proClubAuthority: null };
     });
   }, []);
 
@@ -71,15 +78,30 @@ function RuntimeActorOwner({
 
     void authorityRequest
       .then((bridgeResult) => {
-        if (!mounted || bridgeResult.runtimeResult === null) return;
-
-        setRuntimeState((current) =>
-          applyOrganizationResolution(current, bridgeResult.runtimeResult),
-        );
+        if (!mounted) return;
+        setRuntimeState((current) => {
+          if (getOrganizationResolutionRequest(current.runtimeState) !== request) return current;
+          const next = applyOrganizationResolution(current.runtimeState, bridgeResult.runtimeResult);
+          const authority = bridgeResult.authority;
+          if (isOrganizationRuntimeAuthorized(next) &&
+              bridgeResult.sourceState === "FOUND" && authority?.hasMembershipAuthority === true &&
+              authority.organizationType === "PRO_CLUB" && authority.userId === request.uid &&
+              authority.organizationId === request.organizationId && next.generation === request.generation) {
+            return { runtimeState: next, proClubAuthority: authority };
+          }
+          return {
+            runtimeState: next.status === "REJECTED" || next.status === "ERROR" ? next :
+              applyOrganizationResolution(current.runtimeState, createOrganizationResolutionResult(request, "ERROR")),
+            proClubAuthority: null,
+          };
+        });
       })
       .catch(() => {
-        // The bridge is expected to map read failures to a canonical ERROR
-        // result. An unexpected rejection remains fail-closed in RESOLVING.
+        if (!mounted) return;
+        setRuntimeState(current => getOrganizationResolutionRequest(current.runtimeState) !== request ? current : {
+          runtimeState: applyOrganizationResolution(current.runtimeState, createOrganizationResolutionResult(request, "ERROR")),
+          proClubAuthority: null,
+        });
       });
 
     return () => {
@@ -88,8 +110,8 @@ function RuntimeActorOwner({
   }, [runtimeState]);
 
   const value = useMemo<OrganizationRuntimeContextValue>(
-    () => ({ runtimeState, selectProClub }),
-    [runtimeState, selectProClub],
+    () => ({ runtimeState, selectProClub, proClubAuthority }),
+    [runtimeState, selectProClub, proClubAuthority],
   );
 
   return (

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { Component, lazy, Suspense, useState, useEffect, useRef, type ReactNode } from "react";
 import {
   Menu,
   X,
@@ -61,8 +61,42 @@ import { useSuperAdminSupport } from "./contexts/SuperAdminSupportContext";
 import { SuperAdminSupportBar } from "./components/superadmin/SuperAdminSupportBar";
 import { canAccessTenantCapability } from "./lib/superAdminSupportModel";
 import type { Drill } from "./hooks/useDrillDatabase";
-import ProClubPortal from "./components/pro-club/ProClubPortal";
 import { EmptyState } from "./components/common/EmptyState";
+
+let portalModule: Promise<typeof import("./components/pro-club/ProClubPortal")> | null = null;
+function loadProClubPortal() {
+  return portalModule ??= import("./components/pro-club/ProClubPortal").catch(error => {
+    portalModule = null;
+    throw error;
+  });
+}
+const ProClubPortal = lazy(loadProClubPortal);
+
+function ProClubEntryScreen({ onBack, onLogout, failed = false }: {
+  onBack: () => void; onLogout: () => void; failed?: boolean;
+}) {
+  return <div className="min-h-screen bg-slate-50 text-slate-900">
+    <header className="flex flex-wrap items-center justify-between gap-3 border-b bg-white p-4 sm:px-6">
+      <button className="min-h-11 px-3 font-bold" onClick={onBack}>Back to FutVerse</button>
+      <span className="font-black">Pro Club</span>
+      <button className="min-h-11 px-3 font-bold" onClick={onLogout}>Sign out</button>
+    </header>
+    <main className="p-6 text-center">
+      <p role={failed ? "alert" : "status"}>{failed ? "Unable to load Pro Club. Check your connection and reload to try again." : "Loading Pro Club…"}</p>
+      {failed && <button className="mt-4 min-h-11 rounded-lg bg-slate-900 px-5 text-white" onClick={() => window.location.reload()}>Reload</button>}
+    </main>
+  </div>;
+}
+
+class ProClubEntryBoundary extends Component<{
+  children: ReactNode; onBack: () => void; onLogout: () => void;
+}, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() {
+    return this.state.failed ? <ProClubEntryScreen failed onBack={this.props.onBack} onLogout={this.props.onLogout} /> : this.props.children;
+  }
+}
 
 function AccessResolutionScreen({
   accessState,
@@ -278,19 +312,35 @@ export default function App() {
     navigateTo("tactic");
   };
 
+  const canOpenProClub = Boolean(actualUser?.uid && currentUser?.uid === actualUser.uid &&
+    isExplicitlyActiveAccountStatus(actualUser.status) &&
+    !isSupportActive && !currentUser.supportPresentation);
+
+  useEffect(() => {
+    if (!canOpenProClub || currentPage !== "dashboard") return;
+    let cancelled = false;
+    const preload = () => { if (!cancelled) void loadProClubPortal().catch(() => {}); };
+    if (typeof window.requestIdleCallback === "function") {
+      const id = window.requestIdleCallback(preload);
+      return () => { cancelled = true; window.cancelIdleCallback(id); };
+    }
+    const id = window.setTimeout(preload, 1000);
+    return () => { cancelled = true; window.clearTimeout(id); };
+  }, [canOpenProClub, currentPage, actualUser?.uid]);
+
   if (!currentUser) {
     return <Login />;
   }
-
-  const canOpenProClub = Boolean(actualUser?.uid && currentUser.uid === actualUser.uid &&
-    isExplicitlyActiveAccountStatus(actualUser.status) &&
-    !isSupportActive && !currentUser.supportPresentation);
 
   // Canonical account eligibility gates the portal before its membership boundary.
   // Existing Account/Academy destinations retain their gates below.
   if (currentPage === "pro_club") {
     return canOpenProClub
-      ? <ProClubPortal key={actualUser!.uid} onBack={() => navigateTo("dashboard")} onLogout={handleLogout} />
+      ? <ProClubEntryBoundary key={actualUser!.uid} onBack={() => navigateTo("dashboard")} onLogout={handleLogout}>
+          <Suspense fallback={<ProClubEntryScreen onBack={() => navigateTo("dashboard")} onLogout={handleLogout} />}>
+            <ProClubPortal key={actualUser!.uid} onBack={() => navigateTo("dashboard")} onLogout={handleLogout} />
+          </Suspense>
+        </ProClubEntryBoundary>
       : <AccessDenied onBack={() => navigateTo("dashboard")} />;
   }
 

@@ -9,7 +9,7 @@ import {
   readProClubWorkspaceSession,
   rememberProClubWorkspaceSession,
 } from "../../lib/proClubWorkspaceSession";
-import { onboardingErrorMessage, staffRoleLabels } from "../../lib/proClubOnboarding";
+import { staffRoleLabels } from "../../lib/proClubOnboarding";
 import { loadOwnProClubMembershipDiscoveries } from "../../lib/firestore/proClubMembershipDiscoveryRepository";
 import { isProClubReviewer, proClubOnboardingRepository as repository } from "../../lib/firestore/proClubOnboardingRepository";
 import type { ProClubOrganizationAuthority } from "../../lib/firestore/proClubOrganizationAdapter";
@@ -20,26 +20,16 @@ import ProClubTeamDashboard from "./operations/ProClubTeamDashboard";
 type ProClubDiscoveryState = "DISCOVERING" | "OPENING" | "COMPLETE";
 
 function ClubWorkspace({
-  clubId,
-  uid,
+  authority,
   onBack,
   onLogout,
 }: {
-  clubId: string;
-  uid: string;
+  authority: Readonly<ProClubOrganizationAuthority>;
   onBack: () => void;
   onLogout: () => void;
 }) {
-  const [authority, setAuthority] = useState<ProClubOrganizationAuthority | null>(null);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    let mounted = true;
-    void repository.loadWorkspace(clubId, uid).then((result) => { if (mounted) setAuthority(result); })
-      .catch((cause) => { if (mounted) setError(onboardingErrorMessage(cause)); });
-    return () => { mounted = false; };
-  }, [clubId, uid]);
-  if (error) return <p role="alert" className="rounded-xl bg-rose-50 p-5 text-rose-800">{error}</p>;
-  if (!authority) return <p role="status" className="py-12 text-center text-slate-600">Loading your club…</p>;
+  const clubId = authority.organizationId;
+  const uid = authority.userId;
 
   return (
     <ProClubTeamDashboard
@@ -69,18 +59,23 @@ function ClubWorkspace({
 
 export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void; onLogout: () => void }) {
   const { actualUser, currentUser } = useAuth();
-  const { runtimeState, selectProClub } = useOrganizationRuntime();
+  const { runtimeState, selectProClub, proClubAuthority } = useOrganizationRuntime();
+  // The provider survives navigation. A previous entry's verified authority
+  // cannot open this entry while discovery or restored selection is pending.
+  const [entryGeneration] = useState(runtimeState.generation);
   const [restoredClubReference] = useState(() => readProClubWorkspaceSession());
   const [tab, setTab] = useState<"join" | "workspace">(restoredClubReference ? "workspace" : "join");
   const [clubReference, setClubReference] = useState(restoredClubReference ?? "");
   const [inputError, setInputError] = useState("");
   const [shouldDiscover, setShouldDiscover] = useState(!restoredClubReference);
-  const [discoveryState, setDiscoveryState] = useState<ProClubDiscoveryState>(restoredClubReference ? "COMPLETE" : "DISCOVERING");
+  const [discoveryState, setDiscoveryState] = useState<ProClubDiscoveryState>(restoredClubReference ? "OPENING" : "DISCOVERING");
   const [discoveredAuthorities, setDiscoveredAuthorities] = useState<ProClubOrganizationAuthority[]>([]);
   const discoveryStarted = useRef(false);
   const uid = actualUser?.uid;
   const allowed = uid && currentUser?.uid === uid && !currentUser.supportPresentation;
-  const authorized = allowed && runtimeState.uid === uid && isOrganizationRuntimeAuthorized(runtimeState) && runtimeState.selection?.organizationType === "PRO_CLUB";
+  const authorized = allowed && runtimeState.generation > entryGeneration && runtimeState.uid === uid && isOrganizationRuntimeAuthorized(runtimeState) && runtimeState.selection?.organizationType === "PRO_CLUB" &&
+    proClubAuthority?.hasMembershipAuthority === true && proClubAuthority.userId === uid &&
+    proClubAuthority.organizationType === "PRO_CLUB" && proClubAuthority.organizationId === runtimeState.selection.organizationId;
 
   useEffect(() => {
     if (!uid || !restoredClubReference) return;
@@ -112,6 +107,15 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
 
     void loadOwnProClubMembershipDiscoveries(uid)
       .then(async (discoveries) => {
+        if (!mounted) return;
+        if (discoveries.length === 1) {
+          const clubId = discoveries[0].clubId;
+          setClubReference(clubId);
+          setTab("workspace");
+          setDiscoveryState("OPENING");
+          selectProClub(clubId);
+          return;
+        }
         const candidates = await Promise.all(
           discoveries.map(async ({ clubId }) => {
             try {
@@ -193,8 +197,7 @@ export default function ProClubPortal({ onBack, onLogout }: { onBack: () => void
   return authorized ? (
     <ClubWorkspace
       key={`${uid}:${runtimeState.generation}`}
-      uid={uid}
-      clubId={runtimeState.selection!.organizationId}
+      authority={proClubAuthority}
       onBack={leaveProClub}
       onLogout={signOut}
     />
