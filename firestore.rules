@@ -3979,6 +3979,743 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           );
       }
 
+      // Pro Club Match + Starting XI Persistence V1 — Spark direct Firestore boundary.
+      //
+      // The Match document carries a compact rosterPlayerKeys membership index.
+      // Starting XI / shootout validation checks that single index rather than
+      // issuing one exists() call per selected player. The index itself can move
+      // by exactly one canonical snapshot at a time and only in an atomic batch
+      // with the matching roster document write.
+      function proClubMatchFootballAuthorityV1(clubId) {
+        let staffPath =
+          /databases/$(database)/documents/proClubs/$(clubId)/staff/$(request.auth.uid);
+        return proClubSquadRosterActiveStaffV1(clubId)
+          && get(staffPath).data.get('staffRole', '')
+            in ['HEAD_COACH', 'TECHNICAL_DIRECTOR'];
+      }
+
+      function proClubMatchActorRoleV1(clubId) {
+        return get(
+          /databases/$(database)/documents/proClubs/$(clubId)/staff/$(request.auth.uid)
+        ).data.get('staffRole', '');
+      }
+
+      function proClubMatchValidOptionalTextV1(value, maxLength) {
+        return value == null
+          || (
+            value is string
+            && value.size() > 0
+            && value.size() <= maxLength
+            && value.trim() == value
+          );
+      }
+
+      function proClubMatchValidCoreSchedulingV1(data) {
+        return (
+            data.get('status', '') in ['SCHEDULED', 'IN_PROGRESS', 'COMPLETED']
+            && proClubSquadRosterNormalizedTextV1(
+              data.get('opponentName', ''),
+              120,
+              false
+            )
+            && data.get('kickoffAt', null) is timestamp
+            && data.get('venueType', '') in ['HOME', 'AWAY', 'NEUTRAL']
+          )
+          || (
+            data.get('status', '') in ['DRAFT', 'CANCELLED']
+            && proClubMatchValidOptionalTextV1(
+              data.get('opponentName', null),
+              120
+            )
+            && (
+              data.get('kickoffAt', null) == null
+              || data.get('kickoffAt', null) is timestamp
+            )
+            && (
+              data.get('venueType', null) == null
+              || data.get('venueType', '') in ['HOME', 'AWAY', 'NEUTRAL']
+            )
+          );
+      }
+
+      function proClubMatchHasCanonicalKeysV1(data) {
+        return data.keys().hasAll([
+            'schemaVersion',
+            'status',
+            'squadLabel',
+            'competitionName',
+            'opponentName',
+            'kickoffAt',
+            'venueType',
+            'rosterPlayerKeys',
+            'rosterRevision',
+            'rosterMutationPlayerKey',
+            'rosterMutationKind',
+            'createdAt',
+            'createdBy',
+            'createdByRole',
+            'updatedAt',
+            'updatedBy',
+            'updatedByRole'
+          ])
+          && data.keys().hasOnly([
+            'schemaVersion',
+            'status',
+            'squadLabel',
+            'competitionName',
+            'opponentName',
+            'kickoffAt',
+            'venueType',
+            'rosterPlayerKeys',
+            'rosterRevision',
+            'rosterMutationPlayerKey',
+            'rosterMutationKind',
+            'createdAt',
+            'createdBy',
+            'createdByRole',
+            'updatedAt',
+            'updatedBy',
+            'updatedByRole'
+          ]);
+      }
+
+      function proClubMatchValidDataV1(data) {
+        return proClubMatchHasCanonicalKeysV1(data)
+          && data.get('schemaVersion', 0) == 1
+          && data.get('status', '') in [
+            'DRAFT',
+            'SCHEDULED',
+            'IN_PROGRESS',
+            'COMPLETED',
+            'CANCELLED'
+          ]
+          && proClubSquadRosterNormalizedTextV1(
+            data.get('squadLabel', ''),
+            80,
+            false
+          )
+          && proClubSquadRosterNormalizedTextV1(
+            data.get('competitionName', ''),
+            120,
+            false
+          )
+          && proClubMatchValidCoreSchedulingV1(data)
+          && data.get('rosterPlayerKeys', []) is list
+          && data.get('rosterPlayerKeys', []).size() <= 64
+          && data.get('rosterPlayerKeys', []).toSet().size()
+            == data.get('rosterPlayerKeys', []).size()
+          && data.get('rosterRevision', -1) is int
+          && data.get('rosterRevision', -1) >= 0
+          && (
+            (
+              data.get('rosterRevision', -1) == 0
+              && data.get('rosterPlayerKeys', []).size() == 0
+              && data.get('rosterMutationPlayerKey', null) == null
+              && data.get('rosterMutationKind', null) == null
+            )
+            || (
+              data.get('rosterRevision', -1) > 0
+              && exactDocumentId(data.get('rosterMutationPlayerKey', ''))
+              && data.get('rosterMutationKind', '') in ['ADD', 'REMOVE']
+            )
+          )
+          && data.get('createdAt', null) is timestamp
+          && exactDocumentId(data.get('createdBy', ''))
+          && data.get('createdByRole', '')
+            in ['HEAD_COACH', 'TECHNICAL_DIRECTOR']
+          && data.get('updatedAt', null) is timestamp
+          && exactDocumentId(data.get('updatedBy', ''))
+          && data.get('updatedByRole', '')
+            in ['HEAD_COACH', 'TECHNICAL_DIRECTOR'];
+      }
+
+      function proClubMatchValidTransitionV1(fromStatus, toStatus) {
+        return (
+            fromStatus == toStatus
+            && fromStatus in ['DRAFT', 'SCHEDULED', 'IN_PROGRESS']
+          )
+          || (
+            fromStatus == 'DRAFT'
+            && toStatus in ['SCHEDULED', 'CANCELLED']
+          )
+          || (
+            fromStatus == 'SCHEDULED'
+            && toStatus in ['IN_PROGRESS', 'CANCELLED']
+          )
+          || (
+            fromStatus == 'IN_PROGRESS'
+            && toStatus in ['COMPLETED', 'CANCELLED']
+          );
+      }
+
+      function proClubMatchRosterIndexUnchangedV1(data, previous) {
+        return data.get('rosterPlayerKeys', [])
+            == previous.get('rosterPlayerKeys', [])
+          && data.get('rosterRevision', -1)
+            == previous.get('rosterRevision', -1)
+          && data.get('rosterMutationPlayerKey', null)
+            == previous.get('rosterMutationPlayerKey', null)
+          && data.get('rosterMutationKind', null)
+            == previous.get('rosterMutationKind', null);
+      }
+
+      function proClubMatchPlansReferencePlayerV1(matchId, playerKey) {
+        let startingPath =
+          /databases/$(database)/documents/proClubs/$(clubId)/matches/$(matchId)/startingXI/current;
+        let shootoutPath =
+          /databases/$(database)/documents/proClubs/$(clubId)/matches/$(matchId)/shootout/current;
+        return (
+            exists(startingPath)
+            && (
+              get(startingPath).data.get('slotPlayerKeys', [])
+                .hasAny([playerKey])
+              || get(startingPath).data.get('substitutePlayerKeys', [])
+                .hasAny([playerKey])
+            )
+          )
+          || (
+            exists(shootoutPath)
+            && (
+              get(shootoutPath).data.get('primaryTakers', [])
+                .hasAny([playerKey])
+              || get(shootoutPath).data.get('backupTakers', [])
+                .hasAny([playerKey])
+            )
+          );
+      }
+
+      function proClubMatchValidRosterIndexMutationV1(
+        matchId,
+        data,
+        previous
+      ) {
+        let playerKey = data.get('rosterMutationPlayerKey', '');
+        let mutationKind = data.get('rosterMutationKind', '');
+        let rosterPath =
+          /databases/$(database)/documents/proClubs/$(clubId)/matches/$(matchId)/roster/$(playerKey);
+        return previous.get('status', '') in ['DRAFT', 'SCHEDULED']
+          && data.get('status', '') == previous.get('status', '')
+          && data.diff(previous).affectedKeys().hasOnly([
+            'rosterPlayerKeys',
+            'rosterRevision',
+            'rosterMutationPlayerKey',
+            'rosterMutationKind',
+            'updatedAt',
+            'updatedBy',
+            'updatedByRole'
+          ])
+          && exactDocumentId(playerKey)
+          && data.get('rosterRevision', -1)
+            == previous.get('rosterRevision', -1) + 1
+          && (
+            (
+              mutationKind == 'ADD'
+              && !previous.get('rosterPlayerKeys', []).hasAny([playerKey])
+              && data.get('rosterPlayerKeys', [])
+                == previous.get('rosterPlayerKeys', []).concat([playerKey])
+              && existsAfter(rosterPath)
+              && getAfter(rosterPath).data.get('playerKey', '') == playerKey
+            )
+            || (
+              mutationKind == 'REMOVE'
+              && previous.get('rosterPlayerKeys', []).hasAny([playerKey])
+              && data.get('rosterPlayerKeys', [])
+                == previous.get('rosterPlayerKeys', []).removeAll([playerKey])
+              && !existsAfter(rosterPath)
+              && !proClubMatchPlansReferencePlayerV1(matchId, playerKey)
+            )
+          );
+      }
+
+      function proClubMatchValidCreateV1(matchId) {
+        let data = request.resource.data;
+        return exactDocumentId(matchId)
+          && proClubMatchFootballAuthorityV1(clubId)
+          && proClubMatchValidDataV1(data)
+          && data.get('status', '') == 'DRAFT'
+          && data.get('rosterRevision', -1) == 0
+          && data.get('createdAt', null) == request.time
+          && data.get('createdBy', '') == request.auth.uid
+          && data.get('createdByRole', '')
+            == proClubMatchActorRoleV1(clubId)
+          && data.get('updatedAt', null) == request.time
+          && data.get('updatedBy', '') == request.auth.uid
+          && data.get('updatedByRole', '')
+            == proClubMatchActorRoleV1(clubId);
+      }
+
+      function proClubMatchValidUpdateV1(matchId) {
+        let data = request.resource.data;
+        let previous = resource.data;
+        return exactDocumentId(matchId)
+          && proClubMatchFootballAuthorityV1(clubId)
+          && proClubMatchValidDataV1(previous)
+          && proClubMatchValidDataV1(data)
+          && proClubMatchValidTransitionV1(
+            previous.get('status', ''),
+            data.get('status', '')
+          )
+          && data.get('createdAt', null)
+            == previous.get('createdAt', null)
+          && data.get('createdBy', '')
+            == previous.get('createdBy', '')
+          && data.get('createdByRole', '')
+            == previous.get('createdByRole', '')
+          && data.get('updatedAt', null) == request.time
+          && data.get('updatedBy', '') == request.auth.uid
+          && data.get('updatedByRole', '')
+            == proClubMatchActorRoleV1(clubId)
+          && (
+            proClubMatchRosterIndexUnchangedV1(data, previous)
+            || proClubMatchValidRosterIndexMutationV1(
+              matchId,
+              data,
+              previous
+            )
+          );
+      }
+
+      function proClubMatchRosterSnapshotHasCanonicalKeysV1(data) {
+        return data.keys().hasAll([
+            'schemaVersion',
+            'playerKey',
+            'futId',
+            'firstName',
+            'lastName',
+            'jerseyNumber',
+            'position',
+            'additionalPositions',
+            'createdAt',
+            'createdBy',
+            'createdByRole',
+            'updatedAt',
+            'updatedBy',
+            'updatedByRole'
+          ])
+          && data.keys().hasOnly([
+            'schemaVersion',
+            'playerKey',
+            'futId',
+            'firstName',
+            'lastName',
+            'jerseyNumber',
+            'position',
+            'additionalPositions',
+            'createdAt',
+            'createdBy',
+            'createdByRole',
+            'updatedAt',
+            'updatedBy',
+            'updatedByRole'
+          ]);
+      }
+
+      function proClubMatchValidRosterSnapshotDataV1(playerKey, data) {
+        let playerPath =
+          /databases/$(database)/documents/proClubs/$(clubId)/players/$(playerKey);
+        let player = get(playerPath).data;
+        return validPlayerIdentityKeyV1(playerKey)
+          && exists(playerPath)
+          && proClubSquadRosterHasCanonicalKeysV1(player)
+          && player.get('schemaVersion', 0) == 1
+          && player.get('status', '') == 'ACTIVE'
+          && proClubMatchRosterSnapshotHasCanonicalKeysV1(data)
+          && data.get('schemaVersion', 0) == 1
+          && data.get('playerKey', '') == playerKey
+          && data.get('futId', null) == player.get('futId', null)
+          && data.get('firstName', '') == player.get('firstName', '')
+          && data.get('lastName', '') == player.get('lastName', '')
+          && data.get('jerseyNumber', -1)
+            == player.get('jerseyNumber', -1)
+          && data.get('position', null)
+            == player.get('position', null)
+          && data.get('additionalPositions', [])
+            == player.get('additionalPositions', [])
+          && data.get('createdAt', null) is timestamp
+          && exactDocumentId(data.get('createdBy', ''))
+          && data.get('createdByRole', '')
+            in ['HEAD_COACH', 'TECHNICAL_DIRECTOR']
+          && data.get('updatedAt', null) is timestamp
+          && exactDocumentId(data.get('updatedBy', ''))
+          && data.get('updatedByRole', '')
+            in ['HEAD_COACH', 'TECHNICAL_DIRECTOR'];
+      }
+
+      function proClubMatchValidRosterSnapshotCreateV1(
+        matchId,
+        playerKey
+      ) {
+        let data = request.resource.data;
+        let matchPath =
+          /databases/$(database)/documents/proClubs/$(clubId)/matches/$(matchId);
+        let matchAfter = getAfter(matchPath).data;
+        return proClubMatchFootballAuthorityV1(clubId)
+          && proClubMatchValidRosterSnapshotDataV1(playerKey, data)
+          && proClubMatchValidDataV1(matchAfter)
+          && matchAfter.get('status', '') in ['DRAFT', 'SCHEDULED']
+          && matchAfter.get('rosterMutationKind', '') == 'ADD'
+          && matchAfter.get('rosterMutationPlayerKey', '') == playerKey
+          && matchAfter.get('rosterPlayerKeys', []).hasAny([playerKey])
+          && data.get('createdAt', null) == request.time
+          && data.get('createdBy', '') == request.auth.uid
+          && data.get('createdByRole', '')
+            == proClubMatchActorRoleV1(clubId)
+          && data.get('updatedAt', null) == request.time
+          && data.get('updatedBy', '') == request.auth.uid
+          && data.get('updatedByRole', '')
+            == proClubMatchActorRoleV1(clubId);
+      }
+
+      function proClubMatchValidRosterSnapshotDeleteV1(
+        matchId,
+        playerKey
+      ) {
+        let matchPath =
+          /databases/$(database)/documents/proClubs/$(clubId)/matches/$(matchId);
+        let matchAfter = getAfter(matchPath).data;
+        return proClubMatchFootballAuthorityV1(clubId)
+          && resource.data.get('schemaVersion', 0) == 1
+          && resource.data.get('playerKey', '') == playerKey
+          && proClubMatchValidDataV1(matchAfter)
+          && matchAfter.get('status', '') in ['DRAFT', 'SCHEDULED']
+          && matchAfter.get('rosterMutationKind', '') == 'REMOVE'
+          && matchAfter.get('rosterMutationPlayerKey', '') == playerKey
+          && !matchAfter.get('rosterPlayerKeys', []).hasAny([playerKey]);
+      }
+
+      function proClubMatchValidRoleValueV1(value) {
+        return value == null
+          || (
+            value is string
+            && value.size() > 0
+            && value.size() <= 160
+            && value.trim() == value
+          );
+      }
+
+      function proClubMatchValidRoleAssignmentsV1(roles) {
+        return roles is list
+          && roles.size() == 11
+          && proClubMatchValidRoleValueV1(roles[0])
+          && proClubMatchValidRoleValueV1(roles[1])
+          && proClubMatchValidRoleValueV1(roles[2])
+          && proClubMatchValidRoleValueV1(roles[3])
+          && proClubMatchValidRoleValueV1(roles[4])
+          && proClubMatchValidRoleValueV1(roles[5])
+          && proClubMatchValidRoleValueV1(roles[6])
+          && proClubMatchValidRoleValueV1(roles[7])
+          && proClubMatchValidRoleValueV1(roles[8])
+          && proClubMatchValidRoleValueV1(roles[9])
+          && proClubMatchValidRoleValueV1(roles[10]);
+      }
+
+      function proClubMatchValidSetPieceValueV1(selected, value) {
+        return value == null || selected.hasAny([value]);
+      }
+
+      function proClubMatchValidSetPiecesV1(assignments, selected) {
+        return assignments is map
+          && assignments.keys().hasAll([
+            'CORNER_LEFT',
+            'CORNER_RIGHT',
+            'FREE_KICK_LEFT',
+            'FREE_KICK_RIGHT',
+            'THROW_IN_LEFT',
+            'THROW_IN_RIGHT',
+            'PENALTY'
+          ])
+          && assignments.keys().hasOnly([
+            'CORNER_LEFT',
+            'CORNER_RIGHT',
+            'FREE_KICK_LEFT',
+            'FREE_KICK_RIGHT',
+            'THROW_IN_LEFT',
+            'THROW_IN_RIGHT',
+            'PENALTY'
+          ])
+          && proClubMatchValidSetPieceValueV1(
+            selected,
+            assignments.get('CORNER_LEFT', null)
+          )
+          && proClubMatchValidSetPieceValueV1(
+            selected,
+            assignments.get('CORNER_RIGHT', null)
+          )
+          && proClubMatchValidSetPieceValueV1(
+            selected,
+            assignments.get('FREE_KICK_LEFT', null)
+          )
+          && proClubMatchValidSetPieceValueV1(
+            selected,
+            assignments.get('FREE_KICK_RIGHT', null)
+          )
+          && proClubMatchValidSetPieceValueV1(
+            selected,
+            assignments.get('THROW_IN_LEFT', null)
+          )
+          && proClubMatchValidSetPieceValueV1(
+            selected,
+            assignments.get('THROW_IN_RIGHT', null)
+          )
+          && proClubMatchValidSetPieceValueV1(
+            selected,
+            assignments.get('PENALTY', null)
+          );
+      }
+
+      function proClubMatchStartingXIHasCanonicalKeysV1(data) {
+        return data.keys().hasAll([
+            'schemaVersion',
+            'formation',
+            'slotPlayerKeys',
+            'substitutePlayerKeys',
+            'positionRoleAssignments',
+            'setPieceAssignments',
+            'coachNotes',
+            'matchRosterRevision',
+            'revision',
+            'createdAt',
+            'createdBy',
+            'createdByRole',
+            'updatedAt',
+            'updatedBy',
+            'updatedByRole'
+          ])
+          && data.keys().hasOnly([
+            'schemaVersion',
+            'formation',
+            'slotPlayerKeys',
+            'substitutePlayerKeys',
+            'positionRoleAssignments',
+            'setPieceAssignments',
+            'coachNotes',
+            'matchRosterRevision',
+            'revision',
+            'createdAt',
+            'createdBy',
+            'createdByRole',
+            'updatedAt',
+            'updatedBy',
+            'updatedByRole'
+          ]);
+      }
+
+      function proClubMatchValidStartingXIDataV1(data, rosterPlayerKeys) {
+        let starters = data.get('slotPlayerKeys', []).removeAll([null]);
+        let substitutes = data.get('substitutePlayerKeys', []);
+        let selected = starters.concat(substitutes);
+        return proClubMatchStartingXIHasCanonicalKeysV1(data)
+          && data.get('schemaVersion', 0) == 1
+          && data.get('formation', '') in [
+            '4-3-3',
+            '4-2-3-1',
+            '4-4-2',
+            '3-5-2',
+            'CUSTOM'
+          ]
+          && data.get('slotPlayerKeys', []) is list
+          && data.get('slotPlayerKeys', []).size() == 11
+          && starters.toSet().size() == starters.size()
+          && rosterPlayerKeys.hasAll(starters)
+          && substitutes is list
+          && substitutes.size() <= 64
+          && substitutes.toSet().size() == substitutes.size()
+          && rosterPlayerKeys.hasAll(substitutes)
+          && starters.toSet().intersection(substitutes.toSet()).size() == 0
+          && proClubMatchValidRoleAssignmentsV1(
+            data.get('positionRoleAssignments', [])
+          )
+          && proClubMatchValidSetPiecesV1(
+            data.get('setPieceAssignments', {}),
+            selected
+          )
+          && data.get('coachNotes', '') is string
+          && data.get('coachNotes', '').size() <= 2000
+          && data.get('coachNotes', '').trim()
+            == data.get('coachNotes', '')
+          && data.get('matchRosterRevision', -1) is int
+          && data.get('matchRosterRevision', -1) >= 0
+          && data.get('revision', 0) is int
+          && data.get('revision', 0) >= 1
+          && data.get('createdAt', null) is timestamp
+          && exactDocumentId(data.get('createdBy', ''))
+          && data.get('createdByRole', '')
+            in ['HEAD_COACH', 'TECHNICAL_DIRECTOR']
+          && data.get('updatedAt', null) is timestamp
+          && exactDocumentId(data.get('updatedBy', ''))
+          && data.get('updatedByRole', '')
+            in ['HEAD_COACH', 'TECHNICAL_DIRECTOR'];
+      }
+
+      function proClubMatchValidStartingXICreateV1(matchId) {
+        let data = request.resource.data;
+        let matchPath =
+          /databases/$(database)/documents/proClubs/$(clubId)/matches/$(matchId);
+        let matchData = get(matchPath).data;
+        return proClubMatchFootballAuthorityV1(clubId)
+          && exists(matchPath)
+          && proClubMatchValidDataV1(matchData)
+          && matchData.get('status', '') in ['DRAFT', 'SCHEDULED']
+          && proClubMatchValidStartingXIDataV1(
+            data,
+            matchData.get('rosterPlayerKeys', [])
+          )
+          && data.get('matchRosterRevision', -1)
+            == matchData.get('rosterRevision', -2)
+          && data.get('revision', 0) == 1
+          && data.get('createdAt', null) == request.time
+          && data.get('createdBy', '') == request.auth.uid
+          && data.get('createdByRole', '')
+            == proClubMatchActorRoleV1(clubId)
+          && data.get('updatedAt', null) == request.time
+          && data.get('updatedBy', '') == request.auth.uid
+          && data.get('updatedByRole', '')
+            == proClubMatchActorRoleV1(clubId);
+      }
+
+      function proClubMatchValidStartingXIUpdateV1(matchId) {
+        let data = request.resource.data;
+        let previous = resource.data;
+        let matchPath =
+          /databases/$(database)/documents/proClubs/$(clubId)/matches/$(matchId);
+        let matchData = get(matchPath).data;
+        return proClubMatchFootballAuthorityV1(clubId)
+          && exists(matchPath)
+          && proClubMatchValidDataV1(matchData)
+          && matchData.get('status', '') in ['DRAFT', 'SCHEDULED']
+          && proClubMatchValidStartingXIDataV1(
+            data,
+            matchData.get('rosterPlayerKeys', [])
+          )
+          && data.get('matchRosterRevision', -1)
+            == matchData.get('rosterRevision', -2)
+          && data.get('revision', 0)
+            == previous.get('revision', 0) + 1
+          && data.get('createdAt', null)
+            == previous.get('createdAt', null)
+          && data.get('createdBy', '')
+            == previous.get('createdBy', '')
+          && data.get('createdByRole', '')
+            == previous.get('createdByRole', '')
+          && data.get('updatedAt', null) == request.time
+          && data.get('updatedBy', '') == request.auth.uid
+          && data.get('updatedByRole', '')
+            == proClubMatchActorRoleV1(clubId);
+      }
+
+      function proClubMatchShootoutHasCanonicalKeysV1(data) {
+        return data.keys().hasAll([
+            'schemaVersion',
+            'primaryTakers',
+            'backupTakers',
+            'matchRosterRevision',
+            'revision',
+            'createdAt',
+            'createdBy',
+            'createdByRole',
+            'updatedAt',
+            'updatedBy',
+            'updatedByRole'
+          ])
+          && data.keys().hasOnly([
+            'schemaVersion',
+            'primaryTakers',
+            'backupTakers',
+            'matchRosterRevision',
+            'revision',
+            'createdAt',
+            'createdBy',
+            'createdByRole',
+            'updatedAt',
+            'updatedBy',
+            'updatedByRole'
+          ]);
+      }
+
+      function proClubMatchValidShootoutDataV1(data, rosterPlayerKeys) {
+        let primary = data.get('primaryTakers', []);
+        let backups = data.get('backupTakers', []);
+        let takers = primary.concat(backups);
+        return proClubMatchShootoutHasCanonicalKeysV1(data)
+          && data.get('schemaVersion', 0) == 1
+          && primary is list
+          && primary.size() <= 5
+          && backups is list
+          && backups.size() <= 5
+          && takers.toSet().size() == takers.size()
+          && rosterPlayerKeys.hasAll(takers)
+          && data.get('matchRosterRevision', -1) is int
+          && data.get('matchRosterRevision', -1) >= 0
+          && data.get('revision', 0) is int
+          && data.get('revision', 0) >= 1
+          && data.get('createdAt', null) is timestamp
+          && exactDocumentId(data.get('createdBy', ''))
+          && data.get('createdByRole', '')
+            in ['HEAD_COACH', 'TECHNICAL_DIRECTOR']
+          && data.get('updatedAt', null) is timestamp
+          && exactDocumentId(data.get('updatedBy', ''))
+          && data.get('updatedByRole', '')
+            in ['HEAD_COACH', 'TECHNICAL_DIRECTOR'];
+      }
+
+      function proClubMatchValidShootoutCreateV1(matchId) {
+        let data = request.resource.data;
+        let matchPath =
+          /databases/$(database)/documents/proClubs/$(clubId)/matches/$(matchId);
+        let matchData = get(matchPath).data;
+        return proClubMatchFootballAuthorityV1(clubId)
+          && exists(matchPath)
+          && proClubMatchValidDataV1(matchData)
+          && matchData.get('status', '')
+            in ['DRAFT', 'SCHEDULED', 'IN_PROGRESS']
+          && proClubMatchValidShootoutDataV1(
+            data,
+            matchData.get('rosterPlayerKeys', [])
+          )
+          && data.get('matchRosterRevision', -1)
+            == matchData.get('rosterRevision', -2)
+          && data.get('revision', 0) == 1
+          && data.get('createdAt', null) == request.time
+          && data.get('createdBy', '') == request.auth.uid
+          && data.get('createdByRole', '')
+            == proClubMatchActorRoleV1(clubId)
+          && data.get('updatedAt', null) == request.time
+          && data.get('updatedBy', '') == request.auth.uid
+          && data.get('updatedByRole', '')
+            == proClubMatchActorRoleV1(clubId);
+      }
+
+      function proClubMatchValidShootoutUpdateV1(matchId) {
+        let data = request.resource.data;
+        let previous = resource.data;
+        let matchPath =
+          /databases/$(database)/documents/proClubs/$(clubId)/matches/$(matchId);
+        let matchData = get(matchPath).data;
+        return proClubMatchFootballAuthorityV1(clubId)
+          && exists(matchPath)
+          && proClubMatchValidDataV1(matchData)
+          && matchData.get('status', '')
+            in ['DRAFT', 'SCHEDULED', 'IN_PROGRESS']
+          && proClubMatchValidShootoutDataV1(
+            data,
+            matchData.get('rosterPlayerKeys', [])
+          )
+          && data.get('matchRosterRevision', -1)
+            == matchData.get('rosterRevision', -2)
+          && data.get('revision', 0)
+            == previous.get('revision', 0) + 1
+          && data.get('createdAt', null)
+            == previous.get('createdAt', null)
+          && data.get('createdBy', '')
+            == previous.get('createdBy', '')
+          && data.get('createdByRole', '')
+            == previous.get('createdByRole', '')
+          && data.get('updatedAt', null) == request.time
+          && data.get('updatedBy', '') == request.auth.uid
+          && data.get('updatedByRole', '')
+            == proClubMatchActorRoleV1(clubId);
+      }
+
             // Pro Club Attendance V1 — Spark direct Firestore boundary.
       function proClubAttendanceValidSessionKeysV1(data) {
         return data.keys().hasAll([
@@ -4107,6 +4844,58 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
         );
 
       allow list, create, update, delete: if false;
+
+      // Pro Club Match + Starting XI Persistence V1 — canonical tenant path.
+      match /matches/{matchId} {
+        allow get, list: if proClubSquadRosterActiveStaffV1(clubId);
+        allow create: if proClubMatchValidCreateV1(matchId);
+        allow update: if proClubMatchValidUpdateV1(matchId);
+        allow delete: if false;
+
+        match /roster/{playerKey} {
+          allow get, list: if proClubSquadRosterActiveStaffV1(clubId);
+          allow create: if proClubMatchValidRosterSnapshotCreateV1(
+            matchId,
+            playerKey
+          );
+          allow update: if false;
+          allow delete: if proClubMatchValidRosterSnapshotDeleteV1(
+            matchId,
+            playerKey
+          );
+
+          match /{document=**} {
+            allow read, write: if false;
+          }
+        }
+
+        match /startingXI/current {
+          allow get: if proClubSquadRosterActiveStaffV1(clubId);
+          allow list: if false;
+          allow create: if proClubMatchValidStartingXICreateV1(matchId);
+          allow update: if proClubMatchValidStartingXIUpdateV1(matchId);
+          allow delete: if false;
+        }
+
+        match /shootout/current {
+          allow get: if proClubSquadRosterActiveStaffV1(clubId);
+          allow list: if false;
+          allow create: if proClubMatchValidShootoutCreateV1(matchId);
+          allow update: if proClubMatchValidShootoutUpdateV1(matchId);
+          allow delete: if false;
+        }
+
+        // Audit persistence remains closed in this Rules slice. The canonical
+        // path is reserved now so no alternate client-owned audit path appears.
+        match /startingXIAudit/{eventId} {
+          allow get, list: if proClubSquadRosterActiveStaffV1(clubId);
+          allow create, update, delete: if false;
+        }
+
+        match /{document=**} {
+          allow read, write: if false;
+        }
+      }
 
       // Pro Club Attendance V1 — canonical training attendance path.
       match /attendanceSessions/{attendanceSessionId} {
