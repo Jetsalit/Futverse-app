@@ -467,7 +467,7 @@ function parseStartingXI(
     setPieceAssignments: parseSetPieces(raw.setPieceAssignments),
     gameModelSnapshot:
       raw.gameModelSnapshot && typeof raw.gameModelSnapshot === "object"
-        ? { ...(raw.gameModelSnapshot as ProClubPersistedStartingXIPlan["gameModelSnapshot"]) }
+        ? { ...(raw.gameModelSnapshot as NonNullable<ProClubPersistedStartingXIPlan["gameModelSnapshot"]>) }
         : {
             IN_POSSESSION: "",
             OUT_OF_POSSESSION: "",
