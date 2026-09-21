@@ -1,0 +1,75 @@
+name: Shared Game Model V1
+
+on:
+  pull_request:
+    paths:
+      - firestore.rules
+      - src/lib/gameModel.ts
+      - src/lib/proClubMatchStartingXI.ts
+      - src/lib/firestore/proClubGameModelRepository.ts
+      - src/lib/firestore/proClubMatchStartingXIRepository.ts
+      - src/components/pro-club/operations/ProClubGameModel.tsx
+      - src/components/pro-club/operations/ProClubTeamDashboard.tsx
+      - src/components/pro-club/operations/ProClubMatchStartingXIWorkspace.tsx
+      - src/components/pro-club/operations/ProClubStartingXI11v11.tsx
+      - tests/gameModelV1.unit.test.ts
+      - tests/proClubGameModelRepository.unit.test.ts
+      - tests/proClubGameModelUiWiring.unit.test.ts
+      - tests/proClubTeamDashboardProductionV1.unit.test.tsx
+      - tests/proClubMatchStartingXI.unit.test.ts
+      - tests/proClubMatchStartingXIRepository.unit.test.ts
+      - tests/proClubMatchStartingXIUiWiring.unit.test.ts
+      - tests/firestore.pro-club-match-starting-xi.rules.test.ts
+      - .github/workflows/shared-game-model-v1.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Runtime provenance
+        run: |
+          node --version
+          npm --version
+          git rev-parse HEAD
+          git status --short
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Shared Game Model unit and wiring tests
+        run: >-
+          node --experimental-test-module-mocks --import tsx --test --test-concurrency=1
+          tests/gameModelV1.unit.test.ts
+          tests/proClubGameModelRepository.unit.test.ts
+          tests/proClubGameModelUiWiring.unit.test.ts
+          tests/proClubTeamDashboardProductionV1.unit.test.tsx
+          tests/proClubMatchStartingXI.unit.test.ts
+          tests/proClubMatchStartingXIRepository.unit.test.ts
+          tests/proClubMatchStartingXIUiWiring.unit.test.ts
+          tests/proClubStartingXI11v11.unit.test.ts
+
+      - name: Firestore Rules regression
+        run: >-
+          npx firebase emulators:exec
+          --project demo-futverse-shared-game-model-v1
+          --only firestore
+          "node --import tsx --test --test-concurrency=1 tests/firestore.pro-club-match-starting-xi.rules.test.ts"
+
+      - name: Root TypeScript
+        run: npm run lint
+
+      - name: App build
+        run: npm run build
+
+      - name: Diff whitespace check
+        run: git diff --check "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
