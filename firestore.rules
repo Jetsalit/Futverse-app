@@ -4493,24 +4493,48 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           && data.get('updatedByRole', '') == actorRole;
       }
 
-      function proClubMatchValidCustomFormationSlotV1(slot, index) {
-        return slot is map
-          && slot.keys().size() == 5
-          && slot.keys().hasOnly(['slotIndex', 'position', 'x', 'y', 'label'])
-          && slot.get('slotIndex', -1) == index
-          && slot.get('position', '') in [
-            'GK','LB','LWB','CB','RB','RWB','DM','LM','CM','RM','AM','LW','RW','CF','ST'
-          ]
-          && slot.get('x', -1) is int
-          && slot.get('x', -1) >= 6
-          && slot.get('x', -1) <= 94
-          && slot.get('y', -1) is int
-          && slot.get('y', -1) >= 6
-          && slot.get('y', -1) <= 94
-          && slot.get('label', '') is string
-          && slot.get('label', '').size() > 0
-          && slot.get('label', '').size() <= 24
-          && slot.get('label', '').trim() == slot.get('label', '');
+      function proClubMatchValidCustomCoordinateV1(value) {
+        return value is int
+          && value >= 6
+          && value <= 94;
+      }
+
+      function proClubMatchValidCustomCoordinateListV1(values) {
+        return values is list
+          && values.size() == 11
+          && proClubMatchValidCustomCoordinateV1(values[0])
+          && proClubMatchValidCustomCoordinateV1(values[1])
+          && proClubMatchValidCustomCoordinateV1(values[2])
+          && proClubMatchValidCustomCoordinateV1(values[3])
+          && proClubMatchValidCustomCoordinateV1(values[4])
+          && proClubMatchValidCustomCoordinateV1(values[5])
+          && proClubMatchValidCustomCoordinateV1(values[6])
+          && proClubMatchValidCustomCoordinateV1(values[7])
+          && proClubMatchValidCustomCoordinateV1(values[8])
+          && proClubMatchValidCustomCoordinateV1(values[9])
+          && proClubMatchValidCustomCoordinateV1(values[10]);
+      }
+
+      function proClubMatchValidCustomLabelV1(value) {
+        return value is string
+          && value.size() > 0
+          && value.size() <= 24;
+      }
+
+      function proClubMatchValidCustomLabelListV1(values) {
+        return values is list
+          && values.size() == 11
+          && proClubMatchValidCustomLabelV1(values[0])
+          && proClubMatchValidCustomLabelV1(values[1])
+          && proClubMatchValidCustomLabelV1(values[2])
+          && proClubMatchValidCustomLabelV1(values[3])
+          && proClubMatchValidCustomLabelV1(values[4])
+          && proClubMatchValidCustomLabelV1(values[5])
+          && proClubMatchValidCustomLabelV1(values[6])
+          && proClubMatchValidCustomLabelV1(values[7])
+          && proClubMatchValidCustomLabelV1(values[8])
+          && proClubMatchValidCustomLabelV1(values[9])
+          && proClubMatchValidCustomLabelV1(values[10]);
       }
 
       function proClubMatchValidCustomFormationSlotsV1(formation, slots) {
@@ -4519,19 +4543,17 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           && slots == null
         ) || (
           formation == 'CUSTOM'
-          && slots is list
-          && slots.size() == 11
-          && proClubMatchValidCustomFormationSlotV1(slots[0], 0)
-          && proClubMatchValidCustomFormationSlotV1(slots[1], 1)
-          && proClubMatchValidCustomFormationSlotV1(slots[2], 2)
-          && proClubMatchValidCustomFormationSlotV1(slots[3], 3)
-          && proClubMatchValidCustomFormationSlotV1(slots[4], 4)
-          && proClubMatchValidCustomFormationSlotV1(slots[5], 5)
-          && proClubMatchValidCustomFormationSlotV1(slots[6], 6)
-          && proClubMatchValidCustomFormationSlotV1(slots[7], 7)
-          && proClubMatchValidCustomFormationSlotV1(slots[8], 8)
-          && proClubMatchValidCustomFormationSlotV1(slots[9], 9)
-          && proClubMatchValidCustomFormationSlotV1(slots[10], 10)
+          && slots is map
+          && slots.keys().size() == 4
+          && slots.keys().hasOnly(['positions', 'labels', 'xs', 'ys'])
+          && slots.get('positions', []) is list
+          && slots.get('positions', []).size() == 11
+          && slots.get('positions', []).toSet().hasOnly([
+            'GK','LB','LWB','CB','RB','RWB','DM','LM','CM','RM','AM','LW','RW','CF','ST'
+          ])
+          && proClubMatchValidCustomLabelListV1(slots.get('labels', []))
+          && proClubMatchValidCustomCoordinateListV1(slots.get('xs', []))
+          && proClubMatchValidCustomCoordinateListV1(slots.get('ys', []))
         );
       }
 
