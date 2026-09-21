@@ -165,26 +165,13 @@ function emptySetPieces(): DocumentData {
 }
 
 
-function customFormationSlotsData(): DocumentData[] {
-  return [
-    ["GK", 50, 90, "GK"],
-    ["LB", 15, 70, "LB"],
-    ["CB", 35, 70, "LCB"],
-    ["CB", 65, 70, "RCB"],
-    ["RB", 85, 70, "RB"],
-    ["CM", 30, 50, "LCM"],
-    ["DM", 50, 55, "DM"],
-    ["CM", 70, 50, "RCM"],
-    ["LW", 20, 25, "LW"],
-    ["ST", 50, 20, "ST"],
-    ["RW", 80, 25, "RW"],
-  ].map(([position, x, y, label], slotIndex) => ({
-    slotIndex,
-    position,
-    x,
-    y,
-    label,
-  }));
+function customFormationSlotsData(): DocumentData {
+  return {
+    positions: ["GK", "LB", "CB", "CB", "RB", "CM", "DM", "CM", "LW", "ST", "RW"],
+    labels: ["GK", "LB", "LCB", "RCB", "RB", "LCM", "DM", "RCM", "LW", "ST", "RW"],
+    xs: [50, 15, 35, 65, 85, 30, 50, 70, 20, 50, 80],
+    ys: [90, 70, 70, 70, 70, 50, 55, 50, 25, 20, 25],
+  };
 }
 
 function startingXIData(
@@ -1106,7 +1093,8 @@ test("CUSTOM Starting XI accepts exactly eleven bounded custom slots", async () 
 test("CUSTOM Starting XI rejects invalid coordinates, labels and fixed layouts with custom slots", async () => {
   await seedMatch("match-custom-invalid", "DRAFT");
   const invalidSlots = customFormationSlotsData();
-  invalidSlots[3] = { ...invalidSlots[3], x: 101 };
+  invalidSlots.xs = [...invalidSlots.xs];
+  invalidSlots.xs[3] = 101;
 
   await assertFails(
     setDoc(
