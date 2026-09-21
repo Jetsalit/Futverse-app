@@ -15,6 +15,7 @@ import {
   type ProClubMatchStartingXIRepositoryOps,
 } from "../src/lib/firestore/proClubMatchStartingXIRepository";
 import type { ProClubOrganizationAuthority } from "../src/lib/firestore/proClubOrganizationAdapter";
+import { createProClubCustomFormationSlotsFromFixed } from "../src/lib/proClubStartingXI11v11.ts";
 import type {
   ProClubMatchCoreData,
   ProClubPersistedShootoutPlan,
