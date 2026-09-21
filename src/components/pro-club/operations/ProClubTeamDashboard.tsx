@@ -15,6 +15,7 @@ import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClu
 import { staffRoleLabels } from "../../../lib/proClubOnboarding";
 import ProClubAttendance from "./ProClubAttendance";
 import ProClubHeadCoachWeeklyProductionWorkspace from "./ProClubHeadCoachWeeklyProductionWorkspace";
+import ProClubGameModel from "./ProClubGameModel";
 import ProClubMatchStartingXIWorkspace from "./ProClubMatchStartingXIWorkspace";
 import ProClubSquadRoster from "./ProClubSquadRoster";
 import ProClubStaffSubmissions, {
@@ -32,6 +33,7 @@ export const PRO_CLUB_TEAM_DASHBOARD_TABS = [
   "TRAINING",
   "ATTENDANCE",
   "SUBMISSIONS",
+  "GAME_MODEL",
   "MATCHES",
 ] as const;
 
@@ -49,6 +51,7 @@ export function resolveProClubActiveTab(
     case "TRAINING":
     case "ATTENDANCE":
     case "SUBMISSIONS":
+    case "GAME_MODEL":
     case "MATCHES":
       return value;
     case "OVERVIEW":
@@ -82,6 +85,7 @@ const TAB_LABELS: Record<ProClubTeamDashboardTab, string> = {
   TRAINING: "Training",
   ATTENDANCE: "Attendance",
   SUBMISSIONS: "ส่งงาน",
+  GAME_MODEL: "Game Model",
   MATCHES: "Matches",
 };
 
@@ -425,6 +429,12 @@ export default function ProClubTeamDashboard({
                     : undefined
                 }
               />
+            </div>
+          )}
+
+          {activeTab === "GAME_MODEL" && (
+            <div className="pro-club-module-surface">
+              <ProClubGameModel authority={authority} />
             </div>
           )}
 
