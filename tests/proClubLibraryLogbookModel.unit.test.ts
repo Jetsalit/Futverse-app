@@ -190,3 +190,51 @@ test("Favourites are supplied as session keys and create no persisted field", ()
   assert.equal(entries[0].isFavourite, true);
   assert.equal(Object.hasOwn(drill(), "favourite"), false);
 });
+
+
+test("Recent and Favourites never expose another user's private drill", () => {
+  const foreignPrivate = drill({
+    id: "foreign-private",
+    created_by: "coach-b",
+    is_shared: false,
+    title: "Private other-user drill",
+  });
+  const sharedOther = drill({
+    id: "shared-other",
+    created_by: "coach-b",
+    is_shared: true,
+    title: "Shared other-user drill",
+  });
+
+  const recent = composeProClubLibraryLogbookEntries({
+    actorUid: "coach-a",
+    view: "RECENT",
+    drills: [drill(), foreignPrivate, sharedOther],
+    submissions: [],
+  });
+
+  assert.deepEqual(
+    new Set(recent.map((entry) => entry.referenceId)),
+    new Set(["drill-1", "shared-other"]),
+  );
+
+  const favouriteForeignKey = proClubLibraryLogbookEntryKey(
+    "DRILL",
+    "foreign-private",
+  );
+  const favourites = composeProClubLibraryLogbookEntries({
+    actorUid: "coach-a",
+    view: "FAVOURITES",
+    drills: [foreignPrivate, sharedOther],
+    submissions: [],
+    favouriteKeys: [
+      favouriteForeignKey,
+      proClubLibraryLogbookEntryKey("DRILL", "shared-other"),
+    ],
+  });
+
+  assert.deepEqual(
+    favourites.map((entry) => entry.referenceId),
+    ["shared-other"],
+  );
+});
