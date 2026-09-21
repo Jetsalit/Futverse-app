@@ -1090,11 +1090,10 @@ test("CUSTOM Starting XI accepts exactly eleven bounded custom slots", async () 
   );
 });
 
-test("CUSTOM Starting XI rejects invalid coordinates, labels and fixed layouts with custom slots", async () => {
+test("CUSTOM Starting XI rejects malformed layout shape and fixed layouts with custom slots", async () => {
   await seedMatch("match-custom-invalid", "DRAFT");
   const invalidSlots = customFormationSlotsData();
-  invalidSlots.xs = [...invalidSlots.xs];
-  invalidSlots.xs[3] = 101;
+  invalidSlots.xs = invalidSlots.xs.slice(0, 10);
 
   await assertFails(
     setDoc(
