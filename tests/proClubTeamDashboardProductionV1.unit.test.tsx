@@ -96,7 +96,7 @@ test("renders the production app shell with authoritative club identity and cont
   assert.match(text, /Squad/);
   assert.match(text, /Training/);
   assert.match(text, /Attendance/);
-  assert.match(text, /ส่งงาน/);
+  assert.match(text, /Submissions/);
   assert.match(text, /Game Model/);
   assert.match(text, /Matches/);
   assert.doesNotMatch(text, /Coming soon/i);

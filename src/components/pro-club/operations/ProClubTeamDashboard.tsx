@@ -84,7 +84,7 @@ const TAB_LABELS: Record<ProClubTeamDashboardTab, string> = {
   SQUAD: "Squad",
   TRAINING: "Training",
   ATTENDANCE: "Attendance",
-  SUBMISSIONS: "ส่งงาน",
+  SUBMISSIONS: "Submissions",
   GAME_MODEL: "Game Model",
   MATCHES: "Matches",
 };
