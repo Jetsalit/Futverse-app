@@ -86,7 +86,7 @@ test("role gate accepts only the seven requested football roles", () => {
   }
 });
 
-test("My Logbook composes the actor's existing drills and submissions only", () => {
+test("My Logbook owner-scopes drills while preserving repository-scoped submissions", () => {
   const entries = composeProClubLibraryLogbookEntries({
     actorUid: "coach-a",
     view: "MY_LOGBOOK",
@@ -102,7 +102,7 @@ test("My Logbook composes the actor's existing drills and submissions only", () 
 
   assert.deepEqual(
     new Set(entries.map((entry) => entry.referenceId)),
-    new Set(["drill-1", "submission-own"]),
+    new Set(["drill-1", "submission-own", "submission-other"]),
   );
 });
 
