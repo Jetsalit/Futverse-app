@@ -4493,12 +4493,55 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           && data.get('updatedByRole', '') == actorRole;
       }
 
+      function proClubMatchValidCustomFormationSlotV1(slot, index) {
+        return slot is map
+          && slot.keys().size() == 5
+          && slot.keys().hasOnly(['slotIndex', 'position', 'x', 'y', 'label'])
+          && slot.get('slotIndex', -1) == index
+          && slot.get('position', '') in [
+            'GK','LB','LWB','CB','RB','RWB','DM','LM','CM','RM','AM','LW','RW','CF','ST'
+          ]
+          && slot.get('x', -1) is int
+          && slot.get('x', -1) >= 6
+          && slot.get('x', -1) <= 94
+          && slot.get('y', -1) is int
+          && slot.get('y', -1) >= 6
+          && slot.get('y', -1) <= 94
+          && slot.get('label', '') is string
+          && slot.get('label', '').size() > 0
+          && slot.get('label', '').size() <= 24
+          && slot.get('label', '').trim() == slot.get('label', '');
+      }
+
+      function proClubMatchValidCustomFormationSlotsV1(formation, slots) {
+        return (
+          formation != 'CUSTOM'
+          && slots == null
+        ) || (
+          formation == 'CUSTOM'
+          && slots is list
+          && slots.size() == 11
+          && proClubMatchValidCustomFormationSlotV1(slots[0], 0)
+          && proClubMatchValidCustomFormationSlotV1(slots[1], 1)
+          && proClubMatchValidCustomFormationSlotV1(slots[2], 2)
+          && proClubMatchValidCustomFormationSlotV1(slots[3], 3)
+          && proClubMatchValidCustomFormationSlotV1(slots[4], 4)
+          && proClubMatchValidCustomFormationSlotV1(slots[5], 5)
+          && proClubMatchValidCustomFormationSlotV1(slots[6], 6)
+          && proClubMatchValidCustomFormationSlotV1(slots[7], 7)
+          && proClubMatchValidCustomFormationSlotV1(slots[8], 8)
+          && proClubMatchValidCustomFormationSlotV1(slots[9], 9)
+          && proClubMatchValidCustomFormationSlotV1(slots[10], 10)
+        );
+      }
+
       function proClubMatchStartingXIKeysV1(data) {
         // Exact key contract with one membership scan instead of hasAll+hasOnly.
-        return data.keys().size() == 16
+        return data.keys().size() == 17
           && data.keys().hasOnly([
             'schemaVersion',
             'formation',
+            'customFormationSlots',
             'slotPlayerKeys',
             'substitutePlayerKeys',
             'positionRoleAssignments',
@@ -4539,6 +4582,10 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
             '3-5-2',
             'CUSTOM'
           ]
+          && proClubMatchValidCustomFormationSlotsV1(
+            data.get('formation', ''),
+            data.get('customFormationSlots', null)
+          )
           && proClubMatchValidSetPiecesV1(
             data.get('setPieceAssignments', {}),
             selected
