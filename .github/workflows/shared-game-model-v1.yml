@@ -44,7 +44,7 @@ jobs:
           git status --short
 
       - name: Set up Java 21 for Firebase Emulator
-        uses: actions/setup-java@7a445ee88d4e23b52c33fdc1d5b1bc75e168f28b
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
         with:
           distribution: temurin
           java-version: "21"
