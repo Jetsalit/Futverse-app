@@ -114,7 +114,7 @@ export default function ProClubMatchStartingXIWorkspace({
         const [nextMatches, nextRoster, nextGameModel] = await Promise.all([
           listProClubMatches(clubId),
           listProClubSquadRoster(clubId),
-          getProClubGameModel(clubId),
+          getProClubGameModel(clubId).catch(() => null),
         ]);
         if (cancelled) return;
 
