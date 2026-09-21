@@ -164,6 +164,16 @@ function emptySetPieces(): DocumentData {
   };
 }
 
+
+function customFormationSlotsData(): DocumentData {
+  return {
+    positions: ["GK", "LB", "CB", "CB", "RB", "CM", "DM", "CM", "LW", "ST", "RW"],
+    labels: ["GK", "LB", "LCB", "RCB", "RB", "LCM", "DM", "RCM", "LW", "ST", "RW"],
+    xs: [50, 15, 35, 65, 85, 30, 50, 70, 20, 50, 80],
+    ys: [90, 70, 70, 70, 70, 50, 55, 50, 25, 20, 25],
+  };
+}
+
 function startingXIData(
   actor: string,
   actorRole: "HEAD_COACH" | "TECHNICAL_DIRECTOR",
@@ -172,6 +182,7 @@ function startingXIData(
   return {
     schemaVersion: 1,
     formation: "4-3-3",
+    customFormationSlots: null,
     slotPlayerKeys: PLAYER_KEYS.slice(0, 11),
     substitutePlayerKeys: PLAYER_KEYS.slice(11, 13),
     positionRoleAssignments: Array.from({ length: 11 }, () => null),
@@ -1053,6 +1064,69 @@ test("Game Model rejects extra phases and Starting XI requires an exact four-pha
           OUT_OF_POSSESSION: "",
           TRANSITION_TO_ATTACK: "",
         },
+      }),
+    ),
+  );
+});
+
+test("CUSTOM Starting XI accepts exactly eleven bounded custom slots", async () => {
+  await seedMatch("match-custom-valid", "DRAFT");
+  await assertSucceeds(
+    setDoc(
+      doc(
+        authedDb(HEAD),
+        "proClubs",
+        CLUB_A,
+        "matches",
+        "match-custom-valid",
+        "startingXI",
+        "current",
+      ),
+      startingXIData(HEAD, "HEAD_COACH", {
+        formation: "CUSTOM",
+        customFormationSlots: customFormationSlotsData(),
+      }),
+    ),
+  );
+});
+
+test("CUSTOM Starting XI rejects malformed layout shape and fixed layouts with custom slots", async () => {
+  await seedMatch("match-custom-invalid", "DRAFT");
+  const invalidSlots = customFormationSlotsData();
+  invalidSlots.xs = invalidSlots.xs.slice(0, 10);
+
+  await assertFails(
+    setDoc(
+      doc(
+        authedDb(HEAD),
+        "proClubs",
+        CLUB_A,
+        "matches",
+        "match-custom-invalid",
+        "startingXI",
+        "current",
+      ),
+      startingXIData(HEAD, "HEAD_COACH", {
+        formation: "CUSTOM",
+        customFormationSlots: invalidSlots,
+      }),
+    ),
+  );
+
+  await assertFails(
+    setDoc(
+      doc(
+        authedDb(HEAD),
+        "proClubs",
+        CLUB_A,
+        "matches",
+        "match-custom-invalid",
+        "startingXI",
+        "current",
+      ),
+      startingXIData(HEAD, "HEAD_COACH", {
+        formation: "4-3-3",
+        customFormationSlots: customFormationSlotsData(),
       }),
     ),
   );

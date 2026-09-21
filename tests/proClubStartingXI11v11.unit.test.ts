@@ -6,7 +6,9 @@ import {
   PRO_CLUB_STARTING_XI_UI_SECTIONS,
   canAuthorProClubStartingXI,
   createEmptyProClubStartingXIDraft,
+  createProClubCustomFormationSlotsFromFixed,
   deriveProClubStartingXIEligiblePlayers,
+  validateProClubCustomFormationSlots,
   validateProClubStartingXIDraft,
 } from "../src/lib/proClubStartingXI11v11.ts";
 import type { ProClubOrganizationAuthority } from "../src/lib/firestore/proClubOrganizationAdapter.ts";
@@ -248,4 +250,41 @@ test("set pieces and penalty shootout order can reference only unique selected m
   assert.equal(result.ok, false);
   assert.match(result.errors.join(" "), /duplicate players/);
   assert.match(result.errors.join(" "), /selected match squad/);
+});
+
+test("custom formation seeds eleven editable canonical slots and validates bounds", () => {
+  const slots = createProClubCustomFormationSlotsFromFixed("4-3-3");
+  assert.equal(slots.length, 11);
+  assert.equal(validateProClubCustomFormationSlots(slots).ok, true);
+
+  const moved = slots.map((slot, index) =>
+    index === 6 ? { ...slot, x: 58, y: 42, position: "AM" as const, label: "Free 10" } : slot
+  );
+  assert.equal(validateProClubCustomFormationSlots(moved).ok, true);
+
+  const invalid = moved.map((slot, index) =>
+    index === 6 ? { ...slot, x: 95 } : slot
+  );
+  assert.equal(validateProClubCustomFormationSlots(invalid).ok, false);
+});
+
+test("CUSTOM draft requires custom slots while fixed formations reject them", () => {
+  const custom = createEmptyProClubStartingXIDraft("CUSTOM");
+  assert.equal(validateProClubStartingXIDraft(custom).ok, true);
+
+  const missing = { ...custom, customFormationSlots: null };
+  assert.match(
+    validateProClubStartingXIDraft(missing).errors.join(" "),
+    /exactly 11 slots/,
+  );
+
+  const fixed = createEmptyProClubStartingXIDraft("4-3-3");
+  const fixedWithCustom = {
+    ...fixed,
+    customFormationSlots: createProClubCustomFormationSlotsFromFixed("4-3-3"),
+  };
+  assert.match(
+    validateProClubStartingXIDraft(fixedWithCustom).errors.join(" "),
+    /must not persist custom formation slots/,
+  );
 });

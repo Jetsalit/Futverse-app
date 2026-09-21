@@ -12,6 +12,8 @@ import {
 import {
   PRO_CLUB_SET_PIECE_DUTIES,
   PRO_CLUB_STARTING_XI_FIXED_FORMATIONS,
+  validateProClubCustomFormationSlots,
+  type ProClubCustomFormationSlot,
   type ProClubSetPieceDuty,
   type ProClubStartingXIFormation,
 } from "./proClubStartingXI11v11";
@@ -48,6 +50,7 @@ export interface ProClubMatchRosterSnapshot {
 export interface ProClubPersistedStartingXIPlan {
   schemaVersion: typeof PRO_CLUB_MATCH_STARTING_XI_SCHEMA_VERSION;
   formation: ProClubStartingXIFormation;
+  customFormationSlots?: readonly ProClubCustomFormationSlot[] | null;
   slotPlayerKeys: readonly (string | null)[];
   substitutePlayerKeys: readonly string[];
   positionRoleAssignments: readonly (string | null)[];
@@ -291,6 +294,18 @@ export function validateProClubPersistedStartingXIPlan(
   ) {
     errors.push("Invalid Starting XI formation.");
   }
+  if (value.formation === "CUSTOM") {
+    const customValidation = validateProClubCustomFormationSlots(
+      value.customFormationSlots,
+    );
+    errors.push(...customValidation.errors);
+  } else if (
+    value.customFormationSlots !== undefined &&
+    value.customFormationSlots !== null
+  ) {
+    errors.push("Fixed formations must not persist custom formation slots.");
+  }
+
   if (value.slotPlayerKeys.length !== 11) {
     errors.push("Starting XI must contain exactly 11 slots.");
   }

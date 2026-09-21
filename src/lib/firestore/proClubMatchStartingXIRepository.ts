@@ -37,6 +37,10 @@ import {
 } from "../proClubMatchStartingXI";
 import { validateProClubSquadRosterFootballInput } from "../proClubSquadRoster";
 import {
+  createProClubCustomFormationSlotsFromFixed,
+  type ProClubCustomFormationSlot,
+} from "../proClubStartingXI11v11";
+import {
   resolveProClubOrganizationAuthority,
   type ProClubOrganizationAuthority,
   type ProClubOrganizationAuthorityResult,
@@ -178,6 +182,7 @@ const ROSTER_KEYS = [
 const STARTING_XI_KEYS = [
   "schemaVersion",
   "formation",
+  "customFormationSlots",
   "slotPlayerKeys",
   "substitutePlayerKeys",
   "positionRoleAssignments",
@@ -435,14 +440,72 @@ function parseSetPieces(value: unknown): ProClubPersistedStartingXIPlan["setPiec
   return { ...value } as ProClubPersistedStartingXIPlan["setPieceAssignments"];
 }
 
+const CUSTOM_FORMATION_STORAGE_KEYS = [
+  "positions",
+  "labels",
+  "xs",
+  "ys",
+] as const;
+
+function serializeCustomFormationSlots(
+  slots: readonly ProClubCustomFormationSlot[] | null | undefined,
+): DocumentData | null {
+  if (!slots) return null;
+  return {
+    positions: slots.map((slot) => slot.position),
+    labels: slots.map((slot) => slot.label),
+    xs: slots.map((slot) => slot.x),
+    ys: slots.map((slot) => slot.y),
+  };
+}
+
+function parseCustomFormationSlots(
+  value: unknown,
+): ProClubCustomFormationSlot[] {
+  if (!isPlainObject(value) || !hasExactKeys(value, CUSTOM_FORMATION_STORAGE_KEYS)) {
+    throw new Error("Invalid custom formation storage shape.");
+  }
+
+  const { positions, labels, xs, ys } = value;
+  if (
+    !Array.isArray(positions) ||
+    !Array.isArray(labels) ||
+    !Array.isArray(xs) ||
+    !Array.isArray(ys) ||
+    positions.length !== 11 ||
+    labels.length !== 11 ||
+    xs.length !== 11 ||
+    ys.length !== 11
+  ) {
+    throw new Error("Invalid custom formation storage arrays.");
+  }
+
+  return positions.map((position, slotIndex) => ({
+    slotIndex,
+    position: position as ProClubCustomFormationSlot["position"],
+    x: xs[slotIndex] as number,
+    y: ys[slotIndex] as number,
+    label: labels[slotIndex] as string,
+  }));
+}
+
 function parseStartingXI(
   raw: unknown,
   rosterPlayerKeys: readonly string[],
 ): ProClubStartingXIRecord {
-  const legacyStartingXIKeys = STARTING_XI_KEYS.filter((key) => key !== "gameModelSnapshot");
+  const legacyWithoutCustomKeys = STARTING_XI_KEYS.filter(
+    (key) => key !== "customFormationSlots",
+  );
+  const legacyWithoutGameModelOrCustomKeys = legacyWithoutCustomKeys.filter(
+    (key) => key !== "gameModelSnapshot",
+  );
   if (
     !isPlainObject(raw) ||
-    (!hasExactKeys(raw, STARTING_XI_KEYS) && !hasExactKeys(raw, legacyStartingXIKeys))
+    (
+      !hasExactKeys(raw, STARTING_XI_KEYS) &&
+      !hasExactKeys(raw, legacyWithoutCustomKeys) &&
+      !hasExactKeys(raw, legacyWithoutGameModelOrCustomKeys)
+    )
   ) {
     throw new Error("Invalid Pro Club Starting XI document shape.");
   }
@@ -461,6 +524,12 @@ function parseStartingXI(
   const plan: ProClubPersistedStartingXIPlan = {
     schemaVersion: raw.schemaVersion as 1,
     formation: raw.formation as ProClubPersistedStartingXIPlan["formation"],
+    customFormationSlots:
+      raw.formation === "CUSTOM"
+        ? raw.customFormationSlots === undefined
+          ? createProClubCustomFormationSlotsFromFixed("4-3-3")
+          : parseCustomFormationSlots(raw.customFormationSlots)
+        : null,
     slotPlayerKeys: [...raw.slotPlayerKeys] as (string | null)[],
     substitutePlayerKeys: [...raw.substitutePlayerKeys] as string[],
     positionRoleAssignments: [...raw.positionRoleAssignments] as (string | null)[],
@@ -493,6 +562,8 @@ function parseStartingXI(
     positionRoleAssignments: [...plan.positionRoleAssignments],
     setPieceAssignments: { ...plan.setPieceAssignments },
     gameModelSnapshot: { ...(plan.gameModelSnapshot ?? createEmptyGameModelTextSnapshot()) },
+    customFormationSlots:
+      plan.customFormationSlots?.map((slot) => ({ ...slot })) ?? null,
     matchRosterRevision: raw.matchRosterRevision,
     revision: raw.revision,
     ...requireAudit(raw),
@@ -1007,6 +1078,10 @@ export async function saveProClubStartingXI(
   const payload = {
     schemaVersion: plan.schemaVersion,
     formation: plan.formation,
+    customFormationSlots:
+      plan.formation === "CUSTOM"
+        ? serializeCustomFormationSlots(plan.customFormationSlots)
+        : null,
     slotPlayerKeys: [...plan.slotPlayerKeys],
     substitutePlayerKeys: [...plan.substitutePlayerKeys],
     positionRoleAssignments: [...plan.positionRoleAssignments],

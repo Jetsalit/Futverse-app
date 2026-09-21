@@ -484,10 +484,6 @@ export default function ProClubMatchStartingXIWorkspace({
 
           {loadingMatch ? (
             <p className="text-sm text-slate-500">Loading Match plan…</p>
-          ) : startingXI?.formation === "CUSTOM" ? (
-            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
-              This Match contains a CUSTOM formation. Custom formation editing remains outside the reviewed fixed-formation UI slice.
-            </div>
           ) : (
             <ProClubStartingXI11v11
                 key={`${match.matchId}:${match.rosterRevision}`}

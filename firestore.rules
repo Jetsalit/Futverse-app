@@ -4493,12 +4493,35 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           && data.get('updatedByRole', '') == actorRole;
       }
 
+      function proClubMatchValidCustomFormationSlotsV1(formation, slots) {
+        return (
+          formation != 'CUSTOM'
+          && slots == null
+        ) || (
+          formation == 'CUSTOM'
+          && slots is map
+          && slots.keys().hasOnly(['positions', 'labels', 'xs', 'ys'])
+          && slots.get('positions', []) is list
+          && slots.get('positions', []).size() == 11
+          && slots.get('positions', []).toSet().hasOnly([
+            'GK','LB','LWB','CB','RB','RWB','DM','LM','CM','RM','AM','LW','RW','CF','ST'
+          ])
+          && slots.get('labels', []) is list
+          && slots.get('labels', []).size() == 11
+          && slots.get('xs', []) is list
+          && slots.get('xs', []).size() == 11
+          && slots.get('ys', []) is list
+          && slots.get('ys', []).size() == 11
+        );
+      }
+
       function proClubMatchStartingXIKeysV1(data) {
         // Exact key contract with one membership scan instead of hasAll+hasOnly.
-        return data.keys().size() == 16
+        return data.keys().size() == 17
           && data.keys().hasOnly([
             'schemaVersion',
             'formation',
+            'customFormationSlots',
             'slotPlayerKeys',
             'substitutePlayerKeys',
             'positionRoleAssignments',
@@ -4539,6 +4562,10 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
             '3-5-2',
             'CUSTOM'
           ]
+          && proClubMatchValidCustomFormationSlotsV1(
+            data.get('formation', ''),
+            data.get('customFormationSlots', null)
+          )
           && proClubMatchValidSetPiecesV1(
             data.get('setPieceAssignments', {}),
             selected

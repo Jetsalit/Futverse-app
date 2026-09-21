@@ -3,7 +3,10 @@ import type { ProClubSquadRosterRecord } from "./firestore/proClubSquadRosterRep
 import {
   isExactPlayerKey,
 } from "./playerIdentityFoundation";
-import type { PlayerPositionCode } from "./playerPositionSelection";
+import {
+  isPlayerPositionCode,
+  type PlayerPositionCode,
+} from "./playerPositionSelection";
 
 export const PRO_CLUB_STARTING_XI_FIXED_FORMATIONS = [
   "4-3-3",
@@ -24,6 +27,77 @@ export interface ProClubStartingXISlotDefinition {
   position: PlayerPositionCode;
   x: number;
   y: number;
+}
+
+export interface ProClubCustomFormationSlot
+  extends ProClubStartingXISlotDefinition {
+  label: string;
+}
+
+export const PRO_CLUB_CUSTOM_FORMATION_SLOT_COUNT = 11;
+export const PRO_CLUB_CUSTOM_FORMATION_LABEL_LIMIT = 24;
+export const PRO_CLUB_CUSTOM_FORMATION_COORD_MIN = 6;
+export const PRO_CLUB_CUSTOM_FORMATION_COORD_MAX = 94;
+
+export function createProClubCustomFormationSlotsFromFixed(
+  formation: ProClubStartingXIFixedFormation,
+): ProClubCustomFormationSlot[] {
+  return PRO_CLUB_STARTING_XI_FIXED_SLOTS[formation].map((slot) => ({
+    ...slot,
+    label: slot.position,
+  }));
+}
+
+export function validateProClubCustomFormationSlots(
+  slots: readonly ProClubCustomFormationSlot[] | null | undefined,
+): ProClubStartingXIValidationResult {
+  const errors: string[] = [];
+
+  if (!Array.isArray(slots) || slots.length !== PRO_CLUB_CUSTOM_FORMATION_SLOT_COUNT) {
+    return {
+      ok: false,
+      errors: ["Custom formation must contain exactly 11 slots."],
+    };
+  }
+
+  const seenIndexes = new Set<number>();
+  for (const [expectedIndex, slot] of slots.entries()) {
+    if (
+      !slot ||
+      slot.slotIndex !== expectedIndex ||
+      seenIndexes.has(slot.slotIndex)
+    ) {
+      errors.push("Custom formation slot indexes must be unique and ordered 0–10.");
+      continue;
+    }
+    seenIndexes.add(slot.slotIndex);
+
+    if (!isPlayerPositionCode(slot.position)) {
+      errors.push(`Custom slot ${expectedIndex + 1} has an invalid position code.`);
+    }
+
+    if (
+      typeof slot.label !== "string" ||
+      slot.label.trim() !== slot.label ||
+      slot.label.length === 0 ||
+      slot.label.length > PRO_CLUB_CUSTOM_FORMATION_LABEL_LIMIT
+    ) {
+      errors.push(`Custom slot ${expectedIndex + 1} has an invalid label.`);
+    }
+
+    for (const [axis, value] of [["x", slot.x], ["y", slot.y]] as const) {
+      if (
+        typeof value !== "number" ||
+        !Number.isInteger(value) ||
+        value < PRO_CLUB_CUSTOM_FORMATION_COORD_MIN ||
+        value > PRO_CLUB_CUSTOM_FORMATION_COORD_MAX
+      ) {
+        errors.push(`Custom slot ${expectedIndex + 1} has an invalid ${axis} coordinate.`);
+      }
+    }
+  }
+
+  return { ok: errors.length === 0, errors };
 }
 
 export const PRO_CLUB_STARTING_XI_FIXED_SLOTS:
@@ -136,6 +210,7 @@ export interface ProClubPenaltyShootoutOrder {
 
 export interface ProClubStartingXIDraft {
   formation: ProClubStartingXIFormation;
+  customFormationSlots: readonly ProClubCustomFormationSlot[] | null;
   slotPlayerKeys: readonly (string | null)[];
   substitutePlayerKeys: readonly string[];
   positionRoleAssignments: readonly (string | null)[];
@@ -196,6 +271,10 @@ export function createEmptyProClubStartingXIDraft(
 ): ProClubStartingXIDraft {
   return {
     formation,
+    customFormationSlots:
+      formation === "CUSTOM"
+        ? createProClubCustomFormationSlotsFromFixed("4-3-3")
+        : null,
     slotPlayerKeys: Array.from({ length: 11 }, () => null),
     substitutePlayerKeys: [],
     positionRoleAssignments: Array.from({ length: 11 }, () => null),
@@ -229,6 +308,15 @@ export function validateProClubStartingXIDraft(
       .includes(input.formation)
   ) {
     errors.push("Invalid 11v11 formation.");
+  }
+
+  if (input.formation === "CUSTOM") {
+    const customValidation = validateProClubCustomFormationSlots(
+      input.customFormationSlots,
+    );
+    errors.push(...customValidation.errors);
+  } else if (input.customFormationSlots !== null) {
+    errors.push("Fixed formations must not persist custom formation slots.");
   }
 
   if (input.slotPlayerKeys.length !== 11) {
