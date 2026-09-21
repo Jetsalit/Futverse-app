@@ -440,6 +440,55 @@ function parseSetPieces(value: unknown): ProClubPersistedStartingXIPlan["setPiec
   return { ...value } as ProClubPersistedStartingXIPlan["setPieceAssignments"];
 }
 
+const CUSTOM_FORMATION_STORAGE_KEYS = [
+  "positions",
+  "labels",
+  "xs",
+  "ys",
+] as const;
+
+function serializeCustomFormationSlots(
+  slots: readonly ProClubCustomFormationSlot[] | null | undefined,
+): DocumentData | null {
+  if (!slots) return null;
+  return {
+    positions: slots.map((slot) => slot.position),
+    labels: slots.map((slot) => slot.label),
+    xs: slots.map((slot) => slot.x),
+    ys: slots.map((slot) => slot.y),
+  };
+}
+
+function parseCustomFormationSlots(
+  value: unknown,
+): ProClubCustomFormationSlot[] {
+  if (!isPlainObject(value) || !hasExactKeys(value, CUSTOM_FORMATION_STORAGE_KEYS)) {
+    throw new Error("Invalid custom formation storage shape.");
+  }
+
+  const { positions, labels, xs, ys } = value;
+  if (
+    !Array.isArray(positions) ||
+    !Array.isArray(labels) ||
+    !Array.isArray(xs) ||
+    !Array.isArray(ys) ||
+    positions.length !== 11 ||
+    labels.length !== 11 ||
+    xs.length !== 11 ||
+    ys.length !== 11
+  ) {
+    throw new Error("Invalid custom formation storage arrays.");
+  }
+
+  return positions.map((position, slotIndex) => ({
+    slotIndex,
+    position: position as ProClubCustomFormationSlot["position"],
+    x: xs[slotIndex] as number,
+    y: ys[slotIndex] as number,
+    label: labels[slotIndex] as string,
+  }));
+}
+
 function parseStartingXI(
   raw: unknown,
   rosterPlayerKeys: readonly string[],
@@ -477,9 +526,9 @@ function parseStartingXI(
     formation: raw.formation as ProClubPersistedStartingXIPlan["formation"],
     customFormationSlots:
       raw.formation === "CUSTOM"
-        ? Array.isArray(raw.customFormationSlots)
-          ? raw.customFormationSlots.map((slot) => ({ ...(slot as ProClubCustomFormationSlot) }))
-          : createProClubCustomFormationSlotsFromFixed("4-3-3")
+        ? raw.customFormationSlots === undefined
+          ? createProClubCustomFormationSlotsFromFixed("4-3-3")
+          : parseCustomFormationSlots(raw.customFormationSlots)
         : null,
     slotPlayerKeys: [...raw.slotPlayerKeys] as (string | null)[],
     substitutePlayerKeys: [...raw.substitutePlayerKeys] as string[],
@@ -1031,7 +1080,7 @@ export async function saveProClubStartingXI(
     formation: plan.formation,
     customFormationSlots:
       plan.formation === "CUSTOM"
-        ? plan.customFormationSlots?.map((slot) => ({ ...slot })) ?? null
+        ? serializeCustomFormationSlots(plan.customFormationSlots)
         : null,
     slotPlayerKeys: [...plan.slotPlayerKeys],
     substitutePlayerKeys: [...plan.substitutePlayerKeys],
