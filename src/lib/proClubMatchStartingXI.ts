@@ -16,6 +16,11 @@ import {
   type ProClubStartingXIFormation,
 } from "./proClubStartingXI11v11";
 import type { PlayerPositionCode } from "./playerPositionSelection";
+import {
+  createEmptyGameModelTextSnapshot,
+  validateGameModelTextSnapshot,
+  type GameModelTextSnapshot,
+} from "./gameModel";
 
 export const PRO_CLUB_MATCH_STARTING_XI_SCHEMA_VERSION = 1 as const;
 
@@ -47,6 +52,7 @@ export interface ProClubPersistedStartingXIPlan {
   substitutePlayerKeys: readonly string[];
   positionRoleAssignments: readonly (string | null)[];
   setPieceAssignments: Readonly<Record<ProClubSetPieceDuty, string | null>>;
+  gameModelSnapshot?: GameModelTextSnapshot;
   coachNotes: string;
 }
 
@@ -321,6 +327,13 @@ export function validateProClubPersistedStartingXIPlan(
     )
   ) {
     errors.push("Invalid Position Role Assignment.");
+  }
+
+  const gameModelValidation = validateGameModelTextSnapshot(
+    value.gameModelSnapshot ?? createEmptyGameModelTextSnapshot(),
+  );
+  if (!gameModelValidation.ok) {
+    errors.push(...gameModelValidation.errors);
   }
 
   for (const duty of PRO_CLUB_SET_PIECE_DUTIES) {

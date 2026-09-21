@@ -4425,9 +4425,77 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           && proClubMatchValidRoleAssignmentV1(roles[10]);
       }
 
+      function proClubGameModelPhasesValidV1(phases) {
+        return phases is map
+          && phases.keys().size() == 4
+          && phases.keys().hasOnly([
+            'IN_POSSESSION',
+            'OUT_OF_POSSESSION',
+            'TRANSITION_TO_ATTACK',
+            'TRANSITION_TO_DEFEND'
+          ])
+          && phases.get('IN_POSSESSION', '') is string
+          && phases.get('IN_POSSESSION', '').size() <= 4000
+          && phases.get('OUT_OF_POSSESSION', '') is string
+          && phases.get('OUT_OF_POSSESSION', '').size() <= 4000
+          && phases.get('TRANSITION_TO_ATTACK', '') is string
+          && phases.get('TRANSITION_TO_ATTACK', '').size() <= 4000
+          && phases.get('TRANSITION_TO_DEFEND', '') is string
+          && phases.get('TRANSITION_TO_DEFEND', '').size() <= 4000;
+      }
+
+      function proClubGameModelKeysV1(data) {
+        return data.keys().size() == 9
+          && data.keys().hasOnly([
+            'schemaVersion',
+            'phases',
+            'revision',
+            'createdAt',
+            'createdBy',
+            'createdByRole',
+            'updatedAt',
+            'updatedBy',
+            'updatedByRole'
+          ]);
+      }
+
+      function proClubGameModelValidCreateV1() {
+        let data = request.resource.data;
+        let actorRole = proClubMatchActorRoleV1(clubId);
+        return proClubMatchFootballAuthorityV1(clubId)
+          && proClubGameModelKeysV1(data)
+          && data.get('schemaVersion', 0) == 1
+          && proClubGameModelPhasesValidV1(data.get('phases', {}))
+          && data.get('revision', 0) == 1
+          && data.get('createdAt', null) == request.time
+          && data.get('createdBy', '') == request.auth.uid
+          && data.get('createdByRole', '') == actorRole
+          && data.get('updatedAt', null) == request.time
+          && data.get('updatedBy', '') == request.auth.uid
+          && data.get('updatedByRole', '') == actorRole;
+      }
+
+      function proClubGameModelValidUpdateV1() {
+        let data = request.resource.data;
+        let previous = resource.data;
+        let actorRole = proClubMatchActorRoleV1(clubId);
+        return proClubMatchFootballAuthorityV1(clubId)
+          && proClubGameModelKeysV1(data)
+          && data.get('schemaVersion', 0) == 1
+          && previous.get('schemaVersion', 0) == 1
+          && proClubGameModelPhasesValidV1(data.get('phases', {}))
+          && data.get('revision', 0) == previous.get('revision', 0) + 1
+          && data.get('createdAt', null) == previous.get('createdAt', null)
+          && data.get('createdBy', '') == previous.get('createdBy', '')
+          && data.get('createdByRole', '') == previous.get('createdByRole', '')
+          && data.get('updatedAt', null) == request.time
+          && data.get('updatedBy', '') == request.auth.uid
+          && data.get('updatedByRole', '') == actorRole;
+      }
+
       function proClubMatchStartingXIKeysV1(data) {
         // Exact key contract with one membership scan instead of hasAll+hasOnly.
-        return data.keys().size() == 15
+        return data.keys().size() == 16
           && data.keys().hasOnly([
             'schemaVersion',
             'formation',
@@ -4435,6 +4503,7 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
             'substitutePlayerKeys',
             'positionRoleAssignments',
             'setPieceAssignments',
+            'gameModelSnapshot',
             'coachNotes',
             'matchRosterRevision',
             'revision',
@@ -4473,6 +4542,9 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           && proClubMatchValidSetPiecesV1(
             data.get('setPieceAssignments', {}),
             selected
+          )
+          && proClubGameModelPhasesValidV1(
+            data.get('gameModelSnapshot', {})
           )
           && data.get('coachNotes', '') is string
           && data.get('coachNotes', '').size() <= 2000
@@ -4771,6 +4843,15 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
         );
 
       allow list, create, update, delete: if false;
+
+      // Pro Club Game Model V1 — one editable four-phase master per club.
+      match /gameModel/current {
+        allow get: if proClubSquadRosterActiveStaffV1(clubId);
+        allow list: if false;
+        allow create: if proClubGameModelValidCreateV1();
+        allow update: if proClubGameModelValidUpdateV1();
+        allow delete: if false;
+      }
 
       // Pro Club Match + Starting XI Persistence V1 — canonical tenant path.
       match /matches/{matchId} {

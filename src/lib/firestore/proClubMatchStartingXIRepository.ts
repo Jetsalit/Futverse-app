@@ -11,6 +11,7 @@ import {
 } from "firebase/firestore";
 
 import { auth, db } from "../firebase";
+import { createEmptyGameModelTextSnapshot } from "../gameModel";
 import { isExactPlayerKey } from "../playerIdentityFoundation";
 import {
   validatePositionSelection,
@@ -181,6 +182,7 @@ const STARTING_XI_KEYS = [
   "substitutePlayerKeys",
   "positionRoleAssignments",
   "setPieceAssignments",
+  "gameModelSnapshot",
   "coachNotes",
   "matchRosterRevision",
   "revision",
@@ -437,7 +439,11 @@ function parseStartingXI(
   raw: unknown,
   rosterPlayerKeys: readonly string[],
 ): ProClubStartingXIRecord {
-  if (!isPlainObject(raw) || !hasExactKeys(raw, STARTING_XI_KEYS)) {
+  const legacyStartingXIKeys = STARTING_XI_KEYS.filter((key) => key !== "gameModelSnapshot");
+  if (
+    !isPlainObject(raw) ||
+    (!hasExactKeys(raw, STARTING_XI_KEYS) && !hasExactKeys(raw, legacyStartingXIKeys))
+  ) {
     throw new Error("Invalid Pro Club Starting XI document shape.");
   }
   if (
@@ -459,6 +465,15 @@ function parseStartingXI(
     substitutePlayerKeys: [...raw.substitutePlayerKeys] as string[],
     positionRoleAssignments: [...raw.positionRoleAssignments] as (string | null)[],
     setPieceAssignments: parseSetPieces(raw.setPieceAssignments),
+    gameModelSnapshot:
+      raw.gameModelSnapshot && typeof raw.gameModelSnapshot === "object"
+        ? { ...(raw.gameModelSnapshot as NonNullable<ProClubPersistedStartingXIPlan["gameModelSnapshot"]>) }
+        : {
+            IN_POSSESSION: "",
+            OUT_OF_POSSESSION: "",
+            TRANSITION_TO_ATTACK: "",
+            TRANSITION_TO_DEFEND: "",
+          },
     coachNotes: raw.coachNotes,
   };
   const validation = validateProClubPersistedStartingXIPlan(plan, rosterPlayerKeys);
@@ -477,6 +492,7 @@ function parseStartingXI(
     substitutePlayerKeys: [...plan.substitutePlayerKeys],
     positionRoleAssignments: [...plan.positionRoleAssignments],
     setPieceAssignments: { ...plan.setPieceAssignments },
+    gameModelSnapshot: { ...(plan.gameModelSnapshot ?? createEmptyGameModelTextSnapshot()) },
     matchRosterRevision: raw.matchRosterRevision,
     revision: raw.revision,
     ...requireAudit(raw),
@@ -995,6 +1011,7 @@ export async function saveProClubStartingXI(
     substitutePlayerKeys: [...plan.substitutePlayerKeys],
     positionRoleAssignments: [...plan.positionRoleAssignments],
     setPieceAssignments: { ...plan.setPieceAssignments },
+    gameModelSnapshot: { ...(plan.gameModelSnapshot ?? createEmptyGameModelTextSnapshot()) },
     coachNotes: plan.coachNotes,
     matchRosterRevision: match.rosterRevision,
   };

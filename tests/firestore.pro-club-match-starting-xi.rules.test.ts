@@ -179,6 +179,12 @@ function startingXIData(
       ...emptySetPieces(),
       PENALTY: "p9",
     },
+    gameModelSnapshot: {
+      IN_POSSESSION: "Build through the first line",
+      OUT_OF_POSSESSION: "Protect central space",
+      TRANSITION_TO_ATTACK: "Attack forward when available",
+      TRANSITION_TO_DEFEND: "Counter-press nearest options",
+    },
     coachNotes: "",
     matchRosterRevision: 13,
     revision: 1,
@@ -189,6 +195,30 @@ function startingXIData(
     updatedBy: actor,
     updatedByRole: actorRole,
     ...overrides,
+  };
+}
+
+
+function gameModelData(
+  actor: string,
+  actorRole: "HEAD_COACH" | "TECHNICAL_DIRECTOR",
+  revision = 1,
+): DocumentData {
+  return {
+    schemaVersion: 1,
+    phases: {
+      IN_POSSESSION: "Build through midfield",
+      OUT_OF_POSSESSION: "Protect central space",
+      TRANSITION_TO_ATTACK: "Attack quickly",
+      TRANSITION_TO_DEFEND: "Counter-press",
+    },
+    revision,
+    createdAt: serverTimestamp(),
+    createdBy: actor,
+    createdByRole: actorRole,
+    updatedAt: serverTimestamp(),
+    updatedBy: actor,
+    updatedByRole: actorRole,
   };
 }
 
@@ -921,6 +951,109 @@ test("Starting XI and shootout documents cannot be hard-deleted", async () => {
         "shootout",
         "current",
       ),
+    ),
+  );
+});
+
+test("Game Model master is readable by active staff and writable only by Head Coach or Technical Director", async () => {
+  await assertSucceeds(
+    setDoc(
+      doc(authedDb(HEAD), "proClubs", CLUB_A, "gameModel", "current"),
+      gameModelData(HEAD, "HEAD_COACH"),
+    ),
+  );
+
+  await assertSucceeds(
+    getDoc(
+      doc(authedDb(ASSISTANT), "proClubs", CLUB_A, "gameModel", "current"),
+    ),
+  );
+
+  await seed([
+    [
+      `proClubs/${CLUB_A}/gameModel/current`,
+      {
+        ...gameModelData(HEAD, "HEAD_COACH"),
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  ]);
+
+  await assertSucceeds(
+    updateDoc(
+      doc(authedDb(TECHNICAL_DIRECTOR), "proClubs", CLUB_A, "gameModel", "current"),
+      {
+        phases: {
+          IN_POSSESSION: "Updated",
+          OUT_OF_POSSESSION: "",
+          TRANSITION_TO_ATTACK: "",
+          TRANSITION_TO_DEFEND: "",
+        },
+        revision: 2,
+        updatedAt: serverTimestamp(),
+        updatedBy: TECHNICAL_DIRECTOR,
+        updatedByRole: "TECHNICAL_DIRECTOR",
+      },
+    ),
+  );
+
+  await assertFails(
+    updateDoc(
+      doc(authedDb(ASSISTANT), "proClubs", CLUB_A, "gameModel", "current"),
+      {
+        phases: {
+          IN_POSSESSION: "Assistant edit",
+          OUT_OF_POSSESSION: "",
+          TRANSITION_TO_ATTACK: "",
+          TRANSITION_TO_DEFEND: "",
+        },
+        revision: 3,
+        updatedAt: serverTimestamp(),
+        updatedBy: ASSISTANT,
+        updatedByRole: "HEAD_COACH",
+      },
+    ),
+  );
+});
+
+test("Game Model rejects extra phases and Starting XI requires an exact four-phase snapshot", async () => {
+  await assertFails(
+    setDoc(
+      doc(authedDb(HEAD), "proClubs", CLUB_A, "gameModel", "current"),
+      {
+        ...gameModelData(HEAD, "HEAD_COACH"),
+        phases: {
+          IN_POSSESSION: "",
+          OUT_OF_POSSESSION: "",
+          TRANSITION_TO_ATTACK: "",
+          TRANSITION_TO_DEFEND: "",
+          SET_PIECES: "",
+        },
+      },
+    ),
+  );
+
+  await seedMatch("match-game-model-invalid", "DRAFT");
+
+  await assertFails(
+    setDoc(
+      doc(
+        authedDb(HEAD),
+        "proClubs",
+        CLUB_A,
+        "matches",
+        "match-game-model-invalid",
+        "startingXI",
+        "current",
+      ),
+      startingXIData(HEAD, "HEAD_COACH", {
+        gameModelSnapshot: {
+          IN_POSSESSION: "",
+          OUT_OF_POSSESSION: "",
+          TRANSITION_TO_ATTACK: "",
+        },
+      }),
     ),
   );
 });

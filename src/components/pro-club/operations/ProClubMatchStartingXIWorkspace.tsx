@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
+import { getProClubGameModel, type ProClubGameModelRecord } from "../../../lib/firestore/proClubGameModelRepository";
+import { createEmptyGameModelTextSnapshot } from "../../../lib/gameModel";
 import {
   addProClubMatchRosterPlayer,
   createProClubMatch,
@@ -88,6 +90,7 @@ export default function ProClubMatchStartingXIWorkspace({
   const [matchRoster, setMatchRoster] = useState<ProClubMatchRosterRecord[]>([]);
   const [startingXI, setStartingXI] = useState<ProClubStartingXIRecord | null>(null);
   const [shootout, setShootout] = useState<ProClubShootoutRecord | null>(null);
+  const [teamGameModel, setTeamGameModel] = useState<ProClubGameModelRecord | null>(null);
 
   const [loadingIndex, setLoadingIndex] = useState(true);
   const [loadingMatch, setLoadingMatch] = useState(false);
@@ -108,14 +111,16 @@ export default function ProClubMatchStartingXIWorkspace({
       setLoadingIndex(true);
       setError(null);
       try {
-        const [nextMatches, nextRoster] = await Promise.all([
+        const [nextMatches, nextRoster, nextGameModel] = await Promise.all([
           listProClubMatches(clubId),
           listProClubSquadRoster(clubId),
+          getProClubGameModel(clubId).catch(() => null),
         ]);
         if (cancelled) return;
 
         setMatches(nextMatches);
         setCanonicalRoster(nextRoster);
+        setTeamGameModel(nextGameModel);
         setSelectedMatchId((current) => {
           if (current && nextMatches.some((item) => item.matchId === current)) {
             return current;
@@ -130,6 +135,7 @@ export default function ProClubMatchStartingXIWorkspace({
         if (!cancelled) {
           setMatches([]);
           setCanonicalRoster([]);
+          setTeamGameModel(null);
           setSelectedMatchId(null);
           setError(
             caught instanceof Error
@@ -493,6 +499,11 @@ export default function ProClubMatchStartingXIWorkspace({
                 saveMessage={saveMessage}
                 startingXIWritable={
                   match.status === "DRAFT" || match.status === "SCHEDULED"
+                }
+                initialGameModelSnapshot={
+                  startingXI?.gameModelSnapshot ??
+                  teamGameModel?.phases ??
+                  createEmptyGameModelTextSnapshot()
                 }
                 shootoutWritable={
                   match.status === "DRAFT" ||
