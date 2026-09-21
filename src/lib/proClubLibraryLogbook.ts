@@ -198,6 +198,19 @@ function makeSubmissionEntry(
   };
 }
 
+function isEntryVisibleToActor(
+  entry: ProClubLibraryLogbookEntry,
+  actorUid: string,
+): boolean {
+  if (entry.source === "DRILL") {
+    return entry.ownerUid === actorUid || entry.isShared;
+  }
+
+  // Staff Submissions must already be scoped by the existing repository
+  // authority contract before they reach this presentation adapter.
+  return true;
+}
+
 function matchesView(
   entry: ProClubLibraryLogbookEntry,
   view: ProClubLibraryLogbookView,
@@ -268,6 +281,7 @@ export function composeProClubLibraryLogbookEntries(
     ),
   ].filter(
     (entry) =>
+      isEntryVisibleToActor(entry, input.actorUid) &&
       matchesView(entry, input.view, input.actorUid) &&
       matchesRoleFilter(entry, roleFilter) &&
       matchesQuery(entry, input.query ?? ""),
