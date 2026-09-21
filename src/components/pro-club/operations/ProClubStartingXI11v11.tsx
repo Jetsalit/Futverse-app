@@ -71,7 +71,7 @@ export default function ProClubStartingXI11v11({
   saveMessage = null,
   startingXIWritable = true,
   shootoutWritable = true,
-  initialGameModelSnapshot = createEmptyGameModelTextSnapshot(),
+  initialGameModelSnapshot,
   onSaveStartingXI,
   onSaveShootout,
 }: {
@@ -122,7 +122,13 @@ export default function ProClubStartingXI11v11({
     () => [...(initialShootout?.backupTakers ?? [])],
   );
   const [coachNotes, setCoachNotes] = useState(initialStartingXI?.coachNotes ?? "");
-  const [gameModelSnapshot, setGameModelSnapshot] = useState<GameModelTextSnapshot>(() => ({ ...initialGameModelSnapshot }));
+  const [gameModelSnapshot, setGameModelSnapshot] = useState<GameModelTextSnapshot>(
+    () => ({
+      ...(initialStartingXI?.gameModelSnapshot ??
+        initialGameModelSnapshot ??
+        createEmptyGameModelTextSnapshot()),
+    }),
+  );
 
   const authorCanEdit = canAuthorProClubStartingXI(authority) && !saving;
   const startingXIEditable = authorCanEdit && startingXIWritable;
@@ -144,12 +150,12 @@ export default function ProClubStartingXI11v11({
     setRoleAssignments([...initialStartingXI.positionRoleAssignments]);
     setSetPieceAssignments({ ...initialStartingXI.setPieceAssignments });
     setCoachNotes(initialStartingXI.coachNotes);
-    setGameModelSnapshot({ ...(initialStartingXI.gameModelSnapshot ?? initialGameModelSnapshot) });
+    setGameModelSnapshot({ ...(initialStartingXI.gameModelSnapshot ?? initialGameModelSnapshot ?? createEmptyGameModelTextSnapshot()) });
     setActiveSlot(null);
   }, [initialStartingXI]);
 
   useEffect(() => {
-    if (initialStartingXI) return;
+    if (initialStartingXI || !initialGameModelSnapshot) return;
     setGameModelSnapshot({ ...initialGameModelSnapshot });
   }, [initialGameModelSnapshot, initialStartingXI]);
 
