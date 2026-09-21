@@ -15,7 +15,7 @@ import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClu
 import { staffRoleLabels } from "../../../lib/proClubOnboarding";
 import ProClubAttendance from "./ProClubAttendance";
 import ProClubHeadCoachWeeklyProductionWorkspace from "./ProClubHeadCoachWeeklyProductionWorkspace";
-import ProClubGameModel from "./ProClubGameModel";
+import ProClubGameModel from "./ProClubGameModel";\nimport ProClubLibraryLogbook, {\n  canOpenProClubLibraryLogbook,\n} from "./ProClubLibraryLogbook";
 import ProClubMatchStartingXIWorkspace from "./ProClubMatchStartingXIWorkspace";
 import ProClubSquadRoster from "./ProClubSquadRoster";
 import ProClubStaffSubmissions, {
@@ -104,7 +104,7 @@ export default function ProClubTeamDashboard({
     useState<ProClubTeamDashboardTab>("OVERVIEW");
   const [theme, setTheme] = useState<ProClubTheme>("light");
   const [attendanceLaunch, setAttendanceLaunch] = useState<AttendanceLaunch | null>(null);
-  const staffSubmissionsAvailable = canOpenProClubStaffSubmissions(authority);
+  const staffSubmissionsAvailable = canOpenProClubStaffSubmissions(authority);\n  const libraryLogbookAvailable = canOpenProClubLibraryLogbook(authority);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -336,7 +336,7 @@ export default function ProClubTeamDashboard({
                 </p>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
                 <OverviewCard
                   icon={<Users size={20} />}
                   title="Squad"
@@ -432,7 +432,7 @@ export default function ProClubTeamDashboard({
             </div>
           )}
 
-          {activeTab === "GAME_MODEL" && (
+          {activeTab === "LIBRARY_LOGBOOK" && libraryLogbookAvailable && (\n            <div className="pro-club-module-surface">\n              <ProClubLibraryLogbook\n                authority={authority}\n                onOpenGameModel={() => selectActiveTab("GAME_MODEL")}\n              />\n            </div>\n          )}\n\n          {activeTab === "GAME_MODEL" && (
             <div className="pro-club-module-surface">
               <ProClubGameModel authority={authority} />
             </div>
