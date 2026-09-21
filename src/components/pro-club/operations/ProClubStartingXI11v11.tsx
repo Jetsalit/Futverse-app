@@ -9,6 +9,11 @@ import {
   Users,
 } from "lucide-react";
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
+import {
+  GAME_MODEL_PHASES,
+  GAME_MODEL_PHASE_LABELS,
+  type GameModelTextSnapshot,
+} from "../../../lib/gameModel";
 import type { ProClubSquadRosterRecord } from "../../../lib/firestore/proClubSquadRosterRepository";
 import type {
   ProClubPersistedShootoutPlan,
@@ -32,36 +37,6 @@ import {
 import ProClubStartingXIPlayerPicker, {
   type ProClubPlayerPickerMode,
 } from "./ProClubStartingXIPlayerPicker";
-
-const GAME_MODEL_COPY: Record<(typeof PRO_CLUB_GAME_MODEL_PHASES)[number], readonly string[]> = {
-  IN_POSSESSION: [
-    "Build out from the back",
-    "Create width before progressing",
-    "Support underneath the ball",
-  ],
-  OUT_OF_POSSESSION: [
-    "Compact central spaces",
-    "Press on agreed triggers",
-    "Protect depth behind pressure",
-  ],
-  TRANSITION_TO_ATTACK: [
-    "First pass forward when available",
-    "Attack open wide channels",
-    "Support the runner beyond the ball",
-  ],
-  TRANSITION_TO_DEFEND: [
-    "Counter-press nearest options",
-    "Recover central compactness",
-    "Delay if immediate regain is unavailable",
-  ],
-};
-
-const PHASE_LABELS: Record<(typeof PRO_CLUB_GAME_MODEL_PHASES)[number], string> = {
-  IN_POSSESSION: "In Possession",
-  OUT_OF_POSSESSION: "Out of Possession",
-  TRANSITION_TO_ATTACK: "Transition to Attack",
-  TRANSITION_TO_DEFEND: "Transition to Defend",
-};
 
 const DUTY_LABELS: Record<ProClubSetPieceDuty, string> = {
   CORNER_LEFT: "Corners (L)",
@@ -95,6 +70,7 @@ export default function ProClubStartingXI11v11({
   saveMessage = null,
   startingXIWritable = true,
   shootoutWritable = true,
+  initialGameModelSnapshot,
   onSaveStartingXI,
   onSaveShootout,
 }: {
@@ -106,6 +82,7 @@ export default function ProClubStartingXI11v11({
   saveMessage?: string | null;
   startingXIWritable?: boolean;
   shootoutWritable?: boolean;
+  initialGameModelSnapshot: GameModelTextSnapshot;
   onSaveStartingXI?: (plan: ProClubPersistedStartingXIPlan) => void | Promise<void>;
   onSaveShootout?: (plan: ProClubPersistedShootoutPlan) => void | Promise<void>;
 }) {
@@ -144,6 +121,7 @@ export default function ProClubStartingXI11v11({
     () => [...(initialShootout?.backupTakers ?? [])],
   );
   const [coachNotes, setCoachNotes] = useState(initialStartingXI?.coachNotes ?? "");
+  const [gameModelSnapshot, setGameModelSnapshot] = useState<GameModelTextSnapshot>(() => ({ ...initialGameModelSnapshot }));
 
   const authorCanEdit = canAuthorProClubStartingXI(authority) && !saving;
   const startingXIEditable = authorCanEdit && startingXIWritable;
@@ -165,8 +143,14 @@ export default function ProClubStartingXI11v11({
     setRoleAssignments([...initialStartingXI.positionRoleAssignments]);
     setSetPieceAssignments({ ...initialStartingXI.setPieceAssignments });
     setCoachNotes(initialStartingXI.coachNotes);
+    setGameModelSnapshot({ ...initialStartingXI.gameModelSnapshot });
     setActiveSlot(null);
   }, [initialStartingXI]);
+
+  useEffect(() => {
+    if (initialStartingXI) return;
+    setGameModelSnapshot({ ...initialGameModelSnapshot });
+  }, [initialGameModelSnapshot, initialStartingXI]);
 
   useEffect(() => {
     if (!initialShootout) return;
@@ -262,6 +246,7 @@ export default function ProClubStartingXI11v11({
       substitutePlayerKeys: [...substitutePlayerKeys],
       positionRoleAssignments: [...roleAssignments],
       setPieceAssignments: { ...setPieceAssignments },
+      gameModelSnapshot: { ...gameModelSnapshot },
       coachNotes,
     });
   }
@@ -611,19 +596,26 @@ export default function ProClubStartingXI11v11({
                 <h4 className="font-black text-white">Game Model</h4>
               </div>
               <div className="mt-3 space-y-2">
-                {PRO_CLUB_GAME_MODEL_PHASES.map((phase) => (
+                {GAME_MODEL_PHASES.map((phase) => (
                   <article
                     key={phase}
                     className={["rounded-xl border p-3", displayPhaseTone(phase)].join(" ")}
                   >
                     <p className="text-[10px] font-black uppercase tracking-wide">
-                      {PHASE_LABELS[phase]}
+                      {GAME_MODEL_PHASE_LABELS[phase]}
                     </p>
-                    <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-300">
-                      {GAME_MODEL_COPY[phase].map((line) => (
-                        <li key={line}>• {line}</li>
-                      ))}
-                    </ul>
+                    <textarea
+                      value={gameModelSnapshot[phase]}
+                      disabled={!startingXIEditable}
+                      maxLength={4000}
+                      rows={5}
+                      onChange={(event) => setGameModelSnapshot((current) => ({
+                        ...current,
+                        [phase]: event.target.value,
+                      }))}
+                      placeholder="Write Match Game Model text…"
+                      className="mt-2 w-full resize-y rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-xs leading-5 text-slate-200 outline-none focus:border-cyan-400/50 disabled:opacity-50"
+                    />
                   </article>
                 ))}
               </div>
