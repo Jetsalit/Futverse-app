@@ -212,11 +212,12 @@ export default function ProClubStartingXI11v11({
 
   function selectCustomFormation() {
     if (!startingXIEditable) return;
-    if (formation !== "CUSTOM") {
-      const seedFormation = formation as ProClubStartingXIFixedFormation;
+    if (!customFormationSlots) {
+      const seedFormation =
+        formation === "CUSTOM"
+          ? "4-3-3"
+          : formation as ProClubStartingXIFixedFormation;
       setCustomFormationSlots(createProClubCustomFormationSlotsFromFixed(seedFormation));
-    } else if (!customFormationSlots) {
-      setCustomFormationSlots(createProClubCustomFormationSlotsFromFixed("4-3-3"));
     }
     setFormation("CUSTOM");
     setActiveSlot(null);
@@ -472,9 +473,17 @@ export default function ProClubStartingXI11v11({
                     </button>
                     <div className="mt-1 rounded-lg border border-white/10 bg-slate-950/85 px-2 py-1 text-[10px] shadow-lg">
                       <p className="truncate font-black text-white">
-                        {slot.player ? slot.player.shortName : slot.position}
+                        {slot.player
+                          ? slot.player.shortName
+                          : formation === "CUSTOM"
+                            ? slot.label ?? slot.position
+                            : slot.position}
                       </p>
-                      <p className="mt-0.5 font-bold text-cyan-300">{slot.position}</p>
+                      <p className="mt-0.5 font-bold text-cyan-300">
+                        {formation === "CUSTOM"
+                          ? `${slot.position} · ${slot.label ?? slot.position}`
+                          : slot.position}
+                      </p>
                     </div>
                     {formation === "CUSTOM" && startingXIEditable && (
                       <button
