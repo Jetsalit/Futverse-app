@@ -179,6 +179,7 @@ function startingXIPlan(): ProClubPersistedStartingXIPlan {
   return {
     schemaVersion: 1,
     formation: "4-3-3",
+    customFormationSlots: null,
     slotPlayerKeys: [
       "p1", "p2", "p3", "p4", "p5", "p6",
       "p7", "p8", "p9", "p10", "p11",
@@ -481,4 +482,47 @@ test("non-football authority cannot mutate Match persistence", async () => {
     createProClubMatch(CLUB, MATCH, MATCH_CORE, ops),
     /HEAD_COACH or TECHNICAL_DIRECTOR/,
   );
+});
+
+test("CUSTOM Starting XI persists and reads back slot coordinates, positions and labels", async () => {
+  const { ops } = await createMatchWithRoster();
+  const customSlots = createProClubCustomFormationSlotsFromFixed("4-3-3").map(
+    (slot, index) =>
+      index === 6
+        ? { ...slot, x: 58, y: 42, position: "AM" as const, label: "Free 10" }
+        : slot,
+  );
+
+  const saved = await saveProClubStartingXI(
+    CLUB,
+    MATCH,
+    {
+      ...startingXIPlan(),
+      formation: "CUSTOM",
+      customFormationSlots: customSlots,
+    },
+    0,
+    ops,
+  );
+
+  assert.equal(saved.formation, "CUSTOM");
+  assert.equal(saved.customFormationSlots?.[6].x, 58);
+  assert.equal(saved.customFormationSlots?.[6].y, 42);
+  assert.equal(saved.customFormationSlots?.[6].position, "AM");
+  assert.equal(saved.customFormationSlots?.[6].label, "Free 10");
+
+  const read = await getProClubStartingXI(CLUB, MATCH, ops);
+  assert.deepEqual(read?.customFormationSlots, customSlots);
+});
+
+test("fixed Starting XI normalizes customFormationSlots to null on persistence", async () => {
+  const { ops } = await createMatchWithRoster();
+  const saved = await saveProClubStartingXI(
+    CLUB,
+    MATCH,
+    startingXIPlan(),
+    0,
+    ops,
+  );
+  assert.equal(saved.customFormationSlots, null);
 });
