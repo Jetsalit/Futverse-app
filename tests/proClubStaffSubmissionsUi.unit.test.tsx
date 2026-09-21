@@ -119,7 +119,7 @@ test("author UI fixes the work type from active role and exposes Draft edit/resu
   assert.match(submissionsSource, /บันทึก Draft/);
   assert.match(submissionsSource, /record.status === "DRAFT"/);
   assert.match(submissionsSource, /record.status === "NEEDS_REVISION"/);
-  assert.match(submissionsSource, /ส่งงาน/);
+  assert.match(submissionsSource, />\s*Submit\s*</);
   assert.doesNotMatch(submissionsSource, /<select[^>]*workType/i);
 });
 
