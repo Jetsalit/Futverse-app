@@ -780,7 +780,7 @@ export default function ProClubStaffSubmissions({
                           ) : (
                             <Send size={15} />
                           )}
-                          ส่งงาน
+                          Submit
                         </button>
                       </>
                     )}
