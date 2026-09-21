@@ -63,7 +63,7 @@ export default function ProClubLibraryLogbook({
   authority: ProClubOrganizationAuthority;
   onOpenGameModel?: () => void;
 }) {
-  const { drills } = useDrillDatabase();
+  const { myDrills, academyDrills: sharedDrills } = useDrillDatabase();
   const [view, setView] = useState<ProClubLibraryLogbookView>("MY_LOGBOOK");
   const [roleFilter, setRoleFilter] =
     useState<ProClubLibraryLogbookRoleFilter>("ALL");
@@ -110,11 +110,18 @@ export default function ProClubLibraryLogbook({
     void loadSubmissions();
   }, [loadSubmissions]);
 
+  const visibleDrills = useMemo(() => {
+    const byId = new Map(
+      [...myDrills, ...sharedDrills].map((drill) => [drill.id, drill] as const),
+    );
+    return [...byId.values()];
+  }, [myDrills, sharedDrills]);
+
   const entries = useMemo(
     () =>
       allowed
         ? composeProClubLibraryLogbookEntries({
-            drills,
+            drills: visibleDrills,
             submissions,
             actorUid: authority.userId,
             view,
@@ -126,7 +133,7 @@ export default function ProClubLibraryLogbook({
     [
       allowed,
       authority.userId,
-      drills,
+      visibleDrills,
       favouriteKeys,
       query,
       roleFilter,
