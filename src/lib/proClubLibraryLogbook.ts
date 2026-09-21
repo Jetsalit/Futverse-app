@@ -218,7 +218,9 @@ function matchesView(
 ): boolean {
   switch (view) {
     case "MY_LOGBOOK":
-      return entry.ownerUid === actorUid;
+      return entry.source === "DRILL"
+        ? entry.ownerUid === actorUid
+        : true;
     case "TEAM_SHARED":
       return entry.isShared;
     case "CLUB_LIBRARY":
