@@ -2,8 +2,9 @@ import type { ProClubSquadRosterRecord } from "../../../lib/firestore/proClubSqu
 import {
   PRO_CLUB_STARTING_XI_FIXED_SLOTS,
   deriveProClubStartingXIEligiblePlayers,
-  type ProClubStartingXIFixedFormation,
+  type ProClubCustomFormationSlot,
   type ProClubStartingXIEligiblePlayer,
+  type ProClubStartingXIFormation,
   type ProClubStartingXISlotDefinition,
 } from "../../../lib/proClubStartingXI11v11";
 
@@ -81,13 +82,18 @@ export function filterProClubStartingXIPlayerViews(
 }
 
 export function buildProClubStartingXISlotViews(
-  formation: ProClubStartingXIFixedFormation,
+  formation: ProClubStartingXIFormation,
   slotPlayerKeys: readonly (string | null)[],
   players: readonly ProClubStartingXIPlayerView[],
+  customFormationSlots: readonly ProClubCustomFormationSlot[] | null = null,
 ): ProClubStartingXISlotView[] {
   const byKey = new Map(players.map((player) => [player.playerKey, player] as const));
+  const slots =
+    formation === "CUSTOM"
+      ? customFormationSlots ?? []
+      : PRO_CLUB_STARTING_XI_FIXED_SLOTS[formation];
 
-  return PRO_CLUB_STARTING_XI_FIXED_SLOTS[formation].map((slot) => {
+  return slots.map((slot) => {
     const playerKey = slotPlayerKeys[slot.slotIndex] ?? null;
     return {
       ...slot,
