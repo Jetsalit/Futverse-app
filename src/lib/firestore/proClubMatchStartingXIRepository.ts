@@ -11,6 +11,7 @@ import {
 } from "firebase/firestore";
 
 import { auth, db } from "../firebase";
+import { createEmptyGameModelTextSnapshot } from "../gameModel";
 import { isExactPlayerKey } from "../playerIdentityFoundation";
 import {
   validatePositionSelection,
@@ -491,7 +492,7 @@ function parseStartingXI(
     substitutePlayerKeys: [...plan.substitutePlayerKeys],
     positionRoleAssignments: [...plan.positionRoleAssignments],
     setPieceAssignments: { ...plan.setPieceAssignments },
-    gameModelSnapshot: { ...plan.gameModelSnapshot },
+    gameModelSnapshot: { ...(plan.gameModelSnapshot ?? createEmptyGameModelTextSnapshot()) },
     matchRosterRevision: raw.matchRosterRevision,
     revision: raw.revision,
     ...requireAudit(raw),
@@ -1010,7 +1011,7 @@ export async function saveProClubStartingXI(
     substitutePlayerKeys: [...plan.substitutePlayerKeys],
     positionRoleAssignments: [...plan.positionRoleAssignments],
     setPieceAssignments: { ...plan.setPieceAssignments },
-    gameModelSnapshot: { ...plan.gameModelSnapshot },
+    gameModelSnapshot: { ...(plan.gameModelSnapshot ?? createEmptyGameModelTextSnapshot()) },
     coachNotes: plan.coachNotes,
     matchRosterRevision: match.rosterRevision,
   };
