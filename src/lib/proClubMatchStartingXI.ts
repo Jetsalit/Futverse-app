@@ -17,6 +17,7 @@ import {
 } from "./proClubStartingXI11v11";
 import type { PlayerPositionCode } from "./playerPositionSelection";
 import {
+  createEmptyGameModelTextSnapshot,
   validateGameModelTextSnapshot,
   type GameModelTextSnapshot,
 } from "./gameModel";
@@ -51,7 +52,7 @@ export interface ProClubPersistedStartingXIPlan {
   substitutePlayerKeys: readonly string[];
   positionRoleAssignments: readonly (string | null)[];
   setPieceAssignments: Readonly<Record<ProClubSetPieceDuty, string | null>>;
-  gameModelSnapshot: GameModelTextSnapshot;
+  gameModelSnapshot?: GameModelTextSnapshot;
   coachNotes: string;
 }
 
@@ -328,7 +329,9 @@ export function validateProClubPersistedStartingXIPlan(
     errors.push("Invalid Position Role Assignment.");
   }
 
-  const gameModelValidation = validateGameModelTextSnapshot(value.gameModelSnapshot);
+  const gameModelValidation = validateGameModelTextSnapshot(
+    value.gameModelSnapshot ?? createEmptyGameModelTextSnapshot(),
+  );
   if (!gameModelValidation.ok) {
     errors.push(...gameModelValidation.errors);
   }
