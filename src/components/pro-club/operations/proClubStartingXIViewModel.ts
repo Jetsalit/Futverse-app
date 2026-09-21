@@ -19,6 +19,7 @@ export interface ProClubStartingXIPlayerView {
 
 export interface ProClubStartingXISlotView
   extends ProClubStartingXISlotDefinition {
+  label?: string;
   player: ProClubStartingXIPlayerView | null;
 }
 
