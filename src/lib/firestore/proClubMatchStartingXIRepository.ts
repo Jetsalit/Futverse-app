@@ -37,6 +37,10 @@ import {
 } from "../proClubMatchStartingXI";
 import { validateProClubSquadRosterFootballInput } from "../proClubSquadRoster";
 import {
+  createProClubCustomFormationSlotsFromFixed,
+  type ProClubCustomFormationSlot,
+} from "../proClubStartingXI11v11";
+import {
   resolveProClubOrganizationAuthority,
   type ProClubOrganizationAuthority,
   type ProClubOrganizationAuthorityResult,
@@ -178,6 +182,7 @@ const ROSTER_KEYS = [
 const STARTING_XI_KEYS = [
   "schemaVersion",
   "formation",
+  "customFormationSlots",
   "slotPlayerKeys",
   "substitutePlayerKeys",
   "positionRoleAssignments",
@@ -439,10 +444,19 @@ function parseStartingXI(
   raw: unknown,
   rosterPlayerKeys: readonly string[],
 ): ProClubStartingXIRecord {
-  const legacyStartingXIKeys = STARTING_XI_KEYS.filter((key) => key !== "gameModelSnapshot");
+  const legacyWithoutCustomKeys = STARTING_XI_KEYS.filter(
+    (key) => key !== "customFormationSlots",
+  );
+  const legacyWithoutGameModelOrCustomKeys = legacyWithoutCustomKeys.filter(
+    (key) => key !== "gameModelSnapshot",
+  );
   if (
     !isPlainObject(raw) ||
-    (!hasExactKeys(raw, STARTING_XI_KEYS) && !hasExactKeys(raw, legacyStartingXIKeys))
+    (
+      !hasExactKeys(raw, STARTING_XI_KEYS) &&
+      !hasExactKeys(raw, legacyWithoutCustomKeys) &&
+      !hasExactKeys(raw, legacyWithoutGameModelOrCustomKeys)
+    )
   ) {
     throw new Error("Invalid Pro Club Starting XI document shape.");
   }
@@ -461,6 +475,12 @@ function parseStartingXI(
   const plan: ProClubPersistedStartingXIPlan = {
     schemaVersion: raw.schemaVersion as 1,
     formation: raw.formation as ProClubPersistedStartingXIPlan["formation"],
+    customFormationSlots:
+      raw.formation === "CUSTOM"
+        ? Array.isArray(raw.customFormationSlots)
+          ? raw.customFormationSlots.map((slot) => ({ ...(slot as ProClubCustomFormationSlot) }))
+          : createProClubCustomFormationSlotsFromFixed("4-3-3")
+        : null,
     slotPlayerKeys: [...raw.slotPlayerKeys] as (string | null)[],
     substitutePlayerKeys: [...raw.substitutePlayerKeys] as string[],
     positionRoleAssignments: [...raw.positionRoleAssignments] as (string | null)[],
@@ -493,6 +513,8 @@ function parseStartingXI(
     positionRoleAssignments: [...plan.positionRoleAssignments],
     setPieceAssignments: { ...plan.setPieceAssignments },
     gameModelSnapshot: { ...(plan.gameModelSnapshot ?? createEmptyGameModelTextSnapshot()) },
+    customFormationSlots:
+      plan.customFormationSlots?.map((slot) => ({ ...slot })) ?? null,
     matchRosterRevision: raw.matchRosterRevision,
     revision: raw.revision,
     ...requireAudit(raw),
@@ -1007,6 +1029,10 @@ export async function saveProClubStartingXI(
   const payload = {
     schemaVersion: plan.schemaVersion,
     formation: plan.formation,
+    customFormationSlots:
+      plan.formation === "CUSTOM"
+        ? plan.customFormationSlots?.map((slot) => ({ ...slot })) ?? null
+        : null,
     slotPlayerKeys: [...plan.slotPlayerKeys],
     substitutePlayerKeys: [...plan.substitutePlayerKeys],
     positionRoleAssignments: [...plan.positionRoleAssignments],
