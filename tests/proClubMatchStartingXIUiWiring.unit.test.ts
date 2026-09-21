@@ -62,7 +62,7 @@ test("workspace owns repository access while the Starting XI editor stays presen
   }
 });
 
-test("wiring exposes compact Match Squad management and fixed-formation persistence only", () => {
+test("wiring exposes compact Match Squad management and custom formation persistence", () => {
   const workspace = readFileSync(files.workspace, "utf8");
   const editor = readFileSync(files.editor, "utf8");
 
@@ -70,7 +70,7 @@ test("wiring exposes compact Match Squad management and fixed-formation persiste
   assert.match(workspace, /Match Squad/);
   assert.match(workspace, /Manage Roster/);
   assert.doesNotMatch(workspace, /<h4 className="font-black text-white">Add from First Team<\/h4>/);
-  assert.match(workspace, /CUSTOM formation/);
+  assert.doesNotMatch(workspace, /Custom formation editing remains outside/);
 
   assert.match(editor, /ProClubStartingXIPlayerPicker/);
   assert.match(editor, /\+ Add Substitute/);
@@ -78,6 +78,9 @@ test("wiring exposes compact Match Squad management and fixed-formation persiste
   assert.match(editor, /Save Starting XI/);
   assert.match(editor, /Save Shootout Order/);
   assert.match(editor, /setPieceAssignments/);
+  assert.match(editor, /selectCustomFormation/);
+  assert.match(editor, /customFormationSlots/);
+  assert.match(editor, /onPointerMove/);
 
   assert.doesNotMatch(workspace, /startingXIAudit/);
   assert.doesNotMatch(workspace, /Player Communication.*save/is);
