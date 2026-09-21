@@ -238,3 +238,31 @@ test("Recent and Favourites never expose another user's private drill", () => {
     ["shared-other"],
   );
 });
+
+
+test("My Logbook keeps repository-visible reviewer submissions while owner-scoping drills", () => {
+  const entries = composeProClubLibraryLogbookEntries({
+    actorUid: "head-a",
+    view: "MY_LOGBOOK",
+    drills: [
+      drill({ id: "head-own", created_by: "head-a" }),
+      drill({
+        id: "foreign-private",
+        created_by: "coach-b",
+        is_shared: false,
+      }),
+    ],
+    submissions: [
+      submission({
+        submissionId: "review-visible",
+        authorUid: "assistant-a",
+        authorRole: "ASSISTANT_COACH",
+      }),
+    ],
+  });
+
+  assert.deepEqual(
+    new Set(entries.map((entry) => entry.referenceId)),
+    new Set(["head-own", "review-visible"]),
+  );
+});
