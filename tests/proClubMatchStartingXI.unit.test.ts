@@ -15,7 +15,10 @@ import {
   validateProClubPersistedStartingXIPlan,
 } from "../src/lib/proClubMatchStartingXI.ts";
 import type { ProClubOrganizationAuthority } from "../src/lib/firestore/proClubOrganizationAdapter.ts";
-import { createEmptyProClubStartingXIDraft } from "../src/lib/proClubStartingXI11v11.ts";
+import {
+  createEmptyProClubStartingXIDraft,
+  createProClubCustomFormationSlotsFromFixed,
+} from "../src/lib/proClubStartingXI11v11.ts";
 
 function authority(
   staffRole: ProClubOrganizationAuthority["staffRole"],
@@ -156,4 +159,28 @@ test("shootout order is a separate match-scoped plan and fails closed outside se
   assert.equal(invalid.ok, false);
   assert.match(invalid.errors.join(" "), /duplicate players/);
   assert.match(invalid.errors.join(" "), /authoritative Match squad/);
+});
+
+test("persisted CUSTOM Starting XI requires a valid eleven-slot layout snapshot", () => {
+  const draft = createEmptyProClubStartingXIDraft("4-3-3");
+  const roster = Array.from({ length: 13 }, (_, index) => `p${index + 1}`);
+  const base = {
+    schemaVersion: 1 as const,
+    formation: "CUSTOM" as const,
+    customFormationSlots: createProClubCustomFormationSlotsFromFixed("4-3-3"),
+    slotPlayerKeys: roster.slice(0, 11),
+    substitutePlayerKeys: roster.slice(11),
+    positionRoleAssignments: draft.positionRoleAssignments,
+    setPieceAssignments: draft.setPieceAssignments,
+    coachNotes: "",
+  };
+
+  assert.equal(validateProClubPersistedStartingXIPlan(base, roster).ok, true);
+  assert.equal(
+    validateProClubPersistedStartingXIPlan(
+      { ...base, customFormationSlots: null },
+      roster,
+    ).ok,
+    false,
+  );
 });
