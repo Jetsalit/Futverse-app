@@ -69,7 +69,8 @@ test("Starting XI persistence normalizes legacy documents and writes a four-phas
 
   assert.match(domain, /gameModelSnapshot\?: GameModelTextSnapshot/);
   assert.match(domain, /validateGameModelTextSnapshot/);
-  assert.match(repository, /legacyStartingXIKeys/);
+  assert.match(repository, /legacyWithoutCustomKeys/);
+  assert.match(repository, /legacyWithoutGameModelOrCustomKeys/);
   assert.match(repository, /gameModelSnapshot/);
   assert.match(repository, /createEmptyGameModelTextSnapshot/);
 });
