@@ -12,6 +12,7 @@ import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClu
 import {
   GAME_MODEL_PHASES,
   GAME_MODEL_PHASE_LABELS,
+  type GameModelPhase,
   type GameModelTextSnapshot,
 } from "../../../lib/gameModel";
 import type { ProClubSquadRosterRecord } from "../../../lib/firestore/proClubSquadRosterRepository";
@@ -20,7 +21,6 @@ import type {
   ProClubPersistedStartingXIPlan,
 } from "../../../lib/proClubMatchStartingXI";
 import {
-  PRO_CLUB_GAME_MODEL_PHASES,
   PRO_CLUB_SET_PIECE_DUTIES,
   PRO_CLUB_STARTING_XI_FIXED_FORMATIONS,
   PRO_CLUB_STARTING_XI_FIXED_SLOTS,
@@ -48,7 +48,7 @@ const DUTY_LABELS: Record<ProClubSetPieceDuty, string> = {
   PENALTY: "Penalty",
 };
 
-function displayPhaseTone(phase: (typeof PRO_CLUB_GAME_MODEL_PHASES)[number]): string {
+function displayPhaseTone(phase: GameModelPhase): string {
   switch (phase) {
     case "IN_POSSESSION":
       return "border-emerald-400/20 bg-emerald-400/5 text-emerald-300";
@@ -143,7 +143,7 @@ export default function ProClubStartingXI11v11({
     setRoleAssignments([...initialStartingXI.positionRoleAssignments]);
     setSetPieceAssignments({ ...initialStartingXI.setPieceAssignments });
     setCoachNotes(initialStartingXI.coachNotes);
-    setGameModelSnapshot({ ...initialStartingXI.gameModelSnapshot });
+    setGameModelSnapshot({ ...(initialStartingXI.gameModelSnapshot ?? initialGameModelSnapshot) });
     setActiveSlot(null);
   }, [initialStartingXI]);
 
