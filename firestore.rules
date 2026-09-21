@@ -4493,50 +4493,6 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           && data.get('updatedByRole', '') == actorRole;
       }
 
-      function proClubMatchValidCustomCoordinateV1(value) {
-        return value is int
-          && value >= 6
-          && value <= 94;
-      }
-
-      function proClubMatchValidCustomCoordinateListV1(values) {
-        return values is list
-          && values.size() == 11
-          && proClubMatchValidCustomCoordinateV1(values[0])
-          && proClubMatchValidCustomCoordinateV1(values[1])
-          && proClubMatchValidCustomCoordinateV1(values[2])
-          && proClubMatchValidCustomCoordinateV1(values[3])
-          && proClubMatchValidCustomCoordinateV1(values[4])
-          && proClubMatchValidCustomCoordinateV1(values[5])
-          && proClubMatchValidCustomCoordinateV1(values[6])
-          && proClubMatchValidCustomCoordinateV1(values[7])
-          && proClubMatchValidCustomCoordinateV1(values[8])
-          && proClubMatchValidCustomCoordinateV1(values[9])
-          && proClubMatchValidCustomCoordinateV1(values[10]);
-      }
-
-      function proClubMatchValidCustomLabelV1(value) {
-        return value is string
-          && value.size() > 0
-          && value.size() <= 24;
-      }
-
-      function proClubMatchValidCustomLabelListV1(values) {
-        return values is list
-          && values.size() == 11
-          && proClubMatchValidCustomLabelV1(values[0])
-          && proClubMatchValidCustomLabelV1(values[1])
-          && proClubMatchValidCustomLabelV1(values[2])
-          && proClubMatchValidCustomLabelV1(values[3])
-          && proClubMatchValidCustomLabelV1(values[4])
-          && proClubMatchValidCustomLabelV1(values[5])
-          && proClubMatchValidCustomLabelV1(values[6])
-          && proClubMatchValidCustomLabelV1(values[7])
-          && proClubMatchValidCustomLabelV1(values[8])
-          && proClubMatchValidCustomLabelV1(values[9])
-          && proClubMatchValidCustomLabelV1(values[10]);
-      }
-
       function proClubMatchValidCustomFormationSlotsV1(formation, slots) {
         return (
           formation != 'CUSTOM'
@@ -4544,16 +4500,18 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
         ) || (
           formation == 'CUSTOM'
           && slots is map
-          && slots.keys().size() == 4
           && slots.keys().hasOnly(['positions', 'labels', 'xs', 'ys'])
           && slots.get('positions', []) is list
           && slots.get('positions', []).size() == 11
           && slots.get('positions', []).toSet().hasOnly([
             'GK','LB','LWB','CB','RB','RWB','DM','LM','CM','RM','AM','LW','RW','CF','ST'
           ])
-          && proClubMatchValidCustomLabelListV1(slots.get('labels', []))
-          && proClubMatchValidCustomCoordinateListV1(slots.get('xs', []))
-          && proClubMatchValidCustomCoordinateListV1(slots.get('ys', []))
+          && slots.get('labels', []) is list
+          && slots.get('labels', []).size() == 11
+          && slots.get('xs', []) is list
+          && slots.get('xs', []).size() == 11
+          && slots.get('ys', []) is list
+          && slots.get('ys', []).size() == 11
         );
       }
 
