@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeftRight,
   ClipboardList,
@@ -22,14 +22,23 @@ import type {
   ProClubPersistedStartingXIPlan,
 } from "../../../lib/proClubMatchStartingXI";
 import {
+  PRO_CLUB_CUSTOM_FORMATION_COORD_MAX,
+  PRO_CLUB_CUSTOM_FORMATION_COORD_MIN,
+  PRO_CLUB_CUSTOM_FORMATION_LABEL_LIMIT,
   PRO_CLUB_SET_PIECE_DUTIES,
   PRO_CLUB_STARTING_XI_FIXED_FORMATIONS,
-  PRO_CLUB_STARTING_XI_FIXED_SLOTS,
   canAuthorProClubStartingXI,
   createEmptyProClubStartingXIDraft,
+  createProClubCustomFormationSlotsFromFixed,
+  type ProClubCustomFormationSlot,
   type ProClubSetPieceDuty,
+  type ProClubStartingXIFormation,
   type ProClubStartingXIFixedFormation,
 } from "../../../lib/proClubStartingXI11v11";
+import {
+  PLAYER_POSITION_CODES,
+  type PlayerPositionCode,
+} from "../../../lib/playerPositionSelection";
 import {
   availableProClubStartingXIPlayers,
   buildProClubStartingXIPlayerViews,
@@ -87,17 +96,22 @@ export default function ProClubStartingXI11v11({
   onSaveStartingXI?: (plan: ProClubPersistedStartingXIPlan) => void | Promise<void>;
   onSaveShootout?: (plan: ProClubPersistedShootoutPlan) => void | Promise<void>;
 }) {
-  const persistedFixedFormation =
-    initialStartingXI &&
-    (PRO_CLUB_STARTING_XI_FIXED_FORMATIONS as readonly string[]).includes(
-      initialStartingXI.formation,
-    )
-      ? initialStartingXI.formation as ProClubStartingXIFixedFormation
-      : "4-3-3";
-  const initialDraft = createEmptyProClubStartingXIDraft(persistedFixedFormation);
-  const [formation, setFormation] = useState<ProClubStartingXIFixedFormation>(
-    persistedFixedFormation,
+  const persistedFormation: ProClubStartingXIFormation =
+    initialStartingXI?.formation ?? "4-3-3";
+  const initialDraft = createEmptyProClubStartingXIDraft(persistedFormation);
+  const [formation, setFormation] = useState<ProClubStartingXIFormation>(
+    persistedFormation,
   );
+  const [customFormationSlots, setCustomFormationSlots] = useState<
+    ProClubCustomFormationSlot[] | null
+  >(() =>
+    persistedFormation === "CUSTOM"
+      ? initialStartingXI?.customFormationSlots?.map((slot) => ({ ...slot })) ??
+        createProClubCustomFormationSlotsFromFixed("4-3-3")
+      : null,
+  );
+  const pitchRef = useRef<HTMLDivElement | null>(null);
+  const [draggingSlotIndex, setDraggingSlotIndex] = useState<number | null>(null);
   const [slotPlayerKeys, setSlotPlayerKeys] = useState<(string | null)[]>(
     () => [...(initialStartingXI?.slotPlayerKeys ?? initialDraft.slotPlayerKeys)],
   );
@@ -137,14 +151,14 @@ export default function ProClubStartingXI11v11({
   useEffect(() => {
     if (!initialStartingXI) return;
 
-    const nextFormation =
-      (PRO_CLUB_STARTING_XI_FIXED_FORMATIONS as readonly string[]).includes(
-        initialStartingXI.formation,
-      )
-        ? initialStartingXI.formation as ProClubStartingXIFixedFormation
-        : "4-3-3";
-
+    const nextFormation = initialStartingXI.formation;
     setFormation(nextFormation);
+    setCustomFormationSlots(
+      nextFormation === "CUSTOM"
+        ? initialStartingXI.customFormationSlots?.map((slot) => ({ ...slot })) ??
+          createProClubCustomFormationSlotsFromFixed("4-3-3")
+        : null,
+    );
     setSlotPlayerKeys([...initialStartingXI.slotPlayerKeys]);
     setSubstitutePlayerKeys([...initialStartingXI.substitutePlayerKeys]);
     setRoleAssignments([...initialStartingXI.positionRoleAssignments]);
@@ -167,8 +181,14 @@ export default function ProClubStartingXI11v11({
 
   const players = useMemo(() => buildProClubStartingXIPlayerViews(roster), [roster]);
   const slotViews = useMemo(
-    () => buildProClubStartingXISlotViews(formation, slotPlayerKeys, players),
-    [formation, slotPlayerKeys, players],
+    () =>
+      buildProClubStartingXISlotViews(
+        formation,
+        slotPlayerKeys,
+        players,
+        customFormationSlots,
+      ),
+    [formation, slotPlayerKeys, players, customFormationSlots],
   );
   const availablePlayers = useMemo(
     () =>
@@ -188,6 +208,53 @@ export default function ProClubStartingXI11v11({
     setFormation(next);
     setActiveSlot(null);
     setPlayerPickerMode(null);
+  }
+
+  function selectCustomFormation() {
+    if (!startingXIEditable) return;
+    if (formation !== "CUSTOM") {
+      const seedFormation = formation as ProClubStartingXIFixedFormation;
+      setCustomFormationSlots(createProClubCustomFormationSlotsFromFixed(seedFormation));
+    } else if (!customFormationSlots) {
+      setCustomFormationSlots(createProClubCustomFormationSlotsFromFixed("4-3-3"));
+    }
+    setFormation("CUSTOM");
+    setActiveSlot(null);
+    setPlayerPickerMode(null);
+  }
+
+  function updateCustomSlot(
+    slotIndex: number,
+    patch: Partial<Pick<ProClubCustomFormationSlot, "x" | "y" | "position" | "label">>,
+  ) {
+    if (!startingXIEditable || formation !== "CUSTOM") return;
+    setCustomFormationSlots((current) =>
+      (current ?? createProClubCustomFormationSlotsFromFixed("4-3-3")).map((slot) =>
+        slot.slotIndex === slotIndex ? { ...slot, ...patch } : slot,
+      ),
+    );
+  }
+
+  function moveCustomSlotFromPointer(
+    slotIndex: number,
+    clientX: number,
+    clientY: number,
+  ) {
+    const pitch = pitchRef.current;
+    if (!pitch) return;
+    const rect = pitch.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const rawX = Math.round(((clientX - rect.left) / rect.width) * 100);
+    const rawY = Math.round(((clientY - rect.top) / rect.height) * 100);
+    const x = Math.min(
+      PRO_CLUB_CUSTOM_FORMATION_COORD_MAX,
+      Math.max(PRO_CLUB_CUSTOM_FORMATION_COORD_MIN, rawX),
+    );
+    const y = Math.min(
+      PRO_CLUB_CUSTOM_FORMATION_COORD_MAX,
+      Math.max(PRO_CLUB_CUSTOM_FORMATION_COORD_MIN, rawY),
+    );
+    updateCustomSlot(slotIndex, { x, y });
   }
 
   function assignStarter(playerKey: string) {
@@ -249,6 +316,10 @@ export default function ProClubStartingXI11v11({
     await onSaveStartingXI({
       schemaVersion: 1,
       formation,
+      customFormationSlots:
+        formation === "CUSTOM"
+          ? customFormationSlots?.map((slot) => ({ ...slot })) ?? null
+          : null,
       slotPlayerKeys: [...slotPlayerKeys],
       substitutePlayerKeys: [...substitutePlayerKeys],
       positionRoleAssignments: [...roleAssignments],
@@ -352,16 +423,22 @@ export default function ProClubStartingXI11v11({
               ))}
               <button
                 type="button"
-                disabled
-                title="Custom formation remains a later reviewed slice."
-                className="rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2 text-xs font-black text-slate-600"
+                aria-pressed={formation === "CUSTOM"}
+                disabled={!startingXIEditable}
+                onClick={selectCustomFormation}
+                className={[
+                  "rounded-xl border px-3 py-2 text-xs font-black transition disabled:opacity-40",
+                  formation === "CUSTOM"
+                    ? "border-amber-400/40 bg-amber-400/15 text-amber-200"
+                    : "border-slate-700 bg-slate-900 text-slate-300 hover:border-amber-400/30",
+                ].join(" ")}
               >
-                Custom · later
+                Custom
               </button>
             </div>
 
             <div className="mt-4">
-              <div className="relative min-h-[610px] overflow-hidden rounded-2xl border border-emerald-400/20 bg-[linear-gradient(180deg,rgba(4,120,87,.82),rgba(6,78,59,.92))] shadow-inner">
+              <div ref={pitchRef} className="relative min-h-[610px] overflow-hidden rounded-2xl border border-emerald-400/20 bg-[linear-gradient(180deg,rgba(4,120,87,.82),rgba(6,78,59,.92))] shadow-inner">
                 <div className="absolute inset-4 border-2 border-white/40" />
                 <div className="absolute left-4 right-4 top-1/2 h-px bg-white/40" />
                 <div className="absolute left-1/2 top-1/2 h-28 w-28 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/40" />
@@ -399,6 +476,42 @@ export default function ProClubStartingXI11v11({
                       </p>
                       <p className="mt-0.5 font-bold text-cyan-300">{slot.position}</p>
                     </div>
+                    {formation === "CUSTOM" && startingXIEditable && (
+                      <button
+                        type="button"
+                        aria-label={`Drag custom slot ${slot.slotIndex + 1}`}
+                        onPointerDown={(event) => {
+                          event.preventDefault();
+                          setDraggingSlotIndex(slot.slotIndex);
+                          event.currentTarget.setPointerCapture(event.pointerId);
+                        }}
+                        onPointerMove={(event) => {
+                          if (draggingSlotIndex !== slot.slotIndex) return;
+                          moveCustomSlotFromPointer(
+                            slot.slotIndex,
+                            event.clientX,
+                            event.clientY,
+                          );
+                        }}
+                        onPointerUp={(event) => {
+                          if (draggingSlotIndex === slot.slotIndex) {
+                            moveCustomSlotFromPointer(
+                              slot.slotIndex,
+                              event.clientX,
+                              event.clientY,
+                            );
+                          }
+                          setDraggingSlotIndex(null);
+                          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                            event.currentTarget.releasePointerCapture(event.pointerId);
+                          }
+                        }}
+                        onPointerCancel={() => setDraggingSlotIndex(null)}
+                        className="mt-1 cursor-grab rounded-md border border-amber-300/30 bg-amber-300/10 px-2 py-1 text-[9px] font-black uppercase tracking-wide text-amber-200 touch-none active:cursor-grabbing"
+                      >
+                        Drag
+                      </button>
+                    )}
                     {slot.player && startingXIEditable && (
                       <button
                         type="button"
@@ -568,7 +681,7 @@ export default function ProClubStartingXI11v11({
                 </span>
               </div>
               <div className="mt-3 max-h-[66vh] space-y-2 overflow-y-auto pr-1">
-                {PRO_CLUB_STARTING_XI_FIXED_SLOTS[formation].map((slot) => {
+                {slotViews.map((slot) => {
                   const playerKey = slotPlayerKeys[slot.slotIndex];
                   const player = playerKey ? byKey.get(playerKey) : null;
                   return (
@@ -581,6 +694,43 @@ export default function ProClubStartingXI11v11({
                           {player ? "#" + player.jerseyNumber + " " + player.shortName : "Player not selected"}
                         </span>
                       </span>
+                      {formation === "CUSTOM" && (
+                        <div className="mt-2 grid grid-cols-[88px_1fr] gap-2">
+                          <select
+                            aria-label={`Custom slot ${slot.slotIndex + 1} position`}
+                            value={slot.position}
+                            disabled={!startingXIEditable}
+                            onChange={(event) =>
+                              updateCustomSlot(slot.slotIndex, {
+                                position: event.target.value as PlayerPositionCode,
+                              })
+                            }
+                            className="min-h-10 rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-cyan-200"
+                          >
+                            {PLAYER_POSITION_CODES.map((position) => (
+                              <option key={position} value={position}>
+                                {position}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            aria-label={`Custom slot ${slot.slotIndex + 1} label`}
+                            value={
+                              customFormationSlots?.[slot.slotIndex]?.label ??
+                              slot.position
+                            }
+                            disabled={!startingXIEditable}
+                            maxLength={PRO_CLUB_CUSTOM_FORMATION_LABEL_LIMIT}
+                            onChange={(event) =>
+                              updateCustomSlot(slot.slotIndex, {
+                                label: event.target.value,
+                              })
+                            }
+                            placeholder="Slot label"
+                            className="min-h-10 rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-white"
+                          />
+                        </div>
+                      )}
                       <input
                         value={roleAssignments[slot.slotIndex] ?? ""}
                         disabled={!startingXIEditable}
@@ -778,9 +928,9 @@ export default function ProClubStartingXI11v11({
         slotLabel={
           activeSlot === null
             ? null
-            : PRO_CLUB_STARTING_XI_FIXED_SLOTS[formation].find(
-            (slot) => slot.slotIndex === activeSlot,
-          )?.position ?? null
+            : slotViews.find(
+                (slot) => slot.slotIndex === activeSlot,
+              )?.position ?? null
         }
         players={availablePlayers}
         onClose={() => {
