@@ -12,6 +12,7 @@ import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClu
 import {
   GAME_MODEL_PHASES,
   GAME_MODEL_PHASE_LABELS,
+  createEmptyGameModelTextSnapshot,
   type GameModelPhase,
   type GameModelTextSnapshot,
 } from "../../../lib/gameModel";
@@ -70,7 +71,7 @@ export default function ProClubStartingXI11v11({
   saveMessage = null,
   startingXIWritable = true,
   shootoutWritable = true,
-  initialGameModelSnapshot,
+  initialGameModelSnapshot = createEmptyGameModelTextSnapshot(),
   onSaveStartingXI,
   onSaveShootout,
 }: {
@@ -82,7 +83,7 @@ export default function ProClubStartingXI11v11({
   saveMessage?: string | null;
   startingXIWritable?: boolean;
   shootoutWritable?: boolean;
-  initialGameModelSnapshot: GameModelTextSnapshot;
+  initialGameModelSnapshot?: GameModelTextSnapshot;
   onSaveStartingXI?: (plan: ProClubPersistedStartingXIPlan) => void | Promise<void>;
   onSaveShootout?: (plan: ProClubPersistedShootoutPlan) => void | Promise<void>;
 }) {
