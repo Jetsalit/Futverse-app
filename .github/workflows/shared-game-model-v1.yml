@@ -43,6 +43,12 @@ jobs:
           git rev-parse HEAD
           git status --short
 
+      - name: Set up Java 21 for Firebase Emulator
+        uses: actions/setup-java@7a445ee88d4e23b52c33fdc1d5b1bc75e168f28b
+        with:
+          distribution: temurin
+          java-version: "21"
+
       - name: Install locked dependencies
         run: npm ci --ignore-scripts
 
