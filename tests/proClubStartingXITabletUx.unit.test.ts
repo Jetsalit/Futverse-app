@@ -67,21 +67,19 @@ test("tablet landscape gives pitch primary space and tactical tools one tabbed s
   assert.match(editor, /lg:sticky lg:top-4/);
 });
 
-test("roster drawer remains mounted independently of fixed or CUSTOM formation rendering", () => {
+test("roster drawer remains mounted independently while CUSTOM uses the same editor", () => {
   const workspace = readFileSync(files.workspace, "utf8");
+  const editor = readFileSync(files.editor, "utf8");
 
   const drawerIndex = workspace.indexOf("<ProClubMatchRosterDrawer");
   const loadingBranchIndex = workspace.indexOf("{loadingMatch ? (");
-  const customBranchIndex = workspace.indexOf('startingXI?.formation === "CUSTOM"');
 
   assert.notEqual(drawerIndex, -1);
   assert.notEqual(loadingBranchIndex, -1);
-  assert.notEqual(customBranchIndex, -1);
-  assert.equal(
-    drawerIndex < loadingBranchIndex,
-    true,
-    "Manage Roster drawer must mount outside formation-specific rendering",
-  );
+  assert.equal(drawerIndex < loadingBranchIndex, true);
+  assert.doesNotMatch(workspace, /startingXI\?\.formation === "CUSTOM"/);
+  assert.match(editor, /touch-none/);
+  assert.match(editor, /Drag/);
 });
 
 test("Starting XI save action is persistent across tactical tabs instead of living inside Set Pieces", () => {
