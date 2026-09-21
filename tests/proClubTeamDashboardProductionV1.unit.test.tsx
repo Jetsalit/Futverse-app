@@ -44,6 +44,7 @@ test("freezes the minimal production team navigation", () => {
     "TRAINING",
     "ATTENDANCE",
     "SUBMISSIONS",
+    "LIBRARY_LOGBOOK",
     "GAME_MODEL",
     "MATCHES",
   ]);
@@ -59,6 +60,7 @@ test("active tab refresh persistence accepts only live production tabs", () => {
   assert.equal(resolveProClubActiveTab("TRAINING"), "TRAINING");
   assert.equal(resolveProClubActiveTab("ATTENDANCE"), "ATTENDANCE");
   assert.equal(resolveProClubActiveTab("SUBMISSIONS"), "SUBMISSIONS");
+  assert.equal(resolveProClubActiveTab("LIBRARY_LOGBOOK"), "LIBRARY_LOGBOOK");
   assert.equal(resolveProClubActiveTab("GAME_MODEL"), "GAME_MODEL");
   assert.equal(resolveProClubActiveTab("MATCHES"), "MATCHES");
   assert.equal(resolveProClubActiveTab("UNKNOWN"), "OVERVIEW");
@@ -97,6 +99,7 @@ test("renders the production app shell with authoritative club identity and cont
   assert.match(text, /Training/);
   assert.match(text, /Attendance/);
   assert.match(text, /Submissions/);
+  assert.match(text, /Library &(?:amp;)? Logbook/);
   assert.match(text, /Game Model/);
   assert.match(text, /Matches/);
   assert.doesNotMatch(text, /Coming soon/i);
@@ -143,6 +146,7 @@ test("production dashboard reuses reviewed Squad Training and Attendance surface
   );
   assert.equal((source.match(/<ProClubAttendance\b/g) ?? []).length, 1);
   assert.equal((source.match(/<ProClubStaffSubmissions\b/g) ?? []).length, 1);
+  assert.equal((source.match(/<ProClubLibraryLogbook\b/g) ?? []).length, 1);
   assert.equal((source.match(/<ProClubGameModel\b/g) ?? []).length, 1);
   assert.equal((source.match(/<ProClubMatchStartingXIWorkspace\b/g) ?? []).length, 1);
 });

@@ -5,6 +5,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   Dumbbell,
+  Library,
   Shield,
   Sparkles,
   Sun,
@@ -16,6 +17,9 @@ import { staffRoleLabels } from "../../../lib/proClubOnboarding";
 import ProClubAttendance from "./ProClubAttendance";
 import ProClubHeadCoachWeeklyProductionWorkspace from "./ProClubHeadCoachWeeklyProductionWorkspace";
 import ProClubGameModel from "./ProClubGameModel";
+import ProClubLibraryLogbook, {
+  canOpenProClubLibraryLogbook,
+} from "./ProClubLibraryLogbook";
 import ProClubMatchStartingXIWorkspace from "./ProClubMatchStartingXIWorkspace";
 import ProClubSquadRoster from "./ProClubSquadRoster";
 import ProClubStaffSubmissions, {
@@ -33,6 +37,7 @@ export const PRO_CLUB_TEAM_DASHBOARD_TABS = [
   "TRAINING",
   "ATTENDANCE",
   "SUBMISSIONS",
+  "LIBRARY_LOGBOOK",
   "GAME_MODEL",
   "MATCHES",
 ] as const;
@@ -51,6 +56,7 @@ export function resolveProClubActiveTab(
     case "TRAINING":
     case "ATTENDANCE":
     case "SUBMISSIONS":
+    case "LIBRARY_LOGBOOK":
     case "GAME_MODEL":
     case "MATCHES":
       return value;
@@ -72,6 +78,7 @@ type OverviewCardTone =
   | "training"
   | "attendance"
   | "submissions"
+  | "library"
   | "matches";
 
 type AttendanceLaunch = {
@@ -85,6 +92,7 @@ const TAB_LABELS: Record<ProClubTeamDashboardTab, string> = {
   TRAINING: "Training",
   ATTENDANCE: "Attendance",
   SUBMISSIONS: "Submissions",
+  LIBRARY_LOGBOOK: "Library & Logbook",
   GAME_MODEL: "Game Model",
   MATCHES: "Matches",
 };
@@ -105,6 +113,7 @@ export default function ProClubTeamDashboard({
   const [theme, setTheme] = useState<ProClubTheme>("light");
   const [attendanceLaunch, setAttendanceLaunch] = useState<AttendanceLaunch | null>(null);
   const staffSubmissionsAvailable = canOpenProClubStaffSubmissions(authority);
+  const libraryLogbookAvailable = canOpenProClubLibraryLogbook(authority);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -129,7 +138,8 @@ export default function ProClubTeamDashboard({
         ),
       );
       setActiveTab(
-        restored === "SUBMISSIONS" && !staffSubmissionsAvailable
+        (restored === "SUBMISSIONS" && !staffSubmissionsAvailable) ||
+        (restored === "LIBRARY_LOGBOOK" && !libraryLogbookAvailable)
           ? "OVERVIEW"
           : restored,
       );
@@ -140,6 +150,7 @@ export default function ProClubTeamDashboard({
     authority.organizationId,
     authority.userId,
     staffSubmissionsAvailable,
+    libraryLogbookAvailable,
   ]);
 
   function persistActiveTab(nextTab: ProClubTeamDashboardTab) {
@@ -234,9 +245,11 @@ export default function ProClubTeamDashboard({
           aria-label="Pro Club team sections"
           className="mt-5 flex gap-2 overflow-x-auto pb-1 lg:mt-8 lg:flex-col lg:overflow-visible lg:pb-0"
         >
-          {PRO_CLUB_TEAM_DASHBOARD_TABS.filter(
-            (tab) => tab !== "SUBMISSIONS" || staffSubmissionsAvailable,
-          ).map((tab) => {
+          {PRO_CLUB_TEAM_DASHBOARD_TABS.filter((tab) => {
+            if (tab === "SUBMISSIONS") return staffSubmissionsAvailable;
+            if (tab === "LIBRARY_LOGBOOK") return libraryLogbookAvailable;
+            return true;
+          }).map((tab) => {
             const selected = activeTab === tab;
 
             return (
@@ -336,7 +349,7 @@ export default function ProClubTeamDashboard({
                 </p>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
                 <OverviewCard
                   icon={<Users size={20} />}
                   title="Squad"
@@ -370,6 +383,15 @@ export default function ProClubTeamDashboard({
                     }
                     tone="submissions"
                     onOpen={() => selectActiveTab("SUBMISSIONS")}
+                  />
+                )}
+                {libraryLogbookAvailable && (
+                  <OverviewCard
+                    icon={<Library size={20} />}
+                    title="Library & Logbook"
+                    description="Drills, shared work & development"
+                    tone="library"
+                    onOpen={() => selectActiveTab("LIBRARY_LOGBOOK")}
                   />
                 )}
                 <OverviewCard
@@ -428,6 +450,15 @@ export default function ProClubTeamDashboard({
                     ? () => selectActiveTab("TRAINING")
                     : undefined
                 }
+              />
+            </div>
+          )}
+
+          {activeTab === "LIBRARY_LOGBOOK" && libraryLogbookAvailable && (
+            <div className="pro-club-module-surface">
+              <ProClubLibraryLogbook
+                authority={authority}
+                onOpenGameModel={() => selectActiveTab("GAME_MODEL")}
               />
             </div>
           )}
