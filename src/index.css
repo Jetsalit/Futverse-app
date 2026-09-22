@@ -420,3 +420,72 @@
 [aria-label="Weekly Training Tactic Board full-page workspace"] [class*="ring-slate-800"] [class*="bg-slate-800"] {
   background-color: #1f2937 !important;
 }
+
+
+/* Team Game Model Phase Visuals V1 — phase identity must remain readable in Light and Neon. */
+.pro-club-game-model-phase {
+  --pc-game-model-phase-accent: var(--pc-accent);
+  background: color-mix(in srgb, var(--pc-surface) 94%, var(--pc-game-model-phase-accent) 6%);
+  border-color: color-mix(in srgb, var(--pc-game-model-phase-accent) 34%, var(--pc-border));
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--pc-game-model-phase-accent) 6%, transparent);
+}
+
+.pro-club-game-model-phase-heading,
+.pro-club-game-model-phase-icon,
+.pro-club-game-model-phase-counter {
+  color: var(--pc-game-model-phase-accent);
+}
+
+.pro-club-game-model-phase-textarea {
+  color: var(--pc-game-model-phase-accent) !important;
+  background: color-mix(in srgb, var(--pc-surface) 96%, var(--pc-game-model-phase-accent) 4%) !important;
+  border-color: color-mix(in srgb, var(--pc-game-model-phase-accent) 30%, var(--pc-border)) !important;
+  caret-color: var(--pc-game-model-phase-accent);
+}
+
+.pro-club-game-model-phase-textarea:focus {
+  border-color: var(--pc-game-model-phase-accent) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc-game-model-phase-accent) 18%, transparent);
+}
+
+.pro-club-game-model-phase-textarea::placeholder {
+  color: var(--pc-muted) !important;
+  opacity: 0.78;
+}
+
+[data-pro-club-theme="light"] .pro-club-game-model-phase[data-phase="IN_POSSESSION"] {
+  --pc-game-model-phase-accent: #047857;
+}
+
+[data-pro-club-theme="light"] .pro-club-game-model-phase[data-phase="OUT_OF_POSSESSION"] {
+  --pc-game-model-phase-accent: #be123c;
+}
+
+[data-pro-club-theme="light"] .pro-club-game-model-phase[data-phase="TRANSITION_TO_ATTACK"] {
+  --pc-game-model-phase-accent: #0369a1;
+}
+
+[data-pro-club-theme="light"] .pro-club-game-model-phase[data-phase="TRANSITION_TO_DEFEND"] {
+  --pc-game-model-phase-accent: #a16207;
+}
+
+[data-pro-club-theme="neon"] .pro-club-game-model-phase[data-phase="IN_POSSESSION"] {
+  --pc-game-model-phase-accent: #6ee7b7;
+}
+
+[data-pro-club-theme="neon"] .pro-club-game-model-phase[data-phase="OUT_OF_POSSESSION"] {
+  --pc-game-model-phase-accent: #fda4af;
+}
+
+[data-pro-club-theme="neon"] .pro-club-game-model-phase[data-phase="TRANSITION_TO_ATTACK"] {
+  --pc-game-model-phase-accent: #67e8f9;
+}
+
+[data-pro-club-theme="neon"] .pro-club-game-model-phase[data-phase="TRANSITION_TO_DEFEND"] {
+  --pc-game-model-phase-accent: #fcd34d;
+}
+
+[data-pro-club-theme="neon"] .pro-club-game-model-phase-heading,
+[data-pro-club-theme="neon"] .pro-club-game-model-phase-icon {
+  text-shadow: 0 0 12px color-mix(in srgb, var(--pc-game-model-phase-accent) 32%, transparent);
+}
