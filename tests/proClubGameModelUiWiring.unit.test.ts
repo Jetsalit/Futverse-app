@@ -9,6 +9,7 @@ const files = {
   startingXI: "src/components/pro-club/operations/ProClubStartingXI11v11.tsx",
   matchDomain: "src/lib/proClubMatchStartingXI.ts",
   matchRepository: "src/lib/firestore/proClubMatchStartingXIRepository.ts",
+  themeCss: "src/index.css",
 };
 
 test("dashboard exposes one live Game Model workspace without a second persistence implementation", () => {
@@ -73,4 +74,46 @@ test("Starting XI persistence normalizes legacy documents and writes a four-phas
   assert.match(repository, /legacyWithoutGameModelOrCustomKeys/);
   assert.match(repository, /gameModelSnapshot/);
   assert.match(repository, /createEmptyGameModelTextSnapshot/);
+});
+
+
+test("Team Game Model uses phase-specific icons and theme-aware text colors", () => {
+  const editor = readFileSync(files.editor, "utf8");
+  const css = readFileSync(files.themeCss, "utf8");
+
+  for (const phase of [
+    "IN_POSSESSION",
+    "OUT_OF_POSSESSION",
+    "TRANSITION_TO_ATTACK",
+    "TRANSITION_TO_DEFEND",
+  ]) {
+    assert.match(editor, new RegExp(`data-phase=\\{phase\\}|data-phase=\\\"${phase}\\\"`));
+    assert.match(css, new RegExp(`data-phase=["']${phase}["']`));
+  }
+
+  for (const icon of ["CircleDot", "Shield", "Zap", "ShieldAlert"]) {
+    assert.match(editor, new RegExp(`\\b${icon}\\b`));
+  }
+
+  assert.match(editor, /pro-club-game-model-phase-textarea/);
+  assert.doesNotMatch(
+    editor,
+    /pro-club-game-model-phase-textarea[^\n]*text-white/,
+  );
+
+  assert.match(css, /--pc-game-model-phase-accent/);
+  assert.match(css, /color: var\(--pc-game-model-phase-accent\) !important/);
+
+  for (const color of [
+    "#047857",
+    "#be123c",
+    "#0369a1",
+    "#a16207",
+    "#6ee7b7",
+    "#fda4af",
+    "#67e8f9",
+    "#fcd34d",
+  ]) {
+    assert.match(css, new RegExp(color));
+  }
 });
