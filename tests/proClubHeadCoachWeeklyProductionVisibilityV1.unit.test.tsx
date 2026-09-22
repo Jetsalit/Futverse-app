@@ -180,7 +180,7 @@ test("routes production through the team dashboard while preserving the existing
   );
 });
 
-test("production presentation adds no IO environment switch or forbidden module", () => {
+test("production presentation keeps IO closed and exposes the typed fitness boundary", () => {
   const source = readFileSync(files.productionWorkspace, "utf8");
 
   for (const forbidden of [
@@ -198,7 +198,6 @@ test("production presentation adds no IO environment switch or forbidden module"
     /Match Preparation/i,
     /\bSquad\b/i,
     /\bMatches\b/i,
-    /\bFitness\b/i,
     /\bAnalysis\b/i,
     /\bAvailability\b/i,
     /\bReports\b/i,
@@ -208,4 +207,8 @@ test("production presentation adds no IO environment switch or forbidden module"
   ]) {
     assert.doesNotMatch(source, forbidden);
   }
+
+  assert.match(source, /FitnessTrainingConnection/);
+  assert.match(source, /No recorded fitness results are connected to this training plan/);
+  assert.match(source, /does not generate training prescriptions/);
 });
