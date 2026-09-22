@@ -117,3 +117,21 @@ test("Team Game Model uses phase-specific icons and theme-aware text colors", ()
     assert.match(css, new RegExp(color));
   }
 });
+
+
+test("Light and Neon theme selectors preserve phase textarea colors over generic module overrides", () => {
+  const css = readFileSync(files.themeCss, "utf8");
+
+  assert.match(
+    css,
+    /\[data-pro-club-theme="light"\] \.pro-club-module-surface \.pro-club-game-model-phase-textarea/,
+  );
+  assert.match(
+    css,
+    /\[data-pro-club-theme="neon"\] \.pro-club-module-surface \.pro-club-game-model-phase-textarea/,
+  );
+  assert.match(
+    css,
+    /\.pro-club-game-model-phase-textarea:focus/,
+  );
+});
