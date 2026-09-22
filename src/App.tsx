@@ -513,6 +513,10 @@ export default function App() {
           <FitnessTesting
             onBack={() => navigateTo("dashboard")}
             teamName={activeTeam}
+            canManageCatalogue={
+              effectivePresentationRole === "SUPERADMIN" ||
+              effectivePresentationRole === "ADMIN"
+            }
           />
         );
       case "coaches":

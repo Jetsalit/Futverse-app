@@ -18,6 +18,21 @@ test("Academy keeps its Fitness route and exposes Fitness & Training in the side
   assert.match(academyFitness, /<FitnessTestCatalogue/);
 });
 
+test("Academy catalogue management follows presentation authority and keeps Coach read-only", () => {
+  assert.match(
+    app,
+    /canManageCatalogue=\{[\s\S]*?effectivePresentationRole === "SUPERADMIN"[\s\S]*?effectivePresentationRole === "ADMIN"[\s\S]*?\}/,
+  );
+  assert.doesNotMatch(
+    app,
+    /canManageCatalogue=\{[\s\S]*?effectivePresentationRole === "COACH"/,
+  );
+  assert.equal(
+    (academyFitness.match(/canManage=\{canManageCatalogue\}/g) ?? []).length,
+    2,
+  );
+});
+
 test("Pro Club navigation exposes the combined Fitness & Training workspace", () => {
   assert.match(proClubDashboard, /TRAINING: "Fitness & Training"/);
   assert.match(proClubDashboard, /<FitnessTestCatalogue/);

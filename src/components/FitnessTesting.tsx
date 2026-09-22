@@ -270,9 +270,11 @@ function FitnessTestingGrid({
 export default function FitnessTesting({
   onBack,
   teamName,
+  canManageCatalogue = false,
 }: {
   onBack: () => void;
   teamName?: string;
+  canManageCatalogue?: boolean;
 }) {
   const { settings, academyId } = useAcademy();
   const [players, setPlayers] = useState<Player[]>([]);
@@ -568,7 +570,7 @@ export default function FitnessTesting({
           {academyId && (
             <FitnessTestCatalogue
               organization={{ organizationType: "ACADEMY", organizationId: academyId }}
-              canManage
+              canManage={canManageCatalogue}
             />
           )}
           <EmptyState
@@ -606,7 +608,7 @@ export default function FitnessTesting({
         <div className="mb-6">
           <FitnessTestCatalogue
             organization={{ organizationType: "ACADEMY", organizationId: academyId }}
-            canManage
+            canManage={canManageCatalogue}
           />
         </div>
       )}
