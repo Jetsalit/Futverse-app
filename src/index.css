@@ -437,13 +437,18 @@
 }
 
 .pro-club-game-model-phase-textarea {
-  color: var(--pc-game-model-phase-accent) !important;
-  background: color-mix(in srgb, var(--pc-surface) 96%, var(--pc-game-model-phase-accent) 4%) !important;
-  border-color: color-mix(in srgb, var(--pc-game-model-phase-accent) 30%, var(--pc-border)) !important;
   caret-color: var(--pc-game-model-phase-accent);
 }
 
-.pro-club-game-model-phase-textarea:focus {
+[data-pro-club-theme="light"] .pro-club-module-surface .pro-club-game-model-phase-textarea,
+[data-pro-club-theme="neon"] .pro-club-module-surface .pro-club-game-model-phase-textarea {
+  color: var(--pc-game-model-phase-accent) !important;
+  background: color-mix(in srgb, var(--pc-surface) 96%, var(--pc-game-model-phase-accent) 4%) !important;
+  border-color: color-mix(in srgb, var(--pc-game-model-phase-accent) 30%, var(--pc-border)) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-module-surface .pro-club-game-model-phase-textarea:focus,
+[data-pro-club-theme="neon"] .pro-club-module-surface .pro-club-game-model-phase-textarea:focus {
   border-color: var(--pc-game-model-phase-accent) !important;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc-game-model-phase-accent) 18%, transparent);
 }
