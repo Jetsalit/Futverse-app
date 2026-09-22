@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
-import { RefreshCw, Save, Sparkles } from "lucide-react";
+import {
+  CircleDot,
+  RefreshCw,
+  Save,
+  Shield,
+  ShieldAlert,
+  Sparkles,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
 
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
 import {
@@ -16,6 +25,13 @@ import {
   type GameModelPhase,
   type GameModelTextSnapshot,
 } from "../../../lib/gameModel";
+
+const GAME_MODEL_PHASE_ICONS: Readonly<Record<GameModelPhase, LucideIcon>> = {
+  IN_POSSESSION: CircleDot,
+  OUT_OF_POSSESSION: Shield,
+  TRANSITION_TO_ATTACK: Zap,
+  TRANSITION_TO_DEFEND: ShieldAlert,
+};
 
 function canEditGameModel(authority: ProClubOrganizationAuthority): boolean {
   return (
@@ -153,28 +169,38 @@ export default function ProClubGameModel({
         <p className="pro-club-muted text-sm">Loading Game Model…</p>
       ) : (
         <div className="grid gap-4 xl:grid-cols-2">
-          {GAME_MODEL_PHASES.map((phase) => (
-            <label
-              key={phase}
-              className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4"
-            >
-              <span className="font-black text-white">
-                {GAME_MODEL_PHASE_LABELS[phase]}
-              </span>
-              <textarea
-                value={draft[phase]}
-                disabled={!editable || saving}
-                maxLength={GAME_MODEL_PHASE_TEXT_LIMIT}
-                onChange={(event) => updatePhase(phase, event.target.value)}
-                placeholder="Write the coach's Game Model text here…"
-                rows={8}
-                className="mt-3 w-full resize-y rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-sm leading-6 text-white outline-none focus:border-cyan-400/50 disabled:opacity-60"
-              />
-              <span className="mt-2 block text-right text-[10px] text-slate-500">
-                {draft[phase].length}/{GAME_MODEL_PHASE_TEXT_LIMIT}
-              </span>
-            </label>
-          ))}
+          {GAME_MODEL_PHASES.map((phase) => {
+            const PhaseIcon = GAME_MODEL_PHASE_ICONS[phase];
+            return (
+              <label
+                key={phase}
+                data-phase={phase}
+                className="pro-club-game-model-phase rounded-2xl border p-4"
+              >
+                <span className="pro-club-game-model-phase-heading flex items-center gap-2 font-black">
+                  <PhaseIcon
+                    aria-hidden="true"
+                    className="pro-club-game-model-phase-icon"
+                    size={18}
+                    strokeWidth={2.2}
+                  />
+                  {GAME_MODEL_PHASE_LABELS[phase]}
+                </span>
+                <textarea
+                  value={draft[phase]}
+                  disabled={!editable || saving}
+                  maxLength={GAME_MODEL_PHASE_TEXT_LIMIT}
+                  onChange={(event) => updatePhase(phase, event.target.value)}
+                  placeholder="Write the coach's Game Model text here…"
+                  rows={8}
+                  className="pro-club-game-model-phase-textarea mt-3 w-full resize-y rounded-xl border px-3 py-3 text-sm font-medium leading-6 outline-none disabled:opacity-60"
+                />
+                <span className="pro-club-game-model-phase-counter mt-2 block text-right text-[10px] font-bold">
+                  {draft[phase].length}/{GAME_MODEL_PHASE_TEXT_LIMIT}
+                </span>
+              </label>
+            );
+          })}
         </div>
       )}
 
