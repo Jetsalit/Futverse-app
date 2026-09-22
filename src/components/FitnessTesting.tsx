@@ -6,13 +6,7 @@ import {
   PolarAngleAxis,
   PolarRadiusAxis,
   ResponsiveContainer,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
   Tooltip,
-  Legend,
 } from "recharts";
 import {
   User,
@@ -27,9 +21,11 @@ import {
   calculateAgeFromDateOnly,
   calendarDateInTimeZone,
 } from "../lib/dateTimeFoundation";
-import { collection, onSnapshot, query, orderBy, doc, deleteDoc, deleteField, addDoc, updateDoc } from "firebase/firestore";
+import { collection, onSnapshot, doc, deleteField, addDoc, updateDoc } from "firebase/firestore";
 import { EmptyState } from "./common/EmptyState";
+import FitnessTestCatalogue from "./fitness/FitnessTestCatalogue";
 import { useAcademy } from "../contexts/AcademyContext";
+import { FOOTBALL_FITNESS_TEST_CATALOGUE } from "../lib/fitnessTestFoundation";
 import { mapCanonicalSnapshot } from "../lib/firestore/canonicalDocument";
 import {
   PLAYER_POSITION_CODES,
@@ -53,31 +49,24 @@ interface Player {
   hideFromFitness?: boolean;
 }
 
-const METRICS_CONFIG = [
-  { key: "yoyo_level", label: "Yo-Yo Test", unit: "Level", max: 20 },
-  {
-    key: "calculated_vo2max",
-    label: "VO2 Max (Auto)",
-    unit: "ml/kg/min",
-    max: 80,
-    readonly: true,
-  },
-  { key: "speed_10m", label: "10m Sprint", unit: "Sec", max: 3, invert: true },
-  { key: "speed_30m", label: "30m Sprint", unit: "Sec", max: 6, invert: true },
-  { key: "vertical_jump", label: "Vertical Jump", unit: "cm", max: 80 },
-];
+const FITNESS_DISPLAY_SCALE: Record<string, number> = {
+  yoyo_level: 20,
+  speed_10m: 3,
+  speed_30m: 6,
+  vertical_jump: 80,
+};
+
+const METRICS_CONFIG = FOOTBALL_FITNESS_TEST_CATALOGUE
+  .filter((definition) => definition.key in FITNESS_DISPLAY_SCALE)
+  .map((definition) => ({
+    key: definition.key,
+    label: definition.name,
+    unit: definition.unit,
+    max: FITNESS_DISPLAY_SCALE[definition.key],
+    invert: definition.direction === "LOWER_IS_BETTER",
+  }));
 
 // --- FitnessTestingGrid Implementation ---
-
-// 1. ฟังก์ชันคำนวณอัตโนมัติ (Real-time Calculation)
-const calculateVO2Max = (yoyoLevel: string) => {
-  if (!yoyoLevel) return "";
-  const level = parseFloat(yoyoLevel);
-  if (isNaN(level)) return "";
-  // จำลองสูตรคำนวณ (เช่น ถ้าระดับ 16.1 -> 44.4)
-  // ตัวอย่างใช้สูตรสมมุติเพื่อให้ใกล้เคียงกับเงื่อนไข
-  return (level * 2.758).toFixed(1);
-};
 
 // 2. จัดการ State ของตารางระดับ Row (เพื่อประสิทธิภาพที่ดี ไม่ให้เกิดการ re-render ทั้ง 30 แถวเมื่อพิมพ์ทีละช่อง)
 const PlayerTestRow = memo(
@@ -141,15 +130,10 @@ const PlayerTestRow = memo(
             <input
               type="number"
               step="any"
-              readOnly={m.readonly}
-              placeholder={m.readonly ? "-" : "0.0"}
+              placeholder="0.0"
               value={rowData?.[m.key] || ""}
               onChange={(e) => handleInputChange(m.key, e.target.value)}
-              className={`w-20 border rounded px-2 py-1.5 text-sm text-center mx-auto block font-mono transition-all ${
-                m.readonly
-                  ? "bg-emerald-50 border-emerald-100 text-emerald-700 font-bold focus:outline-none cursor-default shadow-inner"
-                  : "bg-white border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-              }`}
+              className="mx-auto block w-20 rounded border border-slate-200 bg-white px-2 py-1.5 text-center font-mono text-sm transition-all focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
             />
           </td>
         ))}
@@ -188,11 +172,6 @@ function FitnessTestingGrid({
           [field]: value,
         };
 
-        // เมื่อกรอก Yo-Yo Test Level ให้คำนวณ VO2 Max ใส่ช่องแบบ Read-only ทันที
-        if (field === "yoyo_level") {
-          updatedPlayerStats["calculated_vo2max"] = calculateVO2Max(value);
-        }
-
         return {
           ...prev,
           [playerId]: updatedPlayerStats,
@@ -214,7 +193,7 @@ function FitnessTestingGrid({
               Squad Fitness Testing Bulk Entry
             </h2>
             <div className="text-xs text-slate-400 font-medium whitespace-nowrap">
-              Input auto-calculates secondary metrics
+              Enter observed results for the selected testing date
             </div>
           </div>
         </div>
@@ -291,9 +270,11 @@ function FitnessTestingGrid({
 export default function FitnessTesting({
   onBack,
   teamName,
+  canManageCatalogue = false,
 }: {
   onBack: () => void;
   teamName?: string;
+  canManageCatalogue?: boolean;
 }) {
   const { settings, academyId } = useAcademy();
   const [players, setPlayers] = useState<Player[]>([]);
@@ -534,31 +515,28 @@ export default function FitnessTesting({
     Record<string, Record<string, string>>
   >({});
   const getRadarData = (playerId: string) => {
-    return METRICS_CONFIG.filter((m) => m.key !== "calculated_vo2max").map(
-      (m) => {
-        let val = 0;
-        if (testData[playerId]?.[m.key]) {
-          val = parseFloat(testData[playerId][m.key]);
-        } else {
-          val = 0; // fallback to 0 if no data
-        }
+    return METRICS_CONFIG.flatMap((m) => {
+      const rawValue = testData[playerId]?.[m.key];
+      if (!rawValue) return [];
+      const val = parseFloat(rawValue);
+      if (!Number.isFinite(val)) return [];
 
-        // Normalize for radar (0-100 scale)
-        let normalized = 0;
-        if (m.invert) {
-          normalized = Math.max(0, 100 - (val / m.max) * 50);
-        } else {
-          normalized = Math.min(100, (val / m.max) * 100);
-        }
+      // Preserve the established chart display scale only for recorded values.
+      let normalized = 0;
+      if (m.invert) {
+        normalized = Math.max(0, 100 - (val / m.max) * 50);
+      } else {
+        normalized = Math.min(100, (val / m.max) * 100);
+      }
 
-        return {
-          subject: m.label,
-          A: Math.round(normalized),
-          fullMark: 100,
-          actualValue: val,
-        };
-      },
-    );
+      return [{
+        subject: m.label,
+        A: Math.round(normalized),
+        fullMark: 100,
+        actualValue: val,
+        unit: m.unit,
+      }];
+    });
   };
 
   if (loading) {
@@ -581,20 +559,28 @@ export default function FitnessTesting({
           </button>
           <div>
             <h1 className="text-xl sm:text-2xl font-bold text-slate-800 tracking-tight">
-              Fitness Testing System
+              Fitness & Training
             </h1>
             <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest mt-1">
               Assessment Engine
             </p>
           </div>
         </div>
-        <EmptyState
-          icon={Users}
-          title={readError ? "Players Unavailable" : "No Players Available"}
-          description={readError || "You need to add players to the academy before you can test their fitness."}
-          primaryActionLabel="Go Back"
-          onPrimaryAction={onBack}
-        />
+        <div className="space-y-6">
+          {academyId && (
+            <FitnessTestCatalogue
+              organization={{ organizationType: "ACADEMY", organizationId: academyId }}
+              canManage={canManageCatalogue}
+            />
+          )}
+          <EmptyState
+            icon={Users}
+            title={readError ? "Players Unavailable" : "No Players Available"}
+            description={readError || "You need to add players to the academy before you can test their fitness."}
+            primaryActionLabel="Go Back"
+            onPrimaryAction={onBack}
+          />
+        </div>
       </div>
     );
   }
@@ -610,13 +596,22 @@ export default function FitnessTesting({
         </button>
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-800 tracking-tight">
-            Fitness Testing System
+            Fitness & Training
           </h1>
           <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest mt-1">
             Assessment Engine
           </p>
         </div>
       </div>
+
+      {academyId && (
+        <div className="mb-6">
+          <FitnessTestCatalogue
+            organization={{ organizationType: "ACADEMY", organizationId: academyId }}
+            canManage={canManageCatalogue}
+          />
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex border-b border-slate-200 mb-6 space-x-8">
@@ -710,14 +705,23 @@ export default function FitnessTesting({
               <h3 className="text-xs font-bold text-slate-400 uppercase mb-6 border-b border-slate-100 pb-3">
                 Performance Spider Chart
               </h3>
-              <div className="h-[400px] w-full mt-4">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart
-                    cx="50%"
-                    cy="50%"
-                    outerRadius="75%"
-                    data={getRadarData(selectedPlayerId)}
-                  >
+              {getRadarData(selectedPlayerId).length === 0 ? (
+                <div className="flex h-[300px] items-center justify-center rounded-xl border-2 border-dashed border-slate-200 p-6 text-center">
+                  <div>
+                    <Activity className="mx-auto text-slate-300" size={28} />
+                    <p className="mt-3 font-bold text-slate-600">No recorded fitness results for this player</p>
+                    <p className="mt-1 text-sm text-slate-400">Enter an observed test result to populate this report.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-4 h-[400px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RadarChart
+                      cx="50%"
+                      cy="50%"
+                      outerRadius="75%"
+                      data={getRadarData(selectedPlayerId)}
+                    >
                     <PolarGrid stroke="#e2e8f0" strokeWidth={1.5} />
                     <PolarAngleAxis
                       dataKey="subject"
@@ -750,8 +754,8 @@ export default function FitnessTesting({
                     />
                     <Tooltip
                       formatter={(value: any, name: any, props: any) => [
-                        props?.payload?.actualValue || value,
-                        "Value",
+                        `${props?.payload?.actualValue ?? value} ${props?.payload?.unit ?? ""}`.trim(),
+                        "Recorded result",
                       ]}
                       contentStyle={{
                         borderRadius: "12px",
@@ -763,9 +767,10 @@ export default function FitnessTesting({
                         fontWeight: "bold",
                       }}
                     />
-                  </RadarChart>
-                </ResponsiveContainer>
-              </div>
+                    </RadarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">

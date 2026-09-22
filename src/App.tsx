@@ -13,6 +13,7 @@ import {
   Bell,
   Shield,
   UserCircle,
+  Activity,
 } from "lucide-react";
 import Dashboard from "./components/Dashboard";
 import PlayerDashboard from "./components/PlayerDashboard";
@@ -512,6 +513,10 @@ export default function App() {
           <FitnessTesting
             onBack={() => navigateTo("dashboard")}
             teamName={activeTeam}
+            canManageCatalogue={
+              effectivePresentationRole === "SUPERADMIN" ||
+              effectivePresentationRole === "ADMIN"
+            }
           />
         );
       case "coaches":
@@ -642,6 +647,12 @@ export default function App() {
       label: "Youth Report",
       icon: LineChart,
       roles: ["USER", "PARENT"],
+    },
+    {
+      id: "fitness",
+      label: "Fitness & Training",
+      icon: Activity,
+      roles: ["SUPERADMIN", "ADMIN"],
     },
     {
       id: "settings",

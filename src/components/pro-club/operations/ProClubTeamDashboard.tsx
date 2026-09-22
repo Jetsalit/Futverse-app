@@ -13,7 +13,12 @@ import {
 } from "lucide-react";
 
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
+import {
+  FOOTBALL_FITNESS_TEST_CATALOGUE,
+  buildFitnessTrainingConnection,
+} from "../../../lib/fitnessTestFoundation";
 import { staffRoleLabels } from "../../../lib/proClubOnboarding";
+import FitnessTestCatalogue from "../../fitness/FitnessTestCatalogue";
 import ProClubAttendance from "./ProClubAttendance";
 import ProClubHeadCoachWeeklyProductionWorkspace from "./ProClubHeadCoachWeeklyProductionWorkspace";
 import ProClubGameModel from "./ProClubGameModel";
@@ -89,7 +94,7 @@ type AttendanceLaunch = {
 const TAB_LABELS: Record<ProClubTeamDashboardTab, string> = {
   OVERVIEW: "Overview",
   SQUAD: "Squad",
-  TRAINING: "Training",
+  TRAINING: "Fitness & Training",
   ATTENDANCE: "Attendance",
   SUBMISSIONS: "Submissions",
   LIBRARY_LOGBOOK: "Library & Logbook",
@@ -114,6 +119,20 @@ export default function ProClubTeamDashboard({
   const [attendanceLaunch, setAttendanceLaunch] = useState<AttendanceLaunch | null>(null);
   const staffSubmissionsAvailable = canOpenProClubStaffSubmissions(authority);
   const libraryLogbookAvailable = canOpenProClubLibraryLogbook(authority);
+  const fitnessOrganization = {
+    organizationType: "PRO_CLUB" as const,
+    organizationId: authority.organizationId,
+  };
+  const canManageFitnessCatalogue =
+    authority.organizationStatus === "ACTIVE" &&
+    authority.membershipStatus === "ACTIVE" &&
+    authority.hasMembershipAuthority &&
+    (authority.staffRole === "FITNESS_COACH" || authority.staffRole === "TECHNICAL_DIRECTOR");
+  const fitnessTrainingConnection = buildFitnessTrainingConnection({
+    organization: fitnessOrganization,
+    definitions: FOOTBALL_FITNESS_TEST_CATALOGUE,
+    results: [],
+  });
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -359,8 +378,8 @@ export default function ProClubTeamDashboard({
                 />
                 <OverviewCard
                   icon={<Dumbbell size={20} />}
-                  title="Training"
-                  description="Weekly Training"
+                  title="Fitness & Training"
+                  description="Testing catalogue & Weekly Training"
                   tone="training"
                   onOpen={() => selectActiveTab("TRAINING")}
                 />
@@ -418,9 +437,15 @@ export default function ProClubTeamDashboard({
           )}
 
           {activeTab === "TRAINING" && (
-            <div className="pro-club-module-surface">
+            <div className="pro-club-module-surface space-y-6">
+              <FitnessTestCatalogue
+                organization={fitnessOrganization}
+                canManage={canManageFitnessCatalogue}
+                variant="pro-club"
+              />
               <ProClubHeadCoachWeeklyProductionWorkspace
                 authority={authority}
+                fitnessConnection={fitnessTrainingConnection}
                 onTakeAttendance={openAttendanceFromTraining}
                 onOpenSubmissions={
                   staffSubmissionsAvailable

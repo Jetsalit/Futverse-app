@@ -4,6 +4,7 @@ import {
   WEEKLY_TRAINING_SAVED_DRAFT_READ_UNAVAILABLE_MESSAGE,
 } from "../../../config/runtimeCapabilities";
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
+import type { FitnessTrainingConnection } from "../../../lib/fitnessTestFoundation";
 import WeeklyTrainingDraftComposer from "./WeeklyTrainingDraftComposer";
 import WeeklyTrainingSavedDrafts from "./WeeklyTrainingSavedDrafts";
 
@@ -40,12 +41,55 @@ function SavedDraftReadPending() {
   );
 }
 
+function FitnessTrainingBoundary({
+  connection,
+}: {
+  connection: FitnessTrainingConnection;
+}) {
+  return (
+    <article className="rounded-2xl border border-emerald-500/25 bg-emerald-500/5 p-5">
+      <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-300">
+        Fitness connection
+      </p>
+      {connection.state === "NO_DATA" ? (
+        <>
+          <h4 className="mt-2 font-bold text-white">
+            No recorded fitness results are connected to this training plan
+          </h4>
+          <p className="mt-2 text-sm leading-6 text-slate-400">
+            The shared definition catalogue is available, but result persistence needs a separately reviewed backend contract.
+            This boundary does not generate training prescriptions.
+          </p>
+        </>
+      ) : (
+        <>
+          <h4 className="mt-2 font-bold text-white">
+            Recorded fitness observations
+          </h4>
+          <ul className="mt-3 space-y-2 text-sm text-slate-300">
+            {connection.observations.map((observation) => (
+              <li key={observation.id}>
+                {observation.testName}: {observation.value} {observation.unit}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 text-xs text-slate-400">
+            Observations are context only; this boundary does not generate training prescriptions.
+          </p>
+        </>
+      )}
+    </article>
+  );
+}
+
 export default function ProClubHeadCoachWeeklyProductionWorkspace({
   authority,
+  fitnessConnection,
   onTakeAttendance,
   onOpenSubmissions,
 }: {
   authority: ProClubOrganizationAuthority;
+  fitnessConnection?: FitnessTrainingConnection;
   onTakeAttendance?: (slot: { sessionDate: string; startTime: string }) => void;
   onOpenSubmissions?: () => void;
 }) {
@@ -80,6 +124,10 @@ export default function ProClubHeadCoachWeeklyProductionWorkspace({
           </button>
         )}
       </header>
+
+      {fitnessConnection && (
+        <FitnessTrainingBoundary connection={fitnessConnection} />
+      )}
 
       {WEEKLY_TRAINING_SAVED_DRAFT_READ_AVAILABLE ? (
         <WeeklyTrainingSavedDrafts

@@ -96,7 +96,7 @@ test("renders the production app shell with authoritative club identity and cont
   assert.match(text, /Sign out/);
   assert.match(text, /Overview/);
   assert.match(text, /Squad/);
-  assert.match(text, /Training/);
+  assert.match(text, /Fitness &(?:amp;)? Training/);
   assert.match(text, /Attendance/);
   assert.match(text, /Submissions/);
   assert.match(text, /Library &(?:amp;)? Logbook/);
@@ -106,7 +106,6 @@ test("renders the production app shell with authoritative club identity and cont
 
   for (const forbidden of [
     /DEV PREVIEW/i,
-    /Fitness/i,
     /Analysis/i,
     /Availability/i,
     /Reports/i,
@@ -155,7 +154,7 @@ test("overview cards connect directly to the live production tabs", () => {
   const source = readFileSync(files.dashboard, "utf8");
 
   assert.match(source, /title="Squad"[\s\S]*onOpen=\{\(\) => selectActiveTab\("SQUAD"\)\}/);
-  assert.match(source, /title="Training"[\s\S]*onOpen=\{\(\) => selectActiveTab\("TRAINING"\)\}/);
+  assert.match(source, /title="Fitness & Training"[\s\S]*onOpen=\{\(\) => selectActiveTab\("TRAINING"\)\}/);
   assert.match(source, /title="Attendance"[\s\S]*onOpen=\{\(\) => selectActiveTab\("ATTENDANCE"\)\}/);
   assert.match(source, /title="Matches"[\s\S]*onOpen=\{\(\) => selectActiveTab\("MATCHES"\)\}/);
 
