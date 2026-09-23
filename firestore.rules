@@ -195,6 +195,110 @@ service cloud.firestore {
         ).data.role in roles;
     }
 
+    function academyStaffSpecialtyActorCanManageV1(academyId) {
+      return isSuperAdmin()
+        || hasAcademyRole(academyId, ['ADMIN']);
+    }
+
+    function academyStaffSpecialtyTargetIsActiveCoachV1(academyId, uid) {
+      let membershipPath =
+        /databases/$(database)/documents/academies/$(academyId)/members/$(uid);
+      let membership = get(membershipPath).data;
+
+      return exactDocumentId(academyId)
+        && exactDocumentId(uid)
+        && exists(membershipPath)
+        && membership.get('userId', '') == uid
+        && membership.get('academyId', '') == academyId
+        && membership.get('role', '') == 'COACH'
+        && membership.get('status', '') == 'ACTIVE';
+    }
+
+    function validAcademyFitnessCoachSpecialtyDataV1(uid, data) {
+      return exactDocumentId(uid)
+        && data.keys().hasAll([
+          'schemaVersion',
+          'specialty',
+          'status',
+          'createdAt',
+          'createdBy',
+          'updatedAt',
+          'updatedBy'
+        ])
+        && data.keys().hasOnly([
+          'schemaVersion',
+          'specialty',
+          'status',
+          'createdAt',
+          'createdBy',
+          'updatedAt',
+          'updatedBy'
+        ])
+        && data.schemaVersion == 1
+        && data.specialty == 'FITNESS_COACH'
+        && data.status in ['ACTIVE', 'INACTIVE', 'LEFT']
+        && data.createdAt is timestamp
+        && exactDocumentId(data.createdBy)
+        && data.updatedAt is timestamp
+        && exactDocumentId(data.updatedBy);
+    }
+
+    function validAcademyFitnessCoachSpecialtyCreateV1(academyId, uid) {
+      return academyStaffSpecialtyActorCanManageV1(academyId)
+        && academyStaffSpecialtyTargetIsActiveCoachV1(academyId, uid)
+        && validAcademyFitnessCoachSpecialtyDataV1(
+          uid,
+          request.resource.data
+        )
+        && request.resource.data.status == 'ACTIVE'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid;
+    }
+
+    function validAcademyFitnessCoachSpecialtyTransitionV1(
+      fromStatus,
+      toStatus
+    ) {
+      return (
+          fromStatus == 'ACTIVE'
+          && toStatus in ['ACTIVE', 'INACTIVE', 'LEFT']
+        )
+        || (
+          fromStatus == 'INACTIVE'
+          && toStatus in ['INACTIVE', 'ACTIVE', 'LEFT']
+        );
+    }
+
+    function validAcademyFitnessCoachSpecialtyUpdateV1(academyId, uid) {
+      return academyStaffSpecialtyActorCanManageV1(academyId)
+        && validAcademyFitnessCoachSpecialtyDataV1(uid, resource.data)
+        && validAcademyFitnessCoachSpecialtyDataV1(
+          uid,
+          request.resource.data
+        )
+        && validAcademyFitnessCoachSpecialtyTransitionV1(
+          resource.data.status,
+          request.resource.data.status
+        )
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'updatedAt',
+          'updatedBy'
+        ])
+        && request.resource.data.schemaVersion == resource.data.schemaVersion
+        && request.resource.data.specialty == resource.data.specialty
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid
+        && (
+          request.resource.data.status != 'ACTIVE'
+          || academyStaffSpecialtyTargetIsActiveCoachV1(academyId, uid)
+        );
+    }
+
     function tenantMemberCanRead(academyId) {
       return isSuperAdmin() || isActiveAcademyMember(academyId);
     }
@@ -1110,6 +1214,32 @@ service cloud.firestore {
             );
           allow delete: if isSuperAdmin()
             || hasAcademyRole(academyId, ['ADMIN']);
+        }
+      }
+
+      // Academy Fitness Coach Specialty V1 — functional football assignment
+      // separated from canonical Academy membership authority.
+      match /staffSpecialties/{uid} {
+        allow get: if isSuperAdmin()
+          || hasAcademyRole(academyId, ['ADMIN'])
+          || (
+            isOwnUserDocument(uid)
+            && isActiveAcademyMember(academyId)
+          );
+        allow list: if isSuperAdmin()
+          || hasAcademyRole(academyId, ['ADMIN']);
+        allow create: if validAcademyFitnessCoachSpecialtyCreateV1(
+          academyId,
+          uid
+        );
+        allow update: if validAcademyFitnessCoachSpecialtyUpdateV1(
+          academyId,
+          uid
+        );
+        allow delete: if false;
+
+        match /{document=**} {
+          allow read, write: if false;
         }
       }
 
