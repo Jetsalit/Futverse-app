@@ -29,11 +29,18 @@ import { EmptyState } from "./common/EmptyState";
 import { approveAcademyJoinClaim } from "../services/membershipService";
 import type { AcademyJoinClaim, TenantRole } from "../types/Membership";
 import { mapCanonicalSnapshot } from "../lib/firestore/canonicalDocument";
+import type { FitnessCoachAssignmentRow } from "../lib/academyFitnessCoachAssignment";
+import { canManageFitnessCoachAssignments } from "../lib/academyFitnessCoachAssignment";
+import {
+  changeFitnessCoachAssignment,
+  loadFitnessCoachAssignments,
+} from "../services/academyFitnessCoachAssignmentService";
 
 const LICENSES = ["Pro", "A", "B", "C", "ไม่มี"];
 
 interface Coach {
   id: string;
+  userId?: string;
   firstName: string;
   lastName: string;
   email: string;
@@ -59,8 +66,8 @@ const formatClaimDate = (value: AcademyJoinClaim["createdAt"]) => {
 };
 
 export default function CoachManagement({ onBack }: { onBack: () => void }) {
-  const { settings, getAcademyCollection, academyId } = useAcademy();
-  const { currentUser } = useAuth();
+  const { settings, getAcademyCollection, academyId, membership } = useAcademy();
+  const { currentUser, actualUser } = useAuth();
   const [coaches, setCoaches] = useState<Coach[]>([]);
   const [loading, setLoading] = useState(true);
   const [coachReadError, setCoachReadError] = useState<string | null>(null);
@@ -71,7 +78,57 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
 
   const [pendingClaims, setPendingClaims] = useState<AcademyJoinClaim[]>([]);
   const [claimReadError, setClaimReadError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"coaches" | "claims">("coaches");
+  const [activeTab, setActiveTab] = useState<"coaches" | "claims" | "fitness">("coaches");
+  const [fitnessRows, setFitnessRows] = useState<FitnessCoachAssignmentRow[]>([]);
+  const [fitnessLoading, setFitnessLoading] = useState(false);
+  const [fitnessError, setFitnessError] = useState<string | null>(null);
+  const [fitnessPendingUid, setFitnessPendingUid] = useState<string | null>(null);
+  const [fitnessReload, setFitnessReload] = useState(0);
+  const canManageFitness = canManageFitnessCoachAssignments(actualUser, membership, academyId);
+
+  useEffect(() => {
+    if (activeTab !== "fitness") return;
+    let cancelled = false;
+    setFitnessRows([]);
+    setFitnessError(null);
+    setFitnessLoading(true);
+    if (!academyId || !canManageFitness) {
+      setFitnessError("Fitness Coach assignments are unavailable for this session.");
+      setFitnessLoading(false);
+      return;
+    }
+    loadFitnessCoachAssignments({ academyId, actualActor: actualUser, actorMembership: membership })
+      .then((rows) => {
+        if (!cancelled) setFitnessRows(rows);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setFitnessRows([]);
+          setFitnessError(error instanceof Error ? error.message : "Fitness Coach assignments could not be loaded.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setFitnessLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [activeTab, academyId, actualUser, membership, canManageFitness, fitnessReload]);
+
+  const handleFitnessChange = async (uid: string, nextStatus: "ACTIVE" | "INACTIVE") => {
+    if (!academyId || !canManageFitness || fitnessPendingUid) return;
+    if (nextStatus === "INACTIVE" && !window.confirm(`Deactivate Fitness Coach specialty for ${uid}?`)) return;
+    setFitnessPendingUid(uid);
+    setFitnessError(null);
+    try {
+      await changeFitnessCoachAssignment(
+        { academyId, actualActor: actualUser, actorMembership: membership }, uid, nextStatus,
+      );
+      setFitnessReload((current) => current + 1);
+    } catch (error) {
+      setFitnessError(error instanceof Error ? error.message : "Fitness Coach assignment failed.");
+    } finally {
+      setFitnessPendingUid(null);
+    }
+  };
 
   const [formData, setFormData] = useState({
     firstName: "",
@@ -353,14 +410,22 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
                 </span>
               )}
             </button>
+            {canManageFitness && (
+              <button
+                onClick={() => setActiveTab("fitness")}
+                className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === "fitness" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+              >
+                Fitness Coach
+              </button>
+            )}
           </div>
-          <button
+          {activeTab === "coaches" && <button
             onClick={openAddModal}
             className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition shadow-sm justify-center"
           >
             <Plus size={18} />
             <span>เพิ่มผู้ฝึกสอน</span>
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -497,7 +562,7 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
             </div>
           </>
         )
-      ) : (
+      ) : activeTab === "claims" ? (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
@@ -570,6 +635,45 @@ export default function CoachManagement({ onBack }: { onBack: () => void }) {
               </tbody>
             </table>
           </div>
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex-1">
+          <div className="p-5 border-b border-slate-100">
+            <h2 className="text-lg font-bold text-slate-800">Fitness Coach assignments</h2>
+            <p className="text-sm text-slate-500 mt-1">Assignments use active Academy Coach memberships. Deactivation keeps the record for audit.</p>
+          </div>
+          {fitnessError && <p role="alert" className="m-5 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{fitnessError}</p>}
+          {fitnessLoading ? (
+            <p className="p-6 text-sm text-slate-500">Loading assignments…</p>
+          ) : fitnessRows.length === 0 ? (
+            <p className="p-6 text-sm text-slate-500">No active Coach memberships or existing assignments found.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 text-slate-500"><tr>
+                  <th className="p-4">Coach membership</th><th className="p-4">Specialty</th><th className="p-4 text-right">Action</th>
+                </tr></thead>
+                <tbody className="divide-y divide-slate-100">
+                  {fitnessRows.map((row) => {
+                    const profile = coaches.find((coach) => coach.userId === row.uid);
+                    return <tr key={row.uid}>
+                      <td className="p-4">
+                        <div className="font-semibold text-slate-800">{profile ? `${profile.firstName} ${profile.lastName}` : row.uid}</div>
+                        {profile && <div className="text-xs text-slate-500">{profile.email}</div>}
+                        <div className="text-xs text-slate-400">UID: {row.uid}</div>
+                      </td>
+                      <td className="p-4 font-medium text-slate-600">{row.status === "NONE" ? "Not assigned" : row.status}</td>
+                      <td className="p-4 text-right">
+                        {row.canActivate && <button type="button" disabled={Boolean(fitnessPendingUid) || fitnessLoading} onClick={() => handleFitnessChange(row.uid, "ACTIVE")} className="rounded-lg bg-blue-600 px-3 py-2 font-semibold text-white disabled:opacity-50">{row.status === "INACTIVE" ? "Reactivate" : "Assign"}</button>}
+                        {row.canDeactivate && <button type="button" disabled={Boolean(fitnessPendingUid) || fitnessLoading} onClick={() => handleFitnessChange(row.uid, "INACTIVE")} className="rounded-lg bg-rose-50 px-3 py-2 font-semibold text-rose-700 disabled:opacity-50">Deactivate</button>}
+                        {!row.canActivate && !row.canDeactivate && <span className="text-slate-400">—</span>}
+                      </td>
+                    </tr>;
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
