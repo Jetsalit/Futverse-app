@@ -436,7 +436,7 @@ export default function App() {
       currentPage === "fitness" &&
       !canAccessTenantCapability(
         effectivePresentationRole,
-        ["ADMIN"],
+        ["ADMIN", "COACH"],
         isSupportActive,
         hasPermission,
       )
