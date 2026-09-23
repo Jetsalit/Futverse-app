@@ -188,6 +188,7 @@ export default function App() {
     accessState,
     loading: academyLoading,
     error: academyError,
+    fitnessCapabilities: academyFitnessCapabilities,
   } = useAcademy();
 
   const effectivePresentationRole = isSupportActive
@@ -514,8 +515,10 @@ export default function App() {
             onBack={() => navigateTo("dashboard")}
             teamName={activeTeam}
             canManageCatalogue={
-              effectivePresentationRole === "SUPERADMIN" ||
-              effectivePresentationRole === "ADMIN"
+              isSupportActive
+                ? effectivePresentationRole === "SUPERADMIN" ||
+                  effectivePresentationRole === "ADMIN"
+                : academyFitnessCapabilities.includes("FITNESS_MANAGE_CATALOGUE")
             }
           />
         );

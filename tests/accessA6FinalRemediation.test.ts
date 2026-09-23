@@ -162,7 +162,7 @@ test("16. revocation after activation cannot retain an authorized Membership", (
   assert.equal(active.state, "ACTIVE_MEMBERSHIP");
   assert.equal(revoked.state, "MEMBERSHIP_REVOKED");
   assert.equal("membership" in revoked, false);
-  assert.match(academySource, /stopAcademyListener\(\);\s*clearTenantAccess\(\);/s);
+  assert.match(academySource, /stopAcademyListener\(\);\s*stopSpecialtyListener\(\);\s*clearTenantAccess\(\);/s);
 });
 
 test("17. Membership listener errors clear tenant authorization immediately", () => {
