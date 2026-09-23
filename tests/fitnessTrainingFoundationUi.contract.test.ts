@@ -18,6 +18,21 @@ test("Academy keeps its Fitness route and exposes Fitness & Training in the side
   assert.match(academyFitness, /<FitnessTestCatalogue/);
 });
 
+test("Academy Coach can enter Fitness from the dashboard while catalogue management stays read-only", () => {
+  assert.match(
+    app,
+    /currentPage === "fitness"[\s\S]*?canAccessTenantCapability\([\s\S]*?\["ADMIN", "COACH"\]/,
+  );
+  assert.match(
+    app,
+    /canManageCatalogue=\{[\s\S]*?effectivePresentationRole === "SUPERADMIN"[\s\S]*?effectivePresentationRole === "ADMIN"[\s\S]*?\}/,
+  );
+  assert.doesNotMatch(
+    app,
+    /canManageCatalogue=\{[\s\S]*?effectivePresentationRole === "COACH"/,
+  );
+});
+
 test("Academy catalogue management follows presentation authority and keeps Coach read-only", () => {
   assert.match(
     app,
