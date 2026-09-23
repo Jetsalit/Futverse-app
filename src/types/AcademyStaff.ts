@@ -1,4 +1,4 @@
-import type { MembershipStatus, TenantRole } from "./Membership";
+import type { MembershipDate, MembershipStatus, TenantRole } from "./Membership";
 
 /**
  * Functional Academy staff specialty. This is intentionally separate from
@@ -24,4 +24,20 @@ export interface AcademyStaffCapabilityContext {
   membershipRole: TenantRole;
   membershipStatus: MembershipStatus;
   specialties?: readonly AcademyStaffSpecialtyAssignment[];
+}
+
+/**
+ * Authoritative V1 record reserved for
+ * academies/{academyId}/staffSpecialties/{uid}.
+ *
+ * Academy and user identity come only from the Firestore path.
+ */
+export interface AcademyStaffSpecialtyRecord {
+  schemaVersion: 1;
+  specialty: AcademyStaffSpecialty;
+  status: AcademyStaffSpecialtyStatus;
+  createdAt: MembershipDate;
+  createdBy: string;
+  updatedAt: MembershipDate;
+  updatedBy: string;
 }
