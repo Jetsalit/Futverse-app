@@ -15,6 +15,9 @@ import {
   withoutCanonicalDocumentId,
 } from "../lib/firestore/canonicalDocument";
 import type { Membership, TenantRole } from "../types/Membership";
+import type { AcademyFitnessCapability, AcademyStaffSpecialtyAssignment } from "../types/AcademyStaff";
+import { resolveAcademyFitnessCapabilities } from "../lib/academyStaffCapability";
+import { resolveAuthoritativeAcademySpecialty } from "../lib/academyFitnessRuntime";
 import { useAuth } from "./AuthContext";
 import {
   isExactActiveMembership,
@@ -62,6 +65,7 @@ interface AcademyContextType {
   academy: AcademyDocument | null;
   membership: Membership | null;
   tenantRole: TenantRole | null;
+  fitnessCapabilities: readonly AcademyFitnessCapability[];
   accessState: AcademyAccessState;
   error: Error | null;
   getAcademyCollection: (collectionName: string) => CollectionReference<DocumentData>;
@@ -95,6 +99,10 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
   const [academy, setAcademy] = useState<AcademyDocument | null>(null);
   const [membership, setMembership] = useState<Membership | null>(null);
   const [tenantRole, setTenantRole] = useState<TenantRole | null>(null);
+  const [fitnessSpecialty, setFitnessSpecialty] = useState<{
+    scopeKey: string;
+    assignment: AcademyStaffSpecialtyAssignment;
+  } | null>(null);
   const [accessState, setAccessState] = useState<AcademyAccessState>("LOADING");
   const [authorizedScopeKey, setAuthorizedScopeKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -111,6 +119,7 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     let unsubscribeMembership: (() => void) | undefined;
     let unsubscribeAcademy: (() => void) | undefined;
+    let unsubscribeSpecialty: (() => void) | undefined;
     let resolutionVersion = 0;
 
     const clearTenantAccess = () => {
@@ -119,12 +128,18 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
       setAcademy(null);
       setMembership(null);
       setTenantRole(null);
+      setFitnessSpecialty(null);
       setSettings(defaultSettings);
     };
 
     const stopAcademyListener = () => {
       unsubscribeAcademy?.();
       unsubscribeAcademy = undefined;
+    };
+
+    const stopSpecialtyListener = () => {
+      unsubscribeSpecialty?.();
+      unsubscribeSpecialty = undefined;
     };
 
     // PATH B: SuperAdmin Support Workspace Path (SuperAdmin never uses Path A)
@@ -258,6 +273,7 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
         if (cancelled) return;
         const currentVersion = ++resolutionVersion;
         stopAcademyListener();
+        stopSpecialtyListener();
         clearTenantAccess();
 
         if (
@@ -295,6 +311,27 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
         setAccessState("LOADING");
         setError(null);
         setLoading(true);
+
+        if (membershipData.role === "COACH") {
+          unsubscribeSpecialty = onSnapshot(
+            doc(db, "academies", activeAcademyId, "staffSpecialties", uid),
+            { includeMetadataChanges: true },
+            (specialtySnapshot) => {
+              if (cancelled || currentVersion !== resolutionVersion) return;
+              const assignment = resolveAuthoritativeAcademySpecialty(
+                specialtySnapshot.exists(),
+                specialtySnapshot.exists() ? specialtySnapshot.data() : null,
+                specialtySnapshot.metadata.fromCache,
+                specialtySnapshot.metadata.hasPendingWrites,
+              );
+              setFitnessSpecialty(assignment ? { scopeKey, assignment } : null);
+            },
+            () => {
+              if (cancelled || currentVersion !== resolutionVersion) return;
+              setFitnessSpecialty(null);
+            },
+          );
+        }
 
         unsubscribeAcademy = onSnapshot(
           doc(db, "academies", activeAcademyId),
@@ -356,6 +393,7 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
       (membershipSnapshotError) => {
         ++resolutionVersion;
         stopAcademyListener();
+        stopSpecialtyListener();
         if (cancelled) return;
         clearTenantAccess();
         setError(normalizeError(membershipSnapshotError));
@@ -373,6 +411,7 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
       ++resolutionVersion;
       unsubscribeMembership?.();
       stopAcademyListener();
+      stopSpecialtyListener();
     };
   }, [
     currentUser,
@@ -417,6 +456,16 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
             : "ERROR"
         : accessState;
 
+  const fitnessCapabilities = hasAuthorizedTenantContext && membership
+    ? resolveAcademyFitnessCapabilities({
+        membershipRole: membership.role,
+        membershipStatus: membership.status,
+        specialties: fitnessSpecialty?.scopeKey === requestedScopeKey
+          ? [fitnessSpecialty.assignment]
+          : [],
+      })
+    : [];
+
   const updateSettings = async (newSettings: Partial<AcademySettings>) => {
     if (!hasAuthorizedTenantContext || !academyId) {
       throw new Error("An ACTIVE Membership or SuperAdmin Workspace is required.");
@@ -460,6 +509,7 @@ export function AcademyProvider({ children }: { children: React.ReactNode }) {
         academy: hasAuthorizedTenantContext ? academy : null,
         membership: hasAuthorizedTenantContext ? membership : null,
         tenantRole: hasAuthorizedTenantContext ? tenantRole : null,
+        fitnessCapabilities,
         accessState: effectiveAccessState,
         error,
         getAcademyCollection,
