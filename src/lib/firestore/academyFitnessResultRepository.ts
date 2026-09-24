@@ -18,6 +18,7 @@ import {
   validateAcademyFitnessResultCreateInput,
   type AcademyFitnessResultDraftEntry,
   type AcademyFitnessResultHistoryEntry,
+  type ValidAcademyFitnessResultCreate,
 } from "../academyFitnessResult";
 import type { FitnessTestDefinition } from "../fitnessTestFoundation";
 import { isExactPlayerKey } from "../playerIdentityFoundation";
@@ -25,6 +26,37 @@ import { isExactPlayerKey } from "../playerIdentityFoundation";
 // Each write checks the player and actor in Rules. Small batches stay within
 // Firestore's Rules document-access budget even for different players.
 const RESULTS_PER_BATCH = 8;
+const FITNESS_RESULT_ID_PREFIX = "fit-v1-";
+
+// This UTF-8 length-prefixed seed must match the Firestore Rules V1 helper.
+function fitnessResultIdentitySeedV1(
+  result: Pick<
+    ValidAcademyFitnessResultCreate,
+    "playerId" | "definitionId" | "definitionVersion" | "observedOn"
+  >,
+): string {
+  const encoder = new TextEncoder();
+  return `fitness-result-v1|${encoder.encode(result.playerId).length}:${result.playerId}|` +
+    `${result.observedOn}|${encoder.encode(result.definitionId).length}:${result.definitionId}|` +
+    String(result.definitionVersion);
+}
+
+async function fitnessResultDocumentIdV1(
+  result: Pick<
+    ValidAcademyFitnessResultCreate,
+    "playerId" | "definitionId" | "definitionVersion" | "observedOn"
+  >,
+): Promise<string> {
+  const seed = fitnessResultIdentitySeedV1(result);
+  const digest = await globalThis.crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(seed),
+  );
+  const hex = Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+  return `${FITNESS_RESULT_ID_PREFIX}${hex}`;
+}
 
 function exactDocumentId(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 &&
@@ -52,6 +84,12 @@ export async function createAcademyFitnessResultEntries(input: {
     }
     return result.value;
   });
+  const resultIds = await Promise.all(
+    validated.map(fitnessResultDocumentIdV1),
+  );
+  if (new Set(resultIds).size !== resultIds.length) {
+    throw new Error("Duplicate Fitness result observation in request.");
+  }
   const results = collection(
     input.firestore,
     "academies",
@@ -62,8 +100,8 @@ export async function createAcademyFitnessResultEntries(input: {
   for (let start = 0; start < validated.length; start += RESULTS_PER_BATCH) {
     const batch = writeBatch(input.firestore);
     const chunk = validated.slice(start, start + RESULTS_PER_BATCH);
-    for (const result of chunk) {
-      batch.set(doc(results), {
+    for (const [offset, result] of chunk.entries()) {
+      batch.set(doc(results, resultIds[start + offset]), {
         ...result,
         recordedAt: serverTimestamp(),
         recordedBy: input.actorUid,

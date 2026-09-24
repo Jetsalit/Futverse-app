@@ -230,6 +230,41 @@ test("repository reads the selected date and player history from persisted tenan
   ]);
 });
 
+test("repository retries cannot create a duplicate player and test observation", async () => {
+  const repository = await import("../src/lib/firestore/academyFitnessResultRepository.ts");
+  const db = authedDb(COACH_UID);
+  const entry = {
+    playerId: PLAYER_ID,
+    definitionKey: "speed_10m",
+    input: {
+      playerId: PLAYER_ID,
+      definitionId: "football:speed_10m:v1",
+      definitionVersion: 1,
+      value: 1.82,
+      observedOn: "2026-09-24",
+    },
+  };
+
+  await assertSucceeds(repository.createAcademyFitnessResultEntries({
+    firestore: db,
+    academyId: ACADEMY_ID,
+    actorUid: COACH_UID,
+    entries: [entry],
+  }));
+  await assert.rejects(repository.createAcademyFitnessResultEntries({
+    firestore: db,
+    academyId: ACADEMY_ID,
+    actorUid: COACH_UID,
+    entries: [entry],
+  }), (error: unknown) =>
+    Boolean(error && typeof error === "object" && "code" in error && error.code === "permission-denied"),
+  );
+  assert.equal(
+    (await getDocs(collection(db, "academies", ACADEMY_ID, "fitnessResults"))).size,
+    1,
+  );
+});
+
 test("repository rejects malformed entries before any write", async () => {
   const repository = await import("../src/lib/firestore/academyFitnessResultRepository.ts");
   const db = authedDb(COACH_UID);

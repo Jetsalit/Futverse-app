@@ -331,6 +331,28 @@ service cloud.firestore {
         && value * 0 == 0;
     }
 
+    function academyFitnessResultIdentitySeedV1(data) {
+      return 'fitness-result-v1|'
+        + string(data.playerId.toUtf8().size())
+        + ':'
+        + data.playerId
+        + '|'
+        + data.observedOn
+        + '|'
+        + string(data.definitionId.toUtf8().size())
+        + ':'
+        + data.definitionId
+        + '|'
+        + string(data.definitionVersion);
+    }
+
+    function academyFitnessResultIdMatchesV1(resultId, data) {
+      return resultId == 'fit-v1-'
+        + hashing.sha256(
+          academyFitnessResultIdentitySeedV1(data)
+        ).toHexString().lower();
+    }
+
     function academyFitnessResultPlayerExistsV1(academyId, playerId) {
       let playerPath =
         /databases/$(database)/documents/academies/$(academyId)/players/$(playerId);
@@ -380,7 +402,11 @@ service cloud.firestore {
         && data.recordedAt is timestamp
         && data.recordedAt == request.time
         && exactDocumentId(data.recordedBy)
-        && data.recordedBy == request.auth.uid;
+        && data.recordedBy == request.auth.uid
+        && academyFitnessResultIdMatchesV1(
+          resultId,
+          data
+        );
     }
     function tenantMemberCanRead(academyId) {
       return isSuperAdmin() || isActiveAcademyMember(academyId);

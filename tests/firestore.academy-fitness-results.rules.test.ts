@@ -1,5 +1,6 @@
 import { after, before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import {
@@ -98,6 +99,27 @@ function fitnessResultData(
     recordedBy: actorUid,
     ...overrides,
   };
+}
+
+function fitnessResultDocumentId(data: Record<string, unknown>): string {
+  const playerId = data.playerId;
+  const definitionId = data.definitionId;
+  const observedOn = data.observedOn;
+  const definitionVersion = data.definitionVersion;
+  if (
+    typeof playerId !== "string" ||
+    typeof definitionId !== "string" ||
+    typeof observedOn !== "string" ||
+    typeof definitionVersion !== "number"
+  ) {
+    throw new Error("Cannot calculate a Fitness result ID for invalid data.");
+  }
+
+  const seed =
+    `fitness-result-v1|${Buffer.byteLength(playerId, "utf8")}:${playerId}|` +
+    `${observedOn}|${Buffer.byteLength(definitionId, "utf8")}:${definitionId}|` +
+    String(definitionVersion);
+  return `fit-v1-${createHash("sha256").update(seed, "utf8").digest("hex")}`;
 }
 
 function storedFitnessResult(
@@ -261,6 +283,8 @@ after(async () => {
 test(
   "same-Academy active Admin can create exact append-only Fitness result",
   async () => {
+    const data = fitnessResultData(ADMIN_A);
+    const resultId = fitnessResultDocumentId(data);
     await assertSucceeds(
       setDoc(
         doc(
@@ -268,9 +292,55 @@ test(
           "academies",
           ACADEMY_A,
           "fitnessResults",
-          "result-admin-a",
+          resultId,
         ),
-        fitnessResultData(ADMIN_A),
+        data,
+      ),
+    );
+  },
+);
+
+test(
+  "Fitness result document ID is bound to player, date, and test identity",
+  async () => {
+    const db = authedDb(COACH_A);
+    const data = fitnessResultData(COACH_A);
+    const resultId = fitnessResultDocumentId(data);
+
+    await assertFails(
+      setDoc(
+        doc(
+          db,
+          "academies",
+          ACADEMY_A,
+          "fitnessResults",
+          "caller-chosen-random-id",
+        ),
+        data,
+      ),
+    );
+    await assertSucceeds(
+      setDoc(
+        doc(
+          db,
+          "academies",
+          ACADEMY_A,
+          "fitnessResults",
+          resultId,
+        ),
+        data,
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(
+          db,
+          "academies",
+          ACADEMY_A,
+          "fitnessResults",
+          resultId,
+        ),
+        data,
       ),
     );
   },
@@ -279,6 +349,7 @@ test(
 test(
   "same-Academy active Coach can record Fitness results",
   async () => {
+    const data = fitnessResultData(COACH_A);
     await assertSucceeds(
       setDoc(
         doc(
@@ -286,9 +357,9 @@ test(
           "academies",
           ACADEMY_A,
           "fitnessResults",
-          "result-coach-a",
+          fitnessResultDocumentId(data),
         ),
-        fitnessResultData(COACH_A),
+        data,
       ),
     );
   },
@@ -297,6 +368,7 @@ test(
 test(
   "active SuperAdmin can record Academy Fitness result",
   async () => {
+    const data = fitnessResultData(SUPERADMIN);
     await assertSucceeds(
       setDoc(
         doc(
@@ -304,9 +376,9 @@ test(
           "academies",
           ACADEMY_A,
           "fitnessResults",
-          "result-superadmin",
+          fitnessResultDocumentId(data),
         ),
-        fitnessResultData(SUPERADMIN),
+        data,
       ),
     );
   },
@@ -632,10 +704,14 @@ test(
       );
     }
 
-    for (const [index, observedOn] of [
+    for (const observedOn of [
       "2024-02-29",
       "2000-02-29",
-    ].entries()) {
+    ]) {
+      const data = fitnessResultData(
+        COACH_A,
+        { observedOn },
+      );
       await assertSucceeds(
         setDoc(
           doc(
@@ -643,12 +719,9 @@ test(
             "academies",
             ACADEMY_A,
             "fitnessResults",
-            `leap-date-${index}`,
+            fitnessResultDocumentId(data),
           ),
-          fitnessResultData(
-            COACH_A,
-            { observedOn },
-          ),
+          data,
         ),
       );
     }
@@ -665,6 +738,13 @@ test(
       -1,
       12.34,
     ].entries()) {
+      const data = fitnessResultData(
+        COACH_A,
+        {
+          value,
+          definitionId: `football:finite_${index}:v1`,
+        },
+      );
       await assertSucceeds(
         setDoc(
           doc(
@@ -672,12 +752,9 @@ test(
             "academies",
             ACADEMY_A,
             "fitnessResults",
-            `finite-${index}`,
+            fitnessResultDocumentId(data),
           ),
-          fitnessResultData(
-            COACH_A,
-            { value },
-          ),
+          data,
         ),
       );
     }
