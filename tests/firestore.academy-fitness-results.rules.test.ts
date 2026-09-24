@@ -393,7 +393,21 @@ test(
       " player-a",
       "player-a ",
       "players/player-a",
+      "\u00a0player-a",
+      "player-a\u00a0",
+      " player-\na",
+      "\n\nplayer-a",
+      "\ufeffplayer-a",
     ];
+
+    await seed(
+      invalidPlayers
+        .filter((playerId) => playerId !== "" && !playerId.includes("/"))
+        .map((playerId) => [
+          `academies/${ACADEMY_A}/players/${playerId}`,
+          { playerId },
+        ]),
+    );
 
     for (let i = 0; i < invalidPlayers.length; i += 1) {
       await assertFails(
@@ -521,6 +535,12 @@ test(
       " football:speed_10m:v1",
       "football:speed_10m:v1 ",
       "football/speed_10m/v1",
+      "\u00a0football:speed_10m:v1",
+      "football:speed_10m:v1\u00a0",
+      "\ufefffootball:speed_10m:v1",
+      " football:\nspeed_10m:v1",
+      "\n\nfootball:speed_10m:v1",
+      "football:\nspeed_10m:v1 ",
     ];
 
     for (let i = 0; i < invalidDefinitions.length; i += 1) {
@@ -636,7 +656,7 @@ test(
 );
 
 test(
-  "finite numeric observations are accepted",
+  "only finite numeric observations are accepted",
   async () => {
     const db = authedDb(COACH_A);
 
@@ -653,6 +673,29 @@ test(
             ACADEMY_A,
             "fitnessResults",
             `finite-${index}`,
+          ),
+          fitnessResultData(
+            COACH_A,
+            { value },
+          ),
+        ),
+      );
+    }
+
+    for (const [index, value] of [
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      "1",
+    ].entries()) {
+      await assertFails(
+        setDoc(
+          doc(
+            db,
+            "academies",
+            ACADEMY_A,
+            "fitnessResults",
+            `non-finite-${index}`,
           ),
           fitnessResultData(
             COACH_A,

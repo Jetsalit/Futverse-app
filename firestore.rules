@@ -300,10 +300,14 @@ service cloud.firestore {
     }
 
     // Academy Fitness Results V1 — append-only observed football fitness data.
-    function validAcademyFitnessDefinitionIdV1(value) {
+    function validAcademyFitnessIdentifierV1(value) {
       return exactDocumentId(value)
-        && !value.matches('^\\s.*')
-        && !value.matches('.*\\s$');
+        && !value.matches('^[\\s\\p{Z}\\x{FEFF}][\\s\\S]*$')
+        && !value.matches('^[\\s\\S]*[\\s\\p{Z}\\x{FEFF}]$');
+    }
+
+    function validAcademyFitnessDefinitionIdV1(value) {
+      return validAcademyFitnessIdentifierV1(value);
     }
 
     function validAcademyFitnessObservedOnV1(value) {
@@ -331,7 +335,7 @@ service cloud.firestore {
       let playerPath =
         /databases/$(database)/documents/academies/$(academyId)/players/$(playerId);
 
-      return validPlayerIdentityKeyV1(playerId)
+      return validAcademyFitnessIdentifierV1(playerId)
         && exists(playerPath);
     }
 
