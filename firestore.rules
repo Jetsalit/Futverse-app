@@ -299,6 +299,85 @@ service cloud.firestore {
         );
     }
 
+    // Academy Fitness Results V1 — append-only observed football fitness data.
+    function validAcademyFitnessDefinitionIdV1(value) {
+      return exactDocumentId(value)
+        && !value.matches('^\\s.*')
+        && !value.matches('.*\\s$');
+    }
+
+    function validAcademyFitnessObservedOnV1(value) {
+      let parsed = timestamp.date(
+        int(value[0:4]),
+        int(value[5:7]),
+        int(value[8:10])
+      );
+
+      return value is string
+        && value.matches(
+          '^[0-9]{4}-((0[13578]|1[02])-(0[1-9]|[12][0-9]|3[01])|(0[469]|11)-(0[1-9]|[12][0-9]|30)|02-(0[1-9]|1[0-9]|2[0-9]))$'
+        )
+        && parsed.year() == int(value[0:4])
+        && parsed.month() == int(value[5:7])
+        && parsed.day() == int(value[8:10]);
+    }
+
+    function validAcademyFitnessResultValueV1(value) {
+      return value is number
+        && value * 0 == 0;
+    }
+
+    function academyFitnessResultPlayerExistsV1(academyId, playerId) {
+      let playerPath =
+        /databases/$(database)/documents/academies/$(academyId)/players/$(playerId);
+
+      return validPlayerIdentityKeyV1(playerId)
+        && exists(playerPath);
+    }
+
+    function validAcademyFitnessResultCreateV1(academyId, resultId) {
+      let data = request.resource.data;
+
+      return exactDocumentId(resultId)
+        && tenantFootballCanWrite(academyId)
+        && data.keys().hasAll([
+          'schemaVersion',
+          'playerId',
+          'definitionId',
+          'definitionVersion',
+          'value',
+          'observedOn',
+          'source',
+          'recordedAt',
+          'recordedBy'
+        ])
+        && data.keys().hasOnly([
+          'schemaVersion',
+          'playerId',
+          'definitionId',
+          'definitionVersion',
+          'value',
+          'observedOn',
+          'source',
+          'recordedAt',
+          'recordedBy'
+        ])
+        && data.schemaVersion == 1
+        && academyFitnessResultPlayerExistsV1(
+          academyId,
+          data.playerId
+        )
+        && validAcademyFitnessDefinitionIdV1(data.definitionId)
+        && data.definitionVersion is int
+        && data.definitionVersion > 0
+        && validAcademyFitnessResultValueV1(data.value)
+        && validAcademyFitnessObservedOnV1(data.observedOn)
+        && data.source == 'ACADEMY_BULK_ENTRY'
+        && data.recordedAt is timestamp
+        && data.recordedAt == request.time
+        && exactDocumentId(data.recordedBy)
+        && data.recordedBy == request.auth.uid;
+    }
     function tenantMemberCanRead(academyId) {
       return isSuperAdmin() || isActiveAcademyMember(academyId);
     }
@@ -1243,6 +1322,21 @@ service cloud.firestore {
         }
       }
 
+      // Academy Fitness Results V1 — canonical append-only persistence path.
+      match /fitnessResults/{resultId} {
+        allow get, list: if tenantMemberCanRead(academyId);
+
+        allow create: if validAcademyFitnessResultCreateV1(
+          academyId,
+          resultId
+        );
+
+        allow update, delete: if false;
+
+        match /{document=**} {
+          allow read, write: if false;
+        }
+      }
       match /coaches/{coachProfileId} {
         allow read: if isSuperAdmin() || isActiveAcademyMember(academyId);
         allow create, update: if hasNoStoredDocumentId()
