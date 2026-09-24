@@ -16,7 +16,7 @@ import {
   ClipboardList,
   Users,
 } from "lucide-react";
-import { db } from "../lib/firebase";
+import { auth, db } from "../lib/firebase";
 import {
   calculateAgeFromDateOnly,
   calendarDateInTimeZone,
@@ -25,7 +25,17 @@ import { collection, onSnapshot, doc, deleteField, addDoc, updateDoc } from "fir
 import { EmptyState } from "./common/EmptyState";
 import FitnessTestCatalogue from "./fitness/FitnessTestCatalogue";
 import { useAcademy } from "../contexts/AcademyContext";
+import { useAuth } from "../contexts/AuthContext";
 import { FOOTBALL_FITNESS_TEST_CATALOGUE } from "../lib/fitnessTestFoundation";
+import {
+  prepareAcademyFitnessResultDrafts,
+  type AcademyFitnessResultHistoryEntry,
+} from "../lib/academyFitnessResult";
+import {
+  createAcademyFitnessResultEntries,
+  watchAcademyFitnessResultHistory,
+  watchAcademyFitnessResultsForDate,
+} from "../lib/firestore/academyFitnessResultRepository";
 import { mapCanonicalSnapshot } from "../lib/firestore/canonicalDocument";
 import {
   PLAYER_POSITION_CODES,
@@ -54,6 +64,7 @@ const FITNESS_DISPLAY_SCALE: Record<string, number> = {
   speed_10m: 3,
   speed_30m: 6,
   vertical_jump: 80,
+  agility_505: 8,
 };
 
 const METRICS_CONFIG = FOOTBALL_FITNESS_TEST_CATALOGUE
@@ -73,12 +84,16 @@ const PlayerTestRow = memo(
   ({
     player,
     rowData,
+    savedRow,
+    canEnterResults,
     onChange,
     onEdit,
     onDelete,
   }: {
     player: Player;
-    rowData: any;
+    rowData?: Record<string, string>;
+    savedRow?: Record<string, number>;
+    canEnterResults: boolean;
     onChange: (id: string, field: string, value: string) => void;
     onEdit: (player: Player) => void;
     onDelete: (player: Player) => void;
@@ -125,27 +140,42 @@ const PlayerTestRow = memo(
              </button>
           </div>
         </td>
-        {METRICS_CONFIG.map((m) => (
-          <td key={m.key} className="px-4 py-3 text-center">
-            <input
-              type="number"
-              step="any"
-              placeholder="0.0"
-              value={rowData?.[m.key] || ""}
-              onChange={(e) => handleInputChange(m.key, e.target.value)}
-              className="mx-auto block w-20 rounded border border-slate-200 bg-white px-2 py-1.5 text-center font-mono text-sm transition-all focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-            />
-          </td>
-        ))}
+        {METRICS_CONFIG.map((m) => {
+          const isSaved = Object.hasOwn(savedRow ?? {}, m.key);
+          return (
+            <td key={m.key} className="px-4 py-3 text-center">
+              <input
+                aria-label={`${m.label} for ${player.firstName} ${player.lastName}`}
+                type="number"
+                step="any"
+                placeholder="0.0"
+                value={isSaved ? String(savedRow?.[m.key]) : (rowData?.[m.key] ?? "")}
+                disabled={isSaved || !canEnterResults}
+                title={isSaved ? "Recorded result cannot be changed" : undefined}
+                onChange={(e) => handleInputChange(m.key, e.target.value)}
+                className="mx-auto block w-20 rounded border border-slate-200 bg-white px-2 py-1.5 text-center font-mono text-sm transition-all focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 disabled:bg-slate-100 disabled:text-slate-500"
+              />
+            </td>
+          );
+        })}
       </tr>
     );
   },
 );
 
-function FitnessTestingGrid({
+export function FitnessTestingGrid({
   players,
   testData,
   setTestData,
+  savedData,
+  observedOn,
+  onObservedOnChange,
+  canRecordResults,
+  resultsLoading,
+  saving,
+  pendingCount,
+  onSaveResults,
+  entryMessage,
   onEditPlayer,
   onDeletePlayer,
   filterAge,
@@ -154,8 +184,17 @@ function FitnessTestingGrid({
   onAddPlayer,
 }: {
   players: Player[];
-  testData: Record<string, any>;
-  setTestData: React.Dispatch<React.SetStateAction<Record<string, any>>>;
+  testData: Record<string, Record<string, string>>;
+  setTestData: React.Dispatch<React.SetStateAction<Record<string, Record<string, string>>>>;
+  savedData: Record<string, Record<string, number>>;
+  observedOn: string;
+  onObservedOnChange: (date: string) => void;
+  canRecordResults: boolean;
+  resultsLoading: boolean;
+  saving: boolean;
+  pendingCount: number;
+  onSaveResults: () => void;
+  entryMessage: string | null;
   onEditPlayer: (player: Player) => void;
   onDeletePlayer: (player: Player) => void;
   filterAge: string;
@@ -181,6 +220,7 @@ function FitnessTestingGrid({
     [setTestData],
   );
 
+  const canEnterResults = canRecordResults && !resultsLoading && !saving;
   return (
     <>
       <div className="px-6 py-4 border-b border-slate-100 flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
@@ -217,17 +257,33 @@ function FitnessTestingGrid({
           </button>
         </div>
 
-        <div className="flex items-center gap-3 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+          <label className="text-xs font-bold text-slate-600">
+            Testing date
+            <input
+              type="date"
+              value={observedOn}
+              disabled={saving}
+              onChange={(event) => onObservedOnChange(event.target.value)}
+              className="ml-2 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            />
+          </label>
           <button
             type="button"
-            disabled
-            title="No fitness-results backend is configured"
-            className="px-4 py-2 flex items-center justify-center gap-2 bg-slate-200 text-slate-500 rounded-lg text-sm font-semibold cursor-not-allowed w-full sm:w-auto"
+            onClick={onSaveResults}
+            disabled={!canEnterResults || pendingCount === 0}
+            className="px-4 py-2 flex items-center justify-center gap-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-slate-200 disabled:text-slate-500 disabled:cursor-not-allowed w-full sm:w-auto"
           >
-            <ShieldAlert size={16} /> Save unavailable
+            {saving ? "Saving…" : `Save ${pendingCount} result${pendingCount === 1 ? "" : "s"}`}
           </button>
         </div>
       </div>
+
+      {(entryMessage || resultsLoading) && (
+        <p role="status" className="px-6 py-2 text-sm text-slate-600">
+          {resultsLoading ? "Loading recorded results…" : entryMessage}
+        </p>
+      )}
 
       <div className="overflow-x-auto flex-1">
         <table className="w-full text-left border-collapse min-w-[800px]">
@@ -255,6 +311,8 @@ function FitnessTestingGrid({
                 key={player.id}
                 player={player}
                 rowData={testData[player.id]}
+                savedRow={savedData[player.id]}
+                canEnterResults={canEnterResults}
                 onChange={handleRowChange}
                 onEdit={onEditPlayer}
                 onDelete={onDeletePlayer}
@@ -267,16 +325,62 @@ function FitnessTestingGrid({
   );
 }
 
+export function FitnessResultHistory({
+  history,
+  loading,
+  error,
+}: {
+  history: readonly AcademyFitnessResultHistoryEntry[];
+  loading: boolean;
+  error: string | null;
+}) {
+  if (loading) {
+    return <p role="status" className="text-sm text-slate-500">Loading persisted observations…</p>;
+  }
+  if (error) {
+    return <p role="alert" className="text-sm text-rose-700">{error}</p>;
+  }
+  if (history.length === 0) {
+    return <p className="text-sm text-slate-500">No persisted observations for this player yet.</p>;
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[480px] border-collapse text-left text-sm">
+        <thead>
+          <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
+            <th scope="col" className="px-3 py-2">Observed on</th>
+            <th scope="col" className="px-3 py-2">Test</th>
+            <th scope="col" className="px-3 py-2 text-right">Recorded observation</th>
+          </tr>
+        </thead>
+        <tbody>
+          {history.map((entry) => (
+            <tr key={entry.id} className="border-b border-slate-50 text-slate-700">
+              <td className="px-3 py-2 font-mono text-xs">{entry.observedOn}</td>
+              <td className="px-3 py-2">{entry.definitionName}</td>
+              <td className="px-3 py-2 text-right font-mono">{entry.value} {entry.unit}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function FitnessTesting({
   onBack,
   teamName,
   canManageCatalogue = false,
+  canRecordResults = false,
 }: {
   onBack: () => void;
   teamName?: string;
   canManageCatalogue?: boolean;
+  canRecordResults?: boolean;
 }) {
   const { settings, academyId } = useAcademy();
+  const { actualUser } = useAuth();
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(false);
   const [readError, setReadError] = useState<string | null>(null);
@@ -510,15 +614,223 @@ export default function FitnessTesting({
     editingPlayerId !== null &&
     storedPositionBeforeEdit !== null;
 
-  // State from main wrapper for reports functionality and passing to grid
-  const [testData, setTestData] = useState<
-    Record<string, Record<string, string>>
+  const [observedOn, setObservedOn] = useState(
+    () => calendarDateInTimeZone(new Date(), "Asia/Bangkok") ?? "",
+  );
+  const resultScope = academyId ? JSON.stringify([academyId, observedOn]) : "";
+  const [draftsByScope, setDraftsByScope] = useState<
+    Record<string, Record<string, Record<string, string>>>
   >({});
+  const testData = draftsByScope[resultScope] ?? {};
+  const setTestData = useCallback<React.Dispatch<React.SetStateAction<Record<string, Record<string, string>>>>>(
+    (update) => {
+      setDraftsByScope((current) => {
+        const previous = current[resultScope] ?? {};
+        const next = typeof update === "function" ? update(previous) : update;
+        return { ...current, [resultScope]: next };
+      });
+    },
+    [resultScope],
+  );
+  const [resultsState, setResultsState] = useState<{
+    scope: string;
+    status: "LOADING" | "READY" | "ERROR";
+    values: Record<string, Record<string, number>>;
+    error: string | null;
+  }>({ scope: "", status: "LOADING", values: {}, error: null });
+  const historyScope = academyId && selectedPlayerId
+    ? JSON.stringify([academyId, selectedPlayerId])
+    : "";
+  const [historyState, setHistoryState] = useState<{
+    scope: string;
+    status: "LOADING" | "READY" | "ERROR";
+    values: AcademyFitnessResultHistoryEntry[];
+    error: string | null;
+  }>({ scope: "", status: "READY", values: [], error: null });
+  const historyReady = historyScope !== "" && historyState.scope === historyScope && historyState.status === "READY";
+  const playerHistory = historyReady ? historyState.values : [];
+  const historyLoading = historyScope !== "" && (
+    historyState.scope !== historyScope || historyState.status === "LOADING"
+  );
+  const historyError = historyState.scope === historyScope && historyState.status === "ERROR"
+    ? historyState.error
+    : null;
+  const [savingResults, setSavingResults] = useState(false);
+  const [entryMessage, setEntryMessage] = useState<string | null>(null);
+  const resultsReady = resultsState.scope === resultScope && resultsState.status === "READY";
+  const savedData = resultsReady ? resultsState.values : {};
+  const resultsLoading = resultsState.scope !== resultScope || resultsState.status === "LOADING";
+  const activePlayerIds = new Set(players.filter((player) => !player.hideFromFitness).map((player) => player.id));
+  const pendingCount = Object.entries(testData).reduce(
+    (count, [playerId, cells]) => count + (activePlayerIds.has(playerId) ? Object.entries(cells)
+      .filter(([key, value]) => value.trim() !== "" && !Object.hasOwn(savedData[playerId] ?? {}, key))
+      .length : 0),
+    0,
+  );
+
+  useEffect(() => {
+    if (!academyId || !observedOn) return;
+    const scope = JSON.stringify([academyId, observedOn]);
+    setResultsState({ scope, status: "LOADING", values: {}, error: null });
+    let active = true;
+    const unsubscribe = watchAcademyFitnessResultsForDate({
+      firestore: db,
+      academyId,
+      observedOn,
+      definitions: FOOTBALL_FITNESS_TEST_CATALOGUE,
+      onResults: (values) => {
+        if (!active) return;
+        setResultsState({
+          scope,
+          status: "READY",
+          values,
+          error: null,
+        });
+        setDraftsByScope((current) => {
+          const scoped = current[scope];
+          if (!scoped) return current;
+          let changed = false;
+          const next = Object.fromEntries(Object.entries(scoped).map(([playerId, cells]) => {
+            const remaining = Object.fromEntries(Object.entries(cells).filter(([key]) => {
+              const isSaved = Object.hasOwn(values[playerId] ?? {}, key);
+              if (isSaved) changed = true;
+              return !isSaved;
+            }));
+            return [playerId, remaining];
+          }));
+          return changed ? { ...current, [scope]: next } : current;
+        });
+      },
+      onError: (error) => {
+        if (!active) return;
+        console.error("Error fetching Fitness results:", error);
+        setResultsState({
+          scope,
+          status: "ERROR",
+          values: {},
+          error: "Recorded results could not be loaded. Check your Academy access and try again.",
+        });
+      },
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [academyId, observedOn]);
+
+  useEffect(() => {
+    if (!academyId || !selectedPlayerId) {
+      setHistoryState({ scope: "", status: "READY", values: [], error: null });
+      return;
+    }
+
+    const scope = JSON.stringify([academyId, selectedPlayerId]);
+    setHistoryState({ scope, status: "LOADING", values: [], error: null });
+    let active = true;
+    const unsubscribe = watchAcademyFitnessResultHistory({
+      firestore: db,
+      academyId,
+      playerId: selectedPlayerId,
+      definitions: FOOTBALL_FITNESS_TEST_CATALOGUE,
+      onResults: (values) => {
+        if (!active) return;
+        setHistoryState({ scope, status: "READY", values, error: null });
+      },
+      onError: (error) => {
+        if (!active) return;
+        console.error("Error fetching Fitness result history:", error);
+        setHistoryState({
+          scope,
+          status: "ERROR",
+          values: [],
+          error: "Saved observations could not be loaded. Check your Academy access and try again.",
+        });
+      },
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [academyId, selectedPlayerId]);
+
+  const handleSaveResults = async () => {
+    const actorUid = auth.currentUser?.uid;
+    if (!academyId || !actorUid || actorUid !== actualUser?.uid || !canRecordResults || !resultsReady) {
+      setEntryMessage("Academy access or recorded results are unavailable.");
+      return;
+    }
+    const prepared = prepareAcademyFitnessResultDrafts({
+      observedOn,
+      playerIds: [...activePlayerIds],
+      definitions: FOOTBALL_FITNESS_TEST_CATALOGUE,
+      drafts: Object.fromEntries(Object.entries(testData).filter(([playerId]) => activePlayerIds.has(playerId))),
+      saved: savedData,
+    });
+    if (prepared.ok === false) {
+      setEntryMessage(prepared.errors.join(" "));
+      return;
+    }
+    if (prepared.entries.length === 0) {
+      setEntryMessage("Enter at least one observed result before saving.");
+      return;
+    }
+
+    setSavingResults(true);
+    setEntryMessage(null);
+    let committedCount = 0;
+    try {
+      await createAcademyFitnessResultEntries({
+        firestore: db,
+        academyId,
+        actorUid,
+        entries: prepared.entries,
+        onCommitted: (committed) => {
+          committedCount += committed.length;
+          setDraftsByScope((current) => {
+            const next = { ...(current[resultScope] ?? {}) };
+            for (const entry of committed) {
+              const cells = { ...(next[entry.playerId] ?? {}) };
+              delete cells[entry.definitionKey];
+              next[entry.playerId] = cells;
+            }
+            return { ...current, [resultScope]: next };
+          });
+          setResultsState((current) => {
+            if (current.scope !== resultScope || current.status !== "READY") return current;
+            const values = { ...current.values };
+            for (const entry of committed) {
+              values[entry.playerId] = {
+                ...(values[entry.playerId] ?? {}),
+                [entry.definitionKey]: entry.input.value,
+              };
+            }
+            return { ...current, values };
+          });
+        },
+      });
+      setEntryMessage(`${committedCount} result${committedCount === 1 ? "" : "s"} saved.`);
+    } catch (error) {
+      console.error("Error saving Fitness results:", error);
+      setEntryMessage(committedCount > 0
+        ? `${committedCount} results saved. Remaining entries are still in the grid; check Academy access and retry.`
+        : "Results could not be saved. Check Academy access and player records, then retry.");
+    } finally {
+      setSavingResults(false);
+    }
+  };
+
   const getRadarData = (playerId: string) => {
+    const latestByDefinition = new Map<string, AcademyFitnessResultHistoryEntry>();
+    if (historyReady && playerId === selectedPlayerId) {
+      for (const entry of playerHistory) {
+        if (!latestByDefinition.has(entry.definitionKey)) {
+          latestByDefinition.set(entry.definitionKey, entry);
+        }
+      }
+    }
     return METRICS_CONFIG.flatMap((m) => {
-      const rawValue = testData[playerId]?.[m.key];
-      if (!rawValue) return [];
-      const val = parseFloat(rawValue);
+      const latest = latestByDefinition.get(m.key);
+      const val = latest?.value;
       if (!Number.isFinite(val)) return [];
 
       // Preserve the established chart display scale only for recorded values.
@@ -535,9 +847,11 @@ export default function FitnessTesting({
         fullMark: 100,
         actualValue: val,
         unit: m.unit,
+        observedOn: latest?.observedOn,
       }];
     });
   };
+  const selectedRadarData = getRadarData(selectedPlayerId);
 
   if (loading) {
     return (
@@ -651,6 +965,18 @@ export default function FitnessTesting({
             players={filteredPlayers}
             testData={testData}
             setTestData={setTestData}
+            savedData={savedData}
+            observedOn={observedOn}
+            onObservedOnChange={(date) => {
+              setObservedOn(date);
+              setEntryMessage(null);
+            }}
+            canRecordResults={canRecordResults && resultsReady}
+            resultsLoading={resultsLoading}
+            saving={savingResults}
+            pendingCount={pendingCount}
+            onSaveResults={handleSaveResults}
+            entryMessage={entryMessage ?? (resultsState.scope === resultScope ? resultsState.error : null)}
             onEditPlayer={handleEditClick}
             onDeletePlayer={(p) => setPlayerToDelete(p.id)}
             filterAge={filterAge}
@@ -703,9 +1029,24 @@ export default function FitnessTesting({
           <div className="lg:col-span-3 space-y-6">
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
               <h3 className="text-xs font-bold text-slate-400 uppercase mb-6 border-b border-slate-100 pb-3">
-                Performance Spider Chart
+                Latest Recorded Fitness Observations
               </h3>
-              {getRadarData(selectedPlayerId).length === 0 ? (
+              <p className="mb-2 text-xs text-slate-400">
+                The chart uses the most recent stored value for each test; each tooltip shows its observation date.
+              </p>
+              {!selectedPlayerId ? (
+                <p className="flex h-[300px] items-center justify-center text-sm text-slate-500">
+                  Select a player to view recorded observations.
+                </p>
+              ) : historyLoading ? (
+                <p role="status" className="flex h-[300px] items-center justify-center text-sm text-slate-500">
+                  Loading persisted observations…
+                </p>
+              ) : historyError ? (
+                <p role="alert" className="flex h-[300px] items-center justify-center text-sm text-rose-700">
+                  {historyError}
+                </p>
+              ) : selectedRadarData.length === 0 ? (
                 <div className="flex h-[300px] items-center justify-center rounded-xl border-2 border-dashed border-slate-200 p-6 text-center">
                   <div>
                     <Activity className="mx-auto text-slate-300" size={28} />
@@ -720,7 +1061,7 @@ export default function FitnessTesting({
                       cx="50%"
                       cy="50%"
                       outerRadius="75%"
-                      data={getRadarData(selectedPlayerId)}
+                      data={selectedRadarData}
                     >
                     <PolarGrid stroke="#e2e8f0" strokeWidth={1.5} />
                     <PolarAngleAxis
@@ -738,7 +1079,7 @@ export default function FitnessTesting({
                       axisLine={false}
                     />
                     <Radar
-                      name="Current Assessment"
+                      name="Latest recorded result"
                       dataKey="A"
                       stroke="#10b981"
                       strokeWidth={2}
@@ -754,8 +1095,8 @@ export default function FitnessTesting({
                     />
                     <Tooltip
                       formatter={(value: any, name: any, props: any) => [
-                        `${props?.payload?.actualValue ?? value} ${props?.payload?.unit ?? ""}`.trim(),
-                        "Recorded result",
+                        `${props?.payload?.actualValue ?? value} ${props?.payload?.unit ?? ""} · ${props?.payload?.observedOn ?? ""}`.trim(),
+                        "Latest recorded result",
                       ]}
                       contentStyle={{
                         borderRadius: "12px",
@@ -777,11 +1118,15 @@ export default function FitnessTesting({
               <h3 className="text-xs font-bold text-slate-400 uppercase mb-6 border-b border-slate-100 pb-3">
                 Fitness Progression Timeline
               </h3>
-              <div className="h-[300px] w-full mt-4 flex items-center justify-center border-2 border-dashed border-slate-200 rounded-xl">
-                <p className="text-slate-400 font-medium">
-                  Historical data will appear here after multiple tests
-                </p>
-              </div>
+              {!selectedPlayerId ? (
+                <p className="text-sm text-slate-500">Select a player to view persisted observations.</p>
+              ) : (
+                <FitnessResultHistory
+                  history={playerHistory}
+                  loading={historyLoading}
+                  error={historyError}
+                />
+              )}
             </div>
           </div>
         </div>
