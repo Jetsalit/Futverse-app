@@ -655,7 +655,7 @@ export default function App() {
       id: "fitness",
       label: "Fitness & Training",
       icon: Activity,
-      roles: ["SUPERADMIN", "ADMIN"],
+      roles: ["SUPERADMIN", "ADMIN", "COACH"],
     },
     {
       id: "settings",

@@ -14,7 +14,10 @@ const trainingWorkspace = read("src/components/pro-club/operations/ProClubHeadCo
 
 test("Academy keeps its Fitness route and exposes Fitness & Training in the sidebar", () => {
   assert.match(app, /case "fitness"[\s\S]*?<FitnessTesting/);
-  assert.match(app, /id: "fitness"[\s\S]*?label: "Fitness & Training"/);
+  assert.match(
+    app,
+    /id: "fitness"[\s\S]*?label: "Fitness & Training"[\s\S]*?roles: \["SUPERADMIN", "ADMIN", "COACH"\]/,
+  );
   assert.match(academyFitness, /<FitnessTestCatalogue/);
 });
 
