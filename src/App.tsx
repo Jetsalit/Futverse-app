@@ -520,6 +520,13 @@ export default function App() {
                   effectivePresentationRole === "ADMIN"
                 : academyFitnessCapabilities.includes("FITNESS_MANAGE_CATALOGUE")
             }
+            canRecordResults={
+              isSupportActive
+                ? effectivePresentationRole === "SUPERADMIN" ||
+                  effectivePresentationRole === "ADMIN" ||
+                  effectivePresentationRole === "COACH"
+                : academyFitnessCapabilities.includes("FITNESS_RECORD_RESULTS")
+            }
           />
         );
       case "coaches":

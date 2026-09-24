@@ -30,13 +30,14 @@ test("Academy Coach can enter Fitness from the dashboard while catalogue managem
 });
 
 test("Academy catalogue management uses capability while SuperAdmin support keeps presentation authority", () => {
+  const catalogueAuthority = app.match(/canManageCatalogue=\{([\s\S]*?)\n\s*\}/)?.[1] ?? "";
   assert.match(
-    app,
-    /canManageCatalogue=\{[\s\S]*?isSupportActive[\s\S]*?effectivePresentationRole === "SUPERADMIN"[\s\S]*?effectivePresentationRole === "ADMIN"[\s\S]*?academyFitnessCapabilities\.includes\("FITNESS_MANAGE_CATALOGUE"\)/,
+    catalogueAuthority,
+    /isSupportActive[\s\S]*?effectivePresentationRole === "SUPERADMIN"[\s\S]*?effectivePresentationRole === "ADMIN"[\s\S]*?academyFitnessCapabilities\.includes\("FITNESS_MANAGE_CATALOGUE"\)/,
   );
   assert.doesNotMatch(
-    app,
-    /canManageCatalogue=\{[\s\S]*?effectivePresentationRole === "COACH"/,
+    catalogueAuthority,
+    /effectivePresentationRole === "COACH"/,
   );
   assert.equal(
     (academyFitness.match(/canManage=\{canManageCatalogue\}/g) ?? []).length,
