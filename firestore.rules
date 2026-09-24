@@ -5343,6 +5343,99 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
         }
       }
 
+      // Pro Club Fitness Results V1 — immutable player observations.
+      function proClubFitnessResultPlayerEligibleV1(playerKey) {
+        let playerPath =
+          /databases/$(database)/documents/proClubs/$(clubId)/players/$(playerKey);
+        return validPlayerIdentityKeyV1(playerKey)
+          && exists(playerPath)
+          && get(playerPath).data.get('status', '') in ['ACTIVE', 'INACTIVE'];
+      }
+
+      function proClubFitnessResultIdentitySeedV1(data) {
+        return 'fitness-result-v1|'
+          + string(data.playerKey.toUtf8().size())
+          + ':'
+          + data.playerKey
+          + '|'
+          + data.observedOn
+          + '|'
+          + string(data.definitionId.toUtf8().size())
+          + ':'
+          + data.definitionId
+          + '|'
+          + string(data.definitionVersion);
+      }
+
+      function proClubFitnessResultIdMatchesV1(resultId, data) {
+        return resultId == 'fit-v1-'
+          + hashing.sha256(
+            proClubFitnessResultIdentitySeedV1(data)
+          ).toHexString().lower();
+      }
+
+      function proClubFitnessResultValidCreateV1(resultId) {
+        let data = request.resource.data;
+        let staffPath =
+          /databases/$(database)/documents/proClubs/$(clubId)/staff/$(request.auth.uid);
+        return proClubSquadRosterActiveStaffV1(clubId)
+          && get(staffPath).data.get('staffRole', '') == 'FITNESS_COACH'
+          && exactDocumentId(resultId)
+          && data.keys().hasAll([
+            'schemaVersion',
+            'playerKey',
+            'definitionId',
+            'definitionVersion',
+            'value',
+            'observedOn',
+            'source',
+            'recordedAt',
+            'recordedBy'
+          ])
+          && data.keys().hasOnly([
+            'schemaVersion',
+            'playerKey',
+            'definitionId',
+            'definitionVersion',
+            'value',
+            'observedOn',
+            'source',
+            'recordedAt',
+            'recordedBy'
+          ])
+          && data.get('schemaVersion', 0) == 1
+          && proClubFitnessResultPlayerEligibleV1(
+            data.get('playerKey', '')
+          )
+          && validAcademyFitnessDefinitionIdV1(
+            data.get('definitionId', '')
+          )
+          && data.get('definitionVersion', 0) is int
+          && data.get('definitionVersion', 0) > 0
+          && validAcademyFitnessResultValueV1(
+            data.get('value', null)
+          )
+          && validAcademyFitnessObservedOnV1(
+            data.get('observedOn', '')
+          )
+          && data.get('source', '') == 'PRO_CLUB_FITNESS_ENTRY'
+          && data.get('recordedAt', null) is timestamp
+          && data.get('recordedAt', null) == request.time
+          && exactDocumentId(data.get('recordedBy', ''))
+          && data.get('recordedBy', '') == request.auth.uid
+          && proClubFitnessResultIdMatchesV1(resultId, data);
+      }
+
+      match /fitnessResults/{resultId} {
+        allow get, list: if proClubSquadRosterActiveStaffV1(clubId);
+        allow create: if proClubFitnessResultValidCreateV1(resultId);
+        allow update, delete: if false;
+
+        match /{document=**} {
+          allow read, write: if false;
+        }
+      }
+
       match /{document=**} {
         allow read, write: if false;
       }
