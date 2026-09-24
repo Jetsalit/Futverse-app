@@ -427,7 +427,7 @@ test("create rejects invalid Fitness definitions, values, dates, and exact schem
       definitionId: `football:invalid-contract-${index}:v1`,
       ...overrides,
     });
-    await assertFails(createResult(FITNESS_COACH, CLUB_ID, data), label);
+    await assertFails(createResult(FITNESS_COACH, CLUB_ID, data));
   }
 
   const missingField = fitnessResultData(FITNESS_COACH, {
