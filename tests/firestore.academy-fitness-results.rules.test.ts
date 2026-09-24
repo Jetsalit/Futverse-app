@@ -110,7 +110,8 @@ function fitnessResultDocumentId(data: Record<string, unknown>): string {
     typeof playerId !== "string" ||
     typeof definitionId !== "string" ||
     typeof observedOn !== "string" ||
-    typeof definitionVersion !== "number"
+    (typeof definitionVersion !== "number" &&
+      typeof definitionVersion !== "string")
   ) {
     throw new Error("Cannot calculate a Fitness result ID for invalid data.");
   }
@@ -120,6 +121,20 @@ function fitnessResultDocumentId(data: Record<string, unknown>): string {
     `${observedOn}|${Buffer.byteLength(definitionId, "utf8")}:${definitionId}|` +
     String(definitionVersion);
   return `fit-v1-${createHash("sha256").update(seed, "utf8").digest("hex")}`;
+}
+
+function fitnessResultRef(
+  db: Firestore,
+  academyId: string,
+  data: Record<string, unknown>,
+) {
+  return doc(
+    db,
+    "academies",
+    academyId,
+    "fitnessResults",
+    fitnessResultDocumentId(data),
+  );
 }
 
 function storedFitnessResult(
@@ -387,55 +402,47 @@ test(
 test(
   "unauthenticated suspended and cross-Academy actors cannot create",
   async () => {
+    const unauthData = fitnessResultData("anonymous");
     await assertFails(
       setDoc(
-        doc(
-          unauthDb(),
-          "academies",
-          ACADEMY_A,
-          "fitnessResults",
-          "result-unauth",
-        ),
-        fitnessResultData("anonymous"),
+        fitnessResultRef(unauthDb(), ACADEMY_A, unauthData),
+        unauthData,
       ),
     );
 
+    const suspendedData = fitnessResultData(SUSPENDED_COACH);
     await assertFails(
       setDoc(
-        doc(
+        fitnessResultRef(
           authedDb(SUSPENDED_COACH),
-          "academies",
           ACADEMY_A,
-          "fitnessResults",
-          "result-suspended",
+          suspendedData,
         ),
-        fitnessResultData(SUSPENDED_COACH),
+        suspendedData,
       ),
     );
 
+    const crossAdminData = fitnessResultData(ADMIN_B);
     await assertFails(
       setDoc(
-        doc(
+        fitnessResultRef(
           authedDb(ADMIN_B),
-          "academies",
           ACADEMY_A,
-          "fitnessResults",
-          "result-cross-admin",
+          crossAdminData,
         ),
-        fitnessResultData(ADMIN_B),
+        crossAdminData,
       ),
     );
 
+    const crossCoachData = fitnessResultData(COACH_B);
     await assertFails(
       setDoc(
-        doc(
+        fitnessResultRef(
           authedDb(COACH_B),
-          "academies",
           ACADEMY_A,
-          "fitnessResults",
-          "result-cross-coach",
+          crossCoachData,
         ),
-        fitnessResultData(COACH_B),
+        crossCoachData,
       ),
     );
   },
@@ -444,19 +451,14 @@ test(
 test(
   "Fitness result must target existing exact Academy player",
   async () => {
+    const missingPlayer = fitnessResultData(
+      COACH_A,
+      { playerId: "missing-player" },
+    );
     await assertFails(
       setDoc(
-        doc(
-          authedDb(COACH_A),
-          "academies",
-          ACADEMY_A,
-          "fitnessResults",
-          "missing-player",
-        ),
-        fitnessResultData(
-          COACH_A,
-          { playerId: "missing-player" },
-        ),
+        fitnessResultRef(authedDb(COACH_A), ACADEMY_A, missingPlayer),
+        missingPlayer,
       ),
     );
 
@@ -482,19 +484,14 @@ test(
     );
 
     for (let i = 0; i < invalidPlayers.length; i += 1) {
+      const data = fitnessResultData(
+        COACH_A,
+        { playerId: invalidPlayers[i] },
+      );
       await assertFails(
         setDoc(
-          doc(
-            authedDb(COACH_A),
-            "academies",
-            ACADEMY_A,
-            "fitnessResults",
-            `invalid-player-${i}`,
-          ),
-          fitnessResultData(
-            COACH_A,
-            { playerId: invalidPlayers[i] },
-          ),
+          fitnessResultRef(authedDb(COACH_A), ACADEMY_A, data),
+          data,
         ),
       );
     }
@@ -506,19 +503,14 @@ test(
   async () => {
     const db = authedDb(COACH_A);
 
+    const extraData = fitnessResultData(
+      COACH_A,
+      { note: "not allowed" },
+    );
     await assertFails(
       setDoc(
-        doc(
-          db,
-          "academies",
-          ACADEMY_A,
-          "fitnessResults",
-          "extra",
-        ),
-        fitnessResultData(
-          COACH_A,
-          { note: "not allowed" },
-        ),
+        fitnessResultRef(db, ACADEMY_A, extraData),
+        extraData,
       ),
     );
 
@@ -531,67 +523,46 @@ test(
 
     await assertFails(
       setDoc(
-        doc(
-          db,
-          "academies",
-          ACADEMY_A,
-          "fitnessResults",
-          "missing",
-        ),
+        fitnessResultRef(db, ACADEMY_A, missing),
         missing,
       ),
     );
 
+    const sourceData = fitnessResultData(
+      COACH_A,
+      { source: "MANUAL_IMPORT" },
+    );
     await assertFails(
       setDoc(
-        doc(
-          db,
-          "academies",
-          ACADEMY_A,
-          "fitnessResults",
-          "source",
-        ),
-        fitnessResultData(
-          COACH_A,
-          { source: "MANUAL_IMPORT" },
-        ),
+        fitnessResultRef(db, ACADEMY_A, sourceData),
+        sourceData,
       ),
     );
 
+    const actorData = fitnessResultData(
+      COACH_A,
+      { recordedBy: ADMIN_A },
+    );
     await assertFails(
       setDoc(
-        doc(
-          db,
-          "academies",
-          ACADEMY_A,
-          "fitnessResults",
-          "actor",
-        ),
-        fitnessResultData(
-          COACH_A,
-          { recordedBy: ADMIN_A },
-        ),
+        fitnessResultRef(db, ACADEMY_A, actorData),
+        actorData,
       ),
     );
 
+    const timeData = fitnessResultData(
+      COACH_A,
+      {
+        recordedAt:
+          new Date(
+            "2026-01-01T00:00:00Z",
+          ),
+      },
+    );
     await assertFails(
       setDoc(
-        doc(
-          db,
-          "academies",
-          ACADEMY_A,
-          "fitnessResults",
-          "time",
-        ),
-        fitnessResultData(
-          COACH_A,
-          {
-            recordedAt:
-              new Date(
-                "2026-01-01T00:00:00Z",
-              ),
-          },
-        ),
+        fitnessResultRef(db, ACADEMY_A, timeData),
+        timeData,
       ),
     );
   },
@@ -616,22 +587,14 @@ test(
     ];
 
     for (let i = 0; i < invalidDefinitions.length; i += 1) {
+      const data = fitnessResultData(
+        COACH_A,
+        { definitionId: invalidDefinitions[i] },
+      );
       await assertFails(
         setDoc(
-          doc(
-            db,
-            "academies",
-            ACADEMY_A,
-            "fitnessResults",
-            `definition-${i}`,
-          ),
-          fitnessResultData(
-            COACH_A,
-            {
-              definitionId:
-                invalidDefinitions[i],
-            },
-          ),
+          fitnessResultRef(db, ACADEMY_A, data),
+          data,
         ),
       );
     }
@@ -644,22 +607,14 @@ test(
     ];
 
     for (let i = 0; i < invalidVersions.length; i += 1) {
+      const data = fitnessResultData(
+        COACH_A,
+        { definitionVersion: invalidVersions[i] },
+      );
       await assertFails(
         setDoc(
-          doc(
-            db,
-            "academies",
-            ACADEMY_A,
-            "fitnessResults",
-            `version-${i}`,
-          ),
-          fitnessResultData(
-            COACH_A,
-            {
-              definitionVersion:
-                invalidVersions[i],
-            },
-          ),
+          fitnessResultRef(db, ACADEMY_A, data),
+          data,
         ),
       );
     }
@@ -684,22 +639,14 @@ test(
     ];
 
     for (let i = 0; i < invalidDates.length; i += 1) {
+      const data = fitnessResultData(
+        COACH_A,
+        { observedOn: invalidDates[i] },
+      );
       await assertFails(
         setDoc(
-          doc(
-            db,
-            "academies",
-            ACADEMY_A,
-            "fitnessResults",
-            `date-${i}`,
-          ),
-          fitnessResultData(
-            COACH_A,
-            {
-              observedOn:
-                invalidDates[i],
-            },
-          ),
+          fitnessResultRef(db, ACADEMY_A, data),
+          data,
         ),
       );
     }
@@ -759,25 +706,20 @@ test(
       );
     }
 
-    for (const [index, value] of [
+    for (const value of [
       Number.NaN,
       Number.POSITIVE_INFINITY,
       Number.NEGATIVE_INFINITY,
       "1",
-    ].entries()) {
+    ]) {
+      const data = fitnessResultData(
+        COACH_A,
+        { value },
+      );
       await assertFails(
         setDoc(
-          doc(
-            db,
-            "academies",
-            ACADEMY_A,
-            "fitnessResults",
-            `non-finite-${index}`,
-          ),
-          fitnessResultData(
-            COACH_A,
-            { value },
-          ),
+          fitnessResultRef(db, ACADEMY_A, data),
+          data,
         ),
       );
     }
