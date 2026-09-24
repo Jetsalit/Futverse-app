@@ -20,6 +20,7 @@ import {
 import { staffRoleLabels } from "../../../lib/proClubOnboarding";
 import FitnessTestCatalogue from "../../fitness/FitnessTestCatalogue";
 import ProClubAttendance from "./ProClubAttendance";
+import ProClubFitnessResults from "./ProClubFitnessResults";
 import ProClubHeadCoachWeeklyProductionWorkspace from "./ProClubHeadCoachWeeklyProductionWorkspace";
 import ProClubGameModel from "./ProClubGameModel";
 import ProClubLibraryLogbook, {
@@ -443,6 +444,7 @@ export default function ProClubTeamDashboard({
                 canManage={canManageFitnessCatalogue}
                 variant="pro-club"
               />
+              <ProClubFitnessResults authority={authority} />
               <ProClubHeadCoachWeeklyProductionWorkspace
                 authority={authority}
                 fitnessConnection={fitnessTrainingConnection}
