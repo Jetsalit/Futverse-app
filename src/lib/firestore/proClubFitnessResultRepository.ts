@@ -19,6 +19,7 @@ import {
   validateProClubFitnessResultCreateInput,
   type ProClubFitnessResultCreateInput,
   type ProClubFitnessResultHistoryEntry,
+  type ValidProClubFitnessResultCreate,
 } from "../proClubFitnessResult";
 import type { FitnessTestDefinition } from "../fitnessTestFoundation";
 import { parseCanonicalDateOnly } from "../dateTimeFoundation";
@@ -83,6 +84,8 @@ const AMBIGUOUS_WRITE_CODES = new Set([
   "unknown",
   "unavailable",
 ]);
+
+export const MAX_IN_FLIGHT_RESULT_OPERATIONS = 4 as const;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -250,30 +253,36 @@ export function createFirestoreProClubFitnessResultRepositoryOps(input: {
 
 const FIRESTORE_OPS = createFirestoreProClubFitnessResultRepositoryOps();
 
-export async function createProClubFitnessResult(
-  input: { clubId: string; input: ProClubFitnessResultCreateInput },
-  ops: ProClubFitnessResultRepositoryOps = FIRESTORE_OPS,
+interface PreparedProClubFitnessResult {
+  value: ValidProClubFitnessResultCreate;
+  resultId: string;
+}
+
+async function createPreparedProClubFitnessResult(
+  path: readonly string[],
+  uid: string,
+  prepared: PreparedProClubFitnessResult,
+  ops: ProClubFitnessResultRepositoryOps,
 ): Promise<ProClubFitnessResultCreateOutcome> {
-  const path = resultCollectionPath(input.clubId);
-  const validation = validateProClubFitnessResultCreateInput(input.input);
-  if (validation.ok === false) {
-    throw new Error(`Invalid Pro Club Fitness result: ${validation.errors.join(" ")}`);
-  }
-
-  const uid = requireAuthenticatedUid(ops);
-  const authority = await resolveRequiredAuthority(input.clubId, uid, ops);
-  assertFitnessCoachAuthority(authority);
-
-  const resultId = await proClubFitnessResultDocumentIdV1(validation.value);
-  const documentPath = [...path, resultId];
+  const { resultId, value } = prepared;
   const record: Record<string, unknown> = {
-    ...validation.value,
+    ...value,
     recordedAt: ops.serverTimestamp(),
     recordedBy: uid,
   };
-  const existing = await ops.readDocument(documentPath);
+  const documentPath = [...path, resultId];
+  let existing: ProClubFitnessResultRepositoryDocumentSnapshot;
+  try {
+    existing = await ops.readDocument(documentPath);
+  } catch (error) {
+    return { kind: "WRITE_FAILED", resultId, error };
+  }
   if (existing.id !== resultId) {
-    throw new Error("Pro Club Fitness result read returned an unexpected document ID.");
+    return {
+      kind: "WRITE_FAILED",
+      resultId,
+      error: new Error("Pro Club Fitness result read returned an unexpected document ID."),
+    };
   }
   if (existing.exists) {
     return storedResultMatches(existing.data, record)
@@ -301,6 +310,64 @@ export async function createProClubFitnessResult(
       return { kind: "WRITE_FAILED", resultId, error };
     }
   }
+}
+
+export async function createProClubFitnessResults(
+  input: {
+    clubId: string;
+    inputs: readonly ProClubFitnessResultCreateInput[];
+  },
+  ops: ProClubFitnessResultRepositoryOps = FIRESTORE_OPS,
+): Promise<ProClubFitnessResultCreateOutcome[]> {
+  const path = resultCollectionPath(input.clubId);
+  const uid = requireAuthenticatedUid(ops);
+  const authority = await resolveRequiredAuthority(input.clubId, uid, ops);
+  assertFitnessCoachAuthority(authority);
+
+  const prepared: PreparedProClubFitnessResult[] = [];
+  const resultIds = new Set<string>();
+  for (const createInput of input.inputs) {
+    const validation = validateProClubFitnessResultCreateInput(createInput);
+    if (validation.ok === false) {
+      throw new Error(`Invalid Pro Club Fitness result: ${validation.errors.join(" ")}`);
+    }
+    const resultId = await proClubFitnessResultDocumentIdV1(validation.value);
+    if (resultIds.has(resultId)) {
+      throw new Error("Bulk Pro Club Fitness results contain a duplicate deterministic identity.");
+    }
+    resultIds.add(resultId);
+    prepared.push({ value: validation.value, resultId });
+  }
+
+  const outcomes: ProClubFitnessResultCreateOutcome[] = new Array(prepared.length);
+  let nextIndex = 0;
+  const worker = async () => {
+    while (nextIndex < prepared.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const result = prepared[index];
+      try {
+        outcomes[index] = await createPreparedProClubFitnessResult(path, uid, result, ops);
+      } catch (error) {
+        outcomes[index] = { kind: "WRITE_FAILED", resultId: result.resultId, error };
+      }
+    }
+  };
+  const workerCount = Math.min(MAX_IN_FLIGHT_RESULT_OPERATIONS, prepared.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return outcomes;
+}
+
+export async function createProClubFitnessResult(
+  input: { clubId: string; input: ProClubFitnessResultCreateInput },
+  ops: ProClubFitnessResultRepositoryOps = FIRESTORE_OPS,
+): Promise<ProClubFitnessResultCreateOutcome> {
+  const [outcome] = await createProClubFitnessResults({
+    clubId: input.clubId,
+    inputs: [input.input],
+  }, ops);
+  if (!outcome) throw new Error("Pro Club Fitness result creation returned no outcome.");
+  return outcome;
 }
 
 async function resolveActiveStaffForRead(

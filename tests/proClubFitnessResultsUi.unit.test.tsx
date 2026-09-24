@@ -11,7 +11,11 @@ import ProClubFitnessResults, {
 } from "../src/components/pro-club/operations/ProClubFitnessResults";
 import type { ProClubOrganizationAuthority } from "../src/lib/firestore/proClubOrganizationAdapter";
 import type { ProClubSquadRosterRecord } from "../src/lib/firestore/proClubSquadRosterRepository";
-import type { ProClubFitnessResultHistoryEntry } from "../src/lib/proClubFitnessResult";
+import type {
+  ProClubFitnessResultCreateInput,
+  ProClubFitnessResultHistoryEntry,
+} from "../src/lib/proClubFitnessResult";
+import { FOOTBALL_FITNESS_TEST_CATALOGUE } from "../src/lib/fitnessTestFoundation";
 
 function authority(
   staffRole: ProClubOrganizationAuthority["staffRole"] = "FITNESS_COACH",
@@ -125,11 +129,27 @@ function createServices(): {
   services: ProClubFitnessResultsServices;
   calls: { dates: string[]; historyPlayers: string[]; creates: unknown[] };
   remote: Record<string, Record<string, Record<string, number>>>;
+  histories: Record<string, ProClubFitnessResultHistoryEntry[]>;
 } {
   const calls = { dates: [] as string[], historyPlayers: [] as string[], creates: [] as unknown[] };
   const remote: Record<string, Record<string, Record<string, number>>> = {
     "2026-09-24": { "player-key-a": { speed_10m: 1.82 } },
     "2026-09-25": { "player-key-a": { speed_30m: 4.15 } },
+  };
+  const histories: Record<string, ProClubFitnessResultHistoryEntry[]> = {
+    "player-key-a": [
+      {
+        id: "fit-v1-history-a",
+        playerKey: "player-key-a",
+        observedOn: "2026-09-24",
+        definitionId: "football:speed_10m:v1",
+        definitionVersion: 1,
+        definitionKey: "speed_10m",
+        definitionName: "10 m sprint",
+        value: 1.82,
+        unit: "s",
+      },
+    ],
   };
   const services: ProClubFitnessResultsServices = {
     async listRoster() {
@@ -141,31 +161,38 @@ function createServices(): {
     },
     async listHistory({ playerKey }) {
       calls.historyPlayers.push(playerKey);
-      return [
-        {
-          id: "fit-v1-history-a",
-          playerKey,
-          observedOn: "2026-09-24",
-          definitionId: "football:speed_10m:v1",
-          definitionVersion: 1,
-          definitionKey: "speed_10m",
-          definitionName: "10 m sprint",
-          value: 1.82,
-          unit: "s",
-        } satisfies ProClubFitnessResultHistoryEntry,
-      ];
+      return structuredClone(histories[playerKey] ?? []);
     },
-    async createResult(input) {
-      calls.creates.push(input);
-      const { playerKey, observedOn } = input.input;
-      const definitionKey = input.input.definitionId.split(":")[1];
-      remote[observedOn] ??= {};
-      remote[observedOn][playerKey] ??= {};
-      remote[observedOn][playerKey][definitionKey] = input.input.value;
-      return { kind: "DEFINITELY_CREATED", resultId: `fit-v1-${calls.creates.length}` };
+    async createResults(request) {
+      calls.creates.push(request);
+      return request.inputs.map((input, index) => {
+        const { playerKey, observedOn, definitionId, definitionVersion, value } = input;
+        const definitionKey = definitionId.split(":")[1];
+        const definition = FOOTBALL_FITNESS_TEST_CATALOGUE.find((candidate) =>
+          candidate.id === definitionId && candidate.version === definitionVersion,
+        );
+        remote[observedOn] ??= {};
+        remote[observedOn][playerKey] ??= {};
+        remote[observedOn][playerKey][definitionKey] = value;
+        if (definition) {
+          histories[playerKey] ??= [];
+          histories[playerKey].push({
+            id: `fit-v1-${calls.creates.length}-${index}`,
+            playerKey,
+            observedOn,
+            definitionId,
+            definitionVersion,
+            definitionKey: definition.key,
+            definitionName: definition.name,
+            value,
+            unit: definition.unit,
+          });
+        }
+        return { kind: "DEFINITELY_CREATED" as const, resultId: `fit-v1-${calls.creates.length}-${index}` };
+      });
     },
   };
-  return { services, calls, remote };
+  return { services, calls, remote, histories };
 }
 
 test("write authority is limited to active canonical FITNESS_COACH authority", () => {
@@ -178,7 +205,7 @@ test("write authority is limited to active canonical FITNESS_COACH authority", (
 
 test("saved results are immutable, persisted refresh and date switching update the grid, and player history is shown", async () => {
   const runtime = setupDom();
-  const { services, calls, remote } = createServices();
+  const { services, calls, remote, histories } = createServices();
   const auth = authority();
   try {
     await act(async () => {
@@ -191,6 +218,8 @@ test("saved results are immutable, persisted refresh and date switching update t
     assert.equal(savedSpeed.disabled, true);
     assert.match(runtime.container.textContent ?? "", /Player history/);
     assert.match(runtime.container.textContent ?? "", /1\.82 s/);
+    const initialHistoryReads = calls.historyPlayers.length;
+    assert.ok(initialHistoryReads > 0, "selected player history initially loads");
 
     const newJump = inputByLabel(runtime.container, "Ari Player · Vertical jump");
     assert.equal(newJump.disabled, false);
@@ -207,21 +236,26 @@ test("saved results are immutable, persisted refresh and date switching update t
     assert.equal(calls.creates.length, 1, runtime.container.textContent ?? "");
     assert.deepEqual(calls.creates[0], {
       clubId: "club-a",
-      input: {
+      inputs: [{
         playerKey: "player-key-a",
         definitionId: "football:vertical_jump:v1",
         definitionVersion: 1,
         value: 42,
         observedOn: "2026-09-24",
-      },
+      }],
     });
     assert.equal(inputByLabel(runtime.container, "Ari Player · Vertical jump").disabled, true);
     assert.equal(inputByLabel(runtime.container, "Ari Player · Vertical jump").value, "42");
+    assert.equal(histories["player-key-a"].length, 2, "save persisted the new observation before history refresh");
+    assert.ok(calls.historyPlayers.length > initialHistoryReads, "save re-reads history without changing player or remounting");
+    assert.match(runtime.container.textContent ?? "", /42 cm/);
 
     remote["2026-09-24"]["player-key-a"].speed_30m = 4.2;
+    const historyReadsBeforeManualRefresh = calls.historyPlayers.length;
     await act(async () => findButton(runtime.container, "Refresh saved results").click());
     await flushUi();
     assert.equal(inputByLabel(runtime.container, "Ari Player · 30 m sprint").value, "4.2");
+    assert.ok(calls.historyPlayers.length > historyReadsBeforeManualRefresh, "manual refresh re-reads current player history");
 
     const dateInput = runtime.container.querySelector('input[type="date"]');
     assert.ok(dateInput);
@@ -241,6 +275,89 @@ test("saved results are immutable, persisted refresh and date switching update t
   }
 });
 
+test("one bulk save maps partial outcomes and retains only the failed draft", async () => {
+  const runtime = setupDom();
+  const { services, calls, remote } = createServices();
+  const submittedInputs: ProClubFitnessResultCreateInput[][] = [];
+  const createPersisted = services.createResults;
+  services.createResults = async (request) => {
+    submittedInputs.push([...request.inputs]);
+    const persisted = await createPersisted({
+      ...request,
+      inputs: request.inputs.slice(0, 1),
+    });
+    return [
+      ...persisted,
+      { kind: "WRITE_FAILED", resultId: "fit-v1-failed", error: new Error("denied") },
+    ];
+  };
+
+  try {
+    await act(async () => {
+      runtime.root.render(<ProClubFitnessResults authority={authority()} services={services} />);
+    });
+    await flushUi();
+
+    const jump = inputByLabel(runtime.container, "Ari Player · Vertical jump");
+    const sprint = inputByLabel(runtime.container, "Ari Player · 30 m sprint");
+    const valueSetter = Object.getOwnPropertyDescriptor(runtime.window.HTMLInputElement.prototype, "value")?.set;
+    assert.ok(valueSetter);
+    valueSetter.call(jump, "42");
+    await act(async () => jump.dispatchEvent(new runtime.window.Event("input", { bubbles: true })));
+    valueSetter.call(sprint, "4.3");
+    await act(async () => sprint.dispatchEvent(new runtime.window.Event("input", { bubbles: true })));
+    await act(async () => findButton(runtime.container, "Save results").click());
+    await flushUi();
+
+    assert.equal(calls.creates.length, 1, "one Save action makes one bulk repository request");
+    assert.deepEqual(submittedInputs[0].map(({ definitionId, value }) => ({ definitionId, value })), [
+      { definitionId: "football:vertical_jump:v1", value: 42 },
+      { definitionId: "football:speed_30m:v1", value: 4.3 },
+    ]);
+    assert.equal(remote["2026-09-24"]["player-key-a"].vertical_jump, 42);
+    assert.equal(inputByLabel(runtime.container, "Ari Player · Vertical jump").disabled, true);
+    assert.equal(inputByLabel(runtime.container, "Ari Player · 30 m sprint").value, "4.3");
+    assert.equal(inputByLabel(runtime.container, "Ari Player · 30 m sprint").disabled, false);
+    assert.match(runtime.container.textContent ?? "", /1 observation\(s\) confirmed/);
+    assert.match(runtime.container.textContent ?? "", /1 observation\(s\) could not be confirmed; their drafts remain available/);
+  } finally {
+    await act(async () => runtime.root.unmount());
+    runtime.cleanup();
+  }
+});
+
+test("idempotent-equivalent bulk outcomes refresh the selected player's history", async () => {
+  const runtime = setupDom();
+  const { services, calls } = createServices();
+  const createAndPersist = services.createResults;
+  services.createResults = async (request) =>
+    (await createAndPersist(request)).map((outcome) => ({
+      ...outcome,
+      kind: "ALREADY_COMMITTED_EQUIVALENT" as const,
+    }));
+
+  try {
+    await act(async () => {
+      runtime.root.render(<ProClubFitnessResults authority={authority()} services={services} />);
+    });
+    await flushUi();
+    const initialHistoryReads = calls.historyPlayers.length;
+    const jump = inputByLabel(runtime.container, "Ari Player · Vertical jump");
+    const valueSetter = Object.getOwnPropertyDescriptor(runtime.window.HTMLInputElement.prototype, "value")?.set;
+    assert.ok(valueSetter);
+    valueSetter.call(jump, "42");
+    await act(async () => jump.dispatchEvent(new runtime.window.Event("input", { bubbles: true })));
+    await act(async () => findButton(runtime.container, "Save results").click());
+    await flushUi();
+
+    assert.ok(calls.historyPlayers.length > initialHistoryReads);
+    assert.match(runtime.container.textContent ?? "", /42 cm/);
+  } finally {
+    await act(async () => runtime.root.unmount());
+    runtime.cleanup();
+  }
+});
+
 test("active non-FITNESS_COACH staff can read persisted results without save controls", () => {
   const markup = renderToStaticMarkup(
     <ProClubFitnessResults authority={authority("HEAD_COACH")} services={createServices().services} />,
@@ -252,16 +369,42 @@ test("active non-FITNESS_COACH staff can read persisted results without save con
 
 test("a deterministic identity conflict is surfaced and the saved value is preserved", async () => {
   const runtime = setupDom();
-  const { services, remote } = createServices();
-  services.createResult = async ({ input }) => {
-    remote[input.observedOn][input.playerKey].vertical_jump = 40;
-    return { kind: "OBSERVATION_CONFLICT", resultId: "fit-v1-existing" };
+  const { services, calls, remote, histories } = createServices();
+  services.createResults = async ({ inputs }) => {
+    return inputs.map((input) => {
+      remote[input.observedOn][input.playerKey].vertical_jump = 40;
+      const definition = FOOTBALL_FITNESS_TEST_CATALOGUE.find((candidate) =>
+        candidate.id === input.definitionId && candidate.version === input.definitionVersion,
+      );
+      if (definition) {
+        histories[input.playerKey] = [
+          ...(histories[input.playerKey] ?? []).filter((entry) =>
+            entry.definitionId !== input.definitionId ||
+            entry.definitionVersion !== input.definitionVersion ||
+            entry.observedOn !== input.observedOn,
+          ),
+          {
+            id: "fit-v1-existing",
+            playerKey: input.playerKey,
+            observedOn: input.observedOn,
+            definitionId: input.definitionId,
+            definitionVersion: input.definitionVersion,
+            definitionKey: definition.key,
+            definitionName: definition.name,
+            value: 40,
+            unit: definition.unit,
+          },
+        ];
+      }
+      return { kind: "OBSERVATION_CONFLICT" as const, resultId: "fit-v1-existing" };
+    });
   };
   try {
     await act(async () => {
       runtime.root.render(<ProClubFitnessResults authority={authority()} services={services} />);
     });
     await flushUi();
+    const initialHistoryReads = calls.historyPlayers.length;
     const jump = inputByLabel(runtime.container, "Ari Player · Vertical jump");
     const valueSetter = Object.getOwnPropertyDescriptor(runtime.window.HTMLInputElement.prototype, "value")?.set;
     assert.ok(valueSetter);
@@ -271,6 +414,8 @@ test("a deterministic identity conflict is surfaced and the saved value is prese
     await flushUi();
 
     assert.match(runtime.container.textContent ?? "", /identity conflict.*preserved without overwrite/i);
+    assert.ok(calls.historyPlayers.length > initialHistoryReads, "conflict refresh re-reads player history");
+    assert.match(runtime.container.textContent ?? "", /40 cm/);
     const saved = inputByLabel(runtime.container, "Ari Player · Vertical jump");
     assert.equal(saved.value, "40");
     assert.equal(saved.disabled, true);
@@ -288,7 +433,8 @@ test("component adapts existing Pro Club roster and result repositories without 
   assert.match(source, /listProClubSquadRoster/);
   assert.match(source, /listProClubFitnessResultsForDate/);
   assert.match(source, /listProClubFitnessResultHistory/);
-  assert.match(source, /createProClubFitnessResult/);
+  assert.match(source, /createProClubFitnessResults/);
+  assert.doesNotMatch(source, /createProClubFitnessResult(?!s)/);
   assert.doesNotMatch(source, /\b(?:setDoc|addDoc|updateDoc|deleteDoc|writeBatch|runTransaction)\b/);
   assert.doesNotMatch(source, /(?:update|delete|correct)ProClubFitnessResult/i);
 });

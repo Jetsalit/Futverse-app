@@ -11,7 +11,7 @@ import {
   type ProClubFitnessResultHistoryEntry,
 } from "../../../lib/proClubFitnessResult";
 import {
-  createProClubFitnessResult,
+  createProClubFitnessResults,
   listProClubFitnessResultHistory,
   listProClubFitnessResultsForDate,
   type ProClubFitnessResultCreateOutcome,
@@ -35,17 +35,17 @@ export interface ProClubFitnessResultsServices {
     playerKey: string;
     definitions: readonly FitnessTestDefinition[];
   }): Promise<ProClubFitnessResultHistoryEntry[]>;
-  createResult(input: {
+  createResults(input: {
     clubId: string;
-    input: ProClubFitnessResultCreateInput;
-  }): Promise<ProClubFitnessResultCreateOutcome>;
+    inputs: readonly ProClubFitnessResultCreateInput[];
+  }): Promise<ProClubFitnessResultCreateOutcome[]>;
 }
 
 const DEFAULT_SERVICES: ProClubFitnessResultsServices = {
   listRoster: listProClubSquadRoster,
   listResultsForDate: listProClubFitnessResultsForDate,
   listHistory: listProClubFitnessResultHistory,
-  createResult: createProClubFitnessResult,
+  createResults: createProClubFitnessResults,
 };
 
 function hasActiveStaffAuthority(authority: ProClubOrganizationAuthority): boolean {
@@ -197,7 +197,7 @@ export default function ProClubFitnessResults({
       if (current) setHistoryError(`Player history could not be loaded: ${errorMessage(error)}`);
     });
     return () => { current = false; };
-  }, [canRead, clubId, definitions, selectedPlayerKey, services]);
+  }, [canRead, clubId, definitions, refreshVersion, selectedPlayerKey, services]);
 
   function updateDraft(playerKey: string, definitionKey: string, value: string) {
     setDrafts((current) => ({
@@ -234,20 +234,26 @@ export default function ProClubFitnessResults({
     let conflicts = 0;
     let failed = 0;
     const completed: typeof prepared.entries = [];
-    for (const entry of prepared.entries) {
-      try {
-        const result = await services.createResult({ clubId, input: entry.input });
-        if (result.kind === "DEFINITELY_CREATED" || result.kind === "ALREADY_COMMITTED_EQUIVALENT") {
-          committed += 1;
-          completed.push(entry);
-        } else if (result.kind === "OBSERVATION_CONFLICT") {
-          conflicts += 1;
-          completed.push(entry);
-        } else {
-          failed += 1;
-        }
-      } catch {
+    let outcomes: readonly (ProClubFitnessResultCreateOutcome | null)[];
+    try {
+      const results = await services.createResults({
+        clubId,
+        inputs: prepared.entries.map(({ input }) => input),
+      });
+      outcomes = prepared.entries.map((_, index) => results[index] ?? null);
+    } catch {
+      outcomes = prepared.entries.map(() => null);
+    }
+    for (const [index, entry] of prepared.entries.entries()) {
+      const result = outcomes[index];
+      if (!result || result.kind === "WRITE_FAILED") {
         failed += 1;
+      } else if (result.kind === "DEFINITELY_CREATED" || result.kind === "ALREADY_COMMITTED_EQUIVALENT") {
+        committed += 1;
+        completed.push(entry);
+      } else if (result.kind === "OBSERVATION_CONFLICT") {
+        conflicts += 1;
+        completed.push(entry);
       }
     }
 

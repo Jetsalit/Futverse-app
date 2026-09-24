@@ -16,9 +16,11 @@ import {
 } from "firebase/firestore";
 
 import { FOOTBALL_FITNESS_TEST_CATALOGUE } from "../src/lib/fitnessTestFoundation";
+import { proClubFitnessResultDocumentIdV1 } from "../src/lib/proClubFitnessResult";
 import {
   createFirestoreProClubFitnessResultRepositoryOps,
   createProClubFitnessResult,
+  createProClubFitnessResults,
   listProClubFitnessResultHistory,
   listProClubFitnessResultsForDate,
 } from "../src/lib/firestore/proClubFitnessResultRepository";
@@ -198,4 +200,50 @@ test("repository retry recognizes the persisted deterministic identity without r
 
   const stored = await getDocs(collection(db, "proClubs", CLUB_ID, "fitnessResults"));
   assert.equal(stored.size, 1);
+});
+
+test("repository bulk save persists multiple Rules-authorized observations and retries without duplicates", async () => {
+  const db = authenticatedDb(FITNESS_COACH);
+  const ops = repositoryOps(db);
+  const inputs = [
+    {
+      playerKey: PLAYER_KEY,
+      definitionId: "football:speed_10m:v1",
+      definitionVersion: 1,
+      value: 1.82,
+      observedOn: OBSERVED_ON,
+    },
+    {
+      playerKey: PLAYER_KEY,
+      definitionId: "football:vertical_jump:v1",
+      definitionVersion: 1,
+      value: 43,
+      observedOn: OBSERVED_ON,
+    },
+  ];
+
+  const first = await createProClubFitnessResults({ clubId: CLUB_ID, inputs }, ops);
+  const expectedIds: string[] = [];
+  for (const input of inputs) expectedIds.push(await proClubFitnessResultDocumentIdV1(input));
+  assert.deepEqual(first.map(({ kind }) => kind), ["DEFINITELY_CREATED", "DEFINITELY_CREATED"]);
+  assert.deepEqual(first.map(({ resultId }) => resultId), expectedIds);
+
+  const stored = await getDocs(collection(db, "proClubs", CLUB_ID, "fitnessResults"));
+  assert.equal(stored.size, inputs.length);
+  assert.deepEqual(stored.docs.map(({ id }) => id).sort(), [...expectedIds].sort());
+  for (const snapshot of stored.docs) {
+    const data = snapshot.data();
+    assert.equal(data.recordedBy, FITNESS_COACH);
+    assert.ok(data.recordedAt.toMillis() > 0);
+    assert.equal(data.source, "PRO_CLUB_FITNESS_ENTRY");
+  }
+
+  const retry = await createProClubFitnessResults({ clubId: CLUB_ID, inputs }, ops);
+  assert.deepEqual(retry.map(({ kind }) => kind), [
+    "ALREADY_COMMITTED_EQUIVALENT",
+    "ALREADY_COMMITTED_EQUIVALENT",
+  ]);
+  assert.deepEqual(retry.map(({ resultId }) => resultId), expectedIds);
+  const afterRetry = await getDocs(collection(db, "proClubs", CLUB_ID, "fitnessResults"));
+  assert.equal(afterRetry.size, inputs.length);
 });

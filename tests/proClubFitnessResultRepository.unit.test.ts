@@ -9,6 +9,8 @@ import {
 } from "../src/lib/proClubFitnessResult";
 import {
   createProClubFitnessResult,
+  createProClubFitnessResults,
+  MAX_IN_FLIGHT_RESULT_OPERATIONS,
   listProClubFitnessResultHistory,
   listProClubFitnessResultsForDate,
   type ProClubFitnessResultRepositoryOps,
@@ -40,6 +42,8 @@ function createOps(overrides: {
 } = {}) {
   const store = new Map<string, StoredDocument>();
   const writes: Array<{ path: readonly string[]; data: StoredDocument }> = [];
+  const calls = { authenticatedUid: 0, authority: 0 };
+  const networkOperations = { active: 0, maxActive: 0 };
   const reads: readonly string[][] = [];
   const mutableReads = reads as string[][];
   const listCalls: Array<{ path: readonly string[]; field: string; value: string }> = [];
@@ -59,13 +63,26 @@ function createOps(overrides: {
     },
   };
   const ops: ProClubFitnessResultRepositoryOps = {
-    getAuthenticatedUid: () => ACTOR_UID,
-    resolveAuthority: async () => authority,
+    getAuthenticatedUid: () => {
+      calls.authenticatedUid += 1;
+      return ACTOR_UID;
+    },
+    resolveAuthority: async () => {
+      calls.authority += 1;
+      return authority;
+    },
     async readDocument(path) {
-      mutableReads.push([...path]);
-      const id = path[path.length - 1] ?? "";
-      const data = store.get(path.join("/"));
-      return { id, exists: data !== undefined, data };
+      networkOperations.active += 1;
+      networkOperations.maxActive = Math.max(networkOperations.maxActive, networkOperations.active);
+      try {
+        await Promise.resolve();
+        mutableReads.push([...path]);
+        const id = path[path.length - 1] ?? "";
+        const data = store.get(path.join("/"));
+        return { id, exists: data !== undefined, data };
+      } finally {
+        networkOperations.active -= 1;
+      }
     },
     async listDocuments(path, filter) {
       listCalls.push({ path: [...path], field: filter.field, value: filter.value });
@@ -83,15 +100,22 @@ function createOps(overrides: {
     },
     async createDocument(path, data) {
       writes.push({ path: [...path], data });
-      if (overrides.createBehavior) {
-        await overrides.createBehavior(path, data, store);
-        return;
+      networkOperations.active += 1;
+      networkOperations.maxActive = Math.max(networkOperations.maxActive, networkOperations.active);
+      try {
+        if (overrides.createBehavior) {
+          await overrides.createBehavior(path, data, store);
+          return;
+        }
+        await Promise.resolve();
+        store.set(path.join("/"), data);
+      } finally {
+        networkOperations.active -= 1;
       }
-      store.set(path.join("/"), data);
     },
     serverTimestamp: () => SERVER_TIMESTAMP,
   };
-  return { ops, store, writes, reads: mutableReads, listCalls };
+  return { ops, store, writes, reads: mutableReads, listCalls, calls, networkOperations };
 }
 
 function validStoredData(overrides: StoredDocument = {}): StoredDocument {
@@ -190,6 +214,155 @@ test("create requires matching active FITNESS_COACH authority", async () => {
     createProClubFitnessResult({ clubId: CLUB_ID, input: INPUT }, mismatchedTenant.ops),
     /identity mismatch/,
   );
+});
+
+test("bulk create resolves actor and authority once, persists multiple results, and preserves input order", async () => {
+  const { ops, writes, calls } = createOps();
+  const inputs = [
+    INPUT,
+    { ...INPUT, definitionId: "football:vertical_jump:v1", value: 43 },
+    { ...INPUT, definitionId: "football:speed_30m:v1", value: 4.2 },
+  ];
+
+  const outcomes = await createProClubFitnessResults({ clubId: CLUB_ID, inputs }, ops);
+  const expectedIds: string[] = [];
+  for (const input of inputs) {
+    const validated = validateProClubFitnessResultCreateInput(input);
+    assert.equal(validated.ok, true);
+    if (!validated.ok) throw new Error("Test input must be valid.");
+    expectedIds.push(await proClubFitnessResultDocumentIdV1(validated.value));
+  }
+
+  assert.equal(calls.authenticatedUid, 1);
+  assert.equal(calls.authority, 1);
+  assert.deepEqual(outcomes.map(({ kind }) => kind), [
+    "DEFINITELY_CREATED",
+    "DEFINITELY_CREATED",
+    "DEFINITELY_CREATED",
+  ]);
+  assert.deepEqual(outcomes.map(({ resultId }) => resultId), expectedIds);
+  assert.equal(writes.length, inputs.length);
+  assert.ok(writes.every(({ path }) => path.slice(0, 3).join("/") === "proClubs/club-a/fitnessResults"));
+});
+
+test("bulk preflight rejects invalid inputs and duplicate deterministic identities before writes", async () => {
+  const invalidClubOps = createOps();
+  await assert.rejects(
+    createProClubFitnessResults({ clubId: "club/a", inputs: [INPUT] }, invalidClubOps.ops),
+    /clubId/,
+  );
+  assert.equal(invalidClubOps.calls.authenticatedUid, 0);
+  assert.equal(invalidClubOps.calls.authority, 0);
+  assert.equal(invalidClubOps.writes.length, 0);
+
+  const invalidOps = createOps();
+  await assert.rejects(
+    createProClubFitnessResults({
+      clubId: CLUB_ID,
+      inputs: [INPUT, { ...INPUT, value: Number.NaN }],
+    }, invalidOps.ops),
+    /Invalid Pro Club Fitness result/,
+  );
+  assert.equal(invalidOps.writes.length, 0);
+
+  const duplicateOps = createOps();
+  await assert.rejects(
+    createProClubFitnessResults({ clubId: CLUB_ID, inputs: [INPUT, { ...INPUT }] }, duplicateOps.ops),
+    /duplicate deterministic identity/i,
+  );
+  assert.equal(duplicateOps.writes.length, 0);
+});
+
+test("bulk outcomes preserve equivalent, conflict, and create results without overwriting", async () => {
+  const { ops, store, writes } = createOps();
+  const equivalentInput = INPUT;
+  const conflictInput = { ...INPUT, definitionId: "football:vertical_jump:v1", value: 43 };
+  const newInput = { ...INPUT, definitionId: "football:speed_30m:v1", value: 4.2 };
+  const equivalentPath = await resultPath(equivalentInput);
+  const conflictPath = await resultPath(conflictInput);
+  store.set(equivalentPath, validStoredData());
+  store.set(conflictPath, validStoredData({ definitionId: conflictInput.definitionId, value: 99 }));
+
+  const outcomes = await createProClubFitnessResults({
+    clubId: CLUB_ID,
+    inputs: [equivalentInput, conflictInput, newInput],
+  }, ops);
+
+  assert.deepEqual(outcomes.map(({ kind }) => kind), [
+    "ALREADY_COMMITTED_EQUIVALENT",
+    "OBSERVATION_CONFLICT",
+    "DEFINITELY_CREATED",
+  ]);
+  assert.equal(writes.length, 1);
+  assert.equal(store.get(conflictPath)?.value, 99);
+});
+
+test("bulk create reports an ordinary denied write without converting it to success", async () => {
+  const { ops, writes, reads } = createOps({
+    createBehavior: async (path, data, store) => {
+      if (data.value === INPUT.value) {
+        throw Object.assign(new Error("permission denied"), { code: "permission-denied" });
+      }
+      store.set(path.join("/"), data);
+    },
+  });
+  const outcomes = await createProClubFitnessResults({
+    clubId: CLUB_ID,
+    inputs: [INPUT, { ...INPUT, definitionId: "football:vertical_jump:v1", value: 43 }],
+  }, ops);
+
+  assert.deepEqual(outcomes.map(({ kind }) => kind), ["WRITE_FAILED", "DEFINITELY_CREATED"]);
+  assert.equal(writes.length, 2);
+  assert.equal(reads.length, 2, "ordinary permission failures do not trigger ambiguous-write read-back");
+});
+
+test("bulk create retains ambiguous-write read-back and idempotent success semantics", async () => {
+  const { ops, store, reads } = createOps({
+    createBehavior: async (path, data, target) => {
+      target.set(path.join("/"), data);
+      if (data.value === INPUT.value) {
+        throw Object.assign(new Error("connection lost after commit"), { code: "unavailable" });
+      }
+    },
+  });
+  const outcomes = await createProClubFitnessResults({
+    clubId: CLUB_ID,
+    inputs: [INPUT, { ...INPUT, definitionId: "football:vertical_jump:v1", value: 43 }],
+  }, ops);
+
+  assert.deepEqual(outcomes.map(({ kind }) => kind), [
+    "ALREADY_COMMITTED_EQUIVALENT",
+    "DEFINITELY_CREATED",
+  ]);
+  assert.equal(reads.length, 3, "only the ambiguous write gets a deterministic read-back");
+  assert.equal(store.size, 2);
+});
+
+test("bulk create caps concurrent result operations at four and keeps outcomes in request order", async () => {
+  const { ops, networkOperations } = createOps({
+    createBehavior: async (path, data, store) => {
+      await Promise.resolve();
+      store.set(path.join("/"), data);
+    },
+  });
+  const inputs = Array.from({ length: 9 }, (_, index) => ({
+    ...INPUT,
+    observedOn: `2026-09-${String(index + 1).padStart(2, "0")}`,
+  }));
+  const expectedIds: string[] = [];
+  for (const input of inputs) {
+    const validated = validateProClubFitnessResultCreateInput(input);
+    assert.equal(validated.ok, true);
+    if (!validated.ok) throw new Error("Test input must be valid.");
+    expectedIds.push(await proClubFitnessResultDocumentIdV1(validated.value));
+  }
+
+  const outcomes = await createProClubFitnessResults({ clubId: CLUB_ID, inputs }, ops);
+
+  assert.equal(MAX_IN_FLIGHT_RESULT_OPERATIONS, 4);
+  assert.equal(networkOperations.maxActive, MAX_IN_FLIGHT_RESULT_OPERATIONS);
+  assert.deepEqual(outcomes.map(({ kind }) => kind), Array(9).fill("DEFINITELY_CREATED"));
+  assert.deepEqual(outcomes.map(({ resultId }) => resultId), expectedIds);
 });
 
 test("date and player-history reads query the canonical club collection and select persisted data", async () => {
