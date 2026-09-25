@@ -180,11 +180,22 @@ for (const role of ["OWNER", "ADMIN"] as const) {
   });
 }
 
-for (const uid of ["coach", "staff", "staff-only", "player", "member", TARGET, "global-admin", "global-superadmin", "academy-admin", null]) {
+for (const uid of ["coach", "staff", "staff-only", "player", "member", TARGET, "global-admin", "academy-admin", null]) {
   test(`${uid ?? "unauthenticated"} cannot list this club's pending claims`, async () => {
     await assertFails(getDocs(pendingQuery(client(uid))));
   });
 }
+
+test("global-superadmin can list this club's pending claims through the constrained control-plane query", async () => {
+  const result = await assertSucceeds(getDocs(pendingQuery(client("global-superadmin"))));
+  assert.deepEqual(result.docs.map((item) => item.id).sort(), [
+    CLAIM_ID, `${OTHER_TARGET}_PRO_CLUB_${OTHER_CODE}`,
+  ].sort());
+  for (const item of result.docs) {
+    assert.equal(item.data().clubId, CLUB);
+    assert.equal(item.data().status, "PENDING");
+  }
+});
 
 test("active reviewer cannot query an inactive club", async () => {
   await seed([[`proClubs/${CLUB}`, { name: "Club A", level: "T3", status: "INACTIVE" }]]);
