@@ -53,7 +53,7 @@ export interface ProClubFitnessResultRepositoryOps {
   ): Promise<ProClubFitnessResultRepositoryDocumentSnapshot>;
   listDocuments(
     path: readonly string[],
-    filter: { field: "observedOn" | "playerKey"; value: string },
+    filter?: { field: "observedOn" | "playerKey"; value: string },
   ): Promise<ProClubFitnessResultRepositoryListSnapshot>;
   createDocument(path: readonly string[], data: DocumentData): Promise<void>;
   serverTimestamp(): unknown;
@@ -209,10 +209,10 @@ function createFirestoreOps(
         throw new Error("Invalid Pro Club Fitness results collection path.");
       }
       const [root, clubId, collectionName] = path;
-      const resultsQuery = query(
-        collection(firestore, root, clubId, collectionName),
-        where(filter.field, "==", filter.value),
-      );
+      const resultsCollection = collection(firestore, root, clubId, collectionName);
+      const resultsQuery = filter
+        ? query(resultsCollection, where(filter.field, "==", filter.value))
+        : resultsCollection;
       const snapshot = await getDocsFromServer(resultsQuery);
       return {
         documents: snapshot.docs.map((document) => ({
@@ -420,4 +420,33 @@ export async function listProClubFitnessResultHistory(input: {
       .filter((document) => document.exists && isValidDocumentIdentifier(document.id))
       .map(({ id, data }) => ({ id, data })),
   });
+}
+
+export interface ProClubFitnessResultsWeeklyTrainingReadRecord {
+  readonly id: string;
+  readonly organization: {
+    readonly organizationType: "PRO_CLUB";
+    readonly organizationId: string;
+  };
+  readonly data: unknown;
+}
+
+/** Lists the persisted result collection for the observational Weekly Training adapter. */
+export async function listProClubFitnessResultsForWeeklyTrainingRead(
+  input: { clubId: string },
+  ops: ProClubFitnessResultRepositoryOps = FIRESTORE_OPS,
+): Promise<ProClubFitnessResultsWeeklyTrainingReadRecord[]> {
+  const path = await resolveActiveStaffForRead(input.clubId, ops);
+  const snapshot = await ops.listDocuments(path);
+
+  return snapshot.documents
+    .filter((document) => document.exists && isValidDocumentIdentifier(document.id))
+    .map(({ id, data }) => ({
+      id,
+      organization: {
+        organizationType: "PRO_CLUB",
+        organizationId: input.clubId,
+      },
+      data,
+    }));
 }

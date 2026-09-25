@@ -11,6 +11,7 @@ const app = read("src/App.tsx");
 const academyFitness = read("src/components/FitnessTesting.tsx");
 const proClubDashboard = read("src/components/pro-club/operations/ProClubTeamDashboard.tsx");
 const trainingWorkspace = read("src/components/pro-club/operations/ProClubHeadCoachWeeklyProductionWorkspace.tsx");
+const fitnessTrainingWorkspace = read("src/components/pro-club/operations/ProClubFitnessTrainingWorkspace.tsx");
 
 test("Academy keeps its Fitness route and exposes Fitness & Training in the sidebar", () => {
   assert.match(app, /case "fitness"[\s\S]*?<FitnessTesting/);
@@ -47,7 +48,8 @@ test("Academy catalogue management uses capability while SuperAdmin support keep
 
 test("Pro Club navigation exposes the combined Fitness & Training workspace", () => {
   assert.match(proClubDashboard, /TRAINING: "Fitness & Training"/);
-  assert.match(proClubDashboard, /<FitnessTestCatalogue/);
+  assert.match(proClubDashboard, /<ProClubFitnessTrainingWorkspace/);
+  assert.doesNotMatch(proClubDashboard, /<FitnessTestCatalogue|<ProClubFitnessResults|<ProClubHeadCoachWeeklyProductionWorkspace/);
   assert.match(proClubDashboard, /organizationId: authority\.organizationId/);
   assert.match(proClubDashboard, /organizationType: "PRO_CLUB"/);
 });
@@ -58,10 +60,38 @@ test("no-data Academy reports do not render zero-normalized or fabricated charts
   assert.doesNotMatch(academyFitness, /calculateVO2Max/);
 });
 
-test("Weekly Training renders the typed fitness connection boundary without prescription", () => {
-  assert.match(trainingWorkspace, /FitnessTrainingConnection/);
-  assert.match(trainingWorkspace, /No recorded fitness results are connected to this training plan/);
-  assert.match(trainingWorkspace, /does not generate training prescriptions/);
+test("Weekly Training renders persisted observation context without inference", () => {
+  assert.match(trainingWorkspace, /ProClubFitnessWeeklyTrainingReadV1Selection/);
+  assert.match(trainingWorkspace, /Fitness observations are context only/);
+  assert.match(trainingWorkspace, /Fitness context could not be loaded\./);
+  assert.match(trainingWorkspace, /prescription !== null/);
+  assert.doesNotMatch(trainingWorkspace, /No recorded fitness results are connected/);
+});
+
+test("Pro Club catalogue redesign keeps measurement direction descriptive and Academy scoped", () => {
+  const catalogue = read("src/components/fitness/FitnessTestCatalogue.tsx");
+
+  assert.match(catalogue, /variant === "pro-club"/);
+  assert.match(catalogue, /ArrowUp/);
+  assert.match(catalogue, /ArrowDown/);
+  assert.match(catalogue, /text-emerald-300/);
+  assert.match(catalogue, /text-amber-300/);
+  assert.match(catalogue, /higher result/);
+  assert.match(catalogue, /lower result/);
+  assert.match(catalogue, /v\{definition\.version\}/);
+  assert.match(catalogue, /definition\.direction === "LOWER_IS_BETTER"/);
+  assert.match(catalogue, /definition\.direction === "LOWER_IS_BETTER" \? \([\s\S]*?<ArrowDown[\s\S]*?text-amber-300[\s\S]*?: \([\s\S]*?<ArrowUp[\s\S]*?text-emerald-300/);
+  assert.match(catalogue, /text-\[9px\].*font-bold.*uppercase/);
+  assert.match(catalogue, /text-slate-300/);
+  assert.match(catalogue, /text-slate-100/);
+});
+
+test("Weekly Training reads only on its selected Head Coach tab and uses Bangkok calendar date", () => {
+  assert.match(fitnessTrainingWorkspace, /selectedTab !== "WEEKLY_TRAINING" \|\| !canLoadWeeklyContext/);
+  assert.match(fitnessTrainingWorkspace, /calendarDateInTimeZone\(new Date\(\), "Asia\/Bangkok"\)/);
+  assert.match(fitnessTrainingWorkspace, /parseCanonicalDateOnly\(referenceDate\) === null/);
+  assert.match(fitnessTrainingWorkspace, /state: "READ_ERROR"/);
+  assert.doesNotMatch(fitnessTrainingWorkspace, /toISOString\(\)\.slice/);
 });
 
 test("foundation adds no direct fitness persistence or client-side role promotion", () => {

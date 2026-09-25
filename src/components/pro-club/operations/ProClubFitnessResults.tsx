@@ -20,11 +20,16 @@ import {
   listProClubSquadRoster,
   type ProClubSquadRosterRecord,
 } from "../../../lib/firestore/proClubSquadRosterRepository";
+import {
+  listProClubPlayerPhotos,
+  type ProClubPlayerPhotoRecord,
+} from "../../../lib/firestore/proClubPlayerPhotoRepository";
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
 import { isValidDocumentIdentifier } from "../../../lib/proClubModel";
 
 export interface ProClubFitnessResultsServices {
   listRoster(clubId: string): Promise<ProClubSquadRosterRecord[]>;
+  listPhotos(clubId: string): Promise<ProClubPlayerPhotoRecord[]>;
   listResultsForDate(input: {
     clubId: string;
     observedOn: string;
@@ -43,6 +48,7 @@ export interface ProClubFitnessResultsServices {
 
 const DEFAULT_SERVICES: ProClubFitnessResultsServices = {
   listRoster: listProClubSquadRoster,
+  listPhotos: listProClubPlayerPhotos,
   listResultsForDate: listProClubFitnessResultsForDate,
   listHistory: listProClubFitnessResultHistory,
   createResults: createProClubFitnessResults,
@@ -118,6 +124,10 @@ export default function ProClubFitnessResults({
     players: ProClubSquadRosterRecord[];
   } | null>(null);
   const [rosterError, setRosterError] = useState<string | null>(null);
+  const [photos, setPhotos] = useState<{
+    scope: string;
+    dataUrlsByPlayerKey: Record<string, string>;
+  } | null>(null);
   const [selectedPlayerKey, setSelectedPlayerKey] = useState("");
   const [dateResults, setDateResults] = useState<ScopedDateResults | null>(null);
   const [dateError, setDateError] = useState<string | null>(null);
@@ -129,6 +139,9 @@ export default function ProClubFitnessResults({
   const [saving, setSaving] = useState(false);
   const clubId = authority.organizationId;
   const players = rosterState?.scope === authorityScope ? rosterState.players : [];
+  const dataUrlsByPlayerKey = photos?.scope === authorityScope
+    ? photos.dataUrlsByPlayerKey
+    : {};
   const rosterLoading = canRead && rosterState?.scope !== authorityScope && rosterError === null;
   const selectedDateResults = dateResults?.clubId === clubId && dateResults.observedOn === observedOn
     ? dateResults.values
@@ -147,6 +160,26 @@ export default function ProClubFitnessResults({
       if (current) setRosterState({ scope: authorityScope, players: roster });
     }).catch((error: unknown) => {
       if (current) setRosterError(`Roster could not be loaded: ${errorMessage(error)}`);
+    });
+    return () => { current = false; };
+  }, [authorityScope, canRead, clubId, services]);
+
+  useEffect(() => {
+    let current = true;
+    setPhotos(null);
+    if (!canRead) return () => { current = false; };
+
+    services.listPhotos(clubId).then((records) => {
+      if (!current) return;
+      const dataUrlsByPlayerKey: Record<string, string> = {};
+      for (const record of records) {
+        if (typeof record.dataUrl === "string" && record.dataUrl.length > 0) {
+          dataUrlsByPlayerKey[record.playerKey] = record.dataUrl;
+        }
+      }
+      setPhotos({ scope: authorityScope, dataUrlsByPlayerKey });
+    }).catch(() => {
+      if (current) setPhotos({ scope: authorityScope, dataUrlsByPlayerKey: {} });
     });
     return () => { current = false; };
   }, [authorityScope, canRead, clubId, services]);
@@ -369,8 +402,41 @@ export default function ProClubFitnessResults({
             {players.map((player) => (
               <tr key={player.playerKey} className="border-t border-slate-800">
                 <th scope="row" className="sticky left-0 bg-slate-900 px-3 py-3 align-top">
-                  <span className="block font-bold">{playerLabel(player)}</span>
-                  <span className="mt-1 block text-[10px] font-black uppercase tracking-wide text-slate-500">{player.status} · {player.playerKey}</span>
+                  <div className="flex min-w-48 items-center gap-3">
+                    {dataUrlsByPlayerKey[player.playerKey] ? (
+                      <img
+                        src={dataUrlsByPlayerKey[player.playerKey]}
+                        alt={playerLabel(player)}
+                        width={48}
+                        height={48}
+                        className="h-12 w-12 shrink-0 rounded-full object-cover ring-1 ring-white/15"
+                      />
+                    ) : (
+                      <span
+                        role="img"
+                        aria-label={`Jersey number ${player.jerseyNumber}`}
+                        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-slate-600 bg-slate-800 text-xs font-black text-slate-100"
+                      >
+                        #{player.jerseyNumber}
+                      </span>
+                    )}
+                    <span className="min-w-0">
+                      <span className="block truncate font-bold text-white">{playerLabel(player)}</span>
+                      <span className="mt-0.5 block text-xs font-medium text-slate-300">
+                        #{player.jerseyNumber} · {player.position ?? "Position not set"}
+                      </span>
+                      <span className={[
+                        "mt-1 inline-flex rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wide",
+                        player.status === "ACTIVE"
+                          ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"
+                          : player.status === "INACTIVE"
+                            ? "border-amber-400/30 bg-amber-400/10 text-amber-100"
+                            : "border-slate-500/50 bg-slate-700/50 text-slate-300",
+                      ].join(" ")}>
+                        {player.status}
+                      </span>
+                    </span>
+                  </div>
                 </th>
                 {activeDefinitions.map((definition) => {
                   const hasSaved = Object.hasOwn(saved[player.playerKey] ?? {}, definition.key);
