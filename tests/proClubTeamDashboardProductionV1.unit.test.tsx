@@ -127,22 +127,21 @@ test("app shell uses a left desktop sidebar, sticky top bar, and unconstrained m
   assert.doesNotMatch(source, /<main className="[^"]*max-w-/);
 });
 
-test("production dashboard reuses reviewed Squad Training and Attendance surfaces", () => {
+test("production dashboard routes Training through one integrated workspace", () => {
   const source = readFileSync(files.dashboard, "utf8");
 
   assert.match(source, /import ProClubSquadRoster from "\.\/ProClubSquadRoster"/);
   assert.match(
     source,
-    /import ProClubHeadCoachWeeklyProductionWorkspace from "\.\/ProClubHeadCoachWeeklyProductionWorkspace"/,
+    /import ProClubFitnessTrainingWorkspace from "\.\/ProClubFitnessTrainingWorkspace"/,
   );
   assert.match(source, /import ProClubAttendance from "\.\/ProClubAttendance"/);
   assert.match(source, /import ProClubStaffSubmissions/);
   assert.match(source, /import ProClubMatchStartingXIWorkspace from "\.\/ProClubMatchStartingXIWorkspace"/);
   assert.equal((source.match(/<ProClubSquadRoster\b/g) ?? []).length, 1);
-  assert.equal(
-    (source.match(/<ProClubHeadCoachWeeklyProductionWorkspace\b/g) ?? []).length,
-    1,
-  );
+  assert.equal((source.match(/<ProClubFitnessTrainingWorkspace\b/g) ?? []).length, 1);
+  assert.doesNotMatch(source, /<ProClubFitnessResults\b|<FitnessTestCatalogue\b|<ProClubHeadCoachWeeklyProductionWorkspace\b/);
+  assert.match(source, /TRAINING: "Fitness & Training"/);
   assert.equal((source.match(/<ProClubAttendance\b/g) ?? []).length, 1);
   assert.equal((source.match(/<ProClubStaffSubmissions\b/g) ?? []).length, 1);
   assert.equal((source.match(/<ProClubLibraryLogbook\b/g) ?? []).length, 1);

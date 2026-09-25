@@ -4,9 +4,18 @@ import {
   WEEKLY_TRAINING_SAVED_DRAFT_READ_UNAVAILABLE_MESSAGE,
 } from "../../../config/runtimeCapabilities";
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
-import type { FitnessTrainingConnection } from "../../../lib/fitnessTestFoundation";
+import type { ProClubFitnessWeeklyTrainingReadV1Selection } from "../../../lib/proClubFitnessWeeklyTrainingRead";
 import WeeklyTrainingDraftComposer from "./WeeklyTrainingDraftComposer";
 import WeeklyTrainingSavedDrafts from "./WeeklyTrainingSavedDrafts";
+
+export type ProClubWeeklyFitnessContext =
+  | { readonly state: "LOADING" }
+  | {
+      readonly state: "READY";
+      readonly referenceDate: string;
+      readonly selection: ProClubFitnessWeeklyTrainingReadV1Selection;
+    }
+  | { readonly state: "READ_ERROR" };
 
 export function canRenderHeadCoachWeeklyProductionWorkspace(
   authority: ProClubOrganizationAuthority,
@@ -42,58 +51,105 @@ function SavedDraftReadPending() {
 }
 
 function FitnessTrainingBoundary({
-  connection,
+  context,
 }: {
-  connection: FitnessTrainingConnection;
+  context: ProClubWeeklyFitnessContext;
 }) {
+  if (context.state === "LOADING") {
+    return (
+      <article role="status" className="rounded-2xl border border-slate-700 bg-slate-950/50 p-5">
+        <p className="text-sm text-slate-300">Loading Fitness observations…</p>
+      </article>
+    );
+  }
+
+  if (context.state === "READ_ERROR") {
+    return (
+      <article role="alert" className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-5">
+        <p className="text-sm font-semibold text-rose-200">Fitness context could not be loaded.</p>
+      </article>
+    );
+  }
+
+  if (context.selection.prescription !== null) {
+    return (
+      <article role="alert" className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-5">
+        <p className="text-sm font-semibold text-rose-200">Fitness context could not be loaded.</p>
+      </article>
+    );
+  }
+
+  const observationsByPlayer = new Map<
+    string,
+    ProClubFitnessWeeklyTrainingReadV1Selection["observations"][number][]
+  >();
+  for (const observation of context.selection.observations) {
+    const playerObservations = observationsByPlayer.get(observation.playerKey) ?? [];
+    playerObservations.push(observation);
+    observationsByPlayer.set(observation.playerKey, playerObservations);
+  }
+
   return (
-    <article className="rounded-2xl border border-emerald-500/25 bg-emerald-500/5 p-5">
+    <article aria-label="Persisted Fitness observations" className="rounded-2xl border border-emerald-500/25 bg-emerald-500/5 p-5">
       <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-300">
-        Fitness connection
+        Fitness observations as of {context.referenceDate}
       </p>
-      {connection.state === "NO_DATA" ? (
+      {context.selection.state === "NO_DATA" ? (
         <>
-          <h4 className="mt-2 font-bold text-white">
-            No recorded fitness results are connected to this training plan
-          </h4>
-          <p className="mt-2 text-sm leading-6 text-slate-400">
-            The shared definition catalogue is available, but result persistence needs a separately reviewed backend contract.
-            This boundary does not generate training prescriptions.
+          <p className="mt-2 text-sm leading-6 text-slate-200">
+            No eligible persisted Fitness observations were available as of {context.referenceDate}.
           </p>
         </>
       ) : (
         <>
-          <h4 className="mt-2 font-bold text-white">
-            Recorded fitness observations
-          </h4>
-          <ul className="mt-3 space-y-2 text-sm text-slate-300">
-            {connection.observations.map((observation) => (
-              <li key={observation.id}>
-                {observation.testName}: {observation.value} {observation.unit}
-              </li>
+          <div className="mt-3 space-y-3">
+            {[...observationsByPlayer].map(([playerKey, observations]) => (
+              <section key={playerKey} className="rounded-xl border border-slate-700/80 bg-slate-950/50 p-3">
+                <h4 className="font-bold text-white">{observations[0]?.playerDisplayLabel}</h4>
+                <ul className="mt-2 divide-y divide-slate-800">
+                  {observations.map((observation) => (
+                    <li key={observation.resultId} className="grid gap-1 py-2 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                      <span className="font-semibold text-slate-200">{observation.testName}</span>
+                      <span className="text-slate-200">{observation.value} {observation.unit}</span>
+                      <span className="text-xs text-slate-400 sm:col-span-2">
+                        Tested <time dateTime={observation.observedOn}>{observation.observedOn}</time>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
             ))}
-          </ul>
-          <p className="mt-3 text-xs text-slate-400">
-            Observations are context only; this boundary does not generate training prescriptions.
-          </p>
+          </div>
         </>
       )}
+      <p className="mt-3 text-xs leading-5 text-slate-300">
+        Fitness observations are context only. The Head Coach remains responsible for training decisions.
+      </p>
     </article>
   );
 }
 
 export default function ProClubHeadCoachWeeklyProductionWorkspace({
   authority,
-  fitnessConnection,
+  fitnessContext,
   onTakeAttendance,
   onOpenSubmissions,
 }: {
   authority: ProClubOrganizationAuthority;
-  fitnessConnection?: FitnessTrainingConnection;
+  fitnessContext: ProClubWeeklyFitnessContext;
   onTakeAttendance?: (slot: { sessionDate: string; startTime: string }) => void;
   onOpenSubmissions?: () => void;
 }) {
-  if (!canRenderHeadCoachWeeklyProductionWorkspace(authority)) return null;
+  if (!canRenderHeadCoachWeeklyProductionWorkspace(authority)) {
+    return (
+      <section aria-label="Weekly Training authority required" className="rounded-3xl border border-amber-400/30 bg-amber-500/10 p-5 text-amber-100">
+        <h3 className="font-bold">Weekly Training</h3>
+        <p className="mt-2 text-sm leading-6">
+          Active Pro Club Head Coach authority is required to view Weekly Training.
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section
@@ -125,9 +181,7 @@ export default function ProClubHeadCoachWeeklyProductionWorkspace({
         )}
       </header>
 
-      {fitnessConnection && (
-        <FitnessTrainingBoundary connection={fitnessConnection} />
-      )}
+      <FitnessTrainingBoundary context={fitnessContext} />
 
       {WEEKLY_TRAINING_SAVED_DRAFT_READ_AVAILABLE ? (
         <WeeklyTrainingSavedDrafts

@@ -11,6 +11,7 @@ import ProClubFitnessResults, {
 } from "../src/components/pro-club/operations/ProClubFitnessResults";
 import type { ProClubOrganizationAuthority } from "../src/lib/firestore/proClubOrganizationAdapter";
 import type { ProClubSquadRosterRecord } from "../src/lib/firestore/proClubSquadRosterRepository";
+import type { ProClubPlayerPhotoRecord } from "../src/lib/firestore/proClubPlayerPhotoRepository";
 import type {
   ProClubFitnessResultCreateInput,
   ProClubFitnessResultHistoryEntry,
@@ -111,6 +112,24 @@ async function flushUi() {
   });
 }
 
+async function setTestingDate(
+  runtime: ReturnType<typeof setupDom>,
+  date: string,
+) {
+  const dateInput = runtime.container.querySelector('input[type="date"]');
+  assert.ok(dateInput);
+  const valueSetter = Object.getOwnPropertyDescriptor(
+    runtime.window.HTMLInputElement.prototype,
+    "value",
+  )?.set;
+  assert.ok(valueSetter);
+  await act(async () => {
+    valueSetter.call(dateInput, date);
+    dateInput.dispatchEvent(new runtime.window.Event("input", { bubbles: true }));
+  });
+  await flushUi();
+}
+
 function inputByLabel(container: HTMLElement, label: string): HTMLInputElement {
   const element = [...container.querySelectorAll("input")]
     .find((candidate) => candidate.getAttribute("aria-label") === label);
@@ -127,11 +146,11 @@ function findButton(container: HTMLElement, label: string): HTMLButtonElement {
 
 function createServices(): {
   services: ProClubFitnessResultsServices;
-  calls: { dates: string[]; historyPlayers: string[]; creates: unknown[] };
+  calls: { dates: string[]; historyPlayers: string[]; creates: unknown[]; photos: number };
   remote: Record<string, Record<string, Record<string, number>>>;
   histories: Record<string, ProClubFitnessResultHistoryEntry[]>;
 } {
-  const calls = { dates: [] as string[], historyPlayers: [] as string[], creates: [] as unknown[] };
+  const calls = { dates: [] as string[], historyPlayers: [] as string[], creates: [] as unknown[], photos: 0 };
   const remote: Record<string, Record<string, Record<string, number>>> = {
     "2026-09-24": { "player-key-a": { speed_10m: 1.82 } },
     "2026-09-25": { "player-key-a": { speed_30m: 4.15 } },
@@ -154,6 +173,10 @@ function createServices(): {
   const services: ProClubFitnessResultsServices = {
     async listRoster() {
       return [rosterPlayer("player-key-a"), rosterPlayer("player-key-b", "INACTIVE")];
+    },
+    async listPhotos() {
+      calls.photos += 1;
+      return [photoRecord("player-key-a", "data:image/webp;base64,ZmFrZQ==")];
     },
     async listResultsForDate({ observedOn }) {
       calls.dates.push(observedOn);
@@ -195,6 +218,21 @@ function createServices(): {
   return { services, calls, remote, histories };
 }
 
+function photoRecord(playerKey: string, dataUrl: string): ProClubPlayerPhotoRecord {
+  return {
+    playerKey,
+    dataUrl,
+    mimeType: "image/webp",
+    width: 48,
+    height: 48,
+    byteSize: 8,
+    createdAt: null,
+    createdBy: "head-coach-a",
+    updatedAt: null,
+    updatedBy: "head-coach-a",
+  };
+}
+
 test("write authority is limited to active canonical FITNESS_COACH authority", () => {
   assert.equal(canCreateProClubFitnessResults(authority()), true);
   assert.equal(canCreateProClubFitnessResults(authority("HEAD_COACH")), false);
@@ -212,6 +250,20 @@ test("saved results are immutable, persisted refresh and date switching update t
       runtime.root.render(<ProClubFitnessResults authority={auth} services={services} />);
     });
     await flushUi();
+    await setTestingDate(runtime, "2026-09-24");
+
+    const playerTable = runtime.container.querySelector("tbody");
+    assert.ok(playerTable);
+    assert.match(playerTable.textContent ?? "", /Ari Player/);
+    assert.match(playerTable.textContent ?? "", /#8 · CM/);
+    assert.match(playerTable.textContent ?? "", /ACTIVE/);
+    assert.match(playerTable.textContent ?? "", /#9 · CM/);
+    assert.doesNotMatch(playerTable.textContent ?? "", /player-key-a|player-key-b/);
+    const photo = playerTable.querySelector('img[alt="Ari Player"]');
+    assert.ok(photo);
+    assert.equal(photo.getAttribute("src"), "data:image/webp;base64,ZmFrZQ==");
+    assert.match(photo.className, /object-cover/);
+    assert.equal(calls.photos, 1);
 
     const savedSpeed = inputByLabel(runtime.container, "Ari Player · 10 m sprint");
     assert.equal(savedSpeed.value, "1.82");
@@ -257,18 +309,40 @@ test("saved results are immutable, persisted refresh and date switching update t
     assert.equal(inputByLabel(runtime.container, "Ari Player · 30 m sprint").value, "4.2");
     assert.ok(calls.historyPlayers.length > historyReadsBeforeManualRefresh, "manual refresh re-reads current player history");
 
-    const dateInput = runtime.container.querySelector('input[type="date"]');
-    assert.ok(dateInput);
-    valueSetter.call(dateInput, "2026-09-25");
-    await act(async () => {
-      dateInput.dispatchEvent(new runtime.window.Event("input", { bubbles: true }));
-    });
-    await flushUi();
+    await setTestingDate(runtime, "2026-09-25");
 
     assert.ok(calls.dates.includes("2026-09-25"));
     assert.equal(inputByLabel(runtime.container, "Ari Player · 30 m sprint").value, "4.15");
     assert.equal(inputByLabel(runtime.container, "Ari Player · 10 m sprint").value, "");
     assert.ok(calls.historyPlayers.includes("player-key-a"));
+  } finally {
+    await act(async () => runtime.root.unmount());
+    runtime.cleanup();
+  }
+});
+
+test("photo read failure keeps roster and result rows available with jersey fallback", async () => {
+  const runtime = setupDom();
+  const { services } = createServices();
+  services.listRoster = async () => [{ ...rosterPlayer("player-key-a"), position: null }];
+  services.listPhotos = async () => { throw new Error("photo read unavailable"); };
+  try {
+    await act(async () => {
+      runtime.root.render(<ProClubFitnessResults authority={authority()} services={services} />);
+    });
+    await flushUi();
+    await setTestingDate(runtime, "2026-09-24");
+
+    const playerTable = runtime.container.querySelector("tbody");
+    assert.ok(playerTable);
+    assert.match(playerTable.textContent ?? "", /Ari Player/);
+    assert.match(playerTable.textContent ?? "", /#8 · Position not set/);
+    assert.match(playerTable.textContent ?? "", /Position not set/);
+    assert.equal(inputByLabel(runtime.container, "Ari Player · 10 m sprint").value, "1.82");
+    assert.doesNotMatch(playerTable.textContent ?? "", /player-key-a/);
+    assert.equal(playerTable.querySelector("img"), null);
+    assert.equal(playerTable.querySelector('[role="img"]')?.getAttribute("aria-label"), "Jersey number 8");
+    assert.doesNotMatch(runtime.container.textContent ?? "", /photo read unavailable/i);
   } finally {
     await act(async () => runtime.root.unmount());
     runtime.cleanup();
@@ -297,6 +371,7 @@ test("one bulk save maps partial outcomes and retains only the failed draft", as
       runtime.root.render(<ProClubFitnessResults authority={authority()} services={services} />);
     });
     await flushUi();
+    await setTestingDate(runtime, "2026-09-24");
 
     const jump = inputByLabel(runtime.container, "Ari Player · Vertical jump");
     const sprint = inputByLabel(runtime.container, "Ari Player · 30 m sprint");
@@ -341,6 +416,7 @@ test("idempotent-equivalent bulk outcomes refresh the selected player's history"
       runtime.root.render(<ProClubFitnessResults authority={authority()} services={services} />);
     });
     await flushUi();
+    await setTestingDate(runtime, "2026-09-24");
     const initialHistoryReads = calls.historyPlayers.length;
     const jump = inputByLabel(runtime.container, "Ari Player · Vertical jump");
     const valueSetter = Object.getOwnPropertyDescriptor(runtime.window.HTMLInputElement.prototype, "value")?.set;
@@ -404,6 +480,7 @@ test("a deterministic identity conflict is surfaced and the saved value is prese
       runtime.root.render(<ProClubFitnessResults authority={authority()} services={services} />);
     });
     await flushUi();
+    await setTestingDate(runtime, "2026-09-24");
     const initialHistoryReads = calls.historyPlayers.length;
     const jump = inputByLabel(runtime.container, "Ari Player · Vertical jump");
     const valueSetter = Object.getOwnPropertyDescriptor(runtime.window.HTMLInputElement.prototype, "value")?.set;

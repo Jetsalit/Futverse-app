@@ -13,6 +13,7 @@ import {
   MAX_IN_FLIGHT_RESULT_OPERATIONS,
   listProClubFitnessResultHistory,
   listProClubFitnessResultsForDate,
+  listProClubFitnessResultsForWeeklyTrainingRead,
   type ProClubFitnessResultRepositoryOps,
 } from "../src/lib/firestore/proClubFitnessResultRepository";
 
@@ -46,7 +47,7 @@ function createOps(overrides: {
   const networkOperations = { active: 0, maxActive: 0 };
   const reads: readonly string[][] = [];
   const mutableReads = reads as string[][];
-  const listCalls: Array<{ path: readonly string[]; field: string; value: string }> = [];
+  const listCalls: Array<{ path: readonly string[]; field?: string; value?: string }> = [];
   const authority = {
     state: "FOUND" as const,
     value: {
@@ -59,7 +60,7 @@ function createOps(overrides: {
       membershipAuthorizationRole: "MEMBER" as const,
       membershipStatus: "ACTIVE" as const,
       hasMembershipAuthority: true,
-      staffRole: (overrides.role ?? "FITNESS_COACH") as "FITNESS_COACH",
+      staffRole: (Object.hasOwn(overrides, "role") ? overrides.role : "FITNESS_COACH") as "FITNESS_COACH",
     },
   };
   const ops: ProClubFitnessResultRepositoryOps = {
@@ -85,11 +86,15 @@ function createOps(overrides: {
       }
     },
     async listDocuments(path, filter) {
-      listCalls.push({ path: [...path], field: filter.field, value: filter.value });
+      listCalls.push({
+        path: [...path],
+        ...(filter ? { field: filter.field, value: filter.value } : {}),
+      });
       return {
         documents: [...store.entries()]
           .filter(([documentPath, data]) =>
-            documentPath.startsWith(`${path.join("/")}/`) && data[filter.field] === filter.value,
+            documentPath.startsWith(`${path.join("/")}/`) &&
+            (!filter || data[filter.field] === filter.value),
           )
           .map(([documentPath, data]) => ({
             id: documentPath.slice(documentPath.lastIndexOf("/") + 1),
@@ -390,4 +395,38 @@ test("date and player-history reads query the canonical club collection and sele
     { path: ["proClubs", CLUB_ID, "fitnessResults"], field: "observedOn", value: INPUT.observedOn },
     { path: ["proClubs", CLUB_ID, "fitnessResults"], field: "playerKey", value: PLAYER_KEY },
   ]);
+});
+
+test("Weekly Training read lists the unfiltered authoritative results collection with tenant identity", async () => {
+  const { ops, store, listCalls, writes } = createOps({ role: "HEAD_COACH" });
+  const path = await resultPath();
+  const data = validStoredData({ recordedAt: { toMillis: () => 1789908000000 } });
+  store.set(path, data);
+
+  const results = await listProClubFitnessResultsForWeeklyTrainingRead({ clubId: CLUB_ID }, ops);
+
+  assert.deepEqual(listCalls, [{ path: ["proClubs", CLUB_ID, "fitnessResults"] }]);
+  assert.deepEqual(results, [{
+    id: path.split("/").at(-1),
+    organization: { organizationType: "PRO_CLUB", organizationId: CLUB_ID },
+    data,
+  }]);
+  assert.deepEqual(writes, []);
+});
+
+test("Weekly Training collection read requires an authenticated active staff authority", async () => {
+  const unauthenticated = createOps();
+  unauthenticated.ops.getAuthenticatedUid = () => null;
+  await assert.rejects(
+    listProClubFitnessResultsForWeeklyTrainingRead({ clubId: CLUB_ID }, unauthenticated.ops),
+    /Authenticated actor UID/,
+  );
+  assert.deepEqual(unauthenticated.listCalls, []);
+
+  const noStaffRole = createOps({ role: null });
+  await assert.rejects(
+    listProClubFitnessResultsForWeeklyTrainingRead({ clubId: CLUB_ID }, noStaffRole.ops),
+    /active staff authority/,
+  );
+  assert.deepEqual(noStaffRole.listCalls, []);
 });

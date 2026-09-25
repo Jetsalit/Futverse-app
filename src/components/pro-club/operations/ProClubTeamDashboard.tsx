@@ -13,15 +13,9 @@ import {
 } from "lucide-react";
 
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
-import {
-  FOOTBALL_FITNESS_TEST_CATALOGUE,
-  buildFitnessTrainingConnection,
-} from "../../../lib/fitnessTestFoundation";
 import { staffRoleLabels } from "../../../lib/proClubOnboarding";
-import FitnessTestCatalogue from "../../fitness/FitnessTestCatalogue";
 import ProClubAttendance from "./ProClubAttendance";
-import ProClubFitnessResults from "./ProClubFitnessResults";
-import ProClubHeadCoachWeeklyProductionWorkspace from "./ProClubHeadCoachWeeklyProductionWorkspace";
+import ProClubFitnessTrainingWorkspace from "./ProClubFitnessTrainingWorkspace";
 import ProClubGameModel from "./ProClubGameModel";
 import ProClubLibraryLogbook, {
   canOpenProClubLibraryLogbook,
@@ -129,11 +123,6 @@ export default function ProClubTeamDashboard({
     authority.membershipStatus === "ACTIVE" &&
     authority.hasMembershipAuthority &&
     (authority.staffRole === "FITNESS_COACH" || authority.staffRole === "TECHNICAL_DIRECTOR");
-  const fitnessTrainingConnection = buildFitnessTrainingConnection({
-    organization: fitnessOrganization,
-    definitions: FOOTBALL_FITNESS_TEST_CATALOGUE,
-    results: [],
-  });
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -438,16 +427,11 @@ export default function ProClubTeamDashboard({
           )}
 
           {activeTab === "TRAINING" && (
-            <div className="pro-club-module-surface space-y-6">
-              <FitnessTestCatalogue
-                organization={fitnessOrganization}
-                canManage={canManageFitnessCatalogue}
-                variant="pro-club"
-              />
-              <ProClubFitnessResults authority={authority} />
-              <ProClubHeadCoachWeeklyProductionWorkspace
+            <div className="pro-club-module-surface">
+              <ProClubFitnessTrainingWorkspace
                 authority={authority}
-                fitnessConnection={fitnessTrainingConnection}
+                organization={fitnessOrganization}
+                canManageCatalogue={canManageFitnessCatalogue}
                 onTakeAttendance={openAttendanceFromTraining}
                 onOpenSubmissions={
                   staffSubmissionsAvailable
