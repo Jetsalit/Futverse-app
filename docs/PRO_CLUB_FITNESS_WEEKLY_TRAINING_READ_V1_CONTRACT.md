@@ -8,7 +8,7 @@ Persisted Fitness observations are read-only context for Weekly Training. They n
 
 ## 2. Authoritative source
 
-The authoritative source is `proClubs/{clubId}/fitnessResults/{resultId}`. Use only persisted observations accepted by the existing Pro Club Fitness Result V1 contract. Do not duplicate storage, create a Weekly Training Fitness snapshot, or copy Fitness documents into Weekly Training documents.
+The authoritative source is `proClubs/{clubId}/fitnessResults/{resultId}`. Use only persisted observations accepted by the existing Pro Club Fitness Result V1 contract. A candidate must match the exact stored V1 fields: `schemaVersion`, `playerKey`, `definitionId`, `definitionVersion`, `value`, `observedOn`, `source`, `recordedAt`, and `recordedBy`. Missing or unknown fields fail closed. `recordedAt` must be a timestamp-like persisted value with a callable `toMillis()` that returns a finite number; `recordedBy` must be a valid actor/document identifier. Do not duplicate storage, create a Weekly Training Fitness snapshot, or copy Fitness documents into Weekly Training documents.
 
 ## 3. Tenant boundary
 

@@ -60,23 +60,22 @@ function makeRecord({
   value = 12.4,
   observedOn = "2026-09-20",
   dataPatch = {},
+  dataOmit = [],
 } = {}) {
-  return {
-    id,
-    organization,
-    data: {
-      schemaVersion: 1,
-      playerKey,
-      definitionId,
-      definitionVersion,
-      value,
-      observedOn,
-      source: "PRO_CLUB_FITNESS_ENTRY",
-      recordedAt: "2026-09-20T10:00:00.000Z",
-      recordedBy: "coach-1",
-      ...dataPatch,
-    },
+  const data: Record<string, unknown> = {
+    schemaVersion: 1,
+    playerKey,
+    definitionId,
+    definitionVersion,
+    value,
+    observedOn,
+    source: "PRO_CLUB_FITNESS_ENTRY",
+    recordedAt: { toMillis: () => 1789908000000 },
+    recordedBy: "coach-1",
+    ...dataPatch,
   };
+  for (const field of dataOmit) delete data[field];
+  return { id, organization, data };
 }
 
 function makeInput({
@@ -327,4 +326,53 @@ test("uses no current clock inside the pure selection policy", async () => {
   } finally {
     globalThis.Date = NativeDate;
   }
+});
+
+test("omits persisted results that are missing recordedAt", async () => {
+  const result = await select(makeInput({
+    records: [makeRecord({ dataOmit: ["recordedAt"] })],
+  }));
+  assert.deepEqual(result.observations, []);
+});
+
+test("omits persisted results with malformed recordedAt values", async () => {
+  const result = await select(makeInput({
+    records: [
+      makeRecord({ id: "non-callable", dataPatch: { recordedAt: { toMillis: "no" } } }),
+      makeRecord({ id: "non-finite", dataPatch: { recordedAt: { toMillis: () => Number.NaN } } }),
+      makeRecord({ id: "throws", dataPatch: { recordedAt: { toMillis: () => { throw new Error("bad timestamp"); } } } }),
+    ],
+  }));
+  assert.deepEqual(result.observations, []);
+});
+
+test("omits persisted results that are missing recordedBy", async () => {
+  const result = await select(makeInput({
+    records: [makeRecord({ dataOmit: ["recordedBy"] })],
+  }));
+  assert.deepEqual(result.observations, []);
+});
+
+test("omits persisted results with an invalid recordedBy identifier", async () => {
+  const result = await select(makeInput({
+    records: [makeRecord({ dataPatch: { recordedBy: "coach/child" } })],
+  }));
+  assert.deepEqual(result.observations, []);
+});
+
+test("omits persisted results with unknown stored fields", async () => {
+  const result = await select(makeInput({
+    records: [makeRecord({ dataPatch: { unexpectedField: "not part of V1" } })],
+  }));
+  assert.deepEqual(result.observations, []);
+});
+
+test("accepts a valid Timestamp-like recordedAt value", async () => {
+  const result = await select(makeInput({
+    records: [makeRecord({
+      id: "timestamp-like",
+      dataPatch: { recordedAt: { toMillis: () => 1789908000000 } },
+    })],
+  }));
+  assert.equal(result.observations[0]?.resultId, "timestamp-like");
 });

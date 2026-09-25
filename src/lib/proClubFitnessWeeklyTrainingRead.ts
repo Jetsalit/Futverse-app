@@ -71,6 +71,18 @@ type EligibleRosterPlayer = {
 
 type Candidate = ProClubFitnessWeeklyTrainingReadV1Observation;
 
+const PRO_CLUB_FITNESS_RESULT_STORED_FIELDS = [
+  "definitionId",
+  "definitionVersion",
+  "observedOn",
+  "playerKey",
+  "recordedAt",
+  "recordedBy",
+  "schemaVersion",
+  "source",
+  "value",
+] as const;
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
@@ -81,6 +93,26 @@ function compareStableText(left: string, right: string): number {
 
 function definitionIdentity(definitionId: string, definitionVersion: number): string {
   return JSON.stringify([definitionId, definitionVersion]);
+}
+
+function hasExactStoredResultFields(data: Record<string, unknown>): boolean {
+  const actualFields = Object.keys(data).sort();
+  const expectedFields = [...PRO_CLUB_FITNESS_RESULT_STORED_FIELDS].sort();
+  return (
+    actualFields.length === expectedFields.length &&
+    actualFields.every((field, index) => field === expectedFields[index])
+  );
+}
+
+function isValidPersistedTimestamp(value: unknown): boolean {
+  if (!isPlainObject(value)) return false;
+
+  try {
+    const toMillis = value.toMillis;
+    return typeof toMillis === "function" && Number.isFinite(toMillis.call(value));
+  } catch {
+    return false;
+  }
 }
 
 function buildEligibleRoster(
@@ -188,8 +220,11 @@ function candidateForRecord(
     recordOrganization.organizationType !== input.organization.organizationType ||
     recordOrganization.organizationId !== input.organization.organizationId ||
     !isPlainObject(data) ||
+    !hasExactStoredResultFields(data) ||
     data.schemaVersion !== 1 ||
     data.source !== "PRO_CLUB_FITNESS_ENTRY" ||
+    !isValidPersistedTimestamp(data.recordedAt) ||
+    !isValidDocumentIdentifier(data.recordedBy) ||
     !isExactPlayerKey(data.playerKey) ||
     !isExactFitnessDefinitionId(data.definitionId) ||
     !isValidFitnessDefinitionVersion(data.definitionVersion) ||
