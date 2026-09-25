@@ -1955,27 +1955,6 @@ service cloud.firestore {
         && exactDocumentId(data.revokedBy);
     }
 
-    function proClubInviteIdentityUnchangedV1() {
-      return request.resource.data.get('schemaVersion', 0)
-          == resource.data.get('schemaVersion', 0)
-        && request.resource.data.get('inviteCode', '')
-          == resource.data.get('inviteCode', '')
-        && request.resource.data.get('clubId', '')
-          == resource.data.get('clubId', '')
-        && request.resource.data.get('targetUid', '')
-          == resource.data.get('targetUid', '')
-        && request.resource.data.get('membershipAuthorizationRole', '')
-          == resource.data.get('membershipAuthorizationRole', '')
-        && request.resource.data.get('staffRole', '')
-          == resource.data.get('staffRole', '')
-        && request.resource.data.get('createdAt', null)
-          == resource.data.get('createdAt', null)
-        && request.resource.data.get('createdBy', '')
-          == resource.data.get('createdBy', '')
-        && request.resource.data.get('expiresAt', null)
-          == resource.data.get('expiresAt', null);
-    }
-
     function validProClubInviteCreateV1(inviteCode) {
       let data = request.resource.data;
       let clubId = data.get('clubId', '');
