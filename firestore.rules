@@ -2048,53 +2048,6 @@ service cloud.firestore {
           : !identity.keys().hasAny(['email']));
     }
 
-    function validProClubRejectedClaimDataV1(data, clubId, claimId) {
-      return data.keys().hasAll([
-          'schemaVersion',
-          'type',
-          'userId',
-          'claimantIdentity',
-          'clubId',
-          'inviteCode',
-          'membershipAuthorizationRole',
-          'staffRole',
-          'status',
-          'createdAt',
-          'updatedAt',
-          'rejectedAt',
-          'rejectedBy'
-        ])
-        && data.keys().hasOnly([
-          'schemaVersion',
-          'type',
-          'userId',
-          'claimantIdentity',
-          'clubId',
-          'inviteCode',
-          'membershipAuthorizationRole',
-          'staffRole',
-          'status',
-          'createdAt',
-          'updatedAt',
-          'rejectedAt',
-          'rejectedBy'
-        ])
-        && validProClubClaimantIdentityV1(data.get('claimantIdentity', null))
-        && data.schemaVersion == 1
-        && data.type == 'PRO_CLUB_STAFF_JOIN'
-        && exactDocumentId(data.userId)
-        && data.clubId == clubId
-        && validProClubInviteCodeV1(data.inviteCode)
-        && data.membershipAuthorizationRole == 'MEMBER'
-        && validProClubStaffRoleV1(data.staffRole)
-        && data.status == 'REJECTED'
-        && data.createdAt is timestamp
-        && data.updatedAt is timestamp
-        && data.rejectedAt is timestamp
-        && exactDocumentId(data.rejectedBy)
-        && claimId == data.userId + '_PRO_CLUB_' + data.inviteCode;
-    }
-
     function proClubClaimIdentityUnchangedV1() {
       return request.resource.data.get('schemaVersion', 0)
           == resource.data.get('schemaVersion', 0)
