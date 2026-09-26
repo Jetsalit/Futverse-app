@@ -4,6 +4,7 @@ import type {
   WeeklyPlannerActivity,
   WeeklyPlannerSquadScope,
 } from "./weeklyPlannerUiModel";
+import { formatThaiTime } from "../../../lib/thaiDateTimePresentation";
 
 const squadScopeLabel: Record<WeeklyPlannerSquadScope, string> = {
   ALL_SQUAD: "All squad",
@@ -104,7 +105,7 @@ export default function WeeklyPlannerActivityCard({
             </span>
             <p className="mt-2 text-sm font-black text-white">{session.objective}</p>
           </div>
-          <time className="text-sm font-black text-cyan-200">{session.startTime}</time>
+          <time className="text-sm font-black text-cyan-200">{formatThaiTime(session.startTime)}</time>
         </div>
 
         <div className="grid gap-2 text-[11px] text-slate-400 sm:grid-cols-2">
@@ -180,7 +181,7 @@ export default function WeeklyPlannerActivityCard({
             </span>
             <p className="mt-2 text-sm font-black text-white">{activity.title}</p>
           </div>
-          <span className="text-sm font-black text-cyan-200">{activity.startTime}</span>
+          <span className="text-sm font-black text-cyan-200">{formatThaiTime(activity.startTime)}</span>
         </div>
         <p className="text-xs leading-5 text-slate-400">{activity.focus}</p>
         <div className="grid gap-2 text-[11px] text-slate-400 sm:grid-cols-2">
@@ -207,7 +208,7 @@ export default function WeeklyPlannerActivityCard({
             </span>
             <p className="mt-2 text-sm font-black text-white">{activity.focus}</p>
           </div>
-          <span className="text-sm font-black text-emerald-200">{activity.startTime}</span>
+          <span className="text-sm font-black text-emerald-200">{formatThaiTime(activity.startTime)}</span>
         </div>
         <div className="grid gap-2 text-[11px] text-slate-400 sm:grid-cols-2">
           <MetaItem icon={<Clock size={13} />}>{activity.durationMinutes} min</MetaItem>
@@ -231,11 +232,11 @@ export default function WeeklyPlannerActivityCard({
           </span>
           <p className="mt-2 text-sm font-black text-white">vs {activity.opponent || "Opponent not set"}</p>
         </div>
-        <span className="text-sm font-black text-amber-200">{activity.kickoffTime}</span>
+        <span className="text-sm font-black text-amber-200">{formatThaiTime(activity.kickoffTime)}</span>
       </div>
       <div className="space-y-2 text-[11px] leading-4 text-slate-400">
         <p className="font-semibold text-slate-300">{activity.competition || "Competition not set"}</p>
-        <MetaItem icon={<Clock size={13} />}>{activity.kickoffTime}</MetaItem>
+        <MetaItem icon={<Clock size={13} />}>{formatThaiTime(activity.kickoffTime)}</MetaItem>
         <MetaItem icon={<MapPin size={13} />}>{activity.venue || "Venue not set"}</MetaItem>
         <MetaItem icon={<Users size={13} />}>
           {activity.squadLabel} · {squadScopeLabel[activity.squadScope]}

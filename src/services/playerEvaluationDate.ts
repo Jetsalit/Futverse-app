@@ -1,6 +1,7 @@
 import type {
   LegacyPlayerEvaluationRecord,
 } from "./playerEvaluationCompatibility";
+import { formatThaiDateLong } from "../lib/thaiDateTimePresentation";
 
 interface FirestoreTimestampLike {
   toMillis?: () => unknown;
@@ -116,14 +117,15 @@ export function evaluationDateLabel(
   const value =
     evaluationDateValue(evaluation);
 
-  // Preserve the existing UI contract for legacy strings.
-  // Do not timezone-shift or rewrite their displayed date.
+  // Keep malformed legacy strings visible while formatting valid values
+  // for the Thai presentation layer.
   if (typeof value === "string") {
     if (!value.trim()) {
       return "Date unavailable";
     }
 
-    return value.slice(0, 10);
+    const formatted = formatThaiDateLong(value);
+    return formatted === "—" ? value.slice(0, 10) : formatted;
   }
 
   const millis =
@@ -133,9 +135,7 @@ export function evaluationDateLabel(
     return "Date unavailable";
   }
 
-  return new Date(millis)
-    .toISOString()
-    .slice(0, 10);
+  return formatThaiDateLong(new Date(millis));
 }
 
 export function comparePlayerEvaluationsNewestFirst(

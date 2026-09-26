@@ -29,6 +29,7 @@ import { EmptyState } from "./common/EmptyState";
 import { approveAcademyJoinClaim } from "../services/membershipService";
 import type { AcademyJoinClaim, TenantRole } from "../types/Membership";
 import { mapCanonicalSnapshot } from "../lib/firestore/canonicalDocument";
+import { formatThaiDateLong } from "../lib/thaiDateTimePresentation";
 import type { FitnessCoachAssignmentRow } from "../lib/academyFitnessCoachAssignment";
 import { canManageFitnessCoachAssignments } from "../lib/academyFitnessCoachAssignment";
 import {
@@ -62,7 +63,7 @@ const formatClaimDate = (value: AcademyJoinClaim["createdAt"]) => {
   const date = typeof value === "object" && "toDate" in value
     ? value.toDate()
     : new Date(value as Date | string);
-  return Number.isNaN(date.getTime()) ? "Unknown" : date.toLocaleDateString();
+  return Number.isNaN(date.getTime()) ? "Unknown" : formatThaiDateLong(date);
 };
 
 export default function CoachManagement({ onBack }: { onBack: () => void }) {

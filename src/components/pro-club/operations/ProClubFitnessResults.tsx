@@ -6,6 +6,10 @@ import {
 } from "../../../lib/fitnessTestFoundation";
 import { calendarDateInTimeZone, parseCanonicalDateOnly } from "../../../lib/dateTimeFoundation";
 import {
+  formatThaiDateLong,
+  formatThaiDateShort,
+} from "../../../lib/thaiDateTimePresentation";
+import {
   prepareProClubFitnessResultDrafts,
   type ProClubFitnessResultCreateInput,
   type ProClubFitnessResultHistoryEntry,
@@ -339,6 +343,7 @@ export default function ProClubFitnessResults({
             <input
               aria-label="Testing date"
               type="date"
+              lang="th-TH"
               value={observedOn}
               disabled={saving}
               onInput={(event) => {
@@ -350,6 +355,9 @@ export default function ProClubFitnessResults({
               }}
               className="mt-1 block min-h-10 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
             />
+            <span className="block text-[11px] text-slate-400" aria-live="polite">
+              {formatThaiDateLong(observedOn)}
+            </span>
           </label>
           <button
             type="button"
@@ -382,7 +390,7 @@ export default function ProClubFitnessResults({
       {!validDate && <p role="alert" className="mt-4 text-sm text-rose-200">Select a valid testing date.</p>}
       {rosterLoading && <p role="status" className="mt-4 text-sm text-slate-400">Loading the canonical Pro Club roster…</p>}
       {canRead && validDate && selectedDateResults === null && !dateError && (
-        <p role="status" className="mt-4 text-sm text-slate-400">Loading saved results for {observedOn}…</p>
+        <p role="status" className="mt-4 text-sm text-slate-400">Loading saved results for {formatThaiDateLong(observedOn)}…</p>
       )}
 
       <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-700">
@@ -509,7 +517,7 @@ export default function ProClubFitnessResults({
                 <li key={entry.id} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
                   <span className="font-semibold">{entry.definitionName}</span>
                   <span className="text-slate-300">{entry.value} {entry.unit}</span>
-                  <time dateTime={entry.observedOn} className="text-xs text-slate-400">{entry.observedOn}</time>
+                  <time dateTime={entry.observedOn} className="text-xs text-slate-400">{formatThaiDateShort(entry.observedOn)}</time>
                 </li>
               ))}
             </ol>

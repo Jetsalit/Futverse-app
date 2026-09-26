@@ -21,6 +21,10 @@ import {
   calculateAgeFromDateOnly,
   calendarDateInTimeZone,
 } from "../lib/dateTimeFoundation";
+import {
+  formatThaiDateLong,
+  formatThaiDateShort,
+} from "../lib/thaiDateTimePresentation";
 import { collection, onSnapshot, doc, deleteField, addDoc, updateDoc } from "firebase/firestore";
 import { EmptyState } from "./common/EmptyState";
 import FitnessTestCatalogue from "./fitness/FitnessTestCatalogue";
@@ -262,11 +266,15 @@ export function FitnessTestingGrid({
             Testing date
             <input
               type="date"
+              lang="th-TH"
               value={observedOn}
               disabled={saving}
               onChange={(event) => onObservedOnChange(event.target.value)}
               className="ml-2 rounded-lg border border-slate-200 px-3 py-2 text-sm"
             />
+            <span className="ml-2 text-xs text-slate-500" aria-live="polite">
+              {formatThaiDateLong(observedOn)}
+            </span>
           </label>
           <button
             type="button"
@@ -357,7 +365,9 @@ export function FitnessResultHistory({
         <tbody>
           {history.map((entry) => (
             <tr key={entry.id} className="border-b border-slate-50 text-slate-700">
-              <td className="px-3 py-2 font-mono text-xs">{entry.observedOn}</td>
+              <td className="px-3 py-2 text-xs">
+                <time dateTime={entry.observedOn}>{formatThaiDateShort(entry.observedOn)}</time>
+              </td>
               <td className="px-3 py-2">{entry.definitionName}</td>
               <td className="px-3 py-2 text-right font-mono">{entry.value} {entry.unit}</td>
             </tr>
@@ -1095,7 +1105,7 @@ export default function FitnessTesting({
                     />
                     <Tooltip
                       formatter={(value: any, name: any, props: any) => [
-                        `${props?.payload?.actualValue ?? value} ${props?.payload?.unit ?? ""} · ${props?.payload?.observedOn ?? ""}`.trim(),
+                        `${props?.payload?.actualValue ?? value} ${props?.payload?.unit ?? ""} · ${formatThaiDateLong(props?.payload?.observedOn)}`.trim(),
                         "Latest recorded result",
                       ]}
                       contentStyle={{
@@ -1173,8 +1183,13 @@ export default function FitnessTesting({
                   <label className="block text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Date of Birth</label>
                   <div className="relative">
                     <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                    <input required name="dob" value={formData.dob} onChange={handleInputChange} type="date" className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all" />
+                    <input required name="dob" value={formData.dob} onChange={handleInputChange} type="date" lang="th-TH" className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all" />
                   </div>
+                  {formData.dob && (
+                    <p className="mt-1 text-xs text-slate-500" aria-live="polite">
+                      {formatThaiDateLong(formData.dob)}
+                    </p>
+                  )}
                 </div>
                 <div className="grid grid-cols-1 gap-4">
                   <div>

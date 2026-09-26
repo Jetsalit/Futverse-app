@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ProClubWeeklyPeriodizationBoard } from "../../../lib/proClubWeeklyPeriodizationBoard";
+import { formatThaiDateShort, formatThaiTime } from "../../../lib/thaiDateTimePresentation";
 import WeeklyPlannerDayCard from "./WeeklyPlannerDayCard";
 import {
   addWeeklyPlannerActivity,
@@ -42,11 +43,7 @@ function addDays(value: string, amount: number): string {
 }
 
 function formatWeekDate(value: string): string {
-  return dateOnly(value).toLocaleDateString(undefined, {
-    day: "2-digit",
-    month: "short",
-    timeZone: "UTC",
-  });
+  return formatThaiDateShort(value);
 }
 
 function activityDuration(activity: ReturnType<typeof buildWeeklyPlannerState>["days"][number]["activities"][number]): number {
@@ -311,7 +308,8 @@ export default function WeeklyPlannerBoard({
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <label className={labelClass}>
               {composerType === "MATCH" ? "Kickoff" : "Start time"}
-              <input type="time" className={fieldClass} value={startTime} onChange={(event) => setStartTime(event.target.value)} />
+              <input type="time" lang="th-TH" className={fieldClass} value={startTime} onChange={(event) => setStartTime(event.target.value)} />
+              <span className="mt-1 block text-[11px] text-slate-500" aria-live="polite">{formatThaiTime(startTime)}</span>
             </label>
 
             {composerType !== "MATCH" && (

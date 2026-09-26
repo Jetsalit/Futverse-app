@@ -36,6 +36,12 @@ import {
   PRO_CLUB_ATTENDANCE_STATUSES,
   type ProClubAttendanceStatus,
 } from "../../../lib/proClubAttendance";
+import {
+  formatThaiDateLong,
+  formatThaiDateShort,
+  formatThaiDateWithWeekday,
+  formatThaiTime,
+} from "../../../lib/thaiDateTimePresentation";
 
 export interface ProClubAttendanceProps {
   authority: ProClubOrganizationAuthority;
@@ -57,6 +63,16 @@ export function canMutateProClubAttendance(
     authority.hasMembershipAuthority === true &&
     authority.staffRole === "HEAD_COACH"
   );
+}
+
+export function sortProClubAttendanceSessionsNewestFirst<
+  T extends Pick<ProClubAttendanceSessionRecord, "sessionDate" | "startTime">,
+>(sessions: readonly T[]): T[] {
+  return [...sessions].sort((a, b) => {
+    const dateCmp = b.sessionDate.localeCompare(a.sessionDate);
+    if (dateCmp !== 0) return dateCmp;
+    return b.startTime.localeCompare(a.startTime);
+  });
 }
 
 const STATUS_STYLE: Record<
@@ -248,11 +264,7 @@ export default function ProClubAttendance({
         const next = await listProClubAttendanceSessions(clubId, attendanceOps);
         if (!cancelled) {
           // Sort newest session first
-          const sorted = [...next].sort((a, b) => {
-            const dateCmp = b.sessionDate.localeCompare(a.sessionDate);
-            if (dateCmp !== 0) return dateCmp;
-            return b.startTime.localeCompare(a.startTime);
-          });
+          const sorted = sortProClubAttendanceSessionsNewestFirst(next);
           setSessions(sorted);
         }
       } catch (err) {
@@ -388,12 +400,12 @@ export default function ProClubAttendance({
     const trimmedTime = inputTime.trim();
 
     if (!isStrictProClubAttendanceDate(trimmedDate)) {
-      setFormError("sessionDate must be a strict calendar date in YYYY-MM-DD format.");
+      setFormError("Please choose a valid date.");
       return;
     }
 
     if (!isStrictProClubAttendanceTime(trimmedTime)) {
-      setFormError("startTime must be a strict 24-hour time in HH:mm format.");
+      setFormError("Please choose a valid start time in 24-hour format.");
       return;
     }
 
@@ -594,17 +606,21 @@ export default function ProClubAttendance({
                 htmlFor="attendance-session-date"
                 className="block text-xs font-bold uppercase tracking-wider text-slate-400"
               >
-                Date (YYYY-MM-DD)
+                วันที่
               </label>
               <div className="relative mt-1">
                 <input
                   id="attendance-session-date"
                   type="date"
+                  lang="th-TH"
                   value={inputDate}
                   onChange={(e) => setInputDate(e.target.value)}
                   className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-400"
                   required
                 />
+                <p className="mt-1 text-[11px] text-slate-500" aria-live="polite">
+                  {formatThaiDateLong(inputDate)}
+                </p>
               </div>
             </div>
 
@@ -613,17 +629,21 @@ export default function ProClubAttendance({
                 htmlFor="attendance-session-time"
                 className="block text-xs font-bold uppercase tracking-wider text-slate-400"
               >
-                Start Time (HH:mm)
+                เวลาเริ่ม
               </label>
               <div className="relative mt-1">
                 <input
                   id="attendance-session-time"
                   type="time"
+                  lang="th-TH"
                   value={inputTime}
                   onChange={(e) => setInputTime(e.target.value)}
                   className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-400"
                   required
                 />
+                <p className="mt-1 text-[11px] text-slate-500" aria-live="polite">
+                  {formatThaiTime(inputTime)}
+                </p>
               </div>
             </div>
           </div>
@@ -665,7 +685,7 @@ export default function ProClubAttendance({
             </div>
             {selectedSession && (
               <span className="font-mono text-xs text-cyan-300">
-                Active: {selectedSession.sessionDate} {selectedSession.startTime}
+                Active: {formatThaiDateShort(selectedSession.sessionDate)} {formatThaiTime(selectedSession.startTime)}
               </span>
             )}
           </div>
@@ -707,8 +727,8 @@ export default function ProClubAttendance({
                         size={14}
                         className={isSelected ? "text-cyan-400" : "text-slate-500"}
                       />
-                      <span className="font-bold">{session.sessionDate}</span>
-                      <span className="text-slate-400">{session.startTime}</span>
+                      <span className="font-bold">{formatThaiDateShort(session.sessionDate)}</span>
+                      <span className="text-slate-400">{formatThaiTime(session.startTime)}</span>
                       <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-400">
                         {session.squadLabel}
                       </span>
@@ -735,10 +755,10 @@ export default function ProClubAttendance({
               <div>
                 <div className="flex items-center gap-2 text-xs font-bold text-cyan-300">
                   <CheckCircle2 size={16} />
-                  <span>Session Slot: {selectedSession.sessionDate} at {selectedSession.startTime}</span>
+                  <span>Session Slot: {formatThaiDateWithWeekday(selectedSession.sessionDate)} · {formatThaiTime(selectedSession.startTime)}</span>
                 </div>
                 <div className="mt-1 font-mono text-xs text-slate-400">
-                  ID: {selectedSession.attendanceSessionId} · Squad: {selectedSession.squadLabel} · Type: {selectedSession.sessionType}
+                  Squad: {selectedSession.squadLabel} · Type: {selectedSession.sessionType}
                 </div>
               </div>
 

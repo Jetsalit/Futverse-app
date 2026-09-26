@@ -5,6 +5,7 @@ import {
 } from "../../../config/runtimeCapabilities";
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
 import type { ProClubFitnessWeeklyTrainingReadV1Selection } from "../../../lib/proClubFitnessWeeklyTrainingRead";
+import { formatThaiDateLong, formatThaiDateShort } from "../../../lib/thaiDateTimePresentation";
 import WeeklyTrainingDraftComposer from "./WeeklyTrainingDraftComposer";
 import WeeklyTrainingSavedDrafts from "./WeeklyTrainingSavedDrafts";
 
@@ -92,12 +93,12 @@ function FitnessTrainingBoundary({
   return (
     <article aria-label="Persisted Fitness observations" className="rounded-2xl border border-emerald-500/25 bg-emerald-500/5 p-5">
       <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-300">
-        Fitness observations as of {context.referenceDate}
+        Fitness observations as of {formatThaiDateLong(context.referenceDate)}
       </p>
       {context.selection.state === "NO_DATA" ? (
         <>
           <p className="mt-2 text-sm leading-6 text-slate-200">
-            No eligible persisted Fitness observations were available as of {context.referenceDate}.
+            No eligible persisted Fitness observations were available as of {formatThaiDateLong(context.referenceDate)}.
           </p>
         </>
       ) : (
@@ -112,7 +113,7 @@ function FitnessTrainingBoundary({
                       <span className="font-semibold text-slate-200">{observation.testName}</span>
                       <span className="text-slate-200">{observation.value} {observation.unit}</span>
                       <span className="text-xs text-slate-400 sm:col-span-2">
-                        Tested <time dateTime={observation.observedOn}>{observation.observedOn}</time>
+                        Tested <time dateTime={observation.observedOn}>{formatThaiDateShort(observation.observedOn)}</time>
                       </span>
                     </li>
                   ))}

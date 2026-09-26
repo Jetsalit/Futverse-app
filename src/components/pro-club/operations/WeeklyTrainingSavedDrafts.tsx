@@ -14,6 +14,7 @@ import type {
 } from "../../../lib/proClubWeeklyTrainingSavedDraftReadModel";
 import { deriveProClubWeeklyPeriodizationBoard } from "../../../lib/proClubWeeklyPeriodizationBoard";
 import { buildFreshWeeklyTrainingDraftFromSavedDraft } from "../../../lib/proClubWeeklyTrainingReviseAsNewDraft";
+import { formatThaiDateShort, formatThaiTime } from "../../../lib/thaiDateTimePresentation";
 import WeeklyPeriodizationBoard from "./WeeklyPeriodizationBoard";
 import WeeklyTrainingDraftComposer from "./WeeklyTrainingDraftComposer";
 import WeeklyTrainingExistingDraftEditor from "./WeeklyTrainingExistingDraftEditor";
@@ -44,13 +45,14 @@ function safeReadMessage(
 }
 
 function displayDate(value: string): string {
-  const date = new Date(`${value}T00:00:00`);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
+  return formatThaiDateShort(value);
 }
 
 function displayTimestamp(value: string): string {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString();
+  return Number.isNaN(date.getTime())
+    ? ""
+    : `${formatThaiDateShort(date)} ${formatThaiTime(date)}`;
 }
 
 function DraftDetail({
