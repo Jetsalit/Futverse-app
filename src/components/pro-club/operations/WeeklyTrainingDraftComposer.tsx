@@ -259,7 +259,7 @@ export default function WeeklyTrainingDraftComposer({
         <div className="grid gap-4 md:grid-cols-2">
           <label className={labelClass}>
             Week start date
-            <FutVerseThaiDateInput className={inputClass} value={draft.weekStartDate} onChange={(weekStartDate) => setDraft((current) => ({ ...current, weekStartDate }))} aria-label="Week start date" />
+            <FutVerseThaiDateInput className={inputClass} tone="dark" value={draft.weekStartDate} onChange={(weekStartDate) => setDraft((current) => ({ ...current, weekStartDate }))} aria-label="Week start date" />
           </label>
           <label className={labelClass}>
             Squad
@@ -292,8 +292,8 @@ export default function WeeklyTrainingDraftComposer({
                 <button type="button" disabled={draft.sessions.length <= 1} onClick={() => setDraft((current) => ({ ...current, sessions: removeTrainingSession(current.sessions, sessionIndex) }))} className="inline-flex items-center gap-1 text-xs font-bold text-rose-300 disabled:opacity-30"><Trash2 size={14} /> Remove session</button>
               </div>
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <label className={labelClass}>Date<FutVerseThaiDateInput className={inputClass} value={session.sessionDate} onChange={(sessionDate) => updateSession(sessionIndex, { ...session, sessionDate })} aria-label={`Session ${sessionIndex + 1} date`} /></label>
-                <label className={labelClass}>Start time<FutVerseThaiTimeInput className={inputClass} value={session.startTime} onChange={(startTime) => updateSession(sessionIndex, { ...session, startTime })} aria-label={`Session ${sessionIndex + 1} start time`} /></label>
+                <label className={labelClass}>Date<FutVerseThaiDateInput className={inputClass} tone="dark" value={session.sessionDate} onChange={(sessionDate) => updateSession(sessionIndex, { ...session, sessionDate })} aria-label={`Session ${sessionIndex + 1} date`} /></label>
+                <label className={labelClass}>Start time<FutVerseThaiTimeInput className={inputClass} tone="dark" value={session.startTime} onChange={(startTime) => updateSession(sessionIndex, { ...session, startTime })} aria-label={`Session ${sessionIndex + 1} start time`} /></label>
                 <label className={labelClass}>Location<input className={inputClass} maxLength={200} value={session.location} onChange={(event) => updateSession(sessionIndex, { ...session, location: event.target.value })} /></label>
                 <label className={labelClass}>Duration<input type="number" min={15} max={360} className={inputClass} value={session.durationMinutes} onChange={(event) => updateSession(sessionIndex, { ...session, durationMinutes: toInteger(event.target.value, session.durationMinutes) })} /></label>
               </div>

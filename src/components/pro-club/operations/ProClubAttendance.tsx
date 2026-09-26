@@ -613,6 +613,7 @@ export default function ProClubAttendance({
                   id="attendance-session-date"
                   value={inputDate}
                   onChange={setInputDate}
+                  tone="dark"
                   className="border-slate-700 bg-slate-900 text-white hover:border-slate-600 focus:border-cyan-400 focus:ring-cyan-400/20"
                   required
                 />
@@ -631,6 +632,7 @@ export default function ProClubAttendance({
                   id="attendance-session-time"
                   value={inputTime}
                   onChange={setInputTime}
+                  tone="dark"
                   className="border-slate-700 bg-slate-900 text-white focus:border-cyan-400 focus:ring-cyan-400/20"
                   required
                   aria-label="เวลาเริ่ม (24 ชั่วโมง)"
