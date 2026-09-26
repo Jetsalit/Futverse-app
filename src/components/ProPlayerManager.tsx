@@ -22,7 +22,7 @@ import {
 import { useSuperAdminSupport } from "../contexts/SuperAdminSupportContext";
 import { canAccessTenantCapability } from "../lib/superAdminSupportModel";
 import { calendarDateInTimeZone } from "../lib/dateTimeFoundation";
-import { formatThaiDateLong } from "../lib/thaiDateTimePresentation";
+import { FutVerseThaiDateInput } from "./common/FutVerseThaiDateTimeInputs";
 
 export default function ProPlayerManager({
   onBack,
@@ -393,21 +393,13 @@ function AddProPlayerModal({
                 <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">
                   วัน/เดือน/ปีเกิด
                 </label>
-                <input
-                  type="date"
-                  lang="th-TH"
+                <FutVerseThaiDateInput
                   max={localToday}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-500"
+                  className="w-full bg-slate-50 border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-500"
                   value={formData.dob}
-                  onChange={(e) =>
-                    setFormData({ ...formData, dob: e.target.value })
-                  }
+                  onChange={(dob) => setFormData((current) => ({ ...current, dob }))}
+                  aria-label="วันเดือนปีเกิด"
                 />
-                {formData.dob && (
-                  <p className="mt-1 text-xs text-slate-500" aria-live="polite">
-                    {formatThaiDateLong(formData.dob)}
-                  </p>
-                )}
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
@@ -523,20 +515,12 @@ function AddProPlayerModal({
                 <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">
                   สัญญาหมดอายุ (Contract Expiry)
                 </label>
-                <input
-                  type="date"
-                  lang="th-TH"
+                <FutVerseThaiDateInput
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-500"
                   value={formData.contractExpiry}
-                  onChange={(e) =>
-                    setFormData({ ...formData, contractExpiry: e.target.value })
-                  }
+                  onChange={(contractExpiry) => setFormData((current) => ({ ...current, contractExpiry }))}
+                  aria-label="วันหมดอายุสัญญา"
                 />
-                {formData.contractExpiry && (
-                  <p className="mt-1 text-xs text-slate-500" aria-live="polite">
-                    {formatThaiDateLong(formData.contractExpiry)}
-                  </p>
-                )}
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">

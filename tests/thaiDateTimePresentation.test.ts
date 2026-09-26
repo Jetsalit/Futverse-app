@@ -5,7 +5,9 @@ import {
   formatThaiDateLong,
   formatThaiDateShort,
   formatThaiDateWithWeekday,
+  formatThaiMonthYear,
   formatThaiTime,
+  formatThaiWeekdayShort,
 } from "../src/lib/thaiDateTimePresentation";
 
 test("formats Gregorian 2026 dates with the Buddhist Era year and Thai month names", () => {
@@ -17,6 +19,8 @@ test("formats Gregorian 2026 dates with the Buddhist Era year and Thai month nam
     formatThaiDateWithWeekday(canonicalDate),
     "วันเสาร์ที่ 26 กันยายน 2569",
   );
+  assert.equal(formatThaiMonthYear(canonicalDate), "กันยายน 2569");
+  assert.equal(formatThaiWeekdayShort(canonicalDate), "เสาร์");
   assert.equal(canonicalDate, "2026-09-26");
 });
 

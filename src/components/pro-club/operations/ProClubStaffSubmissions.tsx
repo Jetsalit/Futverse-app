@@ -15,6 +15,7 @@ import {
 
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
 import { formatThaiDateLong } from "../../../lib/thaiDateTimePresentation";
+import { FutVerseThaiDateInput } from "../../common/FutVerseThaiDateTimeInputs";
 import {
   approveProClubStaffSubmission,
   beginProClubStaffSubmissionReview,
@@ -730,7 +731,9 @@ export default function ProClubStaffSubmissions({
                           : "font-semibold text-amber-500"
                       }
                     >
-                      {record.targetSessionDate ?? "Not linked"}
+                      {record.targetSessionDate
+                        ? formatThaiDateLong(record.targetSessionDate)
+                        : "Not linked"}
                     </strong>
                   </span>
                 </div>
@@ -1000,24 +1003,18 @@ function SubmissionEditor({
 
           <label className="grid gap-1.5 text-sm font-bold text-slate-700">
             Session date (ถ้ามี)
-            <input
-              type="date"
-              lang="th-TH"
+            <FutVerseThaiDateInput
               disabled={!form.targetPlanId}
               value={form.targetSessionDate ?? ""}
-              onChange={(event) =>
+              onChange={(targetSessionDate) =>
                 onChange({
                   ...form,
-                  targetSessionDate: event.target.value || null,
+                  targetSessionDate: targetSessionDate || null,
                 })
               }
-              className="rounded-xl border border-slate-300 px-3 py-2 font-normal text-slate-900 disabled:bg-slate-100"
+              className="rounded-xl border-slate-300 px-3 py-2 font-normal text-slate-900 disabled:bg-slate-100"
+              aria-label="Session date"
             />
-            {form.targetSessionDate && (
-              <span className="text-xs font-normal text-slate-500" aria-live="polite">
-                {formatThaiDateLong(form.targetSessionDate)}
-              </span>
-            )}
           </label>
         </div>
       </div>

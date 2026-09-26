@@ -25,6 +25,7 @@ import {
   type RawProfileClaimData,
   type UserReviewMode,
 } from "../src/lib/superAdminApprovalModel";
+import { formatThaiDateLong } from "../src/lib/thaiDateTimePresentation";
 import {
   approveUserAtomically,
   type AtomicAdminMutationDependencies,
@@ -324,22 +325,22 @@ describe("Safe Firestore Date Formatting", () => {
       toDate: () => new Date("2026-05-15T12:00:00Z"),
     };
     const formatted = formatFirestoreDate(mockTimestamp);
-    assert.equal(formatted, new Date("2026-05-15T12:00:00Z").toLocaleDateString());
+    assert.equal(formatted, formatThaiDateLong(new Date("2026-05-15T12:00:00Z")));
   });
 
   it("21. Date works", () => {
     const d = new Date("2026-08-14T00:00:00Z");
-    assert.equal(formatFirestoreDate(d), d.toLocaleDateString());
+    assert.equal(formatFirestoreDate(d), formatThaiDateLong(d));
   });
 
   it("22. ISO string works", () => {
     const iso = "2026-01-20T08:30:00.000Z";
-    assert.equal(formatFirestoreDate(iso), new Date(iso).toLocaleDateString());
+    assert.equal(formatFirestoreDate(iso), formatThaiDateLong(new Date(iso)));
   });
 
   it("23. timestamp number works", () => {
     const ms = 1750000000000;
-    assert.equal(formatFirestoreDate(ms), new Date(ms).toLocaleDateString());
+    assert.equal(formatFirestoreDate(ms), formatThaiDateLong(new Date(ms)));
   });
 
   it("24. invalid date => '-'", () => {

@@ -37,11 +37,11 @@ import {
   type ProClubAttendanceStatus,
 } from "../../../lib/proClubAttendance";
 import {
-  formatThaiDateLong,
   formatThaiDateShort,
   formatThaiDateWithWeekday,
   formatThaiTime,
 } from "../../../lib/thaiDateTimePresentation";
+import { FutVerseThaiDateInput, FutVerseThaiTimeInput } from "../../common/FutVerseThaiDateTimeInputs";
 
 export interface ProClubAttendanceProps {
   authority: ProClubOrganizationAuthority;
@@ -609,18 +609,13 @@ export default function ProClubAttendance({
                 วันที่
               </label>
               <div className="relative mt-1">
-                <input
+                <FutVerseThaiDateInput
                   id="attendance-session-date"
-                  type="date"
-                  lang="th-TH"
                   value={inputDate}
-                  onChange={(e) => setInputDate(e.target.value)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-400"
+                  onChange={setInputDate}
+                  className="border-slate-700 bg-slate-900 text-white hover:border-slate-600 focus:border-cyan-400 focus:ring-cyan-400/20"
                   required
                 />
-                <p className="mt-1 text-[11px] text-slate-500" aria-live="polite">
-                  {formatThaiDateLong(inputDate)}
-                </p>
               </div>
             </div>
 
@@ -632,18 +627,14 @@ export default function ProClubAttendance({
                 เวลาเริ่ม
               </label>
               <div className="relative mt-1">
-                <input
+                <FutVerseThaiTimeInput
                   id="attendance-session-time"
-                  type="time"
-                  lang="th-TH"
                   value={inputTime}
-                  onChange={(e) => setInputTime(e.target.value)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-400"
+                  onChange={setInputTime}
+                  className="border-slate-700 bg-slate-900 text-white focus:border-cyan-400 focus:ring-cyan-400/20"
                   required
+                  aria-label="เวลาเริ่ม (24 ชั่วโมง)"
                 />
-                <p className="mt-1 text-[11px] text-slate-500" aria-live="polite">
-                  {formatThaiTime(inputTime)}
-                </p>
               </div>
             </div>
           </div>

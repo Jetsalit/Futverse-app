@@ -5,7 +5,6 @@ import {
   Filter,
   X,
   Upload,
-  Calendar,
   ChevronDown,
   ChevronLeft,
   Edit2,
@@ -19,7 +18,7 @@ import {
   calculateAgeFromDateOnly,
   calendarDateInTimeZone,
 } from "../lib/dateTimeFoundation";
-import { formatThaiDateLong } from "../lib/thaiDateTimePresentation";
+import { FutVerseThaiDateInput } from "./common/FutVerseThaiDateTimeInputs";
 import {
   collection,
   onSnapshot,
@@ -847,30 +846,18 @@ export default function YouthPlayerManager({
                   <label className="block text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">
                     Date of Birth
                   </label>
-                  <div className="relative">
-                    <Calendar
-                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                      size={18}
-                    />
-                    <input
-                      required
-                      name="dob"
-                      value={formData.dob}
-                      onChange={handleInputChange}
-                      type="date"
-                      lang="th-TH"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-slate-700"
-                    />
-                  </div>
+                  <FutVerseThaiDateInput
+                    required
+                    name="dob"
+                    value={formData.dob}
+                    onChange={(dob) => setFormData((current) => ({ ...current, dob }))}
+                    className="w-full bg-slate-50 border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-slate-700"
+                    aria-label="Date of Birth"
+                  />
                   {formData.dob && (
-                    <>
-                      <p className="text-xs text-slate-500 mt-1.5 ml-1" aria-live="polite">
-                        {formatThaiDateLong(formData.dob)}
-                      </p>
-                      <p className="text-xs text-emerald-600 mt-1.5 font-medium ml-1">
-                        Calculated Age: {calculateAge(formData.dob) ?? "-"} years old
-                      </p>
-                    </>
+                    <p className="text-xs text-emerald-600 mt-1.5 font-medium ml-1">
+                      Calculated Age: {calculateAge(formData.dob) ?? "-"} years old
+                    </p>
                   )}
                 </div>
 

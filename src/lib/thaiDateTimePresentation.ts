@@ -31,6 +31,17 @@ const weekdayDateFormatter = new Intl.DateTimeFormat(THAI_LOCALE, {
   year: "numeric",
 });
 
+const monthYearFormatter = new Intl.DateTimeFormat(THAI_LOCALE, {
+  timeZone: BANGKOK_TIME_ZONE,
+  month: "long",
+  year: "numeric",
+});
+
+const weekdayShortFormatter = new Intl.DateTimeFormat(THAI_LOCALE, {
+  timeZone: BANGKOK_TIME_ZONE,
+  weekday: "short",
+});
+
 const timeFormatter = new Intl.DateTimeFormat(THAI_LOCALE, {
   timeZone: BANGKOK_TIME_ZONE,
   hour: "2-digit",
@@ -85,6 +96,14 @@ export function formatThaiDateWithWeekday(
   value: ThaiDateTimeInput,
 ): string {
   return formatDate(value, weekdayDateFormatter);
+}
+
+export function formatThaiMonthYear(value: ThaiDateTimeInput): string {
+  return formatDate(value, monthYearFormatter);
+}
+
+export function formatThaiWeekdayShort(value: ThaiDateTimeInput): string {
+  return formatDate(value, weekdayShortFormatter);
 }
 
 export function formatThaiTime(value: ThaiDateTimeInput): string {

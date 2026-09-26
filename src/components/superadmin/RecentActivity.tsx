@@ -1,5 +1,6 @@
 import { Activity, Loader2 } from "lucide-react";
 import type { DashboardLoadState, RecentActivityItem } from "./dashboardModel";
+import { formatThaiDateShort, formatThaiTime } from "../../lib/thaiDateTimePresentation";
 
 interface RecentActivityProps {
   activities: readonly RecentActivityItem[];
@@ -7,15 +8,25 @@ interface RecentActivityProps {
 }
 
 function formatActivityTime(value: unknown): string {
-  if (value instanceof Date) return value.toLocaleString();
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? "—" : `${formatThaiDateShort(value)} ${formatThaiTime(value)}`;
   if (typeof value === "string" || typeof value === "number") {
     const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
+    if (Number.isNaN(date.getTime())) return "—";
+    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return formatThaiDateShort(value);
+    return `${formatThaiDateShort(date)} ${formatThaiTime(date)}`;
   }
   if (value && typeof value === "object") {
     const timestamp = value as { toDate?: () => Date; seconds?: number };
-    if (typeof timestamp.toDate === "function") return timestamp.toDate().toLocaleString();
-    if (typeof timestamp.seconds === "number") return new Date(timestamp.seconds * 1000).toLocaleString();
+    if (typeof timestamp.toDate === "function") {
+      const date = timestamp.toDate();
+      return date instanceof Date && !Number.isNaN(date.getTime())
+        ? `${formatThaiDateShort(date)} ${formatThaiTime(date)}`
+        : "—";
+    }
+    if (typeof timestamp.seconds === "number") {
+      const date = new Date(timestamp.seconds * 1000);
+      return Number.isNaN(date.getTime()) ? "—" : `${formatThaiDateShort(date)} ${formatThaiTime(date)}`;
+    }
   }
   return "—";
 }

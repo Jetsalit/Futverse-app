@@ -27,6 +27,7 @@ import {
 } from "../lib/thaiDateTimePresentation";
 import { collection, onSnapshot, doc, deleteField, addDoc, updateDoc } from "firebase/firestore";
 import { EmptyState } from "./common/EmptyState";
+import { FutVerseThaiDateInput } from "./common/FutVerseThaiDateTimeInputs";
 import FitnessTestCatalogue from "./fitness/FitnessTestCatalogue";
 import { useAcademy } from "../contexts/AcademyContext";
 import { useAuth } from "../contexts/AuthContext";
@@ -48,7 +49,7 @@ import {
   isPlayerPositionCode,
   validatePositionSelection,
 } from "../lib/playerPositionSelection";
-import { Plus, Edit2, Trash2, X, Upload, Calendar, ChevronDown, Filter } from "lucide-react";
+import { Plus, Edit2, Trash2, X, Upload, ChevronDown, Filter } from "lucide-react";
 
 interface Player {
   id: string;
@@ -264,17 +265,13 @@ export function FitnessTestingGrid({
         <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
           <label className="text-xs font-bold text-slate-600">
             Testing date
-            <input
-              type="date"
-              lang="th-TH"
+            <FutVerseThaiDateInput
               value={observedOn}
               disabled={saving}
-              onChange={(event) => onObservedOnChange(event.target.value)}
-              className="ml-2 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              onChange={onObservedOnChange}
+              className="ml-2 rounded-lg border-slate-200 px-3 py-2 text-sm"
+              aria-label="Testing date"
             />
-            <span className="ml-2 text-xs text-slate-500" aria-live="polite">
-              {formatThaiDateLong(observedOn)}
-            </span>
           </label>
           <button
             type="button"
@@ -1181,15 +1178,14 @@ export default function FitnessTesting({
                 </div>
                 <div>
                   <label className="block text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Date of Birth</label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                    <input required name="dob" value={formData.dob} onChange={handleInputChange} type="date" lang="th-TH" className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all" />
-                  </div>
-                  {formData.dob && (
-                    <p className="mt-1 text-xs text-slate-500" aria-live="polite">
-                      {formatThaiDateLong(formData.dob)}
-                    </p>
-                  )}
+                  <FutVerseThaiDateInput
+                    required
+                    name="dob"
+                    value={formData.dob}
+                    onChange={(dob) => setFormData((current) => ({ ...current, dob }))}
+                    className="w-full bg-slate-50 border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                    aria-label="Date of Birth"
+                  />
                 </div>
                 <div className="grid grid-cols-1 gap-4">
                   <div>
