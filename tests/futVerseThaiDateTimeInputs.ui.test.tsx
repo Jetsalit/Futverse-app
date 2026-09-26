@@ -56,6 +56,17 @@ async function mountInDom(element: React.ReactElement) {
   };
 }
 
+function findCalendarButtonByText(document: Document, text: string): HTMLButtonElement | null {
+  const calendar = document.querySelector('[role="dialog"]');
+  if (!calendar) return null;
+  const buttons = calendar.querySelectorAll("button");
+  for (let index = 0; index < buttons.length; index += 1) {
+    const button = buttons.item(index);
+    if (button.textContent?.trim() === text) return button;
+  }
+  return null;
+}
+
 test("Thai date input shows Buddhist Era text and keeps the hidden form value canonical", () => {
   const html = render(React.createElement(FutVerseThaiDateInput, {
     id: "session-date",
@@ -121,8 +132,7 @@ test("optional Thai date input clears a selected date and restores trigger focus
     const trigger = mounted.document.querySelector<HTMLButtonElement>("button[aria-haspopup='dialog']");
     assert.ok(trigger);
     await act(async () => trigger.dispatchEvent(new mounted.document.defaultView!.MouseEvent("click", { bubbles: true })));
-    const clearButton = Array.from(mounted.document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
-      .find((button) => button.textContent?.trim() === "ล้างวันที่");
+    const clearButton = findCalendarButtonByText(mounted.document, "ล้างวันที่");
     assert.ok(clearButton);
     await act(async () => clearButton.dispatchEvent(new mounted.document.defaultView!.MouseEvent("click", { bubbles: true })));
     assert.equal(changed, "");
@@ -145,11 +155,7 @@ test("required Thai date input does not offer a clear action", async () => {
     const trigger = mounted.document.querySelector<HTMLButtonElement>("button[aria-haspopup='dialog']");
     assert.ok(trigger);
     await act(async () => trigger.dispatchEvent(new mounted.document.defaultView!.MouseEvent("click", { bubbles: true })));
-    assert.equal(
-      Array.from(mounted.document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
-        .find((button) => button.textContent?.trim() === "ล้างวันที่"),
-      undefined,
-    );
+    assert.equal(findCalendarButtonByText(mounted.document, "ล้างวันที่"), null);
   } finally {
     await mounted.close();
   }
