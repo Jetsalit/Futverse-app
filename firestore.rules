@@ -2204,44 +2204,6 @@ service cloud.firestore {
           == resource.data.get('createdAt', null);
     }
 
-    function validProClubApprovalProofDataV1(data, clubId, uid) {
-      return data.keys().hasAll([
-          'schemaVersion',
-          'userId',
-          'clubId',
-          'claimId',
-          'inviteCode',
-          'membershipAuthorizationRole',
-          'staffRole',
-          'status',
-          'approvedAt',
-          'approvedBy'
-        ])
-        && data.keys().hasOnly([
-          'schemaVersion',
-          'userId',
-          'clubId',
-          'claimId',
-          'inviteCode',
-          'membershipAuthorizationRole',
-          'staffRole',
-          'status',
-          'approvedAt',
-          'approvedBy'
-        ])
-        && data.schemaVersion == 1
-        && data.userId == uid
-        && data.clubId == clubId
-        && exactDocumentId(data.claimId)
-        && validProClubInviteCodeV1(data.inviteCode)
-        && data.membershipAuthorizationRole == 'MEMBER'
-        && validProClubStaffRoleV1(data.staffRole)
-        && data.status == 'APPROVED'
-        && data.approvedAt is timestamp
-        && exactDocumentId(data.approvedBy)
-        && data.claimId == uid + '_PRO_CLUB_' + data.inviteCode;
-    }
-
     function freshProClubApprovalProofForUidV1(clubId, uid) {
       let proofPath =
         /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(uid);
