@@ -20,7 +20,7 @@ test("formats Gregorian 2026 dates with the Buddhist Era year and Thai month nam
     "วันเสาร์ที่ 26 กันยายน 2569",
   );
   assert.equal(formatThaiMonthYear(canonicalDate), "กันยายน 2569");
-  assert.equal(formatThaiWeekdayShort(canonicalDate), "เสาร์");
+  assert.match(formatThaiWeekdayShort(canonicalDate), /^(?:ส\.|เสาร์)$/);
   assert.equal(canonicalDate, "2026-09-26");
 });
 

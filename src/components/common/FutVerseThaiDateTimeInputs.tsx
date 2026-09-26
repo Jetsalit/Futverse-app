@@ -232,14 +232,29 @@ export function FutVerseThaiDateInput({
 
           <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2">
             <span className="text-xs text-slate-500">{selectedParts ? displayValue : "ยังไม่ได้เลือกวันที่"}</span>
-            <button
-              type="button"
-              disabled={!today || !isWithinDateBounds(today, min, max)}
-              onClick={selectToday}
-              className="rounded-lg px-2 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              วันนี้
-            </button>
+            <div className="flex items-center gap-2">
+              {!required && selectedParts && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChange("");
+                    setOpen(false);
+                    triggerRef.current?.focus();
+                  }}
+                  className="rounded-lg px-2 py-1 text-xs font-bold text-slate-600 hover:bg-slate-100"
+                >
+                  ล้างวันที่
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={!today || !isWithinDateBounds(today, min, max)}
+                onClick={selectToday}
+                className="rounded-lg px-2 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                วันนี้
+              </button>
+            </div>
           </div>
         </div>
       )}

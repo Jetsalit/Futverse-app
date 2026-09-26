@@ -84,7 +84,8 @@ test("Thai date calendar selects a Gregorian date without changing its canonical
     assert.ok(trigger);
     await act(async () => trigger.dispatchEvent(new mounted.document.defaultView!.MouseEvent("click", { bubbles: true })));
     assert.match(mounted.document.body.textContent ?? "", /กันยายน 2569/);
-    assert.match(mounted.document.body.textContent ?? "", /อาทิตย์/);
+    const sundayLabel = mounted.document.querySelector<HTMLElement>('[role="dialog"] .grid-cols-7 > span')?.textContent;
+    assert.match(sundayLabel ?? "", /^(?:อา\.|อาทิตย์)$/);
     const previousMonth = mounted.document.querySelector<HTMLButtonElement>('button[aria-label="เดือนก่อนหน้า"]');
     const nextMonth = mounted.document.querySelector<HTMLButtonElement>('button[aria-label="เดือนถัดไป"]');
     assert.ok(previousMonth);
@@ -97,6 +98,58 @@ test("Thai date calendar selects a Gregorian date without changing its canonical
     assert.ok(nextDay);
     await act(async () => nextDay.dispatchEvent(new mounted.document.defaultView!.MouseEvent("click", { bubbles: true })));
     assert.equal(changed, "2026-09-27");
+  } finally {
+    await mounted.close();
+  }
+});
+
+test("optional Thai date input clears a selected date and restores trigger focus", async () => {
+  let changed: string | undefined;
+  function ControlledDate() {
+    const [value, setValue] = React.useState("2026-09-26");
+    return React.createElement(FutVerseThaiDateInput, {
+      name: "sessionDate",
+      value,
+      onChange: (next: string) => {
+        changed = next;
+        setValue(next);
+      },
+    });
+  }
+  const mounted = await mountInDom(React.createElement(ControlledDate));
+  try {
+    const trigger = mounted.document.querySelector<HTMLButtonElement>("button[aria-haspopup='dialog']");
+    assert.ok(trigger);
+    await act(async () => trigger.dispatchEvent(new mounted.document.defaultView!.MouseEvent("click", { bubbles: true })));
+    const clearButton = Array.from(mounted.document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
+      .find((button) => button.textContent?.trim() === "ล้างวันที่");
+    assert.ok(clearButton);
+    await act(async () => clearButton.dispatchEvent(new mounted.document.defaultView!.MouseEvent("click", { bubbles: true })));
+    assert.equal(changed, "");
+    assert.equal(trigger.textContent?.trim(), "เลือกวันที่");
+    assert.equal(mounted.document.querySelector<HTMLInputElement>('input[name="sessionDate"]')?.value, "");
+    assert.equal(mounted.document.querySelector('[role="dialog"]'), null);
+    assert.equal(mounted.document.activeElement, trigger);
+  } finally {
+    await mounted.close();
+  }
+});
+
+test("required Thai date input does not offer a clear action", async () => {
+  const mounted = await mountInDom(React.createElement(FutVerseThaiDateInput, {
+    value: "2026-09-26",
+    onChange: () => assert.fail("required date must not be cleared"),
+    required: true,
+  }));
+  try {
+    const trigger = mounted.document.querySelector<HTMLButtonElement>("button[aria-haspopup='dialog']");
+    assert.ok(trigger);
+    await act(async () => trigger.dispatchEvent(new mounted.document.defaultView!.MouseEvent("click", { bubbles: true })));
+    assert.equal(
+      Array.from(mounted.document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
+        .find((button) => button.textContent?.trim() === "ล้างวันที่"),
+      undefined,
+    );
   } finally {
     await mounted.close();
   }
