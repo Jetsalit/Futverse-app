@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ProClubWeeklyPeriodizationBoard } from "../../../lib/proClubWeeklyPeriodizationBoard";
 import { formatThaiDateShort, formatThaiTime } from "../../../lib/thaiDateTimePresentation";
+import { FutVerseThaiTimeInput } from "../../common/FutVerseThaiDateTimeInputs";
 import WeeklyPlannerDayCard from "./WeeklyPlannerDayCard";
 import {
   addWeeklyPlannerActivity,
@@ -273,7 +274,7 @@ export default function WeeklyPlannerBoard({
         <section aria-label="Add planner activity" className="rounded-2xl border border-cyan-400/25 bg-slate-900/95 p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-300">Add activity · {composerDate}</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-300">Add activity · {formatThaiDateShort(composerDate)}</p>
               <h4 className="mt-1 font-black text-white">Local UI preview</h4>
             </div>
             <button type="button" onClick={() => setComposerDate(null)} className="text-xs font-bold text-slate-400 hover:text-white">
@@ -308,8 +309,12 @@ export default function WeeklyPlannerBoard({
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <label className={labelClass}>
               {composerType === "MATCH" ? "Kickoff" : "Start time"}
-              <input type="time" lang="th-TH" className={fieldClass} value={startTime} onChange={(event) => setStartTime(event.target.value)} />
-              <span className="mt-1 block text-[11px] text-slate-500" aria-live="polite">{formatThaiTime(startTime)}</span>
+              <FutVerseThaiTimeInput
+                className={fieldClass}
+                value={startTime}
+                onChange={setStartTime}
+                aria-label={composerType === "MATCH" ? "Kickoff time" : "Start time"}
+              />
             </label>
 
             {composerType !== "MATCH" && (

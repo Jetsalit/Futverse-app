@@ -8,6 +8,7 @@ import {
   type SafeAccountRole,
   type TenantMembershipRole,
 } from "./accountRolePolicy";
+import { formatThaiDateLong } from "./thaiDateTimePresentation";
 
 export type ExplicitAccountRoleSelection = SafeAccountRole | "";
 export type UserReviewMode = "APPROVAL_REVIEW" | "READ_ONLY_PROFILE";
@@ -92,7 +93,7 @@ export function formatFirestoreDate(value: unknown): string {
     try {
       const date = (value as { toDate: () => unknown }).toDate();
       if (date instanceof Date && !isNaN(date.getTime())) {
-        return date.toLocaleDateString();
+        return formatThaiDateLong(date);
       }
       return "-";
     } catch {
@@ -102,13 +103,13 @@ export function formatFirestoreDate(value: unknown): string {
 
   // Date instance
   if (value instanceof Date) {
-    return !isNaN(value.getTime()) ? value.toLocaleDateString() : "-";
+    return !isNaN(value.getTime()) ? formatThaiDateLong(value) : "-";
   }
 
   // Number timestamp (e.g. milliseconds)
   if (typeof value === "number" && Number.isFinite(value)) {
     const date = new Date(value);
-    return !isNaN(date.getTime()) ? date.toLocaleDateString() : "-";
+    return !isNaN(date.getTime()) ? formatThaiDateLong(date) : "-";
   }
 
   // ISO string or date string
@@ -116,7 +117,7 @@ export function formatFirestoreDate(value: unknown): string {
     const trimmed = value.trim();
     if (trimmed.length === 0) return "-";
     const date = new Date(trimmed);
-    return !isNaN(date.getTime()) ? date.toLocaleDateString() : "-";
+    return !isNaN(date.getTime()) ? formatThaiDateLong(date) : "-";
   }
 
   return "-";

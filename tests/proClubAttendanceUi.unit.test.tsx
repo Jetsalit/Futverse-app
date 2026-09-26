@@ -215,10 +215,14 @@ test("static markup presentation: Head Coach sees authorized banner and session 
   assert.match(text, /วันที่/);
   assert.match(text, /เวลาเริ่ม/);
   assert.match(text, /26 กันยายน 2569/);
-  assert.match(text, /09:00 น\./);
   assert.doesNotMatch(text, /2026-09-26|09:00 AM|09:00 PM/);
-  assert.match(markup, /value="2026-09-26"/);
-  assert.match(markup, /value="09:00"/);
+  const document = new JSDOM(markup).window.document;
+  const dateInput = document.querySelector<HTMLButtonElement>("#attendance-session-date");
+  assert.equal(dateInput?.textContent?.trim(), "26 กันยายน 2569");
+  assert.equal(document.querySelector('[name="sessionDate"]'), null);
+  const timeInput = document.querySelector<HTMLInputElement>("#attendance-session-time");
+  assert.equal(timeInput?.value, "09:00");
+  assert.equal(timeInput?.parentElement?.querySelector("span")?.textContent, "น.");
   assert.match(text, /Historical Sessions/);
   assert.match(text, /Open or Create Session Slot/);
 });

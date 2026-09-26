@@ -12,6 +12,16 @@ import {
   FileText,
 } from "lucide-react";
 import { Drill } from "../hooks/useDrillDatabase";
+import { parseCanonicalDateOnly } from "../lib/dateTimeFoundation";
+import { formatThaiDateLong } from "../lib/thaiDateTimePresentation";
+
+function displayDrillDate(value: string | undefined): string {
+  if (!value) return "ไม่ได้ระบุ";
+  if (parseCanonicalDateOnly(value)) return formatThaiDateLong(value);
+  // TacticBoard's persisted Thai date string is a V1 legacy contract and is
+  // intentionally displayed as stored; this workstream does not rewrite it.
+  return value;
+}
 
 interface DrillDetailModalProps {
   drill: Drill;
@@ -95,7 +105,7 @@ export default function DrillDetailModal({
                 วันที่ฝึกซ้อม
               </div>
               <div className="text-lg font-bold text-slate-800">
-                {drill.date || "ไม่ได้ระบุ"}
+                {displayDrillDate(drill.date)}
               </div>
             </div>
           </div>

@@ -116,17 +116,14 @@ async function setTestingDate(
   runtime: ReturnType<typeof setupDom>,
   date: string,
 ) {
-  const dateInput = runtime.container.querySelector('input[type="date"]');
-  assert.ok(dateInput);
-  const valueSetter = Object.getOwnPropertyDescriptor(
-    runtime.window.HTMLInputElement.prototype,
-    "value",
-  )?.set;
-  assert.ok(valueSetter);
+  const dateTrigger = runtime.container.querySelector<HTMLButtonElement>('button[aria-label="Testing date"]');
+  assert.ok(dateTrigger);
   await act(async () => {
-    valueSetter.call(dateInput, date);
-    dateInput.dispatchEvent(new runtime.window.Event("input", { bubbles: true }));
+    dateTrigger.dispatchEvent(new runtime.window.MouseEvent("click", { bubbles: true }));
   });
+  const dateButton = runtime.container.querySelector<HTMLButtonElement>(`button[data-date="${date}"]`);
+  assert.ok(dateButton, `Expected calendar date ${date}.`);
+  await act(async () => dateButton.dispatchEvent(new runtime.window.MouseEvent("click", { bubbles: true })));
   await flushUi();
 }
 

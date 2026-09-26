@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 
 import { EmptyState } from "../common/EmptyState";
+import { FutVerseThaiDateTimeInput } from "../common/FutVerseThaiDateTimeInputs";
 import { useAcademy } from "../../contexts/AcademyContext";
 import { useLanguage } from "../../contexts/LanguageContext";
 import {
@@ -279,36 +280,26 @@ function MatchFormFields({
           />
         </label>
 
-        <label className="space-y-2">
+        <div className="space-y-2">
           <span className="text-xs font-black uppercase tracking-wider text-slate-500">
             {t("match_field_kickoff")}
           </span>
 
-          <input
-            type="datetime-local"
-            lang="th-TH"
+          <FutVerseThaiDateTimeInput
+            id="match-kickoff"
             value={form.kickoffAt}
-            onChange={(event) =>
-              setField(
-                "kickoffAt",
-                event.target.value,
-              )
-            }
-            className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
+            onChange={(kickoffAt) => setField("kickoffAt", kickoffAt)}
+            dateClassName="rounded-xl border-slate-200 bg-white px-3.5 py-3 text-sm font-semibold text-slate-900"
+            timeClassName="rounded-xl border-slate-200 bg-white px-3.5 py-3 text-sm font-semibold text-slate-900"
+            aria-label={t("match_field_kickoff")}
           />
-
-          {form.kickoffAt && (
-            <p className="text-[11px] font-semibold leading-5 text-slate-500" aria-live="polite">
-              {formatThaiDateLong(form.kickoffAt.slice(0, 10))} · {formatThaiTime(form.kickoffAt.slice(11, 16))}
-            </p>
-          )}
 
           <p className="text-[11px] font-semibold leading-5 text-slate-400">
             {t(
               "match_kickoff_timezone_hint",
             )}
           </p>
-        </label>
+        </div>
 
         <label className="space-y-2 md:col-span-2">
           <span className="text-xs font-black uppercase tracking-wider text-slate-500">

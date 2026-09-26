@@ -30,7 +30,9 @@ test("Fitness grid offers a dated save and keeps recorded results read-only", as
     onAddPlayer: () => {},
   }));
   const document = new JSDOM(html).window.document;
-  assert.equal(document.querySelector<HTMLInputElement>('input[type="date"]')?.value, "2026-09-24");
+  const testingDate = document.querySelector<HTMLButtonElement>('button[aria-label="Testing date"]');
+  assert.match(testingDate?.textContent ?? "", /24 กันยายน 2569/);
+  assert.equal(document.querySelectorAll('input[type="date"]').length, 0);
   const sprint = document.querySelector<HTMLInputElement>('input[aria-label="10 m sprint for Player A"]');
   assert.equal(sprint?.value, "1.82");
   assert.equal(sprint?.disabled, true);
@@ -55,7 +57,7 @@ test("Fitness report renders persisted observation history with dates and units"
     error: null,
   }));
   const document = new JSDOM(html).window.document;
-  assert.match(document.body.textContent ?? "", /2026-09-24/);
+  assert.match(document.body.textContent ?? "", /24 ก.ย. 2569/);
   assert.match(document.body.textContent ?? "", /10 m sprint/);
   assert.match(document.body.textContent ?? "", /1\.82 s/);
 });

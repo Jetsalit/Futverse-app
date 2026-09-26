@@ -9,6 +9,7 @@ import {
   formatThaiDateLong,
   formatThaiDateShort,
 } from "../../../lib/thaiDateTimePresentation";
+import { FutVerseThaiDateInput } from "../../common/FutVerseThaiDateTimeInputs";
 import {
   prepareProClubFitnessResultDrafts,
   type ProClubFitnessResultCreateInput,
@@ -340,14 +341,11 @@ export default function ProClubFitnessResults({
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <label className="text-xs font-bold text-slate-300">Testing date
-            <input
+            <FutVerseThaiDateInput
               aria-label="Testing date"
-              type="date"
-              lang="th-TH"
               value={observedOn}
               disabled={saving}
-              onInput={(event) => {
-                const nextDate = event.currentTarget.value;
+              onChange={(nextDate) => {
                 setObservedOn(nextDate);
                 setMessage(parseCanonicalDateOnly(nextDate) === null
                   ? { kind: "error", text: "Select a valid testing date." }
@@ -355,9 +353,6 @@ export default function ProClubFitnessResults({
               }}
               className="mt-1 block min-h-10 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
             />
-            <span className="block text-[11px] text-slate-400" aria-live="polite">
-              {formatThaiDateLong(observedOn)}
-            </span>
           </label>
           <button
             type="button"

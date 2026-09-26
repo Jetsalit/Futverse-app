@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   calculateAgeFromDateOnly,
+  canonicalDateOnlyFromParts,
   calendarDateInTimeZone,
   isSameCalendarDateInTimeZone,
   parseCanonicalDateOnly,
@@ -269,4 +270,10 @@ test("12. leap-day age changes on the leap birthday using calendar parts", () =>
     ),
     20,
   );
+});
+
+test("13. canonical date builder preserves Gregorian leap days and rejects invalid parts", () => {
+  assert.equal(canonicalDateOnlyFromParts(2028, 2, 29), "2028-02-29");
+  assert.equal(canonicalDateOnlyFromParts(2026, 2, 29), null);
+  assert.equal(canonicalDateOnlyFromParts(2026, 13, 1), null);
 });

@@ -89,6 +89,28 @@ export function parseCanonicalDateOnly(
   };
 }
 
+export function canonicalDateOnlyFromParts(
+  year: number,
+  month: number,
+  day: number,
+): string | null {
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(day)
+  ) {
+    return null;
+  }
+
+  const candidate = [
+    String(year).padStart(4, "0"),
+    String(month).padStart(2, "0"),
+    String(day).padStart(2, "0"),
+  ].join("-");
+
+  return parseCanonicalDateOnly(candidate) ? candidate : null;
+}
+
 function compareDateOnlyParts(
   left: CanonicalDateOnlyParts,
   right: CanonicalDateOnlyParts,

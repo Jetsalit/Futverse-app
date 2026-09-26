@@ -28,6 +28,7 @@ import {
   type ProClubLibraryLogbookView,
 } from "../../../lib/proClubLibraryLogbook";
 import type { ProClubStaffSubmissionRecord } from "../../../lib/proClubStaffSubmissions";
+import { formatThaiDateLong } from "../../../lib/thaiDateTimePresentation";
 
 const VIEW_ICONS: Record<ProClubLibraryLogbookView, typeof BookOpen> = {
   MY_LOGBOOK: BookOpen,
@@ -385,7 +386,7 @@ export default function ProClubLibraryLogbook({
               <div className="pro-club-muted mt-4 space-y-1 border-t border-[color:var(--pc-border)] pt-3 text-[10px]">
                 <p>Reference: {entry.referenceId}</p>
                 {entry.targetPlanId && <p>Plan: {entry.targetPlanId}</p>}
-                {entry.targetSessionDate && <p>Session: {entry.targetSessionDate}</p>}
+                {entry.targetSessionDate && <p>Session: {formatThaiDateLong(entry.targetSessionDate)}</p>}
               </div>
             </article>
           ))}
