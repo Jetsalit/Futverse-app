@@ -20,6 +20,7 @@ import {
   validateActiveAcademyInvite,
 } from "../services/membershipService";
 import { mapCanonicalSnapshot } from "../lib/firestore/canonicalDocument";
+import { formatThaiDateLong } from "../lib/thaiDateTimePresentation";
 
 function getRequestedTenantRole(
   requestedRole?: unknown,
@@ -35,7 +36,7 @@ function formatClaimDate(value: AcademyJoinClaim["createdAt"]) {
   const date = typeof value === "object" && "toDate" in value
     ? value.toDate()
     : new Date(value as Date | string);
-  return Number.isNaN(date.getTime()) ? "recently" : date.toLocaleDateString();
+  return Number.isNaN(date.getTime()) ? "recently" : formatThaiDateLong(date);
 }
 
 export default function JoinAcademy({ onBack }: { onBack?: () => void }) {

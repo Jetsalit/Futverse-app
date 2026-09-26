@@ -25,6 +25,11 @@ import {
 import { EmptyState } from "../common/EmptyState";
 import { useAcademy } from "../../contexts/AcademyContext";
 import { useLanguage } from "../../contexts/LanguageContext";
+import {
+  formatThaiDateLong,
+  formatThaiDateShort,
+  formatThaiTime,
+} from "../../lib/thaiDateTimePresentation";
 
 import {
   createAcademyMatch,
@@ -41,7 +46,6 @@ import type {
 
 import {
   MATCH_STATUS_FILTERS,
-  MATCH_WORKSPACE_TIME_ZONE,
   buildMatchCoreData,
   buildMatchCoreDataFromRecord,
   createEmptyMatchForm,
@@ -135,22 +139,11 @@ function statusTone(
 
 function formatMatchDate(
   value: Date | null,
-  language: "th" | "en",
   emptyLabel: string,
 ): string {
   if (!value) return emptyLabel;
 
-  return new Intl.DateTimeFormat(
-    language === "th"
-      ? "th-TH"
-      : "en-GB",
-    {
-      dateStyle: "medium",
-      timeStyle: "short",
-      timeZone:
-        MATCH_WORKSPACE_TIME_ZONE,
-    },
-  ).format(value);
+  return `${formatThaiDateShort(value)} ${formatThaiTime(value)}`;
 }
 
 function MatchStatusBadge({
@@ -293,6 +286,7 @@ function MatchFormFields({
 
           <input
             type="datetime-local"
+            lang="th-TH"
             value={form.kickoffAt}
             onChange={(event) =>
               setField(
@@ -302,6 +296,12 @@ function MatchFormFields({
             }
             className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
           />
+
+          {form.kickoffAt && (
+            <p className="text-[11px] font-semibold leading-5 text-slate-500" aria-live="polite">
+              {formatThaiDateLong(form.kickoffAt.slice(0, 10))} · {formatThaiTime(form.kickoffAt.slice(11, 16))}
+            </p>
+          )}
 
           <p className="text-[11px] font-semibold leading-5 text-slate-400">
             {t(
@@ -379,7 +379,7 @@ export default function MatchWorkspace({
   onBack: () => void;
 }) {
   const { academyId } = useAcademy();
-  const { language, t } = useLanguage();
+  const { t } = useLanguage();
 
   const [matches, setMatches] =
     useState<AcademyMatchRecord[]>([]);
@@ -1116,7 +1116,6 @@ export default function MatchWorkspace({
                           <span>
                             {formatMatchDate(
                               match.kickoffAt,
-                              language,
                               t(
                                 "match_no_kickoff",
                               ),
@@ -1309,7 +1308,6 @@ export default function MatchWorkspace({
                             <div className="mt-2 text-sm font-black text-slate-800">
                               {formatMatchDate(
                                 selectedMatch.kickoffAt,
-                                language,
                                 t(
                                   "match_no_kickoff",
                                 ),
@@ -1386,7 +1384,6 @@ export default function MatchWorkspace({
                             </span>{" "}
                             {formatMatchDate(
                               selectedMatch.createdAt,
-                              language,
                               t(
                                 "match_not_set",
                               ),
@@ -1402,7 +1399,6 @@ export default function MatchWorkspace({
                             </span>{" "}
                             {formatMatchDate(
                               selectedMatch.updatedAt,
-                              language,
                               t(
                                 "match_not_set",
                               ),

@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { ProPlayer } from "../types/ProPlayer";
 import { calendarDateInTimeZone } from "../lib/dateTimeFoundation";
+import { formatThaiDateShort } from "../lib/thaiDateTimePresentation";
 import {
   toProPlayerProfileReadModel,
 } from "../lib/playerProfileReadModel";
@@ -198,7 +199,7 @@ export default function ProPlayerCV({
                     </span>
                     <span className="text-sm font-bold text-slate-800">
                       {profile.age ?? "-"}{" "}
-                      yrs ({profile.dateOfBirth})
+                      yrs ({formatThaiDateShort(profile.dateOfBirth)})
                     </span>
                   </div>
                   <div className="flex justify-between items-center py-2 border-b border-slate-100">
@@ -222,7 +223,7 @@ export default function ProPlayerCV({
                       Contract Expiry
                     </span>
                     <span className="text-sm font-bold text-indigo-600">
-                      {player.contractExpiry}
+                      {formatThaiDateShort(player.contractExpiry)}
                     </span>
                   </div>
                 </div>

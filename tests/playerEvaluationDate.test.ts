@@ -41,7 +41,7 @@ test(
 
     assert.equal(
       evaluationDateLabel(evaluation),
-      "2026-07-27",
+      "27 กรกฎาคม 2569",
     );
 
     assert.equal(
@@ -67,7 +67,7 @@ test(
 
     assert.equal(
       evaluationDateLabel(evaluation),
-      "2026-08-19",
+      "19 สิงหาคม 2569",
     );
 
     assert.equal(
@@ -96,13 +96,13 @@ test(
 
     assert.equal(
       evaluationDateLabel(evaluation),
-      "2026-08-18",
+      "18 สิงหาคม 2569",
     );
   },
 );
 
 test(
-  "legacy string display semantics remain unchanged",
+  "legacy string precedence is preserved while valid dates use Thai display",
   () => {
     const offsetTimestamp = record(
       "eval-offset-string",
@@ -114,7 +114,7 @@ test(
 
     assert.equal(
       evaluationDateLabel(offsetTimestamp),
-      "2026-08-19",
+      "20 สิงหาคม 2569",
     );
 
     assert.equal(
@@ -136,8 +136,8 @@ test(
       },
     );
 
-    // Legacy evaluation_date still has field
-    // precedence and is displayed as before.
+    // Legacy evaluation_date keeps field precedence and its existing
+    // fallback when it cannot be parsed as a date.
     assert.equal(
       evaluationDateLabel(
         invalidEvaluationDate,

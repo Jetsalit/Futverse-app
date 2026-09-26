@@ -5,6 +5,7 @@ import {
   PRO_CLUB_WEEKLY_TRAINING_FRESH_DRAFT_PRODUCTION_AVAILABLE,
 } from "../../../config/runtimeCapabilities";
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
+import { formatThaiDateLong, formatThaiTime } from "../../../lib/thaiDateTimePresentation";
 import {
   createWeeklyTrainingDraftSaveRequestId,
   isAmbiguousWeeklyTrainingDraftSaveError,
@@ -247,7 +248,7 @@ export default function WeeklyTrainingDraftComposer({
           <div className="flex items-center gap-2 font-bold"><CheckCircle2 size={18} /> DRAFT save completed and verified</div>
           <p className="mt-2 break-all">Plan: {saved.planId}</p>
           <p className="mt-1 break-all text-xs text-emerald-200/80">Request: {saved.requestId}</p>
-          <p className="mt-1 text-xs text-emerald-200/80">{saved.documentCount} documents · {saved.createdAt}</p>
+          <p className="mt-1 text-xs text-emerald-200/80">{saved.documentCount} documents · {formatThaiDateLong(saved.createdAt)} {formatThaiTime(saved.createdAt)}</p>
           <p className="mt-2 text-xs text-emerald-200/80">This fresh-DRAFT form is locked after success to prevent an accidental duplicate save.</p>
         </div>
       )}
@@ -257,7 +258,8 @@ export default function WeeklyTrainingDraftComposer({
         <div className="grid gap-4 md:grid-cols-2">
           <label className={labelClass}>
             Week start date
-            <input type="date" className={inputClass} value={draft.weekStartDate} onChange={(event) => setDraft((current) => ({ ...current, weekStartDate: event.target.value }))} />
+            <input type="date" lang="th-TH" className={inputClass} value={draft.weekStartDate} onChange={(event) => setDraft((current) => ({ ...current, weekStartDate: event.target.value }))} />
+            {draft.weekStartDate && <span className="mt-1 block text-[11px] font-normal text-slate-500" aria-live="polite">{formatThaiDateLong(draft.weekStartDate)}</span>}
           </label>
           <label className={labelClass}>
             Squad
@@ -290,8 +292,8 @@ export default function WeeklyTrainingDraftComposer({
                 <button type="button" disabled={draft.sessions.length <= 1} onClick={() => setDraft((current) => ({ ...current, sessions: removeTrainingSession(current.sessions, sessionIndex) }))} className="inline-flex items-center gap-1 text-xs font-bold text-rose-300 disabled:opacity-30"><Trash2 size={14} /> Remove session</button>
               </div>
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <label className={labelClass}>Date<input type="date" className={inputClass} value={session.sessionDate} onChange={(event) => updateSession(sessionIndex, { ...session, sessionDate: event.target.value })} /></label>
-                <label className={labelClass}>Start time<input type="time" className={inputClass} value={session.startTime} onChange={(event) => updateSession(sessionIndex, { ...session, startTime: event.target.value })} /></label>
+                <label className={labelClass}>Date<input type="date" lang="th-TH" className={inputClass} value={session.sessionDate} onChange={(event) => updateSession(sessionIndex, { ...session, sessionDate: event.target.value })} />{session.sessionDate && <span className="mt-1 block text-[11px] font-normal text-slate-500" aria-live="polite">{formatThaiDateLong(session.sessionDate)}</span>}</label>
+                <label className={labelClass}>Start time<input type="time" lang="th-TH" className={inputClass} value={session.startTime} onChange={(event) => updateSession(sessionIndex, { ...session, startTime: event.target.value })} />{session.startTime && <span className="mt-1 block text-[11px] font-normal text-slate-500" aria-live="polite">{formatThaiTime(session.startTime)}</span>}</label>
                 <label className={labelClass}>Location<input className={inputClass} maxLength={200} value={session.location} onChange={(event) => updateSession(sessionIndex, { ...session, location: event.target.value })} /></label>
                 <label className={labelClass}>Duration<input type="number" min={15} max={360} className={inputClass} value={session.durationMinutes} onChange={(event) => updateSession(sessionIndex, { ...session, durationMinutes: toInteger(event.target.value, session.durationMinutes) })} /></label>
               </div>

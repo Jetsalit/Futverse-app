@@ -8,6 +8,7 @@ import { JSDOM } from "jsdom";
 
 import ProClubAttendance, {
   canMutateProClubAttendance,
+  sortProClubAttendanceSessionsNewestFirst,
 } from "../src/components/pro-club/operations/ProClubAttendance";
 import ProClubRoleWorkspace from "../src/components/pro-club/operations/ProClubRoleWorkspace";
 import type { ProClubAttendanceRepositoryOps } from "../src/lib/firestore/proClubAttendanceRepository";
@@ -23,6 +24,11 @@ import type {
   ProClubSquadRosterRecord,
   ProClubSquadRosterRepositoryOps,
 } from "../src/lib/firestore/proClubSquadRosterRepository";
+import {
+  formatThaiDateShort,
+  formatThaiDateWithWeekday,
+  formatThaiTime,
+} from "../src/lib/thaiDateTimePresentation";
 
 const files = {
   attendanceComponent: "src/components/pro-club/operations/ProClubAttendance.tsx",
@@ -195,12 +201,24 @@ test("attendance component invariants: uses only reviewed repositories and forbi
 });
 
 test("static markup presentation: Head Coach sees authorized banner and session controls", () => {
-  const markup = renderToStaticMarkup(<ProClubAttendance authority={authority()} />);
+  const markup = renderToStaticMarkup(
+    <ProClubAttendance
+      authority={authority()}
+      initialSlot={{ sessionDate: "2026-09-26", startTime: "09:00" }}
+    />,
+  );
   const text = visibleText(markup);
 
   assert.match(text, /Training Attendance/);
   assert.match(text, /Head Coach Authorized/);
   assert.match(text, /Attendance Session Slot/);
+  assert.match(text, /วันที่/);
+  assert.match(text, /เวลาเริ่ม/);
+  assert.match(text, /26 กันยายน 2569/);
+  assert.match(text, /09:00 น\./);
+  assert.doesNotMatch(text, /2026-09-26|09:00 AM|09:00 PM/);
+  assert.match(markup, /value="2026-09-26"/);
+  assert.match(markup, /value="09:00"/);
   assert.match(text, /Historical Sessions/);
   assert.match(text, /Open or Create Session Slot/);
 });
@@ -223,6 +241,36 @@ test("deterministic slot calculation and validation match domain contract", () =
   assert.equal(
     buildProClubAttendanceSessionId("2026-09-15", "09:00"),
     "training_2026-09-15_09-00",
+  );
+  assert.equal(
+    buildProClubAttendanceSessionId("2026-09-26", "09:00"),
+    "training_2026-09-26_09-00",
+  );
+});
+
+test("historical attendance sessions stay newest-first by canonical date then time", () => {
+  const sessions = [
+    { attendanceSessionId: "old", sessionDate: "2026-09-18", startTime: "09:00" },
+    { attendanceSessionId: "earlier-slot", sessionDate: "2026-09-20", startTime: "08:00" },
+    { attendanceSessionId: "newest-slot", sessionDate: "2026-09-20", startTime: "10:00" },
+  ];
+
+  const sorted = sortProClubAttendanceSessionsNewestFirst(sessions);
+
+  assert.deepEqual(
+    sorted.map((session) => session.attendanceSessionId),
+    ["newest-slot", "earlier-slot", "old"],
+  );
+  assert.deepEqual(
+    sorted.map(
+      (session) =>
+        `${formatThaiDateShort(session.sessionDate)} ${formatThaiTime(session.startTime)}`,
+    ),
+    [
+      "20 ก.ย. 2569 10:00 น.",
+      "20 ก.ย. 2569 08:00 น.",
+      "18 ก.ย. 2569 09:00 น.",
+    ],
   );
 });
 
@@ -421,7 +469,14 @@ test("corrective: existing exact session opens even when absent from list cache"
     // it attempts create after a cache miss and surfaces "already exists".
     assert.doesNotMatch(text, /already exists/i);
 
-    assert.match(text, new RegExp(targetId));
+    assert.ok(
+      text.includes(
+        `Session Slot: ${formatThaiDateWithWeekday(targetDate)} · ${formatThaiTime(targetTime)}`,
+      ),
+      "the exact existing canonical session must display its Thai date and time",
+    );
+    assert.doesNotMatch(text, new RegExp(targetDate));
+    assert.doesNotMatch(text, /ID: training_/);
   } finally {
     if (root) {
       await act(async () => {

@@ -108,7 +108,9 @@ test("renders saved Training details with blocks, load, focus and drill referenc
     assert.match(text, new RegExp(expected));
   }
 
-  assert.match(markup, /<time[^>]+datetime="2026-09-14"/);
+  assert.match(markup, /<time[^>]+datetime="2026-09-14"/i);
+  assert.match(markup, /14 ก\.ย\. 2569/);
+  assert.match(text, /08:00 น\./);
   assert.match(markup, /data-weekly-planner-day="2026-09-14"/);
 });
 
@@ -138,9 +140,9 @@ test("renders Recovery and Match metadata including squad scope", () => {
     renderToStaticMarkup(<WeeklyPlannerActivityCard activity={recovery} />),
   );
   assert.match(recoveryText, /Recovery/);
-  assert.match(recoveryText, /10:00/);
+  assert.match(recoveryText, /10:00 น\./);
   assert.match(recoveryText, /45 min/);
-  assert.match(recoveryText, /Recovery & mobility/);
+  assert.match(recoveryText, /Recovery &amp; mobility/);
   assert.match(recoveryText, /Recovery Room/);
   assert.match(recoveryText, /All squad/);
 
@@ -148,7 +150,7 @@ test("renders Recovery and Match metadata including squad scope", () => {
     renderToStaticMarkup(<WeeklyPlannerActivityCard activity={match} />),
   );
   assert.match(matchText, /Cup Match/);
-  assert.match(matchText, /18:00/);
+  assert.match(matchText, /18:00 น\./);
   assert.match(matchText, /Muang Thai Insurance Cup/);
   assert.match(matchText, /Lampang Academy/);
   assert.match(matchText, /Main Stadium/);

@@ -9,6 +9,7 @@ import {
   SPARK_FUNCTION_BACKED_WEB_UNAVAILABLE_MESSAGE,
 } from "../../config/runtimeCapabilities";
 import { buttonClass, inputClass, secondaryClass, StatusBadge } from "./StaffOnboarding";
+import { formatThaiDateShort, formatThaiTime } from "../../lib/thaiDateTimePresentation";
 
 function ClaimantDetails({ request }: { request: PendingStaffRequest }) {
   const identity = request.claim.claimantIdentity;
@@ -345,7 +346,7 @@ export default function PendingStaffRequests({ clubId, clubName, uid }: { clubId
           <div className="min-w-0 flex-1"><ClaimantDetails request={request} />
             <h3 className="mt-3 font-bold text-slate-900">{staffRoleLabels[request.claim.staffRole]}</h3>
             <p className="mt-1 text-sm text-slate-600">Invitation ending {request.claim.inviteCode.slice(-6)}</p>
-            <p className="mt-2 text-xs text-slate-500">Requested {request.claim.createdAt.toDate().toLocaleString()}</p></div>
+            <p className="mt-2 text-xs text-slate-500">Requested {formatThaiDateShort(request.claim.createdAt.toDate())} {formatThaiTime(request.claim.createdAt.toDate())}</p></div>
           <StatusBadge status="PENDING" />
         </div>
         {!isClaimantIdentity(request.claim.claimantIdentity) && <p className="mt-3 text-sm text-amber-800">Approval and rejection are unavailable until the claimant’s identity can be verified. Contact your club.</p>}

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
+import { formatThaiDateLong } from "../../../lib/thaiDateTimePresentation";
 import {
   approveProClubStaffSubmission,
   beginProClubStaffSubmissionReview,
@@ -1001,6 +1002,7 @@ function SubmissionEditor({
             Session date (ถ้ามี)
             <input
               type="date"
+              lang="th-TH"
               disabled={!form.targetPlanId}
               value={form.targetSessionDate ?? ""}
               onChange={(event) =>
@@ -1011,6 +1013,11 @@ function SubmissionEditor({
               }
               className="rounded-xl border border-slate-300 px-3 py-2 font-normal text-slate-900 disabled:bg-slate-100"
             />
+            {form.targetSessionDate && (
+              <span className="text-xs font-normal text-slate-500" aria-live="polite">
+                {formatThaiDateLong(form.targetSessionDate)}
+              </span>
+            )}
           </label>
         </div>
       </div>

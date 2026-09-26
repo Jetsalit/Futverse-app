@@ -24,6 +24,7 @@ import {
   PRO_CLUB_TRAINING_DRILL_REFERENCE_MAX_UTF8_BYTES,
   proClubTrainingUtf8ByteLength,
 } from "../../../lib/proClubWeeklyTrainingStorageBounds";
+import { formatThaiDateLong, formatThaiDateShort, formatThaiTime } from "../../../lib/thaiDateTimePresentation";
 
 const inputClass =
   "mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-400 disabled:cursor-not-allowed disabled:opacity-60";
@@ -217,9 +218,9 @@ export default function WeeklyTrainingExistingDraftEditor({
       </div>
 
       <div className="grid gap-3 rounded-xl border border-slate-800 bg-slate-900/70 p-4 text-xs text-slate-400 sm:grid-cols-3">
-        <div><span className="font-bold text-slate-300">Week</span><p className="mt-1">{draft.weekStartDate}</p></div>
+        <div><span className="font-bold text-slate-300">Week</span><p className="mt-1">{formatThaiDateShort(draft.weekStartDate)}</p></div>
         <div><span className="font-bold text-slate-300">Plan</span><p className="mt-1 break-all">{detail.planId}</p></div>
-        <div><span className="font-bold text-slate-300">Concurrency base</span><p className="mt-1 break-all">{detail.updatedAt}</p></div>
+        <div><span className="font-bold text-slate-300">Concurrency base</span><p className="mt-1">{formatThaiDateLong(detail.updatedAt)} {formatThaiTime(detail.updatedAt)}</p></div>
       </div>
 
       {message && <p role="status" className={`rounded-xl border p-3 text-sm ${saved ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100" : "border-amber-500/30 bg-amber-500/10 text-amber-100"}`}>{saved && <CheckCircle2 className="mr-2 inline" size={16} />}{message}</p>}
@@ -237,7 +238,7 @@ export default function WeeklyTrainingExistingDraftEditor({
             <article key={`${session.sessionDate}-${session.startTime}`} className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h6 className="font-black text-white">Session {sessionIndex + 1}</h6>
-                <p className="text-xs text-slate-500">Locked: {session.sessionDate} · {session.startTime}</p>
+                <p className="text-xs text-slate-500">Locked: {formatThaiDateShort(session.sessionDate)} · {formatThaiTime(session.startTime)}</p>
               </div>
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <label className={labelClass}>Location<input className={inputClass} maxLength={200} value={session.location} onChange={(event) => updateSession(sessionIndex, { ...session, location: event.target.value })} /></label>

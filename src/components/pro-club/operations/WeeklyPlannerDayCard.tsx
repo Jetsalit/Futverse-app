@@ -1,4 +1,5 @@
 import WeeklyPlannerActivityCard from "./WeeklyPlannerActivityCard";
+import { formatThaiDateShort } from "../../../lib/thaiDateTimePresentation";
 import {
   sortWeeklyPlannerActivities,
   summarizeWeeklyPlannerDay,
@@ -6,15 +7,7 @@ import {
 } from "./weeklyPlannerUiModel";
 
 function formatPlannerDate(value: string): string {
-  const [year, month, day] = value.split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, day))
-    .toLocaleDateString(undefined, {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      timeZone: "UTC",
-    })
-    .toUpperCase();
+  return formatThaiDateShort(value);
 }
 
 export default function WeeklyPlannerDayCard({

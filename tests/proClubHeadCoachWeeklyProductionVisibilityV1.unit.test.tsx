@@ -121,8 +121,8 @@ test("renders the Weekly surface and distinct persisted NO_DATA state for an eli
   assert.match(text, /Weekly Training/);
   assert.match(text, /Fresh DRAFT/);
   assert.match(text, /Weekly Training history/);
-  assert.match(text, /Fitness observations as of 2026-09-25/);
-  assert.match(text, /No eligible persisted Fitness observations were available as of 2026-09-25\./);
+  assert.match(text, /Fitness observations as of 25 กันยายน 2569/);
+  assert.match(text, /No eligible persisted Fitness observations were available as of 25 กันยายน 2569\./);
   assert.match(text, /Fitness observations are context only\. The Head Coach remains responsible for training decisions\./);
 
   for (const forbidden of [
@@ -160,11 +160,11 @@ test("renders factual persisted observations grouped by player", () => {
     />,
   ));
 
-  assert.match(text, /Fitness observations as of 2026-09-25/);
+  assert.match(text, /Fitness observations as of 25 กันยายน 2569/);
   assert.match(text, /Alex Active/);
   assert.match(text, /10 m sprint/);
   assert.match(text, /1\.82 s/);
-  assert.match(text, /2026-09-22/);
+  assert.match(text, /22 ก\.ย\. 2569/);
   assert.match(text, /Fitness observations are context only\. The Head Coach remains responsible for training decisions\./);
   assert.equal(availableFitnessContext.selection.prescription, null);
 });
