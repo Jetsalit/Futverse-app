@@ -84,6 +84,86 @@ test("Thai date input shows Buddhist Era text and keeps the hidden form value ca
   assert.doesNotMatch(trigger?.textContent ?? "", /2026|AM|PM/);
 });
 
+test("Thai date and time controls keep readable text across light and dark surfaces", () => {
+  const lightDateDocument = new JSDOM(render(React.createElement(FutVerseThaiDateInput, {
+    value: "",
+    onChange: () => {},
+  }))).window.document;
+  const lightDateTrigger = lightDateDocument.querySelector<HTMLButtonElement>("button[aria-haspopup='dialog']");
+  assert.ok(lightDateTrigger?.classList.contains("text-slate-900"));
+  assert.ok(lightDateTrigger?.classList.contains("bg-white"));
+  assert.ok(lightDateTrigger.querySelector("span")?.classList.contains("text-slate-600"));
+
+  const darkDateProps = {
+    value: "",
+    onChange: () => {},
+    tone: "dark",
+  } as React.ComponentProps<typeof FutVerseThaiDateInput> & { tone: "dark" };
+  const darkDateDocument = new JSDOM(render(React.createElement(FutVerseThaiDateInput, darkDateProps))).window.document;
+  const darkDateTrigger = darkDateDocument.querySelector<HTMLButtonElement>("button[aria-haspopup='dialog']");
+  assert.ok(darkDateTrigger?.classList.contains("text-white"));
+  assert.ok(darkDateTrigger?.classList.contains("bg-slate-900"));
+  assert.equal(darkDateTrigger?.classList.contains("bg-white"), false);
+  assert.ok(darkDateTrigger.querySelector("span")?.classList.contains("text-slate-300"));
+
+  const lightTimeDocument = new JSDOM(render(React.createElement(FutVerseThaiTimeInput, {
+    value: "09:00",
+    onChange: () => {},
+  }))).window.document;
+  assert.ok(lightTimeDocument.querySelector("input")?.classList.contains("text-slate-900"));
+  assert.ok(lightTimeDocument.querySelector("input")?.classList.contains("bg-white"));
+  assert.ok(lightTimeDocument.querySelector("span")?.classList.contains("text-slate-700"));
+
+  const darkTimeProps = {
+    value: "09:00",
+    onChange: () => {},
+    tone: "dark",
+  } as React.ComponentProps<typeof FutVerseThaiTimeInput> & { tone: "dark" };
+  const darkTimeDocument = new JSDOM(render(React.createElement(FutVerseThaiTimeInput, darkTimeProps))).window.document;
+  assert.ok(darkTimeDocument.querySelector("input")?.classList.contains("text-white"));
+  assert.ok(darkTimeDocument.querySelector("input")?.classList.contains("bg-slate-900"));
+  assert.equal(darkTimeDocument.querySelector("input")?.classList.contains("bg-white"), false);
+  assert.ok(darkTimeDocument.querySelector("span")?.classList.contains("text-slate-300"));
+
+  const darkDateTimeProps = {
+    value: "2026-09-26T09:00",
+    onChange: () => {},
+    tone: "dark",
+  } as React.ComponentProps<typeof FutVerseThaiDateTimeInput> & { tone: "dark" };
+  const darkDateTimeDocument = new JSDOM(render(React.createElement(FutVerseThaiDateTimeInput, darkDateTimeProps))).window.document;
+  assert.ok(darkDateTimeDocument.querySelector("button[aria-haspopup='dialog']")?.classList.contains("text-white"));
+  assert.ok(darkDateTimeDocument.querySelector("button[aria-haspopup='dialog']")?.classList.contains("bg-slate-900"));
+  assert.ok(darkDateTimeDocument.querySelector("input")?.classList.contains("text-white"));
+  assert.ok(darkDateTimeDocument.querySelector("input")?.classList.contains("bg-slate-900"));
+  assert.equal(darkDateTimeDocument.querySelectorAll("span.text-slate-200").length, 2);
+  assert.ok(darkDateTimeDocument.querySelector("span[aria-hidden='true']")?.classList.contains("text-slate-300"));
+});
+
+test("Thai date calendar uses readable text and keeps disabled days distinguishable", async () => {
+  const mounted = await mountInDom(React.createElement(FutVerseThaiDateInput, {
+    value: "2026-09-26",
+    min: "2026-09-26",
+    onChange: () => {},
+  }));
+  try {
+    const trigger = mounted.document.querySelector<HTMLButtonElement>("button[aria-haspopup='dialog']");
+    assert.ok(trigger);
+    await act(async () => trigger.dispatchEvent(new mounted.document.defaultView!.MouseEvent("click", { bubbles: true })));
+    const calendar = mounted.document.querySelector('[role="dialog"]');
+    assert.ok(calendar);
+    assert.ok(calendar.querySelector("[aria-live='polite']")?.classList.contains("text-slate-900"));
+    assert.ok(calendar.querySelector(".grid-cols-7")?.classList.contains("text-slate-700"));
+    assert.ok(calendar.querySelector<HTMLButtonElement>('button[data-date="2026-09-27"]')?.classList.contains("text-slate-800"));
+    assert.ok(calendar.querySelector<HTMLButtonElement>('button[data-date="2026-09-25"]')?.classList.contains("bg-slate-50"));
+    assert.ok(calendar.querySelector<HTMLButtonElement>('button[data-date="2026-09-25"]')?.classList.contains("text-slate-500"));
+    assert.ok(calendar.querySelector("span.text-slate-700"));
+    assert.ok(findCalendarButtonByText(mounted.document, "ล้างวันที่")?.classList.contains("text-slate-800"));
+    assert.ok(findCalendarButtonByText(mounted.document, "วันนี้")?.classList.contains("text-indigo-800"));
+  } finally {
+    await mounted.close();
+  }
+});
+
 test("Thai date calendar selects a Gregorian date without changing its canonical value", async () => {
   let changed = "";
   const mounted = await mountInDom(React.createElement(FutVerseThaiDateInput, {

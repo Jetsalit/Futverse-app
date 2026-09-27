@@ -19,6 +19,8 @@ const weekdayLabels = Array.from({ length: 7 }, (_, offset) =>
   formatThaiWeekdayShort(new Date(weekdayReference.getTime() + offset * DAY_MILLISECONDS)),
 );
 
+export type FutVerseThaiInputTone = "light" | "dark";
+
 export interface FutVerseThaiDateInputProps {
   id?: string;
   name?: string;
@@ -29,6 +31,7 @@ export interface FutVerseThaiDateInputProps {
   required?: boolean;
   disabled?: boolean;
   className?: string;
+  tone?: FutVerseThaiInputTone;
   placeholder?: string;
   "aria-label"?: string;
 }
@@ -68,6 +71,7 @@ export function FutVerseThaiDateInput({
   required = false,
   disabled = false,
   className = "",
+  tone = "light",
   placeholder = "เลือกวันที่",
   "aria-label": ariaLabel,
 }: FutVerseThaiDateInputProps) {
@@ -109,6 +113,10 @@ export function FutVerseThaiDateInput({
   const outOfBounds = Boolean(selectedParts && !isWithinDateBounds(value, min, max));
   const missingRequired = required && !selectedParts;
   const displayValue = selectedParts ? formatThaiDateLong(value) : placeholder;
+  const fieldSurfaceClass = tone === "dark" ? "border-slate-700 bg-slate-900" : "border-slate-300 bg-white";
+  const fieldTextClass = tone === "dark" ? "text-white" : "text-slate-900";
+  const emptyTextClass = tone === "dark" ? "text-slate-300" : "text-slate-600";
+  const iconTextClass = tone === "dark" ? "text-slate-300" : "text-slate-600";
 
   useEffect(() => {
     validityRef.current?.setCustomValidity(
@@ -147,10 +155,10 @@ export function FutVerseThaiDateInput({
         onKeyDown={(event) => {
           if (event.key === "Escape") setOpen(false);
         }}
-        className={`flex min-h-10 w-full items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-900 outline-none transition hover:border-slate-400 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+        className={`flex min-h-10 w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm ${fieldSurfaceClass} ${fieldTextClass} outline-none transition hover:border-slate-400 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:opacity-75 ${className}`}
       >
-        <CalendarDays size={16} aria-hidden="true" className="shrink-0 text-slate-500" />
-        <span className={selectedParts ? "" : "text-slate-400"}>{displayValue}</span>
+        <CalendarDays size={16} aria-hidden="true" className={`shrink-0 ${iconTextClass}`} />
+        <span className={selectedParts ? "" : emptyTextClass}>{displayValue}</span>
       </button>
       {(required || invalidValue || outOfBounds) && (
         <input
@@ -187,22 +195,22 @@ export function FutVerseThaiDateInput({
               type="button"
               aria-label="เดือนก่อนหน้า"
               onClick={() => setMonth((current) => shiftMonth(current, -1))}
-              className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"
+              className="rounded-lg p-2 text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
             >
               <ChevronLeft size={16} aria-hidden="true" />
             </button>
-            <p className="font-bold" aria-live="polite">{monthLabel}</p>
+            <p className="font-bold text-slate-900" aria-live="polite">{monthLabel}</p>
             <button
               type="button"
               aria-label="เดือนถัดไป"
               onClick={() => setMonth((current) => shiftMonth(current, 1))}
-              className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"
+              className="rounded-lg p-2 text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
             >
               <ChevronRight size={16} aria-hidden="true" />
             </button>
           </div>
 
-          <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-500">
+          <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-700">
             {weekdayLabels.map((label, index) => (
               <span key={`${index}-${label}`} className="py-1 font-semibold">{label}</span>
             ))}
@@ -213,6 +221,11 @@ export function FutVerseThaiDateInput({
               const day = parseCanonicalDateOnly(date)?.day;
               const selected = date === value;
               const disabledDate = disabled || !isWithinDateBounds(date, min, max);
+              const dayToneClass = selected
+                ? "bg-indigo-600 font-bold text-white"
+                : disabledDate
+                  ? "bg-slate-50 text-slate-500"
+                  : "text-slate-800 hover:bg-indigo-50";
               return (
                 <button
                   key={date}
@@ -222,7 +235,7 @@ export function FutVerseThaiDateInput({
                   aria-pressed={selected}
                   disabled={disabledDate}
                   onClick={() => selectDate(date)}
-                  className={`aspect-square rounded-lg text-sm transition disabled:cursor-not-allowed disabled:text-slate-300 ${selected ? "bg-indigo-600 font-bold text-white" : "text-slate-700 hover:bg-indigo-50"}`}
+                  className={`aspect-square rounded-lg text-sm transition disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 ${dayToneClass}`}
                 >
                   {day}
                 </button>
@@ -231,7 +244,7 @@ export function FutVerseThaiDateInput({
           </div>
 
           <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2">
-            <span className="text-xs text-slate-500">{selectedParts ? displayValue : "ยังไม่ได้เลือกวันที่"}</span>
+            <span className="text-xs text-slate-700">{selectedParts ? displayValue : "ยังไม่ได้เลือกวันที่"}</span>
             <div className="flex items-center gap-2">
               {!required && selectedParts && (
                 <button
@@ -241,7 +254,7 @@ export function FutVerseThaiDateInput({
                     setOpen(false);
                     triggerRef.current?.focus();
                   }}
-                  className="rounded-lg px-2 py-1 text-xs font-bold text-slate-600 hover:bg-slate-100"
+                  className="rounded-lg px-2 py-1 text-xs font-bold text-slate-800 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                 >
                   ล้างวันที่
                 </button>
@@ -250,7 +263,7 @@ export function FutVerseThaiDateInput({
                 type="button"
                 disabled={!today || !isWithinDateBounds(today, min, max)}
                 onClick={selectToday}
-                className="rounded-lg px-2 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-lg px-2 py-1 text-xs font-bold text-indigo-800 hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 disabled:opacity-100"
               >
                 วันนี้
               </button>
@@ -273,6 +286,7 @@ export interface FutVerseThaiTimeInputProps {
   required?: boolean;
   disabled?: boolean;
   className?: string;
+  tone?: FutVerseThaiInputTone;
   "aria-label"?: string;
 }
 
@@ -311,11 +325,15 @@ export function FutVerseThaiTimeInput({
   required = false,
   disabled = false,
   className = "",
+  tone = "light",
   "aria-label": ariaLabel,
 }: FutVerseThaiTimeInputProps) {
   const [draft, setDraft] = useState(isCanonicalTime(value) ? value : "");
   const valueRef = React.useRef<HTMLInputElement>(null);
   const invalidSource = value !== "" && !isCanonicalTime(value);
+  const fieldSurfaceClass = tone === "dark" ? "border-slate-700 bg-slate-900" : "border-slate-300 bg-white";
+  const fieldTextClass = tone === "dark" ? "text-white" : "text-slate-900";
+  const suffixTextClass = tone === "dark" ? "text-slate-300" : "text-slate-700";
   const validDraft = !invalidSource && (draft === ""
     ? !required
     : isValidTimeForConstraints(draft, min, max, step));
@@ -364,9 +382,9 @@ export function FutVerseThaiTimeInput({
             setDraft(isCanonicalTime(value) ? value : "");
           }
         }}
-        className={`min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+        className={`min-w-0 flex-1 rounded-xl border px-3 py-2 text-sm ${fieldSurfaceClass} ${fieldTextClass} outline-none transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:opacity-75 ${className}`}
       />
-      <span className="shrink-0 text-sm font-semibold text-slate-500" aria-hidden="true">น.</span>
+      <span className={`shrink-0 text-sm font-semibold ${suffixTextClass}`} aria-hidden="true">น.</span>
     </div>
   );
 }
@@ -381,6 +399,7 @@ export interface FutVerseThaiDateTimeInputProps {
   className?: string;
   dateClassName?: string;
   timeClassName?: string;
+  tone?: FutVerseThaiInputTone;
   "aria-label"?: string;
 }
 
@@ -402,6 +421,7 @@ export function FutVerseThaiDateTimeInput({
   className = "",
   dateClassName = "",
   timeClassName = "",
+  tone = "light",
   "aria-label": ariaLabel = "วันและเวลา",
 }: FutVerseThaiDateTimeInputProps) {
   const [parts, setParts] = useState(() => splitLocalDateTime(value));
@@ -432,7 +452,7 @@ export function FutVerseThaiDateTimeInput({
     <div className={`grid gap-2 sm:grid-cols-2 ${className}`}>
       {name && <input type="hidden" name={name} value={canonicalParts.date && canonicalParts.time ? value : ""} disabled={disabled} />}
       <div>
-        <span className="mb-1 block text-xs font-semibold text-slate-500">วันที่</span>
+        <span className={`mb-1 block text-xs font-semibold ${tone === "dark" ? "text-slate-200" : "text-slate-700"}`}>วันที่</span>
         <FutVerseThaiDateInput
           id={id ? `${id}-date` : undefined}
           value={visibleDate}
@@ -440,11 +460,12 @@ export function FutVerseThaiDateTimeInput({
           required={required}
           disabled={disabled}
           className={dateClassName}
+          tone={tone}
           aria-label={`${ariaLabel} วันที่`}
         />
       </div>
       <div>
-        <span className="mb-1 block text-xs font-semibold text-slate-500">เวลา</span>
+        <span className={`mb-1 block text-xs font-semibold ${tone === "dark" ? "text-slate-200" : "text-slate-700"}`}>เวลา</span>
         <FutVerseThaiTimeInput
           id={id ? `${id}-time` : undefined}
           value={visibleTime}
@@ -452,6 +473,7 @@ export function FutVerseThaiDateTimeInput({
           required={required}
           disabled={disabled}
           className={timeClassName}
+          tone={tone}
           aria-label={`${ariaLabel} เวลา`}
         />
       </div>

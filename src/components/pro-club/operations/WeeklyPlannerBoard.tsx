@@ -311,6 +311,7 @@ export default function WeeklyPlannerBoard({
               {composerType === "MATCH" ? "Kickoff" : "Start time"}
               <FutVerseThaiTimeInput
                 className={fieldClass}
+                tone="dark"
                 value={startTime}
                 onChange={setStartTime}
                 aria-label={composerType === "MATCH" ? "Kickoff time" : "Start time"}
