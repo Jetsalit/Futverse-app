@@ -304,7 +304,7 @@ test("Analysis rules allow repairing a legacy invalid first topic snapshot entry
 test("Analysis rules allow draft saves that preserve a malformed legacy topic snapshot", async () => {
   const path = "proClubs/" + CLUB_A + "/matches/" + MATCH + "/analysis/current";
   const malformedSnapshot = emptyAnalysis(ANALYST);
-  malformedSnapshot.topicSnapshot = [null, { id: "later-topic" }];
+  malformedSnapshot.topicSnapshot = [null, { id: "later-topic", legacyTimestamp: FIXED_TIME }];
   await seed([[path, malformedSnapshot]]);
 
   const reference = doc(db(ANALYST), "proClubs", CLUB_A, "matches", MATCH, "analysis", "current");

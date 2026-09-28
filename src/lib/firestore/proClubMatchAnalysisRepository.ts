@@ -436,7 +436,8 @@ function toPersistedData(
           ...topic,
           choices: [...topic.choices],
         }))
-      : structuredClone(topicSnapshotOverride),
+      // Keep Firestore-native values (for example Timestamp) intact in a frozen snapshot.
+      : topicSnapshotOverride,
     sections: structuredClone(analysis.sections),
     createdAt: values.createdAt,
     createdBy: values.createdBy,

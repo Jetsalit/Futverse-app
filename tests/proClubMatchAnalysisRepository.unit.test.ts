@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { Timestamp } from "firebase/firestore";
 
 import type { ProClubOrganizationAuthority } from "../src/lib/firestore/proClubOrganizationAdapter";
 import {
@@ -38,6 +39,18 @@ function authority(
 type Stored = { id: string; data: Record<string, unknown> };
 
 function clone<T>(value: T): T {
+  if (value instanceof Timestamp) {
+    return new Timestamp(value.seconds, value.nanoseconds) as T;
+  }
+  if (value instanceof Date) return new Date(value) as T;
+  if (Array.isArray(value)) return value.map((entry) => clone(entry)) as T;
+  if (value !== null && typeof value === "object" &&
+      (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)) {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .map(([key, entry]) => [key, clone(entry)]),
+    ) as T;
+  }
   return structuredClone(value);
 }
 
@@ -264,6 +277,37 @@ test("a malformed first topic entry with valid later topics remains readable and
   const completed = await completeProClubMatchAnalysisRecord(CLUB, "match-one", updated, updated.revision, ops);
   assert.equal(completed.status, "COMPLETED");
   assert.deepEqual(docs.get(path)?.data.topicSnapshot, malformedSnapshot);
+});
+
+test("malformed frozen topic snapshots preserve Firestore value types on save and completion", async () => {
+  const { ops, docs } = createHarness();
+  const saved = await saveProClubMatchAnalysisDraft(CLUB, "match-one", draft("match-one"), 0, ops);
+  const path = "proClubs/club-a/matches/match-one/analysis/current";
+  const stored = docs.get(path);
+  assert.ok(stored);
+  const legacyTimestamp = Timestamp.fromDate(new Date("2026-09-27T12:00:00.000Z"));
+  const malformedSnapshot = [
+    { id: "legacy-topic", createdAt: legacyTimestamp },
+    ...(stored.data.topicSnapshot as unknown[]),
+  ];
+  docs.set(path, { id: "current", data: { ...clone(stored.data), topicSnapshot: malformedSnapshot } });
+
+  const reopened = await getProClubMatchAnalysis(CLUB, "match-one", ops);
+  assert.ok(reopened);
+  assert.equal(reopened.recoveryWarning, true);
+  assert.equal(reopened.recoverySaveRequired, undefined);
+  assert.equal(reopened.topicSnapshot.length, saved.topicSnapshot.length);
+
+  const updated = await saveProClubMatchAnalysisDraft(CLUB, "match-one", reopened, reopened.revision, ops);
+  const savedSnapshot = docs.get(path)?.data.topicSnapshot as Array<Record<string, unknown>>;
+  assert.ok(savedSnapshot[0]?.createdAt instanceof Timestamp);
+  assert.ok((savedSnapshot[0]?.createdAt as Timestamp).isEqual(legacyTimestamp));
+
+  const completed = await completeProClubMatchAnalysisRecord(CLUB, "match-one", updated, updated.revision, ops);
+  const completedSnapshot = docs.get(path)?.data.topicSnapshot as Array<Record<string, unknown>>;
+  assert.equal(completed.status, "COMPLETED");
+  assert.ok(completedSnapshot[0]?.createdAt instanceof Timestamp);
+  assert.ok((completedSnapshot[0]?.createdAt as Timestamp).isEqual(legacyTimestamp));
 });
 
 test("an invalid stored kickoff string is normalized and can be saved back as null", async () => {
