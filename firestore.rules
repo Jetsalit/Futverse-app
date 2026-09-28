@@ -4916,8 +4916,8 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
 
       function proClubAnalysisExactKeysV1(data, keys) {
         return data is map
-          && data.keys().hasAll(keys)
-          && data.keys().hasOnly(keys);
+          && data.keys().hasOnly(keys)
+          && data.keys().size() == keys.size();
       }
 
       function proClubAnalysisTextV1(value, limit, allowEmpty) {
@@ -5034,62 +5034,6 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           );
       }
 
-      function proClubAnalysisLineupValidV1(lineup) {
-        return proClubAnalysisExactKeysV1(lineup, [
-            'formation', 'customFormationSlots', 'slots', 'notes'
-          ])
-          && lineup.get('formation', '') in [
-            '4-3-3', '4-2-3-1', '4-4-2', '3-5-2', 'CUSTOM'
-          ]
-          && (
-            lineup.get('formation', '') == 'CUSTOM'
-            ? lineup.get('customFormationSlots', null) is list
-              && lineup.get('customFormationSlots', []).size() == 11
-            : lineup.get('customFormationSlots', null) == null
-          )
-          && lineup.get('slots', null) is list
-          && lineup.get('slots', []).size() == 11
-          && proClubAnalysisTextV1(lineup.get('notes', ''), 2000, true);
-      }
-
-      function proClubAnalysisTopicSectionValidV1(section) {
-        return proClubAnalysisExactKeysV1(section, ['topicValues', 'notes'])
-          && section.get('topicValues', null) is map
-          && section.get('topicValues', {}).keys().size() <= 40
-          && proClubAnalysisTextV1(section.get('notes', ''), 2000, true);
-      }
-
-      function proClubAnalysisKeyMenValidV1(section) {
-        return proClubAnalysisExactKeysV1(section, ['players'])
-          && section.get('players', null) is list
-          && section.get('players', []).size() <= 12;
-      }
-
-      function proClubAnalysisSummaryValidV1(section) {
-        return proClubAnalysisExactKeysV1(section, [
-            'strengths', 'weaknesses', 'keyObservations', 'keyThreats',
-            'areasToExploit', 'tacticalNotes'
-          ])
-          && proClubAnalysisTextV1(section.get('strengths', ''), 2000, true)
-          && proClubAnalysisTextV1(section.get('weaknesses', ''), 2000, true)
-          && proClubAnalysisTextV1(section.get('keyObservations', ''), 2000, true)
-          && proClubAnalysisTextV1(section.get('keyThreats', ''), 2000, true)
-          && proClubAnalysisTextV1(section.get('areasToExploit', ''), 2000, true)
-          && proClubAnalysisTextV1(section.get('tacticalNotes', ''), 2000, true);
-      }
-
-      function proClubAnalysisSetPiecesValidV1(section) {
-        return proClubAnalysisExactKeysV1(section, [
-            'attackingCorners', 'defendingCorners', 'freeKicks',
-            'throwIns', 'penalties'
-          ])
-          && proClubAnalysisTextV1(section.get('attackingCorners', ''), 2000, true)
-          && proClubAnalysisTextV1(section.get('defendingCorners', ''), 2000, true)
-          && proClubAnalysisTextV1(section.get('freeKicks', ''), 2000, true)
-          && proClubAnalysisTextV1(section.get('throwIns', ''), 2000, true)
-          && proClubAnalysisTextV1(section.get('penalties', ''), 2000, true);
-      }
-
       function proClubAnalysisSectionsShapeValidV1(sections) {
         // Required child keys stay bounded; the repository validates nested values and list items.
         return proClubAnalysisExactKeysV1(sections, [
@@ -5118,29 +5062,6 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           ])
           && sections.get('ATTACKING_PATTERNS', null) is map
           && sections.get('ATTACKING_PATTERNS', {}).keys().hasAll(['selected', 'notes']);
-      }
-
-      function proClubAnalysisSectionsValidV1(sections) {
-        return proClubAnalysisExactKeysV1(sections, [
-            'FORMATION_LINEUP', 'IN_POSSESSION_ATT', 'OUT_DEF', 'KEY_MAN',
-            'ANALYSIS', 'SET_PIECES', 'ATTACKING_PATTERNS'
-          ])
-          && proClubAnalysisLineupValidV1(sections.get('FORMATION_LINEUP', {}))
-          && proClubAnalysisTopicSectionValidV1(sections.get('IN_POSSESSION_ATT', {}))
-          && proClubAnalysisTopicSectionValidV1(sections.get('OUT_DEF', {}))
-          && proClubAnalysisKeyMenValidV1(sections.get('KEY_MAN', {}))
-          && proClubAnalysisSummaryValidV1(sections.get('ANALYSIS', {}))
-          && proClubAnalysisSetPiecesValidV1(sections.get('SET_PIECES', {}))
-          && proClubAnalysisExactKeysV1(sections.get('ATTACKING_PATTERNS', {}), [
-            'selected', 'notes'
-          ])
-          && sections.get('ATTACKING_PATTERNS', {}).get('selected', null) is list
-          && sections.get('ATTACKING_PATTERNS', {}).get('selected', []).size() <= 8
-          && proClubAnalysisTextV1(
-            sections.get('ATTACKING_PATTERNS', {}).get('notes', ''),
-            2000,
-            true
-          );
       }
 
       function proClubAnalysisRecordValidV1(matchId, data) {
