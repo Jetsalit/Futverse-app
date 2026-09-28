@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { FileText, LayoutList, PencilLine, Printer, Save, ShieldAlert } from "lucide-react";
 
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
@@ -172,6 +172,7 @@ export default function ProClubMatchAnalysisWorkspace({
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const dirtyRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -255,6 +256,7 @@ export default function ProClubMatchAnalysisWorkspace({
           const savedOpponent = opponentTeams.find((item) => item.opponentId === saved.opponentSnapshot.teamId)
             ?? opponentTeams.find((item) => normalizeOpponentName(item.name) === normalizeOpponentName(saved.opponentSnapshot.name));
           setSelectedOpponentId(savedOpponent?.opponentId ?? saved.opponentSnapshot.teamId);
+          dirtyRef.current = false;
           setDirty(false);
         } else {
           const name = match.opponentName?.trim() || "Opponent";
@@ -282,6 +284,7 @@ export default function ProClubMatchAnalysisWorkspace({
             : created;
           setAnalysis(hydrated);
           setSelectedOpponentId(savedOpponent?.opponentId ?? null);
+          dirtyRef.current = false;
           setDirty(false);
         }
       } catch (caught) {
@@ -298,6 +301,7 @@ export default function ProClubMatchAnalysisWorkspace({
 
   function updateDraft(action: SetStateAction<ProClubMatchAnalysis | null>) {
     setAnalysis((current) => typeof action === "function" ? action(current) : action);
+    dirtyRef.current = true;
     setDirty(true);
     setMessage(null);
   }
@@ -437,6 +441,7 @@ export default function ProClubMatchAnalysisWorkspace({
     try {
       const saved = await services.saveDraft(clubId, match.matchId, analysis, analysis.revision);
       setAnalysis(saved);
+      dirtyRef.current = false;
       setDirty(false);
       setMessage("Draft saved · revision " + saved.revision + ".");
     } catch (caught) {
@@ -462,6 +467,7 @@ export default function ProClubMatchAnalysisWorkspace({
         draft.revision,
       );
       setAnalysis(completed);
+      dirtyRef.current = false;
       setDirty(false);
       setMessage("Analysis saved as completed.");
     } catch (caught) {
@@ -482,7 +488,8 @@ export default function ProClubMatchAnalysisWorkspace({
       setAnalysis((current) => current?.revision === 0
         ? applyTemplateToUnpersistedAnalysis(current, saved.topics)
         : current);
-      setDirty((current) => analysis?.revision === 0 || current);
+      dirtyRef.current = analysis?.revision === 0 || dirtyRef.current;
+      setDirty(dirtyRef.current);
       setShowTopicManager(false);
       setMessage("Analysis Game Model topics saved.");
     } catch (caught) {
@@ -522,8 +529,18 @@ export default function ProClubMatchAnalysisWorkspace({
                 value={selectedMatchId}
                 disabled={loadingIndex || matches.length === 0}
                 onChange={(event) => {
-                  setSelectedMatchId(event.currentTarget.value);
+                  const nextMatchId = event.currentTarget.value;
+                  if (
+                    dirtyRef.current
+                    && nextMatchId !== selectedMatchId
+                    && !window.confirm("Discard unsaved Analysis changes and open another match?")
+                  ) {
+                    event.currentTarget.value = selectedMatchId;
+                    return;
+                  }
+                  setSelectedMatchId(nextMatchId);
                   setView("SECTION");
+                  dirtyRef.current = false;
                   setDirty(false);
                 }}
                 className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"

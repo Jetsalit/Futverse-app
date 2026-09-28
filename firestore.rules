@@ -4979,7 +4979,16 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
       }
 
       function proClubAnalysisTopicsV1(topics) {
-        return topics is list && topics.size() <= 40;
+        return topics is list
+          && topics.size() <= 40
+          // Rules have no list iterator; repository validation checks every entry.
+          && (
+            topics.size() == 0
+            || (
+              topics[0] is map
+              && exactDocumentId(topics[0].get('id', ''))
+            )
+          );
       }
 
       function proClubAnalysisGameModelKeysV1(data) {
@@ -5073,6 +5082,22 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           && proClubAnalysisTextV1(section.get('penalties', ''), 2000, true);
       }
 
+      function proClubAnalysisSectionsShapeValidV1(sections) {
+        // Keep the Rules shape guard bounded; the repository validates all seven sections.
+        return proClubAnalysisExactKeysV1(sections, [
+            'FORMATION_LINEUP', 'IN_POSSESSION_ATT', 'OUT_DEF', 'KEY_MAN',
+            'ANALYSIS', 'SET_PIECES', 'ATTACKING_PATTERNS'
+          ])
+          && sections.get('FORMATION_LINEUP', null) is map
+          && sections.get('IN_POSSESSION_ATT', null) is map
+          && sections.get('OUT_DEF', null) is map
+          && sections.get('KEY_MAN', null) is map
+          && sections.get('ANALYSIS', null) is map
+          && sections.get('SET_PIECES', null) is map
+          && sections.get('ATTACKING_PATTERNS', null) is map
+          && sections.get('ANALYSIS', {}).get('strengths', null) is string;
+      }
+
       function proClubAnalysisSectionsValidV1(sections) {
         return proClubAnalysisExactKeysV1(sections, [
             'FORMATION_LINEUP', 'IN_POSSESSION_ATT', 'OUT_DEF', 'KEY_MAN',
@@ -5108,9 +5133,7 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           ])
           && data.get('schemaVersion', 0) == 1
           && data.get('matchId', '') == matchId
-          && data.get('status', '') in ['DRAFT', 'COMPLETED']
           && data.get('revision', 0) is int
-          && data.get('revision', 0) >= 1
           && proClubAnalysisExactKeysV1(team, ['name', 'logoUrl'])
           && proClubAnalysisTextV1(team.get('name', ''), 120, false)
           && proClubAnalysisLogoSourceV1(team.get('logoUrl', null))
@@ -5131,21 +5154,7 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           && proClubAnalysisTextV1(opponent.get('name', ''), 120, false)
           && proClubAnalysisLogoSourceV1(opponent.get('logoUrl', null))
           && proClubAnalysisTopicSnapshotValidV1(data.get('topicSnapshot', null))
-          && proClubAnalysisExactKeysV1(sections, [
-            'FORMATION_LINEUP', 'IN_POSSESSION_ATT', 'OUT_DEF', 'KEY_MAN',
-            'ANALYSIS', 'SET_PIECES', 'ATTACKING_PATTERNS'
-          ])
-          && sections.get('FORMATION_LINEUP', null) is map
-          && sections.get('IN_POSSESSION_ATT', null) is map
-          && sections.get('OUT_DEF', null) is map
-          && sections.get('KEY_MAN', null) is map
-          && sections.get('ANALYSIS', null) is map
-          && sections.get('SET_PIECES', null) is map
-          && sections.get('ATTACKING_PATTERNS', null) is map
-          && data.get('createdAt', null) is timestamp
-          && exactDocumentId(data.get('createdBy', ''))
-          && data.get('updatedAt', null) is timestamp
-          && exactDocumentId(data.get('updatedBy', ''));
+          && proClubAnalysisSectionsShapeValidV1(sections);
       }
       function proClubAnalysisValidCreateV1(clubId, matchId) {
         let data = request.resource.data;
@@ -5199,10 +5208,8 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           && proClubAnalysisTextV1(opponent.get('name', ''), 120, false)
           && proClubAnalysisLogoSourceV1(opponent.get('logoUrl', null))
           && data.get('topicSnapshot', []) == previous.get('topicSnapshot', [])
-          && proClubAnalysisExactKeysV1(sections, [
-            'FORMATION_LINEUP', 'IN_POSSESSION_ATT', 'OUT_DEF', 'KEY_MAN',
-            'ANALYSIS', 'SET_PIECES', 'ATTACKING_PATTERNS'
-          ])
+          && proClubAnalysisTopicSnapshotValidV1(data.get('topicSnapshot', null))
+          && proClubAnalysisSectionsShapeValidV1(sections)
           && data.get('createdAt', null) == previous.get('createdAt', null)
           && data.get('createdBy', '') == previous.get('createdBy', '')
           && data.get('updatedAt', null) is timestamp

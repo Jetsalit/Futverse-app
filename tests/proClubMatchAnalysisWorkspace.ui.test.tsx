@@ -299,6 +299,7 @@ test("seven-section editor saves all opponent findings, reopens the Draft, and b
 
     await act(async () => tabs[3]?.dispatchEvent(new runtime.dom.window.MouseEvent("click", { bubbles: true })));
     await act(async () => button(runtime.container, "Add Key Man").click());
+    assert.match(runtime.container.textContent ?? "", /Save draft to refresh Overview and Report\./);
     const keyManName = runtime.container.querySelector<HTMLInputElement>('input[aria-label^="Key man name "]');
     assert.ok(keyManName);
     await setInput(runtime, keyManName, "Noah Striker");
@@ -418,6 +419,67 @@ test("Game Model manager keeps persistence errors visible inside the topic dialo
     await flushUi();
     assert.match(runtime.container.querySelector('[role="alert"]')?.textContent ?? "", /changed in another session/);
     assert.match(runtime.container.textContent ?? "", /Manage topics/);
+  } finally {
+    await act(async () => runtime.root.unmount());
+    runtime.cleanup();
+  }
+});
+
+test("switching matches confirms before discarding an unsaved Analysis draft", async () => {
+  const runtime = setupDom();
+  const harness = servicesHarness();
+  const services: ProClubMatchAnalysisWorkspaceServices = {
+    ...harness.services,
+    async listMatches() { return [match("match-a"), match("match-b")]; },
+  };
+  let allowDiscard = false;
+  let confirmations = 0;
+  runtime.dom.window.confirm = () => {
+    confirmations += 1;
+    return allowDiscard;
+  };
+  try {
+    await act(async () => runtime.root.render(
+      <ProClubMatchAnalysisWorkspace authority={authority()} services={services} />,
+    ));
+    await flushUi();
+    const keyManTab = [...runtime.container.querySelectorAll('[role="tab"]')]
+      .find((item) => item.textContent?.trim() === "Key Man");
+    assert.ok(keyManTab);
+    await act(async () => keyManTab.dispatchEvent(new runtime.dom.window.MouseEvent("click", { bubbles: true })));
+    await act(async () => button(runtime.container, "Add Key Man").click());
+    const keyManName = runtime.container.querySelector<HTMLInputElement>('input[aria-label^="Key man name "]');
+    assert.ok(keyManName);
+    await setInput(runtime, keyManName, "Unsaved player");
+
+    const matchSelector = runtime.container.querySelector<HTMLSelectElement>(
+      'select[aria-label="Analysis match"]',
+    );
+    assert.ok(matchSelector);
+    const originalMatchId = matchSelector.value;
+    const nextMatchId = [...matchSelector.options]
+      .find((item) => item.value !== originalMatchId)?.value;
+    assert.ok(nextMatchId);
+    await selectValue(runtime, matchSelector, nextMatchId);
+    await flushUi();
+    assert.equal(confirmations, 1);
+    assert.equal(matchSelector.value, originalMatchId);
+    assert.equal(
+      runtime.container.querySelector<HTMLInputElement>('input[aria-label^="Key man name "]')?.value,
+      "Unsaved player",
+    );
+    assert.ok([...runtime.container.querySelectorAll("button")]
+      .some((item) => item.textContent?.trim() === "Remove key man"));
+
+    allowDiscard = true;
+    await selectValue(runtime, matchSelector, nextMatchId);
+    await flushUi();
+    assert.equal(confirmations, 2);
+    assert.equal(matchSelector.value, nextMatchId);
+    assert.equal(
+      runtime.container.querySelector('input[aria-label^="Key man name "]'),
+      null,
+    );
   } finally {
     await act(async () => runtime.root.unmount());
     runtime.cleanup();

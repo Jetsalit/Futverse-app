@@ -213,3 +213,52 @@ test("Analysis creation rejects mismatched match identity and oversized logo fie
   oversized.logoUrl = "data:image/webp;base64," + "A".repeat(90_001);
   await assertFails(setDoc(doc(firestore, "proClubs", CLUB_A, "teamLogos", "current"), oversized));
 });
+
+test("Analysis rules reject malformed model topics and nested report sections", async () => {
+  const firestore = db(ANALYST);
+  const gameModelPath = doc(firestore, "proClubs", CLUB_A, "analysisGameModel", "current");
+  const audit = {
+    revision: 1,
+    createdAt: serverTimestamp(),
+    createdBy: ANALYST,
+    updatedAt: serverTimestamp(),
+    updatedBy: ANALYST,
+  };
+  const topics = Array.from({ length: 40 }, (_, displayOrder) => ({
+    id: "topic-" + displayOrder,
+    name: "Topic " + displayOrder,
+    displayLabel: null,
+    section: displayOrder % 2 === 0 ? "IN_POSSESSION_ATT" : "OUT_DEF",
+    inputType: "CHECKBOX",
+    choices: [],
+    displayOrder,
+    enabled: true,
+    archived: false,
+    includeInAnalysis: true,
+    includeInSummary: true,
+    helperText: null,
+  }));
+  await assertFails(setDoc(gameModelPath, {
+    schemaVersion: 1,
+    topics: [null],
+    ...audit,
+  }));
+  await assertSucceeds(setDoc(gameModelPath, {
+    schemaVersion: 1,
+    topics,
+    ...audit,
+  }));
+
+  const malformedAnalysis = emptyAnalysis(ANALYST);
+  malformedAnalysis.sections = {
+    ...malformedAnalysis.sections,
+    ANALYSIS: {
+      ...malformedAnalysis.sections.ANALYSIS,
+      strengths: { unsupported: "object" },
+    },
+  };
+  await assertFails(setDoc(
+    doc(firestore, "proClubs", CLUB_A, "matches", MATCH, "analysis", "current"),
+    malformedAnalysis,
+  ));
+});
