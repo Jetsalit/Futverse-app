@@ -15,7 +15,7 @@ import {
   type ProClubMatchAnalysis,
 } from "../../../lib/proClubMatchAnalysis";
 import type { ProClubCustomFormationSlot } from "../../../lib/proClubStartingXI11v11";
-import type { PlayerPositionCode } from "../../../lib/playerPositionSelection";
+import { PLAYER_POSITION_CODES, type PlayerPositionCode } from "../../../lib/playerPositionSelection";
 import { getProClubAnalysisRatingClass } from "./proClubTheme";
 
 const TEXT_LIMIT = 2000;
@@ -306,13 +306,13 @@ export default function ProClubMatchAnalysisSectionEditor({
                   onPointerMove={(event) => handleMarkerPointerMove(slot.slotIndex, event)}
                   onPointerUp={finishMarkerDrag}
                   onPointerCancel={finishMarkerDrag}
-                  className={`pro-club-analysis-marker absolute z-10 flex max-w-[28%] -translate-x-1/2 -translate-y-1/2 flex-col items-center rounded-lg px-1 py-0.5 text-white ${isCustom && !disabled ? "touch-none cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
+                  className={`pro-club-analysis-marker absolute z-10 flex max-w-[28%] -translate-x-1/2 -translate-y-1/2 flex-col items-center rounded-lg px-1 py-0.5 ${isCustom && !disabled ? "touch-none cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
                   style={{ left: slot.x + "%", top: slot.y + "%" }}
                 >
-                  <span className="rounded-full border border-white/80 bg-slate-950/90 px-2 py-1 text-[10px] font-black">
+                  <span className="pro-club-analysis-marker-badge rounded-full border border-white/80 px-2 py-1 text-[10px] font-black">
                     {slot.jerseyNumber === null ? slot.position : `#${slot.jerseyNumber} · ${slot.position}`}
                   </span>
-                  {slot.playerName && <span className="max-w-full truncate rounded bg-slate-950/80 px-1 text-[9px] font-bold">{slot.playerName}</span>}
+                  {slot.playerName && <span className="pro-club-analysis-marker-name max-w-full truncate rounded px-1 text-[9px] font-bold">{slot.playerName}</span>}
                 </button>
               ))}
             </div>
@@ -329,10 +329,26 @@ export default function ProClubMatchAnalysisSectionEditor({
                   data-lineup-row={slot.slotIndex}
                   data-selected={selectedSlotIndex === slot.slotIndex}
                   onClick={() => setSelectedSlotIndex(slot.slotIndex)}
-                  className="pro-club-analysis-lineup-row grid min-w-0 grid-cols-[1.65rem_2.5rem_minmax(0,1fr)_3.4rem_2rem] items-center gap-1.5 rounded-xl border border-slate-200 p-1.5"
+                  className="pro-club-analysis-lineup-row grid min-w-0 grid-cols-[1.65rem_3.5rem_minmax(0,1fr)_3.4rem_2rem] items-center gap-1.5 rounded-xl border border-slate-200 p-1.5"
                 >
                   <span className="text-center text-xs font-black text-slate-500">{slot.slotIndex + 1}</span>
-                  <span className="text-center text-xs font-black text-slate-700">{slot.position}</span>
+                  {isCustom ? (
+                    <select
+                      aria-label={`Position slot ${slot.slotIndex + 1}`}
+                      value={slot.position}
+                      disabled={disabled}
+                      onFocus={() => setSelectedSlotIndex(slot.slotIndex)}
+                      onChange={(event) => {
+                        const selectedPosition = event.currentTarget.value as PlayerPositionCode;
+                        patchSlot(slot.slotIndex, { position: selectedPosition, label: selectedPosition });
+                      }}
+                      className="pro-club-analysis-input min-w-0 w-full rounded-lg border border-slate-300 px-1 py-2 text-[10px] font-bold text-slate-900 disabled:bg-slate-100"
+                    >
+                      {PLAYER_POSITION_CODES.map((position) => <option key={position} value={position}>{position}</option>)}
+                    </select>
+                  ) : (
+                    <span className="text-center text-xs font-black text-slate-700">{slot.position}</span>
+                  )}
                   <input
                     aria-label={"Player name slot " + (slot.slotIndex + 1)}
                     placeholder="Player name"

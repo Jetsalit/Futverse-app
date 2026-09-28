@@ -111,6 +111,12 @@ test("theme CSS defines scoped Light and Professional Neon tokens", () => {
   assert.match(css, /\.pro-club-analysis-workspace select:focus/);
   assert.match(css, /\.pro-club-analysis-workspace \[class~="text-slate-900"\][\s\S]*var\(--pc-text/);
   assert.match(css, /\.pro-club-analysis-tab/);
+  assert.match(css, /\[data-pro-club-theme="light"\] \.pro-club-analysis-workspace \.pro-club-analysis-marker-badge\s*\{[^}]*background-color:\s*#020617;[^}]*color:\s*#fff;/);
+  assert.match(css, /\[data-pro-club-theme="light"\] \.pro-club-analysis-workspace \.pro-club-analysis-marker-name\s*\{[^}]*background-color:\s*rgba\(2,\s*6,\s*23,\s*0\.82\);[^}]*color:\s*#fff;/);
+  assert.match(css, /\[data-pro-club-theme="neon"\] \.pro-club-analysis-workspace \.pro-club-analysis-marker-badge\s*\{[^}]*background-color:\s*#020617;[^}]*color:\s*#f8fafc;/);
+  assert.match(css, /\[data-pro-club-theme="neon"\] \.pro-club-analysis-workspace \.pro-club-analysis-marker-name\s*\{[^}]*background-color:\s*rgba\(2,\s*6,\s*23,\s*0\.82\);[^}]*color:\s*#f8fafc;/);
+  assert.match(css, /\.pro-club-analysis-marker\[data-selected="true"\]\s*\{[^}]*box-shadow:[^}]*rgba\(34, 211, 238/);
+  assert.doesNotMatch(css, /^\[data-pro-club-theme="light"\]\s+\.pro-club-analysis-workspace\s+\.text-white\s*\{/m);
   assert.match(css, /\.pro-club-analysis-rating--1/);
   assert.match(css, /\.pro-club-analysis-rating--2/);
   assert.match(css, /\.pro-club-analysis-rating--3/);

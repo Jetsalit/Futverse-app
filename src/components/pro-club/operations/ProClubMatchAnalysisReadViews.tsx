@@ -179,7 +179,7 @@ function KeyManList({ players }: { players: readonly ProClubAnalysisKeyMan[] }) 
 function OpponentPitch({ analysis }: { analysis: ProClubMatchAnalysis }) {
   const lineup = analysis.sections.FORMATION_LINEUP;
   return (
-    <div className="relative mx-auto aspect-[4/3] w-full max-w-xl overflow-hidden rounded-2xl border-2 border-emerald-900 bg-emerald-700 text-white">
+    <div className="relative mx-auto aspect-[4/3] w-full max-w-xl overflow-hidden rounded-2xl border-2 border-emerald-900 bg-emerald-700">
       <div className="absolute inset-3 rounded-xl border border-white/55" />
       <div className="absolute left-1/2 top-1/2 h-px w-[calc(100%-24px)] -translate-x-1/2 bg-white/50" />
       <div className="absolute left-1/2 top-1/2 h-20 w-20 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/50" />
@@ -189,10 +189,10 @@ function OpponentPitch({ analysis }: { analysis: ProClubMatchAnalysis }) {
           className="absolute z-10 flex max-w-[24%] -translate-x-1/2 -translate-y-1/2 flex-col items-center text-center"
           style={{ left: slot.x + "%", top: slot.y + "%" }}
         >
-          <span className="flex h-7 min-w-7 items-center justify-center rounded-full border-2 border-white bg-slate-900 px-1 text-[10px] font-black">
+          <span className="pro-club-analysis-marker-badge flex h-7 min-w-7 items-center justify-center rounded-full border-2 border-white px-1 text-[10px] font-black">
             {slot.jerseyNumber === null ? slot.position : `#${slot.jerseyNumber} · ${slot.position}`}
           </span>
-          {slot.playerName && <span className="max-w-full truncate rounded bg-slate-950/80 px-1 text-[9px] font-bold">{slot.playerName}</span>}
+          {slot.playerName && <span className="pro-club-analysis-marker-name max-w-full truncate rounded px-1 text-[9px] font-bold">{slot.playerName}</span>}
         </div>
       ))}
     </div>

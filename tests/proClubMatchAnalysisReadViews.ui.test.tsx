@@ -51,6 +51,9 @@ function sampleAnalysis(): ProClubMatchAnalysis {
       FORMATION_LINEUP: {
         ...empty.sections.FORMATION_LINEUP,
         formation: "4-3-3",
+        slots: empty.sections.FORMATION_LINEUP.slots.map((slot, index) => index === 0
+          ? { ...slot, playerName: "Keeper One", jerseyNumber: 1 }
+          : slot),
         notes: "Compact mid-block",
       },
       IN_POSSESSION_ATT: { topicValues: { "build-up": "Short" }, notes: "Build through the left." },
@@ -155,6 +158,8 @@ test("Overview displays saved lineup and all seven persisted sections without ed
   assert.doesNotMatch(markup, /<textarea|<input|<select/i);
   assert.match(markup, /Edit Analysis/);
   assert.match(markup, /pro-club-analysis-workspace/);
+  assert.match(markup, /pro-club-analysis-marker-badge/);
+  assert.match(markup, /pro-club-analysis-marker-name/);
   assert.match(markup, /pro-club-analysis-rating--5/);
   assert.match(markup, /pro-club-analysis-rating--4/);
   assert.match(markup, /pro-club-analysis-rating--3/);
@@ -187,6 +192,8 @@ test("Report uses saved data and its print action opens browser print", async ()
   assert.match(markup, /data-section="ATTACKING_PATTERNS"/);
   assert.match(markup, /Print or Save as PDF/);
   assert.match(markup, /pro-club-analysis-report/);
+  assert.match(markup, /pro-club-analysis-marker-badge/);
+  assert.match(markup, /pro-club-analysis-marker-name/);
   const css = readFileSync("src/index.css", "utf8");
   assert.match(css, /\.pro-club-analysis-report\s*\{[\s\S]*background:\s*var\(--pc-bg/);
   assert.match(css, /@media print\s*\{[\s\S]*\.pro-club-analysis-report\s*\{[\s\S]*background:\s*#fff/);

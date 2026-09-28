@@ -654,10 +654,6 @@
   text-shadow: none;
 }
 
-[data-pro-club-theme="light"] .pro-club-analysis-workspace .text-white {
-  color: #fff !important;
-}
-
 [data-pro-club-theme="neon"] .pro-club-analysis-pitch {
   border-color: #34d399;
   background: linear-gradient(145deg, #064e3b, #047857 58%, #065f46);
@@ -672,6 +668,26 @@
 .pro-club-analysis-marker[data-selected="true"] {
   border-color: #a5f3fc;
   box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.62), 0 0 18px rgba(34, 211, 238, 0.48);
+}
+
+[data-pro-club-theme="light"] .pro-club-analysis-workspace .pro-club-analysis-marker-badge {
+  background-color: #020617;
+  color: #fff;
+}
+
+[data-pro-club-theme="light"] .pro-club-analysis-workspace .pro-club-analysis-marker-name {
+  background-color: rgba(2, 6, 23, 0.82);
+  color: #fff;
+}
+
+[data-pro-club-theme="neon"] .pro-club-analysis-workspace .pro-club-analysis-marker-badge {
+  background-color: #020617;
+  color: #f8fafc;
+}
+
+[data-pro-club-theme="neon"] .pro-club-analysis-workspace .pro-club-analysis-marker-name {
+  background-color: rgba(2, 6, 23, 0.82);
+  color: #f8fafc;
 }
 
 .pro-club-analysis-lineup-row[data-selected="true"] {
