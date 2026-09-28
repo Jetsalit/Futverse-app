@@ -485,3 +485,43 @@ test("switching matches confirms before discarding an unsaved Analysis draft", a
     runtime.cleanup();
   }
 });
+
+test("disables Analysis editing while a draft save is pending", async () => {
+  const runtime = setupDom();
+  const harness = servicesHarness();
+  let releaseSave!: () => void;
+  const pendingSave = new Promise<void>((resolve) => { releaseSave = resolve; });
+  const services: ProClubMatchAnalysisWorkspaceServices = {
+    ...harness.services,
+    async saveDraft(clubId, matchId, analysis, revision) {
+      await pendingSave;
+      return harness.services.saveDraft(clubId, matchId, analysis, revision);
+    },
+  };
+  try {
+    await act(async () => runtime.root.render(
+      <ProClubMatchAnalysisWorkspace authority={authority()} services={services} />,
+    ));
+    await flushUi();
+    const nameField = input(runtime.container, "Player name slot 1");
+    await setInput(runtime, nameField, "Saved name");
+
+    await act(async () => button(runtime.container, "Save Draft").click());
+    await flushUi();
+    assert.equal(nameField.disabled, true);
+    assert.equal(runtime.container.querySelector<HTMLSelectElement>(
+      'select[aria-label="Analysis match"]',
+    )?.disabled, true);
+    releaseSave();
+    await flushUi();
+    assert.equal(nameField.disabled, false);
+    assert.equal(runtime.container.querySelector<HTMLSelectElement>(
+      'select[aria-label="Analysis match"]',
+    )?.disabled, false);
+    assert.equal(harness.state().savedAnalysis?.sections.FORMATION_LINEUP.slots[0]?.playerName, "Saved name");
+  } finally {
+    releaseSave();
+    await act(async () => runtime.root.unmount());
+    runtime.cleanup();
+  }
+});

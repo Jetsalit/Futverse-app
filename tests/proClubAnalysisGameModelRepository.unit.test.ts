@@ -88,6 +88,34 @@ test("missing Analysis Game Model reads editable defaults without creating a doc
   assert.equal(docs.size, 0);
 });
 
+test("malformed stored Game Model topics are skipped so Analysis remains readable", async () => {
+  const { ops, docs } = createHarness();
+  const validTopic = createProClubAnalysisTopic({
+    id: "build-up",
+    name: "Build Up",
+    section: "IN_POSSESSION_ATT",
+    inputType: "CHECKBOX",
+    displayOrder: 0,
+  });
+  docs.set("proClubs/club-a/analysisGameModel/current", {
+    id: "current",
+    data: {
+      schemaVersion: 1,
+      topics: [validTopic, null],
+      revision: 1,
+      createdAt: new Date("2026-09-27T10:00:00.000Z"),
+      createdBy: UID,
+      updatedAt: new Date("2026-09-27T10:00:00.000Z"),
+      updatedBy: UID,
+    },
+  });
+
+  const model = await getProClubAnalysisGameModel(CLUB, ops);
+
+  assert.deepEqual(model.topics, [validTopic]);
+  assert.equal(model.invalidTopicCount, 1);
+});
+
 test("topic adds, reorder, enable/disable, and archive state survive a save and reload", async () => {
   const { ops } = createHarness();
   const defaults = (await getProClubAnalysisGameModel(CLUB, ops)).topics;

@@ -243,6 +243,7 @@ test("Analysis rules reject malformed model topics and nested report sections", 
     topics: [null],
     ...audit,
   }));
+  // Firestore Rules cannot iterate later list entries. Repository reads quarantine malformed entries.
   await assertSucceeds(setDoc(gameModelPath, {
     schemaVersion: 1,
     topics,
@@ -260,5 +261,15 @@ test("Analysis rules reject malformed model topics and nested report sections", 
   await assertFails(setDoc(
     doc(firestore, "proClubs", CLUB_A, "matches", MATCH, "analysis", "current"),
     malformedAnalysis,
+  ));
+});
+
+test("Analysis rules reject an incomplete Formation / Lineup section", async () => {
+  const firestore = db(ANALYST);
+  const emptyLineup = emptyAnalysis(ANALYST);
+  emptyLineup.sections.FORMATION_LINEUP = {};
+  await assertFails(setDoc(
+    doc(firestore, "proClubs", CLUB_A, "matches", MATCH, "analysis", "current"),
+    emptyLineup,
   ));
 });

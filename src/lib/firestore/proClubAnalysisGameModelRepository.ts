@@ -28,6 +28,7 @@ export const PRO_CLUB_ANALYSIS_GAME_MODEL_SCHEMA_VERSION = 1 as const;
 export interface ProClubAnalysisGameModelRecord {
   readonly schemaVersion: typeof PRO_CLUB_ANALYSIS_GAME_MODEL_SCHEMA_VERSION;
   readonly topics: readonly ProClubAnalysisTopic[];
+  readonly invalidTopicCount?: number;
   readonly revision: number;
   readonly createdAt: unknown;
   readonly createdBy: string | null;
@@ -87,6 +88,32 @@ function validateTopics(value: unknown): value is ProClubAnalysisTopic[] {
   });
 }
 
+function parseStoredTopics(value: unknown): {
+  readonly topics: ProClubAnalysisTopic[];
+  readonly invalidTopicCount: number;
+} {
+  if (!Array.isArray(value) || value.length > 40) {
+    throw new Error("Stored Analysis Game Model topics are invalid.");
+  }
+  const topics: ProClubAnalysisTopic[] = [];
+  const ids = new Set<string>();
+  let invalidTopicCount = 0;
+  for (const topic of value) {
+    if (!isPlainRecord(topic)) {
+      invalidTopicCount += 1;
+      continue;
+    }
+    const validation = validateProClubAnalysisTopic(topic);
+    if (!validation.ok || typeof topic.id !== "string" || ids.has(topic.id)) {
+      invalidTopicCount += 1;
+      continue;
+    }
+    ids.add(topic.id);
+    topics.push(topic as unknown as ProClubAnalysisTopic);
+  }
+  return { topics, invalidTopicCount };
+}
+
 function cloneTopics(
   topics: readonly ProClubAnalysisTopic[],
 ): ProClubAnalysisTopic[] {
@@ -111,9 +138,7 @@ function parseStoredRecord(raw: unknown): ProClubAnalysisGameModelRecord {
   if (raw.schemaVersion !== PRO_CLUB_ANALYSIS_GAME_MODEL_SCHEMA_VERSION) {
     throw new Error("Unsupported Analysis Game Model schemaVersion.");
   }
-  if (!validateTopics(raw.topics)) {
-    throw new Error("Stored Analysis Game Model topics are invalid.");
-  }
+  const parsedTopics = parseStoredTopics(raw.topics);
   if (
     typeof raw.revision !== "number" ||
     !Number.isInteger(raw.revision) ||
@@ -127,7 +152,10 @@ function parseStoredRecord(raw: unknown): ProClubAnalysisGameModelRecord {
   }
   return {
     schemaVersion: PRO_CLUB_ANALYSIS_GAME_MODEL_SCHEMA_VERSION,
-    topics: cloneTopics(raw.topics),
+    topics: cloneTopics(parsedTopics.topics),
+    ...(parsedTopics.invalidTopicCount > 0
+      ? { invalidTopicCount: parsedTopics.invalidTopicCount }
+      : {}),
     revision: raw.revision,
     createdAt: raw.createdAt,
     createdBy: raw.createdBy,

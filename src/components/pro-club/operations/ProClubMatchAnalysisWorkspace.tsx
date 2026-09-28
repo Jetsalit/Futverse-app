@@ -527,8 +527,12 @@ export default function ProClubMatchAnalysisWorkspace({
               <select
                 aria-label="Analysis match"
                 value={selectedMatchId}
-                disabled={loadingIndex || matches.length === 0}
+                disabled={loadingIndex || saving || matches.length === 0}
                 onChange={(event) => {
+                  if (saving) {
+                    event.currentTarget.value = selectedMatchId;
+                    return;
+                  }
                   const nextMatchId = event.currentTarget.value;
                   if (
                     dirtyRef.current
@@ -559,6 +563,12 @@ export default function ProClubMatchAnalysisWorkspace({
             )}
           </div>
         </div>
+
+        {(model?.invalidTopicCount ?? 0) > 0 && (
+          <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">
+            {model!.invalidTopicCount} invalid saved Game Model topic(s) were skipped. Saving the topic template will remove them.
+          </p>
+        )}
 
         {match && (
           <div className="mt-5 grid gap-4 border-t border-slate-100 pt-4 lg:grid-cols-[1fr_1fr_auto] lg:items-center">
@@ -683,7 +693,7 @@ export default function ProClubMatchAnalysisWorkspace({
                   sectionId={activeSection}
                   analysis={analysis}
                   setAnalysis={updateDraft as Dispatch<SetStateAction<ProClubMatchAnalysis | null>>}
-                  disabled={!canEdit}
+                  disabled={!canEdit || saving}
                   topics={analysisTopics}
                   onOpponentNameChange={setOpponentName}
                 />

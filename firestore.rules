@@ -5083,19 +5083,33 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
       }
 
       function proClubAnalysisSectionsShapeValidV1(sections) {
-        // Keep the Rules shape guard bounded; the repository validates all seven sections.
+        // Required child keys stay bounded; the repository validates nested values and list items.
         return proClubAnalysisExactKeysV1(sections, [
             'FORMATION_LINEUP', 'IN_POSSESSION_ATT', 'OUT_DEF', 'KEY_MAN',
             'ANALYSIS', 'SET_PIECES', 'ATTACKING_PATTERNS'
           ])
           && sections.get('FORMATION_LINEUP', null) is map
+          && sections.get('FORMATION_LINEUP', {}).keys().hasAll([
+            'formation', 'customFormationSlots', 'slots', 'notes'
+          ])
           && sections.get('IN_POSSESSION_ATT', null) is map
+          && sections.get('IN_POSSESSION_ATT', {}).keys().hasAll(['topicValues', 'notes'])
           && sections.get('OUT_DEF', null) is map
+          && sections.get('OUT_DEF', {}).keys().hasAll(['topicValues', 'notes'])
           && sections.get('KEY_MAN', null) is map
+          && sections.get('KEY_MAN', {}).keys().hasAll(['players'])
           && sections.get('ANALYSIS', null) is map
+          && sections.get('ANALYSIS', {}).keys().hasAll([
+            'strengths', 'weaknesses', 'keyObservations', 'keyThreats',
+            'areasToExploit', 'tacticalNotes'
+          ])
+          && sections.get('ANALYSIS', {}).get('strengths', null) is string
           && sections.get('SET_PIECES', null) is map
+          && sections.get('SET_PIECES', {}).keys().hasAll([
+            'attackingCorners', 'defendingCorners', 'freeKicks', 'throwIns', 'penalties'
+          ])
           && sections.get('ATTACKING_PATTERNS', null) is map
-          && sections.get('ANALYSIS', {}).get('strengths', null) is string;
+          && sections.get('ATTACKING_PATTERNS', {}).keys().hasAll(['selected', 'notes']);
       }
 
       function proClubAnalysisSectionsValidV1(sections) {
