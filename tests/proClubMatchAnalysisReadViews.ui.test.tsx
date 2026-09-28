@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -153,6 +154,10 @@ test("Overview displays saved lineup and all seven persisted sections without ed
   assert.match(markup, new RegExp(OPPONENT_LOGO));
   assert.doesNotMatch(markup, /<textarea|<input|<select/i);
   assert.match(markup, /Edit Analysis/);
+  assert.match(markup, /pro-club-analysis-workspace/);
+  assert.match(markup, /pro-club-analysis-rating--5/);
+  assert.match(markup, /pro-club-analysis-rating--4/);
+  assert.match(markup, /pro-club-analysis-rating--3/);
   assert.match(markup, /Game Model summary/);
   const outDefStart = markup.indexOf('data-section="OUT_DEF"');
   const keyManStart = markup.indexOf('data-section="KEY_MAN"');
@@ -181,6 +186,11 @@ test("Report uses saved data and its print action opens browser print", async ()
   assert.match(markup, /data-section="SET_PIECES"/);
   assert.match(markup, /data-section="ATTACKING_PATTERNS"/);
   assert.match(markup, /Print or Save as PDF/);
+  assert.match(markup, /pro-club-analysis-report/);
+  const css = readFileSync("src/index.css", "utf8");
+  assert.match(css, /\.pro-club-analysis-report\s*\{[\s\S]*background:\s*var\(--pc-bg/);
+  assert.match(css, /@media print\s*\{[\s\S]*\.pro-club-analysis-report\s*\{[\s\S]*background:\s*#fff/);
+  assert.match(css, /\.pro-club-analysis-report \[data-section\][\s\S]*background:\s*#fff/);
 
   const runtime = setupDom();
   let printCalls = 0;

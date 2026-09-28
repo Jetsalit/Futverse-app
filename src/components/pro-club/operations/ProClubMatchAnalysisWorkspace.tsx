@@ -507,7 +507,7 @@ export default function ProClubMatchAnalysisWorkspace({
 
   if (!authorized) {
     return (
-      <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm font-bold text-amber-900">
+      <section className="pro-club-analysis-workspace rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm font-bold text-amber-900">
         <ShieldAlert className="mb-2" size={22} />
         Active Analyst, Head Coach, Assistant Coach, or Technical Director authority is required to open Analysis.
       </section>
@@ -515,8 +515,8 @@ export default function ProClubMatchAnalysisWorkspace({
   }
 
   return (
-    <section aria-label="Pro Club Match Analysis workspace" className="space-y-5">
-      <header className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+    <section aria-label="Pro Club Match Analysis workspace" className="pro-club-analysis-workspace space-y-5">
+      <header className="pro-club-analysis-card rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-col justify-between gap-5 xl:flex-row xl:items-center">
           <div className="min-w-0">
             <p className="text-xs font-black uppercase tracking-[0.16em] text-cyan-700">Opposition Analysis</p>
@@ -639,7 +639,7 @@ export default function ProClubMatchAnalysisWorkspace({
                     disabled={!savedReportAvailable}
                     aria-pressed={view === id}
                     onClick={() => setView(id as "OVERVIEW" | "REPORT")}
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="pro-club-analysis-tab inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Icon size={16} /> {label}
                   </button>
@@ -649,7 +649,7 @@ export default function ProClubMatchAnalysisWorkspace({
             </div>
             <div className="flex flex-wrap gap-2">
               {view !== "SECTION" && (
-                <button type="button" onClick={() => setView("SECTION")} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700">
+                <button type="button" onClick={() => setView("SECTION")} className="pro-club-analysis-tab inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700">
                   <PencilLine size={16} /> Back to edit
                 </button>
               )}
@@ -680,16 +680,14 @@ export default function ProClubMatchAnalysisWorkspace({
                     role="tab"
                     aria-selected={activeSection === id}
                     onClick={() => setActiveSection(id as typeof activeSection)}
-                    className={activeSection === id
-                      ? "shrink-0 rounded-xl bg-cyan-700 px-3 py-2 text-sm font-black text-white"
-                      : "shrink-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700"}
+                    className={`pro-club-analysis-tab shrink-0 rounded-xl px-3 py-2 text-sm ${activeSection === id ? "font-black text-white" : "font-bold"}`}
                   >
                     {label}
                   </button>
                 ))}
               </nav>
 
-              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+              <section className="pro-club-analysis-card rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h2 className="text-lg font-black text-slate-900">{analysis.opponentSnapshot.name}</h2>

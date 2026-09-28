@@ -3,7 +3,7 @@ import {
   PRO_CLUB_STARTING_XI_FIXED_SLOTS,
   validateProClubCustomFormationSlots,
   type ProClubCustomFormationSlot,
-  type ProClubStartingXIFormation,
+  type ProClubStartingXIFixedFormation,
 } from "./proClubStartingXI11v11";
 import {
   isPlayerPositionCode,
@@ -11,6 +11,121 @@ import {
 } from "./playerPositionSelection";
 
 export const PRO_CLUB_MATCH_ANALYSIS_SCHEMA_VERSION = 1 as const;
+
+export const PRO_CLUB_ANALYSIS_FIXED_FORMATIONS = [
+  ...PRO_CLUB_STARTING_XI_FIXED_FORMATIONS,
+  "4-1-4-1",
+  "5-3-2",
+  "3-4-3",
+] as const;
+
+export type ProClubAnalysisFixedFormation =
+  (typeof PRO_CLUB_ANALYSIS_FIXED_FORMATIONS)[number];
+export type ProClubAnalysisFormation = ProClubAnalysisFixedFormation | "CUSTOM";
+
+function copyStartingXIFormation(
+  formation: ProClubStartingXIFixedFormation,
+): ProClubCustomFormationSlot[] {
+  return PRO_CLUB_STARTING_XI_FIXED_SLOTS[formation].map((slot) => ({
+    ...slot,
+    label: slot.position,
+  }));
+}
+
+export const PRO_CLUB_ANALYSIS_FIXED_SLOTS: Readonly<
+  Record<ProClubAnalysisFixedFormation, readonly ProClubCustomFormationSlot[]>
+> = {
+  "4-3-3": copyStartingXIFormation("4-3-3"),
+  "4-2-3-1": copyStartingXIFormation("4-2-3-1"),
+  "4-4-2": copyStartingXIFormation("4-4-2"),
+  "3-5-2": copyStartingXIFormation("3-5-2"),
+  "4-1-4-1": [
+    { slotIndex: 0, position: "GK", x: 50, y: 90, label: "GK" },
+    { slotIndex: 1, position: "LB", x: 15, y: 70, label: "LB" },
+    { slotIndex: 2, position: "CB", x: 35, y: 70, label: "CB" },
+    { slotIndex: 3, position: "CB", x: 65, y: 70, label: "CB" },
+    { slotIndex: 4, position: "RB", x: 85, y: 70, label: "RB" },
+    { slotIndex: 5, position: "DM", x: 50, y: 56, label: "DM" },
+    { slotIndex: 6, position: "LM", x: 15, y: 39, label: "LM" },
+    { slotIndex: 7, position: "CM", x: 38, y: 40, label: "CM" },
+    { slotIndex: 8, position: "CM", x: 62, y: 40, label: "CM" },
+    { slotIndex: 9, position: "RM", x: 85, y: 39, label: "RM" },
+    { slotIndex: 10, position: "ST", x: 50, y: 18, label: "ST" },
+  ],
+  "5-3-2": [
+    { slotIndex: 0, position: "GK", x: 50, y: 90, label: "GK" },
+    { slotIndex: 1, position: "LWB", x: 10, y: 66, label: "LWB" },
+    { slotIndex: 2, position: "CB", x: 28, y: 70, label: "CB" },
+    { slotIndex: 3, position: "CB", x: 50, y: 72, label: "CB" },
+    { slotIndex: 4, position: "CB", x: 72, y: 70, label: "CB" },
+    { slotIndex: 5, position: "RWB", x: 90, y: 66, label: "RWB" },
+    { slotIndex: 6, position: "CM", x: 28, y: 48, label: "CM" },
+    { slotIndex: 7, position: "DM", x: 50, y: 52, label: "DM" },
+    { slotIndex: 8, position: "CM", x: 72, y: 48, label: "CM" },
+    { slotIndex: 9, position: "ST", x: 38, y: 22, label: "ST" },
+    { slotIndex: 10, position: "ST", x: 62, y: 22, label: "ST" },
+  ],
+  "3-4-3": [
+    { slotIndex: 0, position: "GK", x: 50, y: 90, label: "GK" },
+    { slotIndex: 1, position: "CB", x: 25, y: 70, label: "CB" },
+    { slotIndex: 2, position: "CB", x: 50, y: 73, label: "CB" },
+    { slotIndex: 3, position: "CB", x: 75, y: 70, label: "CB" },
+    { slotIndex: 4, position: "LM", x: 15, y: 49, label: "LM" },
+    { slotIndex: 5, position: "CM", x: 40, y: 50, label: "CM" },
+    { slotIndex: 6, position: "CM", x: 60, y: 50, label: "CM" },
+    { slotIndex: 7, position: "RM", x: 85, y: 49, label: "RM" },
+    { slotIndex: 8, position: "LW", x: 20, y: 24, label: "LW" },
+    { slotIndex: 9, position: "ST", x: 50, y: 18, label: "ST" },
+    { slotIndex: 10, position: "RW", x: 80, y: 24, label: "RW" },
+  ],
+};
+
+export const PRO_CLUB_ANALYSIS_PITCH_COORD_MIN = 6;
+export const PRO_CLUB_ANALYSIS_PITCH_COORD_MAX = 94;
+
+export function createProClubAnalysisFormationSlots(
+  formation: ProClubAnalysisFixedFormation,
+): ProClubCustomFormationSlot[] {
+  return PRO_CLUB_ANALYSIS_FIXED_SLOTS[formation].map((slot) => ({ ...slot }));
+}
+
+export function getProClubAnalysisPointerCoordinates(
+  bounds: Pick<DOMRect, "left" | "top" | "width" | "height">,
+  clientX: number,
+  clientY: number,
+): { x: number; y: number } {
+  const toCoordinate = (point: number, origin: number, size: number) => {
+    if (!Number.isFinite(point) || !Number.isFinite(size) || size <= 0) return 50;
+    return Math.min(
+      PRO_CLUB_ANALYSIS_PITCH_COORD_MAX,
+      Math.max(
+        PRO_CLUB_ANALYSIS_PITCH_COORD_MIN,
+        Math.round(((point - origin) / size) * 100),
+      ),
+    );
+  };
+  return {
+    x: toCoordinate(clientX, bounds.left, bounds.width),
+    y: toCoordinate(clientY, bounds.top, bounds.height),
+  };
+}
+
+export function moveProClubAnalysisCustomFormationSlot(
+  slots: readonly ProClubCustomFormationSlot[],
+  slotIndex: number,
+  x: number,
+  y: number,
+): ProClubCustomFormationSlot[] {
+  const clamp = (value: number) => Number.isFinite(value)
+    ? Math.min(
+        PRO_CLUB_ANALYSIS_PITCH_COORD_MAX,
+        Math.max(PRO_CLUB_ANALYSIS_PITCH_COORD_MIN, Math.round(value)),
+      )
+    : 50;
+  return slots.map((slot, index) => index === slotIndex
+    ? { ...slot, x: clamp(x), y: clamp(y) }
+    : { ...slot });
+}
 
 export const PRO_CLUB_ANALYSIS_SECTIONS = [
   { id: "FORMATION_LINEUP", label: "Formation / Lineup" },
@@ -524,7 +639,7 @@ export interface ProClubOpponentLineupSlot {
 }
 
 export interface ProClubAnalysisFormationLineup {
-  readonly formation: ProClubStartingXIFormation;
+  readonly formation: ProClubAnalysisFormation;
   readonly customFormationSlots: readonly ProClubCustomFormationSlot[] | null;
   readonly slots: readonly ProClubOpponentLineupSlot[];
   readonly notes: string;
@@ -629,9 +744,9 @@ export interface CreateEmptyProClubMatchAnalysisInput {
 }
 
 function createEmptyLineupSlots(
-  formation: Exclude<ProClubStartingXIFormation, "CUSTOM">,
+  formation: ProClubAnalysisFixedFormation,
 ): ProClubOpponentLineupSlot[] {
-  return PRO_CLUB_STARTING_XI_FIXED_SLOTS[formation].map((slot) => ({
+  return PRO_CLUB_ANALYSIS_FIXED_SLOTS[formation].map((slot) => ({
     ...slot,
     label: slot.position,
     playerName: "",
@@ -859,7 +974,7 @@ function validateLineup(value: unknown): ProClubAnalysisValidationResult {
 
   const formation = value.formation;
   const fixedFormations =
-    PRO_CLUB_STARTING_XI_FIXED_FORMATIONS as readonly string[];
+    PRO_CLUB_ANALYSIS_FIXED_FORMATIONS as readonly string[];
   if (formation !== "CUSTOM" && !fixedFormations.includes(String(formation))) {
     errors.push("Opponent formation is invalid.");
   }
@@ -881,8 +996,8 @@ function validateLineup(value: unknown): ProClubAnalysisValidationResult {
         ? value.customFormationSlots
         : typeof formation === "string" &&
             fixedFormations.includes(formation)
-          ? PRO_CLUB_STARTING_XI_FIXED_SLOTS[
-              formation as keyof typeof PRO_CLUB_STARTING_XI_FIXED_SLOTS
+          ? PRO_CLUB_ANALYSIS_FIXED_SLOTS[
+              formation as ProClubAnalysisFixedFormation
             ]
           : [];
     value.slots.forEach((slot, index) => {
