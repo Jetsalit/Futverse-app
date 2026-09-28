@@ -4905,6 +4905,356 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           && data.get('updatedBy', '') == request.auth.uid;
       }
 
+      // Analysis V1 uses the same active tenant boundary as other Pro Club workflows.
+      function proClubAnalysisActiveStaffV1(clubId) {
+        let staffPath = /databases/$(database)/documents/proClubs/$(clubId)/staff/$(request.auth.uid);
+        return proClubSquadRosterActiveStaffV1(clubId)
+          && get(staffPath).data.get('staffRole', '') in [
+            'ANALYST', 'HEAD_COACH', 'ASSISTANT_COACH', 'TECHNICAL_DIRECTOR'
+          ];
+      }
+
+      function proClubAnalysisExactKeysV1(data, keys) {
+        return data is map
+          && data.keys().hasAll(keys)
+          && data.keys().hasOnly(keys);
+      }
+
+      function proClubAnalysisTextV1(value, limit, allowEmpty) {
+        return value is string
+          && value.size() <= limit
+          && value.trim() == value
+          && (allowEmpty || value.size() > 0);
+      }
+
+      function proClubAnalysisLogoSourceV1(value) {
+        return value == null
+          || (value is string
+            && value.size() <= 90000
+            && (
+              value.matches('^https://.+$')
+              || value.matches('^data:image/webp;base64,[A-Za-z0-9+/]+=*$')
+            ));
+      }
+
+      function proClubAnalysisLogoFieldsV1(data) {
+        return data.get('schemaVersion', 0) == 1
+          && (
+            data.get('logoUrl', null) == null
+            ? data.get('mimeType', null) == null
+              && data.get('width', null) == null
+              && data.get('height', null) == null
+              && data.get('byteSize', null) == null
+            : data.get('logoUrl', '') is string
+              && data.get('logoUrl', '').matches('^data:image/webp;base64,[A-Za-z0-9+/]+=*$')
+              && data.get('logoUrl', '').size() <= 90000
+              && data.get('mimeType', '') == 'image/webp'
+              && data.get('width', 0) is int
+              && data.get('width', 0) >= 1
+              && data.get('width', 0) <= 256
+              && data.get('height', 0) is int
+              && data.get('height', 0) >= 1
+              && data.get('height', 0) <= 256
+              && data.get('byteSize', 0) is int
+              && data.get('byteSize', 0) >= 1
+              && data.get('byteSize', 0) <= 61440
+          );
+      }
+
+      function proClubAnalysisLogoAuditCreateV1(data) {
+        return data.get('createdAt', null) is timestamp
+          && data.get('createdAt', null) == request.time
+          && data.get('createdBy', '') == request.auth.uid
+          && data.get('updatedAt', null) is timestamp
+          && data.get('updatedAt', null) == request.time
+          && data.get('updatedBy', '') == request.auth.uid;
+      }
+
+      function proClubAnalysisLogoAuditUpdateV1(data, previous) {
+        return data.get('createdAt', null) == previous.get('createdAt', null)
+          && data.get('createdBy', '') == previous.get('createdBy', '')
+          && data.get('updatedAt', null) is timestamp
+          && data.get('updatedAt', null) == request.time
+          && data.get('updatedBy', '') == request.auth.uid;
+      }
+
+      function proClubAnalysisTopicsV1(topics) {
+        return topics is list
+          && topics.size() <= 40
+          // Rules have no list iterator; repository validation checks every entry.
+          && (
+            topics.size() == 0
+            || (
+              topics[0] is map
+              && exactDocumentId(topics[0].get('id', ''))
+            )
+          );
+      }
+
+      function proClubAnalysisGameModelKeysV1(data) {
+        return proClubAnalysisExactKeysV1(data, [
+          'schemaVersion', 'topics', 'revision', 'createdAt', 'createdBy',
+          'updatedAt', 'updatedBy'
+        ]);
+      }
+
+      function proClubAnalysisGameModelValidCreateV1(clubId) {
+        let data = request.resource.data;
+        return proClubAnalysisActiveStaffV1(clubId)
+          && proClubAnalysisGameModelKeysV1(data)
+          && data.get('schemaVersion', 0) == 1
+          && proClubAnalysisTopicsV1(data.get('topics', null))
+          && data.get('revision', 0) == 1
+          && proClubAnalysisLogoAuditCreateV1(data);
+      }
+
+      function proClubAnalysisGameModelValidUpdateV1(clubId) {
+        let data = request.resource.data;
+        let previous = resource.data;
+        return proClubAnalysisActiveStaffV1(clubId)
+          && proClubAnalysisGameModelKeysV1(data)
+          && proClubAnalysisGameModelKeysV1(previous)
+          && data.get('schemaVersion', 0) == 1
+          && proClubAnalysisTopicsV1(data.get('topics', null))
+          && data.get('revision', 0) == previous.get('revision', 0) + 1
+          && data.get('createdAt', null) == previous.get('createdAt', null)
+          && data.get('createdBy', '') == previous.get('createdBy', '')
+          && data.get('updatedAt', null) == request.time
+          && data.get('updatedBy', '') == request.auth.uid;
+      }
+      function proClubAnalysisTopicSnapshotValidV1(topics) {
+        return topics is list
+          && topics.size() <= 40
+          && (
+            topics.size() == 0
+            || (
+              topics[0] is map
+              && exactDocumentId(topics[0].get('id', ''))
+            )
+          );
+      }
+
+      function proClubAnalysisLineupValidV1(lineup) {
+        return proClubAnalysisExactKeysV1(lineup, [
+            'formation', 'customFormationSlots', 'slots', 'notes'
+          ])
+          && lineup.get('formation', '') in [
+            '4-3-3', '4-2-3-1', '4-4-2', '3-5-2', 'CUSTOM'
+          ]
+          && (
+            lineup.get('formation', '') == 'CUSTOM'
+            ? lineup.get('customFormationSlots', null) is list
+              && lineup.get('customFormationSlots', []).size() == 11
+            : lineup.get('customFormationSlots', null) == null
+          )
+          && lineup.get('slots', null) is list
+          && lineup.get('slots', []).size() == 11
+          && proClubAnalysisTextV1(lineup.get('notes', ''), 2000, true);
+      }
+
+      function proClubAnalysisTopicSectionValidV1(section) {
+        return proClubAnalysisExactKeysV1(section, ['topicValues', 'notes'])
+          && section.get('topicValues', null) is map
+          && section.get('topicValues', {}).keys().size() <= 40
+          && proClubAnalysisTextV1(section.get('notes', ''), 2000, true);
+      }
+
+      function proClubAnalysisKeyMenValidV1(section) {
+        return proClubAnalysisExactKeysV1(section, ['players'])
+          && section.get('players', null) is list
+          && section.get('players', []).size() <= 12;
+      }
+
+      function proClubAnalysisSummaryValidV1(section) {
+        return proClubAnalysisExactKeysV1(section, [
+            'strengths', 'weaknesses', 'keyObservations', 'keyThreats',
+            'areasToExploit', 'tacticalNotes'
+          ])
+          && proClubAnalysisTextV1(section.get('strengths', ''), 2000, true)
+          && proClubAnalysisTextV1(section.get('weaknesses', ''), 2000, true)
+          && proClubAnalysisTextV1(section.get('keyObservations', ''), 2000, true)
+          && proClubAnalysisTextV1(section.get('keyThreats', ''), 2000, true)
+          && proClubAnalysisTextV1(section.get('areasToExploit', ''), 2000, true)
+          && proClubAnalysisTextV1(section.get('tacticalNotes', ''), 2000, true);
+      }
+
+      function proClubAnalysisSetPiecesValidV1(section) {
+        return proClubAnalysisExactKeysV1(section, [
+            'attackingCorners', 'defendingCorners', 'freeKicks',
+            'throwIns', 'penalties'
+          ])
+          && proClubAnalysisTextV1(section.get('attackingCorners', ''), 2000, true)
+          && proClubAnalysisTextV1(section.get('defendingCorners', ''), 2000, true)
+          && proClubAnalysisTextV1(section.get('freeKicks', ''), 2000, true)
+          && proClubAnalysisTextV1(section.get('throwIns', ''), 2000, true)
+          && proClubAnalysisTextV1(section.get('penalties', ''), 2000, true);
+      }
+
+      function proClubAnalysisSectionsShapeValidV1(sections) {
+        // Required child keys stay bounded; the repository validates nested values and list items.
+        return proClubAnalysisExactKeysV1(sections, [
+            'FORMATION_LINEUP', 'IN_POSSESSION_ATT', 'OUT_DEF', 'KEY_MAN',
+            'ANALYSIS', 'SET_PIECES', 'ATTACKING_PATTERNS'
+          ])
+          && sections.get('FORMATION_LINEUP', null) is map
+          && sections.get('FORMATION_LINEUP', {}).keys().hasAll([
+            'formation', 'customFormationSlots', 'slots', 'notes'
+          ])
+          && sections.get('IN_POSSESSION_ATT', null) is map
+          && sections.get('IN_POSSESSION_ATT', {}).keys().hasAll(['topicValues', 'notes'])
+          && sections.get('OUT_DEF', null) is map
+          && sections.get('OUT_DEF', {}).keys().hasAll(['topicValues', 'notes'])
+          && sections.get('KEY_MAN', null) is map
+          && sections.get('KEY_MAN', {}).keys().hasAll(['players'])
+          && sections.get('ANALYSIS', null) is map
+          && sections.get('ANALYSIS', {}).keys().hasAll([
+            'strengths', 'weaknesses', 'keyObservations', 'keyThreats',
+            'areasToExploit', 'tacticalNotes'
+          ])
+          && sections.get('ANALYSIS', {}).get('strengths', null) is string
+          && sections.get('SET_PIECES', null) is map
+          && sections.get('SET_PIECES', {}).keys().hasAll([
+            'attackingCorners', 'defendingCorners', 'freeKicks', 'throwIns', 'penalties'
+          ])
+          && sections.get('ATTACKING_PATTERNS', null) is map
+          && sections.get('ATTACKING_PATTERNS', {}).keys().hasAll(['selected', 'notes']);
+      }
+
+      function proClubAnalysisSectionsValidV1(sections) {
+        return proClubAnalysisExactKeysV1(sections, [
+            'FORMATION_LINEUP', 'IN_POSSESSION_ATT', 'OUT_DEF', 'KEY_MAN',
+            'ANALYSIS', 'SET_PIECES', 'ATTACKING_PATTERNS'
+          ])
+          && proClubAnalysisLineupValidV1(sections.get('FORMATION_LINEUP', {}))
+          && proClubAnalysisTopicSectionValidV1(sections.get('IN_POSSESSION_ATT', {}))
+          && proClubAnalysisTopicSectionValidV1(sections.get('OUT_DEF', {}))
+          && proClubAnalysisKeyMenValidV1(sections.get('KEY_MAN', {}))
+          && proClubAnalysisSummaryValidV1(sections.get('ANALYSIS', {}))
+          && proClubAnalysisSetPiecesValidV1(sections.get('SET_PIECES', {}))
+          && proClubAnalysisExactKeysV1(sections.get('ATTACKING_PATTERNS', {}), [
+            'selected', 'notes'
+          ])
+          && sections.get('ATTACKING_PATTERNS', {}).get('selected', null) is list
+          && sections.get('ATTACKING_PATTERNS', {}).get('selected', []).size() <= 8
+          && proClubAnalysisTextV1(
+            sections.get('ATTACKING_PATTERNS', {}).get('notes', ''),
+            2000,
+            true
+          );
+      }
+
+      function proClubAnalysisRecordValidV1(matchId, data) {
+        let sections = data.get('sections', {});
+        let team = data.get('teamSnapshot', {});
+        let matchSnapshot = data.get('matchSnapshot', {});
+        let opponent = data.get('opponentSnapshot', {});
+        return proClubAnalysisExactKeysV1(data, [
+            'schemaVersion', 'matchId', 'status', 'revision', 'teamSnapshot',
+            'matchSnapshot', 'opponentSnapshot', 'topicSnapshot', 'sections',
+            'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+          ])
+          && data.get('schemaVersion', 0) == 1
+          && data.get('matchId', '') == matchId
+          && data.get('revision', 0) is int
+          && proClubAnalysisExactKeysV1(team, ['name', 'logoUrl'])
+          && proClubAnalysisTextV1(team.get('name', ''), 120, false)
+          && proClubAnalysisLogoSourceV1(team.get('logoUrl', null))
+          && proClubAnalysisExactKeysV1(matchSnapshot, [
+            'competitionName', 'opponentName', 'kickoffAt'
+          ])
+          && proClubAnalysisTextV1(matchSnapshot.get('competitionName', ''), 120, false)
+          && proClubAnalysisTextV1(matchSnapshot.get('opponentName', ''), 120, false)
+          && (
+            matchSnapshot.get('kickoffAt', null) == null
+            || matchSnapshot.get('kickoffAt', '') is string
+          )
+          && proClubAnalysisExactKeysV1(opponent, ['teamId', 'name', 'logoUrl'])
+          && (
+            opponent.get('teamId', null) == null
+            || exactDocumentId(opponent.get('teamId', ''))
+          )
+          && proClubAnalysisTextV1(opponent.get('name', ''), 120, false)
+          && proClubAnalysisLogoSourceV1(opponent.get('logoUrl', null))
+          && proClubAnalysisTopicSnapshotValidV1(data.get('topicSnapshot', null))
+          && proClubAnalysisSectionsShapeValidV1(sections);
+      }
+      function proClubAnalysisValidCreateV1(clubId, matchId) {
+        let data = request.resource.data;
+        let matchPath =
+          /databases/$(database)/documents/proClubs/$(clubId)/matches/$(matchId);
+        return proClubAnalysisActiveStaffV1(clubId)
+          && exactDocumentId(matchId)
+          && exists(matchPath)
+          && proClubAnalysisRecordValidV1(matchId, data)
+          && data.get('status', '') == 'DRAFT'
+          && data.get('revision', 0) == 1
+          && proClubAnalysisLogoAuditCreateV1(data);
+      }
+
+      function proClubAnalysisValidUpdateV1(clubId, matchId) {
+        let data = request.resource.data;
+        let previous = resource.data;
+        let sections = data.get('sections', {});
+        let team = data.get('teamSnapshot', {});
+        let matchSnapshot = data.get('matchSnapshot', {});
+        let opponent = data.get('opponentSnapshot', {});
+        return proClubAnalysisActiveStaffV1(clubId)
+          && exists(/databases/$(database)/documents/proClubs/$(clubId)/matches/$(matchId))
+          && proClubAnalysisExactKeysV1(data, [
+            'schemaVersion', 'matchId', 'status', 'revision', 'teamSnapshot',
+            'matchSnapshot', 'opponentSnapshot', 'topicSnapshot', 'sections',
+            'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+          ])
+          && data.get('schemaVersion', 0) == 1
+          && data.get('matchId', '') == matchId
+          && previous.get('status', '') == 'DRAFT'
+          && data.get('status', '') in ['DRAFT', 'COMPLETED']
+          && data.get('revision', 0) == previous.get('revision', 0) + 1
+          && proClubAnalysisExactKeysV1(team, ['name', 'logoUrl'])
+          && proClubAnalysisTextV1(team.get('name', ''), 120, false)
+          && proClubAnalysisLogoSourceV1(team.get('logoUrl', null))
+          && proClubAnalysisExactKeysV1(matchSnapshot, [
+            'competitionName', 'opponentName', 'kickoffAt'
+          ])
+          && proClubAnalysisTextV1(matchSnapshot.get('competitionName', ''), 120, false)
+          && proClubAnalysisTextV1(matchSnapshot.get('opponentName', ''), 120, false)
+          && (
+            matchSnapshot.get('kickoffAt', null) == null
+            || matchSnapshot.get('kickoffAt', '') is string
+          )
+          && proClubAnalysisExactKeysV1(opponent, ['teamId', 'name', 'logoUrl'])
+          && (
+            opponent.get('teamId', null) == null
+            || exactDocumentId(opponent.get('teamId', ''))
+          )
+          && proClubAnalysisTextV1(opponent.get('name', ''), 120, false)
+          && proClubAnalysisLogoSourceV1(opponent.get('logoUrl', null))
+          && (
+            data.get('topicSnapshot', []) == previous.get('topicSnapshot', [])
+            || (
+              previous.get('topicSnapshot', null) == [null]
+              && data.get('topicSnapshot', []) == []
+            )
+          )
+          && proClubAnalysisSectionsShapeValidV1(sections)
+          && data.get('createdAt', null) == previous.get('createdAt', null)
+          && data.get('createdBy', '') == previous.get('createdBy', '')
+          && data.get('updatedAt', null) is timestamp
+          && data.get('updatedAt', null) == request.time
+          && data.get('updatedBy', '') == request.auth.uid;
+      }
+      function proClubAnalysisLogoRecordValidV1(data, includeName) {
+        return proClubAnalysisLogoFieldsV1(data)
+          && data.get('createdAt', null) is timestamp
+          && exactDocumentId(data.get('createdBy', ''))
+          && data.get('updatedAt', null) is timestamp
+          && exactDocumentId(data.get('updatedBy', ''))
+          && (
+            includeName
+            ? proClubAnalysisTextV1(data.get('name', ''), 120, false)
+            : true
+          );
+      }
       function proClubAttendanceValidRecordUpdateV1(
         attendanceSessionId,
         playerKey
@@ -4931,6 +5281,62 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
 
       allow list, create, update, delete: if false;
 
+      function proClubAnalysisTeamLogoKeysV1(data, includeName) {
+        return includeName
+          ? proClubAnalysisExactKeysV1(data, [
+            'name', 'schemaVersion', 'logoUrl', 'mimeType', 'width',
+            'height', 'byteSize', 'createdAt', 'createdBy', 'updatedAt',
+            'updatedBy'
+          ])
+          : proClubAnalysisExactKeysV1(data, [
+            'schemaVersion', 'logoUrl', 'mimeType', 'width', 'height',
+            'byteSize', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+          ]);
+      }
+
+      // Analysis V1 — per-club editable topic template.
+      match /analysisGameModel/current {
+        allow get: if proClubAnalysisActiveStaffV1(clubId);
+        allow list: if false;
+        allow create: if proClubAnalysisGameModelValidCreateV1(clubId);
+        allow update: if proClubAnalysisGameModelValidUpdateV1(clubId);
+        allow delete: if false;
+      }
+
+      // Analysis V1 — own-team logo override; profile logo remains the fallback.
+      match /teamLogos/current {
+        allow get: if proClubAnalysisActiveStaffV1(clubId);
+        allow list: if false;
+        allow create: if proClubAnalysisActiveStaffV1(clubId)
+          && proClubAnalysisTeamLogoKeysV1(request.resource.data, false)
+          && proClubAnalysisLogoRecordValidV1(request.resource.data, false)
+          && proClubAnalysisLogoAuditCreateV1(request.resource.data);
+        allow update: if proClubAnalysisActiveStaffV1(clubId)
+          && proClubAnalysisTeamLogoKeysV1(request.resource.data, false)
+          && proClubAnalysisLogoRecordValidV1(request.resource.data, false)
+          && proClubAnalysisLogoAuditUpdateV1(request.resource.data, resource.data);
+        allow delete: if false;
+      }
+
+      // Analysis V1 — reusable opponent identities and bounded logo assets.
+      match /opponentTeams/{opponentId} {
+        allow get, list: if proClubAnalysisActiveStaffV1(clubId);
+        allow create: if exactDocumentId(opponentId)
+          && proClubAnalysisActiveStaffV1(clubId)
+          && proClubAnalysisTeamLogoKeysV1(request.resource.data, true)
+          && proClubAnalysisLogoRecordValidV1(request.resource.data, true)
+          && proClubAnalysisLogoAuditCreateV1(request.resource.data);
+        allow update: if exactDocumentId(opponentId)
+          && proClubAnalysisActiveStaffV1(clubId)
+          && proClubAnalysisTeamLogoKeysV1(request.resource.data, true)
+          && proClubAnalysisLogoRecordValidV1(request.resource.data, true)
+          && proClubAnalysisLogoAuditUpdateV1(request.resource.data, resource.data);
+        allow delete: if false;
+
+        match /{document=**} {
+          allow read, write: if false;
+        }
+      }
       // Pro Club Game Model V1 — one editable four-phase master per club.
       match /gameModel/current {
         allow get: if proClubSquadRosterActiveStaffV1(clubId);
@@ -4984,6 +5390,14 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           allow delete: if false;
         }
 
+        // Analysis V1 — one immutable-snapshot report per Match.
+        match /analysis/current {
+          allow get: if proClubAnalysisActiveStaffV1(clubId);
+          allow list: if false;
+          allow create: if proClubAnalysisValidCreateV1(clubId, matchId);
+          allow update: if proClubAnalysisValidUpdateV1(clubId, matchId);
+          allow delete: if false;
+        }
         // Audit persistence remains closed in this Rules slice. The canonical
         // path is reserved now so no alternate client-owned audit path appears.
         match /startingXIAudit/{eventId} {
