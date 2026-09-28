@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
+  BarChart3,
   CalendarDays,
   ClipboardCheck,
   ClipboardList,
@@ -13,6 +14,7 @@ import {
 } from "lucide-react";
 
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
+import { canAccessProClubMatchAnalysis } from "../../../lib/proClubMatchAnalysisAccess";
 import { staffRoleLabels } from "../../../lib/proClubOnboarding";
 import ProClubAttendance from "./ProClubAttendance";
 import ProClubFitnessTrainingWorkspace from "./ProClubFitnessTrainingWorkspace";
@@ -21,6 +23,7 @@ import ProClubLibraryLogbook, {
   canOpenProClubLibraryLogbook,
 } from "./ProClubLibraryLogbook";
 import ProClubMatchStartingXIWorkspace from "./ProClubMatchStartingXIWorkspace";
+import ProClubMatchAnalysisWorkspace from "./ProClubMatchAnalysisWorkspace";
 import ProClubSquadRoster from "./ProClubSquadRoster";
 import ProClubStaffSubmissions, {
   canOpenProClubStaffSubmissions,
@@ -40,6 +43,7 @@ export const PRO_CLUB_TEAM_DASHBOARD_TABS = [
   "LIBRARY_LOGBOOK",
   "GAME_MODEL",
   "MATCHES",
+  "ANALYSIS",
 ] as const;
 
 export type ProClubTeamDashboardTab =
@@ -59,6 +63,7 @@ export function resolveProClubActiveTab(
     case "LIBRARY_LOGBOOK":
     case "GAME_MODEL":
     case "MATCHES":
+    case "ANALYSIS":
       return value;
     case "OVERVIEW":
     default:
@@ -79,7 +84,8 @@ type OverviewCardTone =
   | "attendance"
   | "submissions"
   | "library"
-  | "matches";
+  | "matches"
+  | "analysis";
 
 type AttendanceLaunch = {
   sessionDate: string;
@@ -95,6 +101,7 @@ const TAB_LABELS: Record<ProClubTeamDashboardTab, string> = {
   LIBRARY_LOGBOOK: "Library & Logbook",
   GAME_MODEL: "Game Model",
   MATCHES: "Matches",
+  ANALYSIS: "Analysis",
 };
 
 export default function ProClubTeamDashboard({
@@ -114,6 +121,7 @@ export default function ProClubTeamDashboard({
   const [attendanceLaunch, setAttendanceLaunch] = useState<AttendanceLaunch | null>(null);
   const staffSubmissionsAvailable = canOpenProClubStaffSubmissions(authority);
   const libraryLogbookAvailable = canOpenProClubLibraryLogbook(authority);
+  const analysisAvailable = canAccessProClubMatchAnalysis(authority);
   const fitnessOrganization = {
     organizationType: "PRO_CLUB" as const,
     organizationId: authority.organizationId,
@@ -148,7 +156,8 @@ export default function ProClubTeamDashboard({
       );
       setActiveTab(
         (restored === "SUBMISSIONS" && !staffSubmissionsAvailable) ||
-        (restored === "LIBRARY_LOGBOOK" && !libraryLogbookAvailable)
+        (restored === "LIBRARY_LOGBOOK" && !libraryLogbookAvailable) ||
+        (restored === "ANALYSIS" && !analysisAvailable)
           ? "OVERVIEW"
           : restored,
       );
@@ -160,6 +169,7 @@ export default function ProClubTeamDashboard({
     authority.userId,
     staffSubmissionsAvailable,
     libraryLogbookAvailable,
+    analysisAvailable,
   ]);
 
   function persistActiveTab(nextTab: ProClubTeamDashboardTab) {
@@ -257,6 +267,7 @@ export default function ProClubTeamDashboard({
           {PRO_CLUB_TEAM_DASHBOARD_TABS.filter((tab) => {
             if (tab === "SUBMISSIONS") return staffSubmissionsAvailable;
             if (tab === "LIBRARY_LOGBOOK") return libraryLogbookAvailable;
+            if (tab === "ANALYSIS") return analysisAvailable;
             return true;
           }).map((tab) => {
             const selected = activeTab === tab;
@@ -410,6 +421,15 @@ export default function ProClubTeamDashboard({
                   tone="matches"
                   onOpen={() => selectActiveTab("MATCHES")}
                 />
+                {analysisAvailable && (
+                  <OverviewCard
+                    icon={<BarChart3 size={20} />}
+                    title="Analysis"
+                    description="Opposition Analysis & Report"
+                    tone="analysis"
+                    onOpen={() => selectActiveTab("ANALYSIS")}
+                  />
+                )}
               </div>
 
               {overviewSupplement && (
@@ -483,6 +503,14 @@ export default function ProClubTeamDashboard({
           {activeTab === "MATCHES" && (
             <div className="pro-club-module-surface">
               <ProClubMatchStartingXIWorkspace authority={authority} />
+            </div>
+          )}
+          {activeTab === "ANALYSIS" && analysisAvailable && (
+            <div className="pro-club-module-surface">
+              <ProClubMatchAnalysisWorkspace
+                authority={authority}
+                onOpenMatches={() => selectActiveTab("MATCHES")}
+              />
             </div>
           )}
         </main>

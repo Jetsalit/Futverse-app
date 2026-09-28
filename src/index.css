@@ -494,3 +494,49 @@
 [data-pro-club-theme="neon"] .pro-club-game-model-phase-icon {
   text-shadow: 0 0 12px color-mix(in srgb, var(--pc-game-model-phase-accent) 32%, transparent);
 }
+
+.pro-club-analysis-report {
+  color: #0f172a;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .pro-club-analysis-report,
+  .pro-club-analysis-report * {
+    visibility: visible !important;
+  }
+
+  .pro-club-analysis-report {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    padding: 0 !important;
+    color: #0f172a !important;
+    background: #fff !important;
+    box-shadow: none !important;
+  }
+
+  .pro-club-analysis-no-print {
+    display: none !important;
+  }
+
+  .pro-club-analysis-report [data-section] {
+    break-inside: avoid;
+    border-color: #cbd5e1 !important;
+    box-shadow: none !important;
+  }
+
+  .pro-club-analysis-report img {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}

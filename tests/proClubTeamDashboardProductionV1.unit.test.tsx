@@ -47,6 +47,7 @@ test("freezes the minimal production team navigation", () => {
     "LIBRARY_LOGBOOK",
     "GAME_MODEL",
     "MATCHES",
+    "ANALYSIS",
   ]);
 });
 
@@ -63,6 +64,7 @@ test("active tab refresh persistence accepts only live production tabs", () => {
   assert.equal(resolveProClubActiveTab("LIBRARY_LOGBOOK"), "LIBRARY_LOGBOOK");
   assert.equal(resolveProClubActiveTab("GAME_MODEL"), "GAME_MODEL");
   assert.equal(resolveProClubActiveTab("MATCHES"), "MATCHES");
+  assert.equal(resolveProClubActiveTab("ANALYSIS"), "ANALYSIS");
   assert.equal(resolveProClubActiveTab("UNKNOWN"), "OVERVIEW");
   assert.equal(resolveProClubActiveTab(null), "OVERVIEW");
 });
@@ -102,11 +104,11 @@ test("renders the production app shell with authoritative club identity and cont
   assert.match(text, /Library &(?:amp;)? Logbook/);
   assert.match(text, /Game Model/);
   assert.match(text, /Matches/);
+  assert.match(text, /Analysis/);
   assert.doesNotMatch(text, /Coming soon/i);
 
   for (const forbidden of [
     /DEV PREVIEW/i,
-    /Analysis/i,
     /Availability/i,
     /Reports/i,
     /Staff administration/i,
@@ -116,6 +118,24 @@ test("renders the production app shell with authoritative club identity and cont
   }
 });
 
+test("Analysis navigation is limited to authorized Analysis staff", () => {
+  const allowed = renderToStaticMarkup(
+    <ProClubTeamDashboard
+      authority={authority({ staffRole: "ANALYST" })}
+      onBack={() => {}}
+      onLogout={() => {}}
+    />,
+  );
+  const denied = renderToStaticMarkup(
+    <ProClubTeamDashboard
+      authority={authority({ staffRole: "FITNESS_COACH" })}
+      onBack={() => {}}
+      onLogout={() => {}}
+    />,
+  );
+  assert.match(visibleText(allowed), /Analysis/);
+  assert.doesNotMatch(visibleText(denied), /Analysis/);
+});
 test("app shell uses a left desktop sidebar, sticky top bar, and unconstrained main content", () => {
   const source = readFileSync(files.dashboard, "utf8");
 
@@ -138,6 +158,8 @@ test("production dashboard routes Training through one integrated workspace", ()
   assert.match(source, /import ProClubAttendance from "\.\/ProClubAttendance"/);
   assert.match(source, /import ProClubStaffSubmissions/);
   assert.match(source, /import ProClubMatchStartingXIWorkspace from "\.\/ProClubMatchStartingXIWorkspace"/);
+  assert.match(source, /import ProClubMatchAnalysisWorkspace from "\.\/ProClubMatchAnalysisWorkspace"/);
+  assert.equal((source.match(/<ProClubMatchAnalysisWorkspace\b/g) ?? []).length, 1);
   assert.equal((source.match(/<ProClubSquadRoster\b/g) ?? []).length, 1);
   assert.equal((source.match(/<ProClubFitnessTrainingWorkspace\b/g) ?? []).length, 1);
   assert.doesNotMatch(source, /<ProClubFitnessResults\b|<FitnessTestCatalogue\b|<ProClubHeadCoachWeeklyProductionWorkspace\b/);
