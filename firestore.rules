@@ -5023,7 +5023,15 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           && data.get('updatedBy', '') == request.auth.uid;
       }
       function proClubAnalysisTopicSnapshotValidV1(topics) {
-        return topics is list && topics.size() <= 40;
+        return topics is list
+          && topics.size() <= 40
+          && (
+            topics.size() == 0
+            || (
+              topics[0] is map
+              && exactDocumentId(topics[0].get('id', ''))
+            )
+          );
       }
 
       function proClubAnalysisLineupValidV1(lineup) {
@@ -5221,8 +5229,13 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           )
           && proClubAnalysisTextV1(opponent.get('name', ''), 120, false)
           && proClubAnalysisLogoSourceV1(opponent.get('logoUrl', null))
-          && data.get('topicSnapshot', []) == previous.get('topicSnapshot', [])
-          && proClubAnalysisTopicSnapshotValidV1(data.get('topicSnapshot', null))
+          && (
+            data.get('topicSnapshot', []) == previous.get('topicSnapshot', [])
+            || (
+              previous.get('topicSnapshot', null) == [null]
+              && data.get('topicSnapshot', []) == []
+            )
+          )
           && proClubAnalysisSectionsShapeValidV1(sections)
           && data.get('createdAt', null) == previous.get('createdAt', null)
           && data.get('createdBy', '') == previous.get('createdBy', '')

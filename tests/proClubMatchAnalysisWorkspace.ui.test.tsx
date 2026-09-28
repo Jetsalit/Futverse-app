@@ -8,6 +8,8 @@ import type { ProClubOrganizationAuthority } from "../src/lib/firestore/proClubO
 import type { ProClubMatchRecord } from "../src/lib/firestore/proClubMatchStartingXIRepository";
 import {
   createDefaultProClubAnalysisTopics,
+  createEmptyProClubMatchAnalysis,
+  createProClubAnalysisTopicSnapshot,
   validateProClubMatchAnalysis,
   type ProClubMatchAnalysis,
 } from "../src/lib/proClubMatchAnalysis";
@@ -171,8 +173,10 @@ async function selectValue(runtime: ReturnType<typeof setupDom>, element: HTMLSe
   await act(async () => element.dispatchEvent(new runtime.dom.window.Event("change", { bubbles: true })));
 }
 
-function servicesHarness() {
-  let savedAnalysis: ProClubMatchAnalysis | null = null;
+function servicesHarness(initialAnalysis: ProClubMatchAnalysis | null = null) {
+  let savedAnalysis: ProClubMatchAnalysis | null = initialAnalysis
+    ? structuredClone(initialAnalysis)
+    : null;
   let currentModel = gameModel();
   let saves = 0;
   let completions = 0;
@@ -200,8 +204,15 @@ function servicesHarness() {
       const validation = validateProClubMatchAnalysis(analysis);
       assert.equal(validation.ok, true, validation.errors.join(" "));
       saves += 1;
+      const {
+        recoveryWarning,
+        recoverySaveRequired,
+        ...savedDraft
+      } = structuredClone(analysis);
+      void recoveryWarning;
+      void recoverySaveRequired;
       savedAnalysis = {
-        ...structuredClone(analysis),
+        ...savedDraft,
         status: "DRAFT",
         revision: revision + 1,
         createdAt: new Date("2026-09-27T10:02:00.000Z"),
@@ -521,6 +532,51 @@ test("disables Analysis editing while a draft save is pending", async () => {
     assert.equal(harness.state().savedAnalysis?.sections.FORMATION_LINEUP.slots[0]?.playerName, "Saved name");
   } finally {
     releaseSave();
+    await act(async () => runtime.root.unmount());
+    runtime.cleanup();
+  }
+});
+
+test("recovered Analysis warns and requires a draft save before completion", async () => {
+  const runtime = setupDom();
+  const base = createEmptyProClubMatchAnalysis({
+    matchId: "match-a",
+    clubName: "Lampang United",
+    clubLogoUrl: null,
+    competitionName: "Thai League 3",
+    opponentName: "Riverside FC",
+    kickoffAt: null,
+    topicSnapshot: createProClubAnalysisTopicSnapshot(createDefaultProClubAnalysisTopics()),
+  });
+  const recovered: ProClubMatchAnalysis = {
+    ...base,
+    status: "DRAFT",
+    revision: 1,
+    createdAt: new Date("2026-09-27T10:00:00.000Z"),
+    createdBy: "analyst-a",
+    updatedAt: new Date("2026-09-27T10:00:00.000Z"),
+    updatedBy: "analyst-a",
+    recoveryWarning: true,
+    recoverySaveRequired: true,
+  };
+  const harness = servicesHarness(recovered);
+  try {
+    await act(async () => runtime.root.render(
+      <ProClubMatchAnalysisWorkspace authority={authority()} services={harness.services} />,
+    ));
+    await flushUi();
+    assert.match(runtime.container.textContent ?? "", /Some saved Analysis values were malformed and have been reset/);
+    assert.equal(button(runtime.container, "Save Draft").disabled, false);
+    assert.equal(button(runtime.container, "Save Analysis").disabled, true);
+    assert.equal(button(runtime.container, "Overview").disabled, true);
+    assert.equal(button(runtime.container, "Report").disabled, true);
+    await act(async () => button(runtime.container, "Save Draft").click());
+    await flushUi();
+    assert.doesNotMatch(runtime.container.textContent ?? "", /Some saved Analysis values were malformed/);
+    assert.equal(button(runtime.container, "Save Analysis").disabled, false);
+    assert.equal(button(runtime.container, "Overview").disabled, false);
+    assert.equal(button(runtime.container, "Report").disabled, false);
+  } finally {
     await act(async () => runtime.root.unmount());
     runtime.cleanup();
   }

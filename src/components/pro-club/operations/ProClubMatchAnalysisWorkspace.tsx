@@ -256,8 +256,8 @@ export default function ProClubMatchAnalysisWorkspace({
           const savedOpponent = opponentTeams.find((item) => item.opponentId === saved.opponentSnapshot.teamId)
             ?? opponentTeams.find((item) => normalizeOpponentName(item.name) === normalizeOpponentName(saved.opponentSnapshot.name));
           setSelectedOpponentId(savedOpponent?.opponentId ?? saved.opponentSnapshot.teamId);
-          dirtyRef.current = false;
-          setDirty(false);
+          dirtyRef.current = Boolean(saved.recoverySaveRequired);
+          setDirty(dirtyRef.current);
         } else {
           const name = match.opponentName?.trim() || "Opponent";
           const savedOpponent = opponentTeams.find(
@@ -441,9 +441,11 @@ export default function ProClubMatchAnalysisWorkspace({
     try {
       const saved = await services.saveDraft(clubId, match.matchId, analysis, analysis.revision);
       setAnalysis(saved);
-      dirtyRef.current = false;
-      setDirty(false);
-      setMessage("Draft saved · revision " + saved.revision + ".");
+      dirtyRef.current = Boolean(saved.recoverySaveRequired);
+      setDirty(dirtyRef.current);
+      setMessage(saved.recoveryWarning
+        ? "Draft saved · revision " + saved.revision + ". Invalid saved topic entries remain skipped."
+        : "Draft saved · revision " + saved.revision + ".");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Draft could not be saved.");
     } finally {
@@ -452,7 +454,7 @@ export default function ProClubMatchAnalysisWorkspace({
   }
 
   async function completeAnalysis() {
-    if (!analysis || !match || !canEdit || saving) return;
+    if (!analysis || !match || !canEdit || saving || analysis.recoverySaveRequired) return;
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -614,6 +616,14 @@ export default function ProClubMatchAnalysisWorkspace({
       )}
       {loadingAnalysis && <p role="status" className="rounded-xl bg-white p-4 text-sm text-slate-600">Loading saved Analysis…</p>}
 
+      {analysis?.recoveryWarning && !loadingAnalysis && (
+        <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">
+          {analysis.recoverySaveRequired
+            ? "Some saved Analysis values were malformed and have been reset. Review the recovered sections and save the draft before completing it."
+            : "Invalid frozen Game Model topic entries were skipped in this view. The saved topic snapshot remains unchanged."}
+        </p>
+      )}
+
       {analysis && !loadingAnalysis && (
         <>
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -646,7 +656,7 @@ export default function ProClubMatchAnalysisWorkspace({
               <button type="button" disabled={!canEdit || saving} onClick={() => void saveDraft()} className="inline-flex items-center gap-2 rounded-xl bg-cyan-700 px-4 py-2 text-sm font-black text-white disabled:opacity-50">
                 <Save size={16} /> {saving ? "Saving…" : "Save Draft"}
               </button>
-              <button type="button" disabled={!canEdit || saving} onClick={() => void completeAnalysis()} className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2 text-sm font-black text-white disabled:opacity-50">
+              <button type="button" disabled={!canEdit || saving || Boolean(analysis.recoverySaveRequired)} onClick={() => void completeAnalysis()} className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2 text-sm font-black text-white disabled:opacity-50">
                 <Printer size={16} /> Save Analysis
               </button>
             </div>

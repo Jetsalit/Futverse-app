@@ -155,6 +155,92 @@ test("Analysis draft saves with a frozen topic snapshot and reopens from its mat
   );
 });
 
+test("malformed stored Analysis is normalized and remains editable without rewriting its frozen topic snapshot", async () => {
+  const { ops, docs } = createHarness();
+  const saved = await saveProClubMatchAnalysisDraft(
+    CLUB,
+    "match-one",
+    draft("match-one"),
+    0,
+    ops,
+  );
+  const path = "proClubs/club-a/matches/match-one/analysis/current";
+  const stored = docs.get(path);
+  assert.ok(stored);
+  const malformed = clone(stored.data);
+  const sections = malformed.sections as Record<string, Record<string, unknown>>;
+  sections.FORMATION_LINEUP!.formation = 42;
+  malformed.topicSnapshot = [
+    ...(malformed.topicSnapshot as unknown[]),
+    null,
+  ];
+  docs.set(path, { id: "current", data: malformed });
+
+  const reopened = await getProClubMatchAnalysis(CLUB, "match-one", ops);
+
+  assert.ok(reopened);
+  assert.equal(reopened.recoveryWarning, true);
+  assert.equal(reopened.recoverySaveRequired, true);
+  assert.equal(reopened.sections.FORMATION_LINEUP.formation, "4-3-3");
+  assert.equal(reopened.topicSnapshot.length, saved.topicSnapshot.length);
+
+  const repaired = await saveProClubMatchAnalysisDraft(
+    CLUB,
+    "match-one",
+    reopened,
+    1,
+    ops,
+  );
+
+  assert.equal(repaired.revision, 2);
+  assert.equal(repaired.sections.FORMATION_LINEUP.formation, "4-3-3");
+  assert.equal(repaired.recoveryWarning, true);
+  assert.equal(repaired.recoverySaveRequired, undefined);
+  assert.equal((docs.get(path)?.data.topicSnapshot as unknown[]).length, saved.topicSnapshot.length + 1);
+
+  const completed = await completeProClubMatchAnalysisRecord(
+    CLUB,
+    "match-one",
+    repaired,
+    repaired.revision,
+    ops,
+  );
+  assert.equal(completed.status, "COMPLETED");
+  assert.equal(completed.recoveryWarning, true);
+  assert.equal((docs.get(path)?.data.topicSnapshot as unknown[]).at(-1), null);
+});
+
+test("a legacy Analysis with a null first topic entry repairs to an empty immutable snapshot", async () => {
+  const { ops, docs } = createHarness();
+  await saveProClubMatchAnalysisDraft(CLUB, "match-one", draft("match-one"), 0, ops);
+  const path = "proClubs/club-a/matches/match-one/analysis/current";
+  const stored = docs.get(path);
+  assert.ok(stored);
+  docs.set(path, {
+    id: "current",
+    data: { ...clone(stored.data), topicSnapshot: [null] },
+  });
+
+  const recovered = await getProClubMatchAnalysis(CLUB, "match-one", ops);
+  assert.ok(recovered);
+  assert.equal(recovered.recoveryWarning, true);
+  assert.equal(recovered.recoverySaveRequired, true);
+  assert.deepEqual(recovered.topicSnapshot, []);
+
+  const repaired = await saveProClubMatchAnalysisDraft(
+    CLUB,
+    "match-one",
+    recovered,
+    recovered.revision,
+    ops,
+  );
+  assert.equal(repaired.revision, 2);
+  assert.equal(repaired.recoveryWarning, undefined);
+  assert.deepEqual(repaired.topicSnapshot, []);
+  assert.deepEqual(repaired.sections.IN_POSSESSION_ATT.topicValues, {});
+  assert.deepEqual(docs.get(path)?.data.topicSnapshot, []);
+});
+
 test("analyses for different matches persist at independent paths", async () => {
   const { ops } = createHarness();
   const first = await saveProClubMatchAnalysisDraft(

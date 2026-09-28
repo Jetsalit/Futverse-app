@@ -612,6 +612,10 @@ export interface ProClubMatchAnalysis {
   readonly createdBy: string | null;
   readonly updatedAt: unknown;
   readonly updatedBy: string | null;
+  /** Read-only signal that the repository recovered malformed stored draft data. */
+  readonly recoveryWarning?: true;
+  /** The recovered section values still need one explicit draft save. */
+  readonly recoverySaveRequired?: true;
 }
 
 export interface CreateEmptyProClubMatchAnalysisInput {
@@ -988,7 +992,18 @@ export function validateProClubMatchAnalysis(
     "updatedAt",
     "updatedBy",
   ];
-  if (!hasOnlyKeys(value, expectedRootKeys)) {
+  const persistedValue = { ...value };
+  const recoveryWarning = persistedValue.recoveryWarning;
+  const recoverySaveRequired = persistedValue.recoverySaveRequired;
+  delete persistedValue.recoveryWarning;
+  delete persistedValue.recoverySaveRequired;
+  if (
+    (recoveryWarning !== undefined && recoveryWarning !== true) ||
+    (recoverySaveRequired !== undefined && recoverySaveRequired !== true)
+  ) {
+    errors.push("Match Analysis recovery warning is invalid.");
+  }
+  if (!hasOnlyKeys(persistedValue, expectedRootKeys)) {
     errors.push("Match Analysis contains missing or unsupported fields.");
   }
   if (value.schemaVersion !== PRO_CLUB_MATCH_ANALYSIS_SCHEMA_VERSION) {

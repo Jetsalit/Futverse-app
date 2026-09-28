@@ -273,3 +273,30 @@ test("Analysis rules reject an incomplete Formation / Lineup section", async () 
     emptyLineup,
   ));
 });
+
+test("Analysis rules reject a malformed first topic snapshot entry", async () => {
+  const firestore = db(ANALYST);
+  const malformedSnapshot = emptyAnalysis(ANALYST);
+  malformedSnapshot.topicSnapshot = [null];
+  await assertFails(setDoc(
+    doc(firestore, "proClubs", CLUB_A, "matches", MATCH, "analysis", "current"),
+    malformedSnapshot,
+  ));
+});
+
+test("Analysis rules allow repairing a legacy invalid first topic snapshot entry", async () => {
+  const path = "proClubs/" + CLUB_A + "/matches/" + MATCH + "/analysis/current";
+  const malformedSnapshot = emptyAnalysis(ANALYST);
+  malformedSnapshot.topicSnapshot = [null];
+  await seed([[path, malformedSnapshot]]);
+
+  const reference = doc(db(ANALYST), "proClubs", CLUB_A, "matches", MATCH, "analysis", "current");
+  await assertSucceeds(updateDoc(reference, {
+    topicSnapshot: [],
+    revision: 2,
+    updatedAt: serverTimestamp(),
+    updatedBy: ANALYST,
+  }));
+  const repaired = await getDoc(reference);
+  assert.deepEqual(repaired.data()?.topicSnapshot, []);
+});
