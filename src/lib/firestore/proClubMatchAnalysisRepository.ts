@@ -97,18 +97,7 @@ export function proClubMatchAnalysisDocumentPath(
 interface ParsedProClubMatchAnalysis {
   readonly analysis: ProClubMatchAnalysis;
   readonly rawTopicSnapshot: unknown;
-  readonly rawTopicSnapshotPassesRulesGuard: boolean;
   readonly rawTopicSnapshotCanRepairToEmpty: boolean;
-}
-
-function topicSnapshotPassesRulesGuard(value: unknown): boolean {
-  if (!Array.isArray(value) || value.length > 40) return false;
-  if (value.length === 0) return true;
-  const first = value[0];
-  return isPlainRecord(first) &&
-    typeof first.id === "string" &&
-    first.id.length > 0 &&
-    !first.id.includes("/");
 }
 
 function topicSnapshotCanRepairToEmpty(value: unknown): boolean {
@@ -171,6 +160,10 @@ function parseRecord(
   const rawTeamSnapshot = isPlainRecord(raw.teamSnapshot) ? raw.teamSnapshot : {};
   const rawMatchSnapshot = isPlainRecord(raw.matchSnapshot) ? raw.matchSnapshot : {};
   const rawOpponentSnapshot = isPlainRecord(raw.opponentSnapshot) ? raw.opponentSnapshot : {};
+  const rawKickoffAt = rawMatchSnapshot.kickoffAt;
+  const isValidKickoffAt = rawKickoffAt === null ||
+    (typeof rawKickoffAt === "string" && Number.isFinite(Date.parse(rawKickoffAt)));
+  const normalizedKickoffAt = isValidKickoffAt ? rawKickoffAt as string | null : null;
   const teamSnapshot = {
     name: rawTeamSnapshot.name,
     logoUrl: rawTeamSnapshot.logoUrl,
@@ -178,7 +171,7 @@ function parseRecord(
   const matchSnapshot = {
     competitionName: rawMatchSnapshot.competitionName,
     opponentName: rawMatchSnapshot.opponentName,
-    kickoffAt: rawMatchSnapshot.kickoffAt,
+    kickoffAt: normalizedKickoffAt,
   };
   const opponentSnapshot = {
     teamId: rawOpponentSnapshot.teamId,
@@ -192,13 +185,13 @@ function parseRecord(
     !hasExactKeys(rawTeamSnapshot, ["name", "logoUrl"]) ||
     !hasExactKeys(rawMatchSnapshot, ["competitionName", "opponentName", "kickoffAt"]) ||
     !hasExactKeys(rawOpponentSnapshot, ["teamId", "name", "logoUrl"]) ||
+    !isValidKickoffAt ||
     Object.keys(raw).some((key) => ![
       "schemaVersion", "matchId", "status", "revision", "teamSnapshot",
       "matchSnapshot", "opponentSnapshot", "topicSnapshot", "sections",
       "createdAt", "createdBy", "updatedAt", "updatedBy",
     ].includes(key));
   const rawClubLogoUrl = rawTeamSnapshot.logoUrl;
-  const rawKickoffAt = rawMatchSnapshot.kickoffAt;
   const defaults = createEmptyProClubMatchAnalysis({
     matchId,
     clubName: typeof teamSnapshot.name === "string"
@@ -213,9 +206,7 @@ function parseRecord(
     opponentName: typeof matchSnapshot.opponentName === "string"
       ? matchSnapshot.opponentName
       : "Opponent",
-    kickoffAt: typeof rawKickoffAt === "string" || rawKickoffAt === null
-      ? rawKickoffAt as string | null
-      : null,
+    kickoffAt: normalizedKickoffAt,
     topicSnapshot: normalizedTopics.topics,
   });
   const root = {
@@ -239,7 +230,7 @@ function parseRecord(
   }
 
   let recovered = normalizedTopics.recovered || rootShapeRecovered;
-  let sectionsRecovered = rootShapeRecovered || !topicSnapshotPassesRulesGuard(raw.topicSnapshot);
+  let sectionsRecovered = rootShapeRecovered || topicSnapshotCanRepairToEmpty(raw.topicSnapshot);
   const normalizedSections: Record<string, unknown> = { ...defaults.sections };
   const rawSections = isPlainRecord(raw.sections) ? raw.sections : {};
   const sectionIds = [
@@ -365,7 +356,6 @@ function parseRecord(
       ...(sectionsRecovered ? { recoverySaveRequired: true as const } : {}),
     },
     rawTopicSnapshot: raw.topicSnapshot,
-    rawTopicSnapshotPassesRulesGuard: topicSnapshotPassesRulesGuard(raw.topicSnapshot),
     rawTopicSnapshotCanRepairToEmpty: topicSnapshotCanRepairToEmpty(raw.topicSnapshot),
   };
 }
@@ -532,13 +522,9 @@ export async function saveProClubMatchAnalysisDraft(
       throw new Error("Stale Match Analysis revision.");
     }
 
-    const canKeepTopicSnapshot = current.rawTopicSnapshotPassesRulesGuard;
-    if (!canKeepTopicSnapshot && !current.rawTopicSnapshotCanRepairToEmpty) {
-      throw new Error("This malformed legacy topic snapshot cannot be safely repaired under the current Firestore Rules.");
-    }
-    const recoveredPayload = canKeepTopicSnapshot
-      ? analysis
-      : {
+    const repairLegacyNullSnapshot = current.rawTopicSnapshotCanRepairToEmpty;
+    const recoveredPayload = repairLegacyNullSnapshot
+      ? {
           ...analysis,
           topicSnapshot: [],
           sections: {
@@ -552,13 +538,15 @@ export async function saveProClubMatchAnalysisDraft(
               topicValues: {},
             },
           },
-        };
+        }
+      : analysis;
     const preserved = {
       ...recoveredPayload,
       // The Game Model topic snapshot is immutable for this match. Team,
       // opponent, and match snapshots may change through an explicit draft save.
-      // A legacy snapshot failing Rules' bounded guard can only be repaired to empty.
-      topicSnapshot: canKeepTopicSnapshot ? current.analysis.topicSnapshot : [],
+      // Preserve present malformed snapshots unchanged; Rules permit equality with
+      // the existing frozen snapshot. The legacy [null] sentinel can be emptied.
+      topicSnapshot: repairLegacyNullSnapshot ? [] : current.analysis.topicSnapshot,
     };
     payload = toPersistedData(preserved, {
       revision: current.analysis.revision + 1,
@@ -567,9 +555,7 @@ export async function saveProClubMatchAnalysisDraft(
       updatedAt: timestamp,
       updatedBy: uid,
       status: "DRAFT",
-    }, canKeepTopicSnapshot
-      ? current.rawTopicSnapshot
-      : []);
+    }, repairLegacyNullSnapshot ? [] : current.rawTopicSnapshot);
   }
 
   if (currentSnapshot.exists) {
@@ -636,9 +622,7 @@ export async function completeProClubMatchAnalysisRecord(
     updatedAt: timestamp,
     updatedBy: uid,
     status: "COMPLETED",
-  }, current.rawTopicSnapshotPassesRulesGuard
-    ? current.rawTopicSnapshot
-    : current.analysis.topicSnapshot);
+  }, current.rawTopicSnapshot);
   await ops.updateDocument(path, payload);
 
   const readBack = await ops.readDocument(path);

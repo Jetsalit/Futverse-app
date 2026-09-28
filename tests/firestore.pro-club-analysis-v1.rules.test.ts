@@ -300,3 +300,19 @@ test("Analysis rules allow repairing a legacy invalid first topic snapshot entry
   const repaired = await getDoc(reference);
   assert.deepEqual(repaired.data()?.topicSnapshot, []);
 });
+
+test("Analysis rules allow draft saves that preserve a malformed legacy topic snapshot", async () => {
+  const path = "proClubs/" + CLUB_A + "/matches/" + MATCH + "/analysis/current";
+  const malformedSnapshot = emptyAnalysis(ANALYST);
+  malformedSnapshot.topicSnapshot = [null, { id: "later-topic" }];
+  await seed([[path, malformedSnapshot]]);
+
+  const reference = doc(db(ANALYST), "proClubs", CLUB_A, "matches", MATCH, "analysis", "current");
+  await assertSucceeds(updateDoc(reference, {
+    revision: 2,
+    updatedAt: serverTimestamp(),
+    updatedBy: ANALYST,
+  }));
+  const saved = await getDoc(reference);
+  assert.deepEqual(saved.data()?.topicSnapshot, malformedSnapshot.topicSnapshot);
+});

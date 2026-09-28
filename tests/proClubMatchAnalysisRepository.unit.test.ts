@@ -241,6 +241,54 @@ test("a legacy Analysis with a null first topic entry repairs to an empty immuta
   assert.deepEqual(docs.get(path)?.data.topicSnapshot, []);
 });
 
+test("a malformed first topic entry with valid later topics remains readable and editable without changing its snapshot", async () => {
+  const { ops, docs } = createHarness();
+  const saved = await saveProClubMatchAnalysisDraft(CLUB, "match-one", draft("match-one"), 0, ops);
+  const path = "proClubs/club-a/matches/match-one/analysis/current";
+  const stored = docs.get(path);
+  assert.ok(stored);
+  const malformedSnapshot = [null, ...(stored.data.topicSnapshot as unknown[])];
+  docs.set(path, { id: "current", data: { ...clone(stored.data), topicSnapshot: malformedSnapshot } });
+
+  const reopened = await getProClubMatchAnalysis(CLUB, "match-one", ops);
+  assert.ok(reopened);
+  assert.equal(reopened.recoveryWarning, true);
+  assert.equal(reopened.recoverySaveRequired, undefined);
+  assert.equal(reopened.topicSnapshot.length, saved.topicSnapshot.length);
+
+  const updated = await saveProClubMatchAnalysisDraft(CLUB, "match-one", reopened, reopened.revision, ops);
+  assert.equal(updated.revision, 2);
+  assert.equal(updated.recoveryWarning, true);
+  assert.deepEqual(docs.get(path)?.data.topicSnapshot, malformedSnapshot);
+
+  const completed = await completeProClubMatchAnalysisRecord(CLUB, "match-one", updated, updated.revision, ops);
+  assert.equal(completed.status, "COMPLETED");
+  assert.deepEqual(docs.get(path)?.data.topicSnapshot, malformedSnapshot);
+});
+
+test("an invalid stored kickoff string is normalized and can be saved back as null", async () => {
+  const { ops, docs } = createHarness();
+  await saveProClubMatchAnalysisDraft(CLUB, "match-one", draft("match-one"), 0, ops);
+  const path = "proClubs/club-a/matches/match-one/analysis/current";
+  const stored = docs.get(path);
+  assert.ok(stored);
+  const malformed = clone(stored.data);
+  (malformed.matchSnapshot as Record<string, unknown>).kickoffAt = "not-a-date";
+  docs.set(path, { id: "current", data: malformed });
+
+  const reopened = await getProClubMatchAnalysis(CLUB, "match-one", ops);
+  assert.ok(reopened);
+  assert.equal(reopened.recoveryWarning, true);
+  assert.equal(reopened.recoverySaveRequired, true);
+  assert.equal(reopened.matchSnapshot.kickoffAt, null);
+
+  const repaired = await saveProClubMatchAnalysisDraft(CLUB, "match-one", reopened, reopened.revision, ops);
+  assert.equal(repaired.revision, 2);
+  assert.equal(repaired.matchSnapshot.kickoffAt, null);
+  assert.equal(repaired.recoveryWarning, undefined);
+  assert.equal((docs.get(path)?.data.matchSnapshot as Record<string, unknown>).kickoffAt, null);
+});
+
 test("analyses for different matches persist at independent paths", async () => {
   const { ops } = createHarness();
   const first = await saveProClubMatchAnalysisDraft(
