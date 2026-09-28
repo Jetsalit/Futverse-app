@@ -7,6 +7,7 @@ import {
   type ProClubAnalysisTopicValue,
   type ProClubMatchAnalysis,
 } from "../../../lib/proClubMatchAnalysis";
+import { getProClubAnalysisRatingClass } from "./proClubTheme";
 
 const sectionTitle = new Map(
   PRO_CLUB_ANALYSIS_SECTIONS.map(({ id, label }) => [id, label]),
@@ -55,7 +56,7 @@ function SectionCard({
     <section
       data-section={id}
       aria-labelledby={"analysis-overview-" + id}
-      className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm print:break-inside-avoid"
+      className="pro-club-analysis-card rounded-2xl border border-slate-200 bg-white p-4 shadow-sm print:break-inside-avoid"
     >
       <h3 id={"analysis-overview-" + id} className="text-lg font-black text-slate-900">
         {title}
@@ -122,14 +123,29 @@ function TopicFinding({
   topic: ProClubAnalysisTopicSnapshot;
   value: ProClubAnalysisTopicValue;
 }) {
+  const label = topicValueLabel(topic, value);
   return (
     <div className="rounded-xl bg-slate-50 p-3">
       <dt className="font-bold text-slate-500">{topic.displayLabel || topic.name}</dt>
       <dd className="text-slate-900">
-        {topicValueLabel(topic, value)}
-        {topic.inputType === "RATING" && typeof value === "number" ? " / 5" : ""}
+        {topic.inputType === "RATING" ? (
+          <span data-rating={typeof value === "number" ? value : "neutral"} className={`${getProClubAnalysisRatingClass(typeof value === "number" ? value : null)} px-2 py-0.5`}>
+            {label}{typeof value === "number" ? " / 5" : ""}
+          </span>
+        ) : label}
       </dd>
     </div>
+  );
+}
+
+function RatingFinding({ label, value }: { label: string; value: number | null }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {label}
+      <span data-rating={value ?? "neutral"} className={`${getProClubAnalysisRatingClass(value)} px-2 py-0.5`}>
+        {value ?? "—"}
+      </span>
+    </span>
   );
 }
 
@@ -144,10 +160,12 @@ function KeyManList({ players }: { players: readonly ProClubAnalysisKeyMan[] }) 
             {player.jerseyNumber === null ? "" : " · #" + player.jerseyNumber}
             {player.position ? " · " + player.position : ""}
           </p>
-          <p className="text-xs text-slate-500">
-            Danger {player.dangerLevel ?? "—"} · Pace {player.pace ?? "—"} ·
-            Aerial {player.aerialThreat ?? "—"} · 1v1 {player.oneVsOne ?? "—"} ·
-            Work rate {player.workRate ?? "—"}
+          <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+            <RatingFinding label="Danger" value={player.dangerLevel} />
+            <RatingFinding label="Pace" value={player.pace} />
+            <RatingFinding label="Aerial" value={player.aerialThreat} />
+            <RatingFinding label="1v1" value={player.oneVsOne} />
+            <RatingFinding label="Work rate" value={player.workRate} />
           </p>
           <p><strong>Strengths:</strong> {player.strengths || "—"}</p>
           <p><strong>Weaknesses:</strong> {player.weaknesses || "—"}</p>
@@ -161,7 +179,7 @@ function KeyManList({ players }: { players: readonly ProClubAnalysisKeyMan[] }) 
 function OpponentPitch({ analysis }: { analysis: ProClubMatchAnalysis }) {
   const lineup = analysis.sections.FORMATION_LINEUP;
   return (
-    <div className="relative mx-auto aspect-[4/3] w-full max-w-xl overflow-hidden rounded-2xl border-2 border-emerald-900 bg-emerald-700 text-white">
+    <div className="relative mx-auto aspect-[4/3] w-full max-w-xl overflow-hidden rounded-2xl border-2 border-emerald-900 bg-emerald-700">
       <div className="absolute inset-3 rounded-xl border border-white/55" />
       <div className="absolute left-1/2 top-1/2 h-px w-[calc(100%-24px)] -translate-x-1/2 bg-white/50" />
       <div className="absolute left-1/2 top-1/2 h-20 w-20 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/50" />
@@ -171,12 +189,10 @@ function OpponentPitch({ analysis }: { analysis: ProClubMatchAnalysis }) {
           className="absolute z-10 flex max-w-[24%] -translate-x-1/2 -translate-y-1/2 flex-col items-center text-center"
           style={{ left: slot.x + "%", top: slot.y + "%" }}
         >
-          <span className="flex h-7 min-w-7 items-center justify-center rounded-full border-2 border-white bg-slate-900 px-1 text-[10px] font-black">
-            {slot.jerseyNumber ?? slot.position}
+          <span className="pro-club-analysis-marker-badge flex h-7 min-w-7 items-center justify-center rounded-full border-2 border-white px-1 text-[10px] font-black">
+            {slot.jerseyNumber === null ? slot.position : `#${slot.jerseyNumber} · ${slot.position}`}
           </span>
-          <span className="max-w-full truncate rounded bg-slate-950/80 px-1 text-[9px] font-bold">
-            {slot.playerName || slot.label}
-          </span>
+          {slot.playerName && <span className="pro-club-analysis-marker-name max-w-full truncate rounded px-1 text-[9px] font-bold">{slot.playerName}</span>}
         </div>
       ))}
     </div>
@@ -300,7 +316,7 @@ export function ProClubMatchAnalysisOverview({
   onEdit?: () => void;
 }) {
   return (
-    <div aria-label="Analysis Overview" className="space-y-4">
+    <div aria-label="Analysis Overview" className="pro-club-analysis-workspace space-y-4">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-2xl font-black text-slate-900">Overview</h2>
         {onEdit && (
@@ -327,7 +343,7 @@ export function ProClubMatchAnalysisReport({
   }
 
   return (
-    <article className="pro-club-analysis-report mx-auto max-w-5xl space-y-4 bg-white p-2 text-slate-900">
+    <article className="pro-club-analysis-workspace pro-club-analysis-report mx-auto max-w-5xl space-y-4 p-2">
       <div className="pro-club-analysis-no-print flex items-center justify-between gap-3">
         <h2 className="text-2xl font-black">Report</h2>
         <button

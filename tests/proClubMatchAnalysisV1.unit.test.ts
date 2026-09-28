@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  PRO_CLUB_ANALYSIS_FIXED_FORMATIONS,
+  PRO_CLUB_ANALYSIS_FIXED_SLOTS,
   PRO_CLUB_ANALYSIS_SECTIONS,
   addProClubAnalysisTopic,
   archiveProClubAnalysisTopic,
   completeProClubMatchAnalysis,
   createDefaultProClubAnalysisTopics,
   createEmptyProClubMatchAnalysis,
+  createProClubAnalysisFormationSlots,
   createProClubAnalysisTopic,
   createProClubAnalysisTopicSnapshot,
   reorderProClubAnalysisTopics,
@@ -15,7 +18,28 @@ import {
   updateProClubAnalysisTopic,
   validateProClubAnalysisTopicValue,
   validateProClubMatchAnalysis,
+  getProClubAnalysisPointerCoordinates,
+  moveProClubAnalysisCustomFormationSlot,
 } from "../src/lib/proClubMatchAnalysis";
+import {
+  PRO_CLUB_STARTING_XI_FIXED_FORMATIONS,
+  PRO_CLUB_STARTING_XI_FIXED_SLOTS,
+} from "../src/lib/proClubStartingXI11v11";
+import { isPlayerPositionCode } from "../src/lib/playerPositionSelection";
+
+function emptyAnalysis() {
+  return createEmptyProClubMatchAnalysis({
+    matchId: "formation-test-match",
+    clubName: "FutVerse FC",
+    clubLogoUrl: null,
+    competitionName: "League",
+    opponentName: "Test Opponent",
+    kickoffAt: null,
+    topicSnapshot: createProClubAnalysisTopicSnapshot(
+      createDefaultProClubAnalysisTopics(),
+    ),
+  });
+}
 
 test("Analysis V1 exposes exactly the seven required sections in order", () => {
   assert.deepEqual(
@@ -41,6 +65,74 @@ test("Analysis V1 exposes exactly the seven required sections in order", () => {
       "Set Pieces",
       "การเข้าทำ",
     ],
+  );
+});
+
+test("Analysis formation catalog adds three formations without changing Starting XI", () => {
+  assert.deepEqual(PRO_CLUB_ANALYSIS_FIXED_FORMATIONS, [
+    "4-3-3", "4-2-3-1", "4-4-2", "3-5-2", "4-1-4-1", "5-3-2", "3-4-3",
+  ]);
+  assert.deepEqual(PRO_CLUB_STARTING_XI_FIXED_FORMATIONS, [
+    "4-3-3", "4-2-3-1", "4-4-2", "3-5-2",
+  ]);
+  assert.deepEqual(Object.keys(PRO_CLUB_STARTING_XI_FIXED_SLOTS), [
+    "4-3-3", "4-2-3-1", "4-4-2", "3-5-2",
+  ]);
+
+  const empty = emptyAnalysis();
+  for (const formation of ["4-1-4-1", "5-3-2", "3-4-3"] as const) {
+    const template = createProClubAnalysisFormationSlots(formation);
+    assert.equal(template.length, 11, `${formation} must have 11 slots`);
+    assert.ok(template.every((slot) => isPlayerPositionCode(slot.position)));
+    assert.ok(template.every((slot) =>
+      Number.isInteger(slot.x) && slot.x >= 6 && slot.x <= 94 &&
+      Number.isInteger(slot.y) && slot.y >= 6 && slot.y <= 94,
+    ));
+    assert.notEqual(
+      template[0],
+      PRO_CLUB_ANALYSIS_FIXED_SLOTS[formation][0],
+      "Analysis slot templates are returned as copies",
+    );
+
+    const analysis = {
+      ...empty,
+      sections: {
+        ...empty.sections,
+        FORMATION_LINEUP: {
+          ...empty.sections.FORMATION_LINEUP,
+          formation,
+          customFormationSlots: null,
+          slots: template.map((slot) => ({
+            ...slot,
+            playerName: "",
+            jerseyNumber: null,
+            notes: "",
+          })),
+        },
+      },
+    };
+    assert.equal(validateProClubMatchAnalysis(analysis).ok, true, formation);
+  }
+});
+
+test("custom pitch movement clamps normalized coordinates and keeps lineup data", () => {
+  const template = createProClubAnalysisFormationSlots("4-3-3");
+  const moved = moveProClubAnalysisCustomFormationSlot(template, 4, -20, 120);
+  assert.deepEqual(
+    { x: moved[4]?.x, y: moved[4]?.y },
+    { x: 6, y: 94 },
+  );
+  assert.deepEqual(
+    { x: moved[3]?.x, y: moved[3]?.y },
+    { x: template[3]?.x, y: template[3]?.y },
+  );
+  assert.deepEqual(
+    getProClubAnalysisPointerCoordinates(
+      { left: 10, top: 20, width: 100, height: 200 },
+      60,
+      120,
+    ),
+    { x: 50, y: 50 },
   );
 });
 

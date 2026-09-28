@@ -173,6 +173,27 @@ async function selectValue(runtime: ReturnType<typeof setupDom>, element: HTMLSe
   await act(async () => element.dispatchEvent(new runtime.dom.window.Event("change", { bubbles: true })));
 }
 
+function dispatchPointer(
+  runtime: ReturnType<typeof setupDom>,
+  target: Element,
+  type: "pointerdown" | "pointermove" | "pointerup",
+  clientX: number,
+  clientY: number,
+  pointerType: "mouse" | "touch",
+) {
+  const event = new runtime.dom.window.MouseEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    clientX,
+    clientY,
+  });
+  Object.defineProperties(event, {
+    pointerId: { configurable: true, value: 7 },
+    pointerType: { configurable: true, value: pointerType },
+  });
+  target.dispatchEvent(event);
+}
+
 function servicesHarness(initialAnalysis: ProClubMatchAnalysis | null = null) {
   let savedAnalysis: ProClubMatchAnalysis | null = initialAnalysis
     ? structuredClone(initialAnalysis)
@@ -295,14 +316,94 @@ test("seven-section editor saves all opponent findings, reopens the Draft, and b
       "Set Pieces",
       "การเข้าทำ",
     ]);
+    assert.ok(tabs.every((item) => item.classList.contains("pro-club-analysis-tab")));
+    assert.equal(runtime.container.querySelectorAll("[data-lineup-row]").length, 11);
+    assert.equal(runtime.container.querySelectorAll("[data-lineup-marker]").length, 11);
+    assert.equal(runtime.container.querySelectorAll('textarea[aria-label^="Lineup notes slot "]').length, 0);
+    assert.equal(runtime.container.querySelector('select[aria-label="Position slot 1"]'), null);
+    assert.equal(
+      runtime.container.querySelector('[data-lineup-marker="0"]')?.getAttribute("data-custom-draggable"),
+      "false",
+    );
+    assert.ok(runtime.container.querySelector('[data-lineup-marker="0"] .pro-club-analysis-marker-badge'));
+
+    const sixthRow = runtime.container.querySelector<HTMLElement>('[data-lineup-row="5"]');
+    assert.ok(sixthRow);
+    await act(async () => sixthRow.dispatchEvent(new runtime.dom.window.MouseEvent("click", { bubbles: true })));
+    assert.equal(sixthRow.getAttribute("data-selected"), "true");
+    assert.equal(runtime.container.querySelector('[data-lineup-marker="5"]')?.getAttribute("data-selected"), "true");
+    await act(async () => runtime.container.querySelector<HTMLButtonElement>('button[aria-label="Toggle lineup notes slot 6"]')!.click());
+    assert.ok(runtime.container.querySelector('textarea[aria-label="Lineup notes slot 6"]'));
+    await act(async () => runtime.container.querySelector<HTMLButtonElement>('button[aria-label="Toggle lineup notes slot 7"]')!.click());
+    assert.equal(runtime.container.querySelector('textarea[aria-label="Lineup notes slot 6"]'), null);
+    assert.ok(runtime.container.querySelector('textarea[aria-label="Lineup notes slot 7"]'));
 
     await selectValue(runtime, runtime.container.querySelector<HTMLSelectElement>('select[aria-label="Opponent formation"]')!, "CUSTOM");
+    assert.equal(
+      runtime.container.querySelector('[data-lineup-marker="0"]')?.getAttribute("data-custom-draggable"),
+      "true",
+    );
+    const firstPosition = runtime.container.querySelector<HTMLSelectElement>('select[aria-label="Position slot 1"]');
+    assert.ok(firstPosition);
+    assert.equal(firstPosition.value, "GK");
+    await selectValue(runtime, firstPosition, "CB");
+    assert.equal(
+      runtime.container.querySelector<HTMLSelectElement>('[data-lineup-row="0"] select[aria-label="Position slot 1"]')?.value,
+      "CB",
+    );
+    assert.equal(
+      runtime.container.querySelector('[data-lineup-marker="0"] .pro-club-analysis-marker-badge')?.textContent,
+      "CB",
+    );
     await setInput(runtime, input(runtime.container, "Player name slot 1"), "Keeper One");
     await setInput(runtime, input(runtime.container, "Shirt number slot 1"), "1");
-    await setInput(runtime, input(runtime.container, "Horizontal position slot 1"), "48");
+    assert.equal(
+      runtime.container.querySelector('[data-lineup-marker="0"] .pro-club-analysis-marker-badge')?.textContent,
+      "#1 · CB",
+    );
+    assert.ok(runtime.container.querySelector('[data-lineup-marker="0"] .pro-club-analysis-marker-name'));
+    const pitch = runtime.container.querySelector<HTMLElement>('[aria-label="Opponent formation pitch"]');
+    assert.ok(pitch);
+    pitch.getBoundingClientRect = () => ({
+      left: 0, top: 0, width: 100, height: 100,
+      right: 100, bottom: 100, x: 0, y: 0,
+      toJSON: () => ({}),
+    }) as DOMRect;
+    const keeperMarker = runtime.container.querySelector<HTMLElement>('[data-lineup-marker="0"]');
+    assert.ok(keeperMarker);
+    await act(async () => {
+      dispatchPointer(runtime, keeperMarker, "pointerdown", 50, 90, "mouse");
+      dispatchPointer(runtime, keeperMarker, "pointermove", 48, 42, "mouse");
+      dispatchPointer(runtime, keeperMarker, "pointerup", 48, 42, "mouse");
+    });
+    assert.equal(keeperMarker.style.left, "48%");
+    assert.equal(keeperMarker.style.top, "42%");
+    await act(async () => button(runtime.container, "Reset formation").click());
+    assert.equal(runtime.container.querySelector<HTMLElement>('[data-lineup-marker="0"]')?.style.left, "50%");
+    assert.equal(runtime.container.querySelector<HTMLElement>('[data-lineup-marker="0"]')?.style.top, "90%");
+    assert.equal(input(runtime.container, "Player name slot 1").value, "Keeper One");
+    assert.equal(input(runtime.container, "Shirt number slot 1").value, "1");
+    const keeperAfterReset = runtime.container.querySelector<HTMLElement>('[data-lineup-marker="0"]');
+    assert.ok(keeperAfterReset);
+    await act(async () => {
+      dispatchPointer(runtime, keeperAfterReset, "pointerdown", 50, 90, "mouse");
+      dispatchPointer(runtime, keeperAfterReset, "pointermove", 48, 42, "mouse");
+      dispatchPointer(runtime, keeperAfterReset, "pointerup", 48, 42, "mouse");
+    });
+    const leftBackMarker = runtime.container.querySelector<HTMLElement>('[data-lineup-marker="1"]');
+    assert.ok(leftBackMarker);
+    await act(async () => {
+      dispatchPointer(runtime, leftBackMarker, "pointerdown", 15, 70, "touch");
+      dispatchPointer(runtime, leftBackMarker, "pointermove", 22, 65, "touch");
+      dispatchPointer(runtime, leftBackMarker, "pointerup", 22, 65, "touch");
+    });
     assert.equal(runtime.container.querySelector<HTMLSelectElement>('select[aria-label="Opponent formation"]')?.value, "CUSTOM");
 
     await act(async () => tabs[1]?.dispatchEvent(new runtime.dom.window.MouseEvent("click", { bubbles: true })));
+    const progressionRating = runtime.container.querySelector<HTMLInputElement>('input[aria-label="Progression"]');
+    assert.ok(progressionRating);
+    assert.equal(progressionRating.getAttribute("data-rating"), "neutral");
+    assert.ok(progressionRating.classList.contains("pro-club-analysis-rating--neutral"));
     await selectValue(runtime, runtime.container.querySelector<HTMLSelectElement>('select[aria-label="Build Up"]')!, "Short");
 
     await act(async () => tabs[2]?.dispatchEvent(new runtime.dom.window.MouseEvent("click", { bubbles: true })));
@@ -343,7 +444,13 @@ test("seven-section editor saves all opponent findings, reopens the Draft, and b
     const saved = harness.state().savedAnalysis;
     assert.ok(saved);
     assert.equal(saved.sections.FORMATION_LINEUP.slots[0]?.playerName, "Keeper One");
+    assert.equal(saved.sections.FORMATION_LINEUP.slots[0]?.position, "CB");
+    assert.equal(saved.sections.FORMATION_LINEUP.customFormationSlots?.[0]?.position, "CB");
+    assert.equal(saved.sections.FORMATION_LINEUP.customFormationSlots?.[0]?.label, "CB");
     assert.equal(saved.sections.FORMATION_LINEUP.slots[0]?.x, 48);
+    assert.equal(saved.sections.FORMATION_LINEUP.slots[0]?.y, 42);
+    assert.equal(saved.sections.FORMATION_LINEUP.slots[1]?.x, 22);
+    assert.equal(saved.sections.FORMATION_LINEUP.slots[1]?.y, 65);
     assert.equal(saved.sections.IN_POSSESSION_ATT.topicValues["build-up"], "Short");
     assert.equal(saved.sections.OUT_DEF.topicValues.pressing, "High");
     assert.equal(saved.sections.KEY_MAN.players[0]?.name, "Noah Striker");
@@ -368,7 +475,13 @@ test("seven-section editor saves all opponent findings, reopens the Draft, and b
       formationTab.dispatchEvent(new runtime.dom.window.MouseEvent("click", { bubbles: true }));
     });
     assert.equal(input(runtime.container, "Player name slot 1").value, "Keeper One");
+    assert.equal(input(runtime.container, "Player name slot 1").getAttribute("placeholder"), "Player name");
     assert.equal(runtime.container.querySelector<HTMLSelectElement>('select[aria-label="Opponent formation"]')?.value, "CUSTOM");
+    assert.equal(runtime.container.querySelector<HTMLSelectElement>('select[aria-label="Position slot 1"]')?.value, "CB");
+    const restoredMarker = runtime.container.querySelector<HTMLElement>('[data-lineup-marker="0"]');
+    assert.equal(restoredMarker?.querySelector(".pro-club-analysis-marker-badge")?.textContent, "#1 · CB");
+    assert.equal(restoredMarker?.style.left, "48%");
+    assert.equal(restoredMarker?.style.top, "42%");
   } finally {
     await act(async () => root.unmount());
     runtime.cleanup();
