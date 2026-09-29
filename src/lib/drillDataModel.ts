@@ -1,9 +1,19 @@
+import {
+  DEFAULT_TEAM_COLORS,
+  normalizePitchTheme,
+  normalizeTeamColors,
+  type PitchThemeId,
+  type TeamColors,
+} from "./tacticBoardModel";
+
 export type DrillFieldType = "full" | "half" | "small";
 
 export interface DrillCanvasData {
   elements: unknown[];
   lines: unknown[];
   fieldType: DrillFieldType;
+  teamColors?: TeamColors;
+  pitchTheme?: PitchThemeId;
 }
 
 export interface Drill {
@@ -45,6 +55,8 @@ export function normalizeDrillCanvasData(
     elements: Array.isArray(raw.elements) ? raw.elements : [],
     lines: Array.isArray(raw.lines) ? raw.lines : [],
     fieldType: normalizeDrillFieldType(raw.fieldType),
+    teamColors: normalizeTeamColors(raw.teamColors ?? DEFAULT_TEAM_COLORS),
+    pitchTheme: normalizePitchTheme(raw.pitchTheme),
   };
 }
 

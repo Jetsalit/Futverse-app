@@ -7,7 +7,9 @@ import {
   Trash2,
   Pencil,
   ArrowRight,
+  Minus,
   Activity,
+  RotateCw,
   ChevronLeft,
   Save,
   X,
@@ -28,6 +30,22 @@ import {
 } from "react-konva";
 import useImage from "use-image";
 import { useDrillDatabase, type Drill } from "../hooks/useDrillDatabase";
+import {
+  DEFAULT_TEAM_COLORS,
+  PITCH_THEME_PRESETS,
+  getContrastColor,
+  makeCurvePoints,
+  moveTacticLine,
+  normalizeOrientation,
+  normalizePitchTheme,
+  normalizeTeamColors,
+  resolveTacticLineStyle,
+  rotateTacticEquipment,
+  type CurveDirection,
+  type EquipmentOrientation,
+  type PitchThemeId,
+  type TacticArrowhead,
+} from "../lib/tacticBoardModel";
 import {
   normalizeDrillFieldType,
   type DrillCanvasData,
@@ -94,6 +112,7 @@ const MAIN_TOOLS = [
 ];
 
 const DRAWING_TOOLS = [
+  { id: "straight", icon: Minus, label: "เส้นตรง" },
   { id: "freehand", icon: Pencil, label: "วาดอิสระ" },
   { id: "pass", icon: ArrowRight, label: "ส่งบอล" },
   { id: "dashed", icon: DashedLineIcon, label: "เส้นประ" },
@@ -131,6 +150,11 @@ const BallNode = ({ el, onDragEnd, onClick, onTap }: any) => {
   );
 };
 
+type TacticBoardUndoAction =
+  | { type: "line"; id: string }
+  | { type: "element"; id: string }
+  | { type: "orientation"; id: string; orientation: EquipmentOrientation };
+
 export default function TacticBoard({
   onBack,
   editingDrill,
@@ -143,8 +167,14 @@ export default function TacticBoard({
 
   const [activeTool, setActiveTool] = useState("select");
   const [activeLineTool, setActiveLineTool] = useState("freehand");
+  const [activeArrowhead, setActiveArrowhead] =
+    useState<TacticArrowhead>("end");
+  const [curveDirection, setCurveDirection] =
+    useState<CurveDirection>("left");
   const [activeColor, setActiveColor] = useState("#ffffff");
   const [fieldType, setFieldType] = useState<DrillFieldType>("full");
+  const [teamColors, setTeamColors] = useState(DEFAULT_TEAM_COLORS);
+  const [pitchTheme, setPitchTheme] = useState<PitchThemeId>("white");
 
   const { saveDrill, updateDrill } = useDrillDatabase();
   const [saveForm, setSaveForm] = useState({
@@ -162,7 +192,18 @@ export default function TacticBoard({
   const stageRef = useRef<any>(null);
   const [elements, setElements] = useState<any[]>([]);
   const [lines, setLines] = useState<any[]>([]);
+  const undoStackRef = useRef<TacticBoardUndoAction[]>([]);
   const isDrawing = useRef(false);
+  const panDragRef = useRef<{
+    pointerId: number;
+    clientX: number;
+    clientY: number;
+    viewportX: number;
+    viewportY: number;
+  } | null>(null);
+  const [viewport, setViewport] = useState({ x: 0, y: 0 });
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [stageSize, setStageSize] = useState({ width: 800, height: 500 });
 
@@ -189,11 +230,23 @@ export default function TacticBoard({
       );
       setLines(Array.isArray(canvasData.lines) ? canvasData.lines : []);
       setFieldType(normalizeDrillFieldType(canvasData.fieldType));
+      setTeamColors(normalizeTeamColors(canvasData.teamColors));
+      setPitchTheme(normalizePitchTheme(canvasData.pitchTheme));
+      setSelectedElementId(null);
+      setSelectedLineId(null);
+      setViewport({ x: 0, y: 0 });
+      undoStackRef.current = [];
       setUploadedImage(null);
     } else {
       setDrillMode("upload");
       setElements([]);
       setLines([]);
+      setTeamColors(DEFAULT_TEAM_COLORS);
+      setPitchTheme("white");
+      setSelectedElementId(null);
+      setSelectedLineId(null);
+      setViewport({ x: 0, y: 0 });
+      undoStackRef.current = [];
       setUploadedImage(editingDrill.previewImage || null);
     }
   }, [editingDrill]);
@@ -228,10 +281,20 @@ export default function TacticBoard({
     ) {
       const x = stageSize.width / 2 + (Math.random() * 40 - 20);
       const y = stageSize.height / 2 + (Math.random() * 40 - 20);
-      setElements([
-        ...elements,
-        { id: Date.now().toString(), type: toolId, x, y },
-      ]);
+      const id = Date.now().toString();
+      const element = {
+        id,
+        type: toolId,
+        x,
+        y,
+        ...(toolId === "mini_goal" || toolId === "hurdle"
+          ? { orientation: 0 }
+          : {}),
+      };
+      undoStackRef.current.push({ type: "element", id });
+      setElements((current) => [...current, element]);
+      setSelectedElementId(id);
+      setSelectedLineId(null);
       setActiveTool("select");
     } else {
       setActiveTool(toolId);
@@ -241,9 +304,34 @@ export default function TacticBoard({
   const handleClear = () => {
     setElements([]);
     setLines([]);
+    setSelectedElementId(null);
+    setSelectedLineId(null);
+    undoStackRef.current = [];
   };
 
   const handleUndo = () => {
+    const action = undoStackRef.current.pop();
+    if (action?.type === "line") {
+      setLines((current) => current.filter((line) => line.id !== action.id));
+      if (selectedLineId === action.id) setSelectedLineId(null);
+      return;
+    }
+    if (action?.type === "element") {
+      setElements((current) => current.filter((element) => element.id !== action.id));
+      if (selectedElementId === action.id) setSelectedElementId(null);
+      return;
+    }
+    if (action?.type === "orientation") {
+      setElements((current) =>
+        current.map((element) =>
+          element.id === action.id
+            ? { ...element, orientation: action.orientation }
+            : element,
+        ),
+      );
+      return;
+    }
+
     if (lines.length > 0 && isDrawing.current === false) {
       setLines(lines.slice(0, -1));
     } else if (elements.length > 0) {
@@ -253,38 +341,113 @@ export default function TacticBoard({
 
   const handleElementClick = (e: any, id: string, type: "element" | "line") => {
     if (activeTool === "eraser") {
-      if (type === "element")
-        setElements(elements.filter((el) => el.id !== id));
-      if (type === "line") setLines(lines.filter((l) => l.id !== id));
+      if (type === "element") {
+        setElements((current) => current.filter((el) => el.id !== id));
+        if (selectedElementId === id) setSelectedElementId(null);
+      }
+      if (type === "line") {
+        setLines((current) => current.filter((line) => line.id !== id));
+        if (selectedLineId === id) setSelectedLineId(null);
+      }
+      return;
+    }
+
+    if (activeTool === "select") {
+      if (type === "element") {
+        setSelectedElementId(id);
+        setSelectedLineId(null);
+      } else {
+        setSelectedLineId(id);
+        setSelectedElementId(null);
+      }
     }
   };
 
   const handleDragEnd = (id: string, e: any) => {
-    if (activeTool === "eraser") return;
-    setElements(
-      elements.map((el) => {
-        if (el.id === id) {
-          return { ...el, x: e.target.x(), y: e.target.y() };
-        }
-        return el;
-      }),
+    if (activeTool === "eraser" || activeTool === "pan") return;
+    setElements((current) =>
+      current.map((el) =>
+        el.id === id ? { ...el, x: e.target.x(), y: e.target.y() } : el,
+      ),
     );
+    setSelectedElementId(id);
+    setSelectedLineId(null);
+  };
+
+  const handleLineDragEnd = (id: string, e: any) => {
+    if (activeTool !== "select") return;
+    setLines((current) =>
+      current.map((line) =>
+        line.id === id
+          ? moveTacticLine(line, e.target.x(), e.target.y())
+          : line,
+      ),
+    );
+    setSelectedLineId(id);
+    setSelectedElementId(null);
+  };
+
+  const handlePanPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activeTool !== "pan") return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    panDragRef.current = {
+      pointerId: e.pointerId,
+      clientX: e.clientX,
+      clientY: e.clientY,
+      viewportX: viewport.x,
+      viewportY: viewport.y,
+    };
+  };
+
+  const handlePanPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = panDragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    setViewport({
+      x: drag.viewportX + e.clientX - drag.clientX,
+      y: drag.viewportY + e.clientY - drag.clientY,
+    });
+  };
+
+  const handlePanPointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (panDragRef.current?.pointerId !== e.pointerId) return;
+    panDragRef.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
   };
 
   const handleMouseDown = (e: any) => {
-    if (activeTool === "eraser") return;
-    if (activeTool !== "draw") return;
+    const stage = e.target.getStage();
+    if (activeTool === "select" && e.target === stage) {
+      setSelectedElementId(null);
+      setSelectedLineId(null);
+    }
+    if (activeTool !== "draw" || e.target !== stage) return;
     isDrawing.current = true;
-    const pos = e.target.getStage().getPointerPosition();
-    setLines([
-      ...lines,
-      {
-        id: Date.now().toString(),
-        points: [pos.x, pos.y],
-        color: activeColor,
-        tool: activeLineTool,
-      },
-    ]);
+    const pos = stage.getRelativePointerPosition();
+    if (!pos) {
+      isDrawing.current = false;
+      return;
+    }
+    const geometry =
+      activeLineTool === "curve"
+        ? "curved"
+        : activeLineTool === "freehand" || activeLineTool === "dribble"
+          ? activeLineTool
+          : "straight";
+    const tool = activeLineTool === "straight" ? "pass" : activeLineTool;
+    const line = {
+      id: Date.now().toString(),
+      points: [pos.x, pos.y],
+      color: activeColor,
+      tool,
+      geometry,
+      stroke: activeLineTool === "dashed" ? "dashed" : "solid",
+      arrowhead: activeArrowhead,
+      curveDirection,
+    };
+    undoStackRef.current.push({ type: "line", id: line.id });
+    setLines((current) => [...current, line]);
   };
 
   const generateZigzag = (x1: number, y1: number, x2: number, y2: number) => {
@@ -313,38 +476,30 @@ export default function TacticBoard({
   const handleMouseMove = (e: any) => {
     if (!isDrawing.current || activeTool !== "draw") return;
     const stage = e.target.getStage();
-    const point = stage.getPointerPosition();
-    let lastLine = { ...lines[lines.length - 1] };
+    const point = stage.getRelativePointerPosition();
+    const lastIndex = lines.length - 1;
+    if (!point || lastIndex < 0) return;
+    let lastLine = { ...lines[lastIndex] };
+    const lineStyle = resolveTacticLineStyle(lastLine);
 
-    if (["pass", "dashed"].includes(lastLine.tool)) {
+    if (lineStyle.geometry === "straight") {
       lastLine.points = [
         lastLine.points[0],
         lastLine.points[1],
         point.x,
         point.y,
       ];
-    } else if (lastLine.tool === "curve") {
+    } else if (lineStyle.geometry === "curved") {
       const x1 = lastLine.points[0];
       const y1 = lastLine.points[1];
-      const x2 = point.x;
-      const y2 = point.y;
-      const dx = x2 - x1;
-      const dy = y2 - y1;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      // Create a nice arc by generating a single control point in the middle, pushed out orthogonally.
-      if (dist > 10) {
-        const mx = x1 + dx / 2;
-        const my = y1 + dy / 2;
-        // The normal vector
-        const nx = -dy / dist;
-        const ny = dx / dist;
-        // Curve offset: 25% of the distance
-        const offset = dist * 0.25;
-        lastLine.points = [x1, y1, mx + nx * offset, my + ny * offset, x2, y2];
-      } else {
-        lastLine.points = [x1, y1, x2, y2];
-      }
-    } else if (lastLine.tool === "dribble") {
+      lastLine.points = makeCurvePoints(
+        x1,
+        y1,
+        point.x,
+        point.y,
+        lineStyle.curveDirection,
+      );
+    } else if (lineStyle.geometry === "dribble") {
       lastLine.points = generateZigzag(
         lastLine.points[0],
         lastLine.points[1],
@@ -355,7 +510,9 @@ export default function TacticBoard({
       lastLine.points = lastLine.points.concat([point.x, point.y]);
     }
 
-    setLines([...lines.slice(0, -1), lastLine]);
+    setLines((current) =>
+      current.map((line, index) => (index === lastIndex ? lastLine : line)),
+    );
   };
 
   const handleMouseUp = () => {
@@ -373,6 +530,29 @@ export default function TacticBoard({
     }
   };
 
+  const selectedElement = elements.find(
+    (element) => element.id === selectedElementId,
+  );
+  const selectedEquipment =
+    selectedElement?.type === "mini_goal" || selectedElement?.type === "hurdle";
+  const pitchColors = PITCH_THEME_PRESETS[pitchTheme];
+
+  const rotateSelectedEquipment = () => {
+    if (!selectedEquipment || !selectedElementId) return;
+    undoStackRef.current.push({
+      type: "orientation",
+      id: selectedElementId,
+      orientation: normalizeOrientation(selectedElement.orientation),
+    });
+    setElements((current) =>
+      current.map((element) =>
+        element.id === selectedElementId
+          ? rotateTacticEquipment(element)
+          : element,
+      ),
+    );
+  };
+
   const handleSaveAll = async () => {
     let finalPreviewImage: string | undefined;
     let finalCanvasData: DrillCanvasData | null;
@@ -381,7 +561,7 @@ export default function TacticBoard({
       finalPreviewImage = stageRef.current
         ? stageRef.current.toDataURL({ pixelRatio: 2 })
         : undefined;
-      finalCanvasData = { elements, lines, fieldType };
+      finalCanvasData = { elements, lines, fieldType, teamColors, pitchTheme };
     } else {
       finalPreviewImage = uploadedImage || undefined;
       finalCanvasData = null;
@@ -533,8 +713,20 @@ export default function TacticBoard({
                           key={tool.id}
                           onClick={() => {
                             setActiveLineTool(tool.id);
+                            setActiveArrowhead(
+                              tool.id === "pass" ||
+                                tool.id === "freehand" ||
+                                tool.id === "dribble"
+                                ? "end"
+                                : "none",
+                            );
                             setActiveTool("draw");
                           }}
+                          aria-label={
+                            tool.id === "straight"
+                              ? "Draw a solid straight line"
+                              : tool.label
+                          }
                           className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm transition-all whitespace-nowrap ${
                             isActive
                               ? "bg-slate-200 text-slate-800 font-medium"
@@ -546,6 +738,48 @@ export default function TacticBoard({
                         </button>
                       );
                     })}
+
+                    <button
+                      type="button"
+                      aria-label="Arrowhead style"
+                      aria-pressed={activeArrowhead === "end"}
+                      onClick={() =>
+                        setActiveArrowhead((current) =>
+                          current === "end" ? "none" : "end",
+                        )
+                      }
+                      className={`px-2 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap ${
+                        activeArrowhead === "end"
+                          ? "bg-slate-200 text-slate-800"
+                          : "text-slate-500 hover:bg-slate-100"
+                      }`}
+                    >
+                      {activeArrowhead === "end" ? "Arrow: End" : "Arrow: None"}
+                    </button>
+
+                    {activeLineTool === "curve" && (
+                      <div
+                        className="flex items-center gap-1"
+                        aria-label="Curve bend direction"
+                      >
+                        <button
+                          type="button"
+                          aria-pressed={curveDirection === "left"}
+                          onClick={() => setCurveDirection("left")}
+                          className={`px-2 py-1.5 rounded-md text-xs font-semibold ${curveDirection === "left" ? "bg-slate-200 text-slate-800" : "text-slate-500 hover:bg-slate-100"}`}
+                        >
+                          Bend Left
+                        </button>
+                        <button
+                          type="button"
+                          aria-pressed={curveDirection === "right"}
+                          onClick={() => setCurveDirection("right")}
+                          className={`px-2 py-1.5 rounded-md text-xs font-semibold ${curveDirection === "right" ? "bg-slate-200 text-slate-800" : "text-slate-500 hover:bg-slate-100"}`}
+                        >
+                          Bend Right
+                        </button>
+                      </div>
+                    )}
 
                     <div className="w-[1px] h-6 bg-slate-200 mx-1 shrink-0"></div>
 
@@ -582,20 +816,63 @@ export default function TacticBoard({
                     </select>
                   </div>
 
-                  <div className="flex items-center gap-5">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-slate-600 text-xs">
-                        สีทีมแดง:
-                      </span>
-                      <div className="w-5 h-5 bg-[#ef4444] rounded box-border border-2 border-white shadow-[0_0_0_1px_#cbd5e1]"></div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-slate-600 text-xs">
-                        สีทีมน้ำเงิน:
-                      </span>
-                      <div className="w-5 h-5 bg-[#3b82f6] rounded box-border border-2 border-white shadow-[0_0_0_1px_#cbd5e1]"></div>
-                    </div>
-                  </div>
+                  <label className="flex items-center gap-2 font-bold text-slate-600 text-xs">
+                    Team A (Red)
+                    <input
+                      type="color"
+                      aria-label="Team A color"
+                      value={teamColors.teamA}
+                      onChange={(e) =>
+                        setTeamColors((current) => ({
+                          ...current,
+                          teamA: e.target.value,
+                        }))
+                      }
+                      className="w-8 h-7 rounded border border-slate-300 bg-white p-0.5"
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 font-bold text-slate-600 text-xs">
+                    Team B (Blue)
+                    <input
+                      type="color"
+                      aria-label="Team B color"
+                      value={teamColors.teamB}
+                      onChange={(e) =>
+                        setTeamColors((current) => ({
+                          ...current,
+                          teamB: e.target.value,
+                        }))
+                      }
+                      className="w-8 h-7 rounded border border-slate-300 bg-white p-0.5"
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 font-bold text-slate-600 text-xs">
+                    Pitch theme
+                    <select
+                      aria-label="Pitch theme"
+                      value={pitchTheme}
+                      onChange={(e) =>
+                        setPitchTheme(normalizePitchTheme(e.target.value))
+                      }
+                      className="border border-slate-300 rounded-md px-2 py-1 text-sm bg-white text-slate-700 shadow-sm"
+                    >
+                      {Object.entries(PITCH_THEME_PRESETS).map(([id, theme]) => (
+                        <option key={id} value={id}>
+                          {theme.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {selectedEquipment && (
+                    <button
+                      type="button"
+                      aria-label="Rotate selected equipment 90 degrees"
+                      onClick={rotateSelectedEquipment}
+                      className="flex items-center gap-1.5 px-2 py-1.5 rounded-md border border-slate-300 bg-white text-slate-700 text-xs font-semibold shadow-sm"
+                    >
+                      <RotateCw size={14} /> Rotate 90°
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -604,6 +881,8 @@ export default function TacticBoard({
                 <div
                   className={`relative bg-white ring-1 ring-slate-300 shadow-sm overflow-hidden select-none shrink-0 mx-auto ${activeTool !== "pan" ? "touch-none" : ""}`}
                   style={{
+                    backgroundColor: pitchColors.background,
+                    color: pitchColors.markings,
                     aspectRatio:
                       fieldType === "full" || fieldType === "small"
                         ? "1.54 / 1"
@@ -616,47 +895,50 @@ export default function TacticBoard({
                   ref={containerRef}
                 >
                   {/* Pure CSS Pitch Markings */}
-                  <div className="absolute inset-4 lg:inset-6 ring-[1.5px] ring-slate-800 pointer-events-none z-0">
+                  <div
+                    className="absolute inset-4 lg:inset-6 ring-[1.5px] ring-current pointer-events-none z-0"
+                    style={{ backgroundColor: pitchColors.background }}
+                  >
                     {fieldType === "full" ? (
                       <>
                         {/* Center line */}
-                        <div className="absolute top-0 bottom-0 left-1/2 w-[1.5px] bg-slate-800 -translate-x-1/2"></div>
+                        <div className="absolute top-0 bottom-0 left-1/2 w-[1.5px] bg-current -translate-x-1/2"></div>
 
                         {/* Center circle */}
-                        <div className="absolute top-1/2 left-1/2 h-[26.9%] aspect-square border-[1.5px] border-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
+                        <div className="absolute top-1/2 left-1/2 h-[26.9%] aspect-square border-[1.5px] border-current rounded-full -translate-x-1/2 -translate-y-1/2"></div>
 
                         {/* Center mark */}
-                        <div className="absolute top-1/2 left-1/2 w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
+                        <div className="absolute top-1/2 left-1/2 w-1.5 h-1.5 bg-current rounded-full -translate-x-1/2 -translate-y-1/2"></div>
 
                         {/* Left Penalty Arc */}
-                        <div className="absolute top-1/2 left-[10.4%] h-[26.9%] aspect-square border-[1.5px] border-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2 z-0"></div>
+                        <div className="absolute top-1/2 left-[10.4%] h-[26.9%] aspect-square border-[1.5px] border-current rounded-full -translate-x-1/2 -translate-y-1/2 z-0"></div>
 
                         {/* Left Penalty Area */}
-                        <div className="absolute top-1/2 left-0 w-[15.7%] h-[59.3%] border-[1.5px] border-slate-800 -translate-y-1/2 border-l-0 bg-white z-10"></div>
+                        <div className="absolute top-1/2 left-0 w-[15.7%] h-[59.3%] border-[1.5px] border-current -translate-y-1/2 border-l-0 bg-inherit z-10"></div>
 
                         {/* Left Goal Area */}
-                        <div className="absolute top-1/2 left-0 w-[5.2%] h-[26.9%] border-[1.5px] border-slate-800 -translate-y-1/2 border-l-0 bg-white z-20"></div>
+                        <div className="absolute top-1/2 left-0 w-[5.2%] h-[26.9%] border-[1.5px] border-current -translate-y-1/2 border-l-0 bg-inherit z-20"></div>
 
                         {/* Left Penalty Mark */}
-                        <div className="absolute top-1/2 left-[10.4%] w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2 z-30"></div>
+                        <div className="absolute top-1/2 left-[10.4%] w-1.5 h-1.5 bg-current rounded-full -translate-x-1/2 -translate-y-1/2 z-30"></div>
 
                         {/* Right Penalty Arc */}
-                        <div className="absolute top-1/2 right-[10.4%] h-[26.9%] aspect-square border-[1.5px] border-slate-800 rounded-full translate-x-1/2 -translate-y-1/2 z-0"></div>
+                        <div className="absolute top-1/2 right-[10.4%] h-[26.9%] aspect-square border-[1.5px] border-current rounded-full translate-x-1/2 -translate-y-1/2 z-0"></div>
 
                         {/* Right Penalty Area */}
-                        <div className="absolute top-1/2 right-0 w-[15.7%] h-[59.3%] border-[1.5px] border-slate-800 -translate-y-1/2 border-r-0 bg-white z-10"></div>
+                        <div className="absolute top-1/2 right-0 w-[15.7%] h-[59.3%] border-[1.5px] border-current -translate-y-1/2 border-r-0 bg-inherit z-10"></div>
 
                         {/* Right Goal Area */}
-                        <div className="absolute top-1/2 right-0 w-[5.2%] h-[26.9%] border-[1.5px] border-slate-800 -translate-y-1/2 border-r-0 bg-white z-20"></div>
+                        <div className="absolute top-1/2 right-0 w-[5.2%] h-[26.9%] border-[1.5px] border-current -translate-y-1/2 border-r-0 bg-inherit z-20"></div>
 
                         {/* Right Penalty Mark */}
-                        <div className="absolute top-1/2 right-[10.4%] w-1.5 h-1.5 bg-slate-800 rounded-full translate-x-1/2 -translate-y-1/2 z-30"></div>
+                        <div className="absolute top-1/2 right-[10.4%] w-1.5 h-1.5 bg-current rounded-full translate-x-1/2 -translate-y-1/2 z-30"></div>
 
                         {/* Corner Arcs */}
-                        <div className="absolute top-0 left-0 w-4 h-4 border-b-[1.5px] border-r-[1.5px] border-slate-800 rounded-br-full z-10"></div>
-                        <div className="absolute bottom-0 left-0 w-4 h-4 border-t-[1.5px] border-r-[1.5px] border-slate-800 rounded-tr-full z-10"></div>
-                        <div className="absolute top-0 right-0 w-4 h-4 border-b-[1.5px] border-l-[1.5px] border-slate-800 rounded-bl-full z-10"></div>
-                        <div className="absolute bottom-0 right-0 w-4 h-4 border-t-[1.5px] border-l-[1.5px] border-slate-800 rounded-tl-full z-10"></div>
+                        <div className="absolute top-0 left-0 w-4 h-4 border-b-[1.5px] border-r-[1.5px] border-current rounded-br-full z-10"></div>
+                        <div className="absolute bottom-0 left-0 w-4 h-4 border-t-[1.5px] border-r-[1.5px] border-current rounded-tr-full z-10"></div>
+                        <div className="absolute top-0 right-0 w-4 h-4 border-b-[1.5px] border-l-[1.5px] border-current rounded-bl-full z-10"></div>
+                        <div className="absolute bottom-0 right-0 w-4 h-4 border-t-[1.5px] border-l-[1.5px] border-current rounded-tl-full z-10"></div>
                       </>
                     ) : fieldType === "small" ? (
                       <></>
@@ -664,29 +946,29 @@ export default function TacticBoard({
                       <>
                         {/* Half Field Markings (Goal at bottom) */}
                         {/* Center line (at top) */}
-                        <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-slate-800 z-10"></div>
+                        <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-current z-10"></div>
 
                         {/* Center circle (top) */}
-                        <div className="absolute top-0 left-1/2 w-[26.9%] aspect-square border-[1.5px] border-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2 z-10"></div>
+                        <div className="absolute top-0 left-1/2 w-[26.9%] aspect-square border-[1.5px] border-current rounded-full -translate-x-1/2 -translate-y-1/2 z-10"></div>
 
                         {/* Center mark (top) */}
-                        <div className="absolute top-0 left-1/2 w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 -translate-y-1/2 z-10"></div>
+                        <div className="absolute top-0 left-1/2 w-1.5 h-1.5 bg-current rounded-full -translate-x-1/2 -translate-y-1/2 z-10"></div>
 
                         {/* Penalty Arc */}
-                        <div className="absolute bottom-[21%] left-1/2 w-[26.9%] aspect-square border-[1.5px] border-slate-800 rounded-full -translate-x-1/2 translate-y-1/2 z-0"></div>
+                        <div className="absolute bottom-[21%] left-1/2 w-[26.9%] aspect-square border-[1.5px] border-current rounded-full -translate-x-1/2 translate-y-1/2 z-0"></div>
 
                         {/* Penalty Area */}
-                        <div className="absolute bottom-0 left-1/2 w-[59.3%] h-[31.4%] border-[1.5px] border-slate-800 border-b-0 -translate-x-1/2 bg-white z-10"></div>
+                        <div className="absolute bottom-0 left-1/2 w-[59.3%] h-[31.4%] border-[1.5px] border-current border-b-0 -translate-x-1/2 bg-inherit z-10"></div>
 
                         {/* Goal Area */}
-                        <div className="absolute bottom-0 left-1/2 w-[26.9%] h-[10.5%] border-[1.5px] border-slate-800 border-b-0 -translate-x-1/2 bg-white z-20"></div>
+                        <div className="absolute bottom-0 left-1/2 w-[26.9%] h-[10.5%] border-[1.5px] border-current border-b-0 -translate-x-1/2 bg-inherit z-20"></div>
 
                         {/* Penalty Mark */}
-                        <div className="absolute bottom-[21%] left-1/2 w-1.5 h-1.5 bg-slate-800 rounded-full -translate-x-1/2 translate-y-1/2 z-30"></div>
+                        <div className="absolute bottom-[21%] left-1/2 w-1.5 h-1.5 bg-current rounded-full -translate-x-1/2 translate-y-1/2 z-30"></div>
 
                         {/* Corner Arcs */}
-                        <div className="absolute bottom-0 left-0 w-4 h-4 border-t-[1.5px] border-r-[1.5px] border-slate-800 rounded-tr-full z-10"></div>
-                        <div className="absolute bottom-0 right-0 w-4 h-4 border-t-[1.5px] border-l-[1.5px] border-slate-800 rounded-tl-full z-10"></div>
+                        <div className="absolute bottom-0 left-0 w-4 h-4 border-t-[1.5px] border-r-[1.5px] border-current rounded-tr-full z-10"></div>
+                        <div className="absolute bottom-0 right-0 w-4 h-4 border-t-[1.5px] border-l-[1.5px] border-current rounded-tl-full z-10"></div>
                       </>
                     )}
                   </div>
@@ -700,6 +982,8 @@ export default function TacticBoard({
                       ref={stageRef}
                       width={stageSize.width}
                       height={stageSize.height}
+                      x={viewport.x}
+                      y={viewport.y}
                       onMouseDown={handleMouseDown}
                       onMouseMove={handleMouseMove}
                       onMouseUp={handleMouseUp}
@@ -716,34 +1000,49 @@ export default function TacticBoard({
                     >
                       <Layer>
                         {lines.map((line, i) => {
-                          let dash: number[] = [];
-                          if (line.tool === "dashed") dash = [10, 8];
-                          let tension =
-                            line.tool === "curve" || line.tool === "freehand"
-                              ? 0.5
-                              : 0;
+                          const lineStyle = resolveTacticLineStyle(line);
+                          const lineProps: any = {
+                            id: line.id,
+                            x: typeof line.x === "number" ? line.x : 0,
+                            y: typeof line.y === "number" ? line.y : 0,
+                            points: line.points,
+                            stroke: line.color,
+                            strokeWidth:
+                              selectedLineId === line.id && activeTool === "select"
+                                ? 5
+                                : lineStyle.geometry === "dribble"
+                                  ? 3
+                                  : 4,
+                            fill: line.color,
+                            tension:
+                              lineStyle.geometry === "curved" ||
+                              lineStyle.geometry === "freehand"
+                                ? 0.5
+                                : 0,
+                            lineCap: "round",
+                            lineJoin: "round",
+                            dash: lineStyle.stroke === "dashed" ? [10, 8] : [],
+                            draggable: activeTool === "select",
+                            onDragEnd: (e: any) => handleLineDragEnd(line.id, e),
+                            onClick: (e: any) =>
+                              handleElementClick(e, line.id, "line"),
+                            onTap: (e: any) =>
+                              handleElementClick(e, line.id, "line"),
+                            hitStrokeWidth: 20,
+                            shadowColor: getContrastColor(pitchColors.background),
+                            shadowBlur: 3,
+                            shadowOpacity: 0.65,
+                          };
 
-                          return (
+                          return lineStyle.arrowhead === "end" ? (
                             <Arrow
                               key={line.id || i}
-                              points={line.points}
-                              stroke={line.color}
-                              strokeWidth={line.tool === "dribble" ? 3 : 4}
-                              fill={line.color}
-                              tension={tension}
-                              lineCap="round"
-                              lineJoin="round"
-                              dash={dash}
+                              {...lineProps}
                               pointerLength={10}
                               pointerWidth={10}
-                              onClick={(e) =>
-                                handleElementClick(e, line.id, "line")
-                              }
-                              onTap={(e) =>
-                                handleElementClick(e, line.id, "line")
-                              }
-                              hitStrokeWidth={20}
                             />
+                          ) : (
+                            <Line key={line.id || i} {...lineProps} />
                           );
                         })}
 
@@ -756,8 +1055,12 @@ export default function TacticBoard({
                                 x={el.x}
                                 y={el.y}
                                 radius={10}
-                                fill="#ef4444"
-                                stroke="#991b1b"
+                                fill={teamColors.teamA}
+                                stroke={
+                                  teamColors.teamA.toLowerCase() === "#ef4444"
+                                    ? "#991b1b"
+                                    : getContrastColor(teamColors.teamA)
+                                }
                                 strokeWidth={2}
                                 draggable
                                 onDragEnd={(e) => handleDragEnd(el.id, e)}
@@ -778,8 +1081,12 @@ export default function TacticBoard({
                                 x={el.x}
                                 y={el.y}
                                 radius={10}
-                                fill="#3b82f6"
-                                stroke="#1e3a8a"
+                                fill={teamColors.teamB}
+                                stroke={
+                                  teamColors.teamB.toLowerCase() === "#3b82f6"
+                                    ? "#1e3a8a"
+                                    : getContrastColor(teamColors.teamB)
+                                }
                                 strokeWidth={2}
                                 draggable
                                 onDragEnd={(e) => handleDragEnd(el.id, e)}
@@ -838,10 +1145,14 @@ export default function TacticBoard({
                                 x={el.x}
                                 y={el.y}
                                 data="M 0 16 L 0 0 L 40 0 L 40 16"
-                                stroke="#e2e8f0"
-                                strokeWidth={5}
+                                stroke="#0f172a"
+                                strokeWidth={4}
                                 offsetX={20}
                                 offsetY={8}
+                                rotation={normalizeOrientation(el.orientation)}
+                                shadowColor={getContrastColor(pitchColors.background)}
+                                shadowBlur={4}
+                                shadowOpacity={0.9}
                                 draggable
                                 onDragEnd={(e) => handleDragEnd(el.id, e)}
                                 onClick={(e) =>
@@ -866,6 +1177,10 @@ export default function TacticBoard({
                                 strokeWidth={3}
                                 offsetX={12}
                                 offsetY={8}
+                                rotation={normalizeOrientation(el.orientation)}
+                                shadowColor={getContrastColor(pitchColors.background)}
+                                shadowBlur={3}
+                                shadowOpacity={0.9}
                                 draggable
                                 onDragEnd={(e) => handleDragEnd(el.id, e)}
                                 onClick={(e) =>
@@ -930,6 +1245,17 @@ export default function TacticBoard({
                         })}
                       </Layer>
                     </Stage>
+                    {activeTool === "pan" && (
+                      <div
+                        className="absolute inset-0 z-20 cursor-grab active:cursor-grabbing"
+                        aria-hidden="true"
+                        style={{ touchAction: "none" }}
+                        onPointerDown={handlePanPointerDown}
+                        onPointerMove={handlePanPointerMove}
+                        onPointerUp={handlePanPointerEnd}
+                        onPointerCancel={handlePanPointerEnd}
+                      />
+                    )}
                   </div>
                 </div>
               </div>
