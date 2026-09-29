@@ -33,6 +33,8 @@ test("4. malformed canvas arrays are normalized without crashing", () => {
       elements: [],
       lines: [],
       fieldType: "half",
+      teamColors: { teamA: "#ef4444", teamB: "#3b82f6" },
+      pitchTheme: "white",
     },
   );
 });
@@ -51,8 +53,42 @@ test("5. valid canvas content is preserved", () => {
       elements,
       lines,
       fieldType: "small",
+      teamColors: { teamA: "#ef4444", teamB: "#3b82f6" },
+      pitchTheme: "white",
     },
   );
+});
+
+test("8. team colors and pitch theme survive canvas normalization", () => {
+  const canvas = normalizeDrillCanvasData({
+    elements: [],
+    lines: [],
+    fieldType: "full",
+    teamColors: { teamA: "#00aa88", teamB: "#7722cc" },
+    pitchTheme: "dark-navy",
+  });
+
+  assert.deepEqual(canvas?.teamColors, {
+    teamA: "#00aa88",
+    teamB: "#7722cc",
+  });
+  assert.equal(canvas?.pitchTheme, "dark-navy");
+});
+
+test("9. legacy canvas receives red-blue and white-pitch defaults", () => {
+  const canvas = normalizeDrillCanvasData({
+    elements: [{ id: "legacy-player", type: "red", x: 10, y: 20 }],
+    lines: [{ id: "legacy-line", tool: "pass", points: [1, 2, 3, 4] }],
+    fieldType: "full",
+  });
+
+  assert.deepEqual(canvas?.teamColors, {
+    teamA: "#ef4444",
+    teamB: "#3b82f6",
+  });
+  assert.equal(canvas?.pitchTheme, "white");
+  assert.equal((canvas?.lines[0] as { tool: string }).tool, "pass");
+  assert.equal((canvas?.elements[0] as { type: string }).type, "red");
 });
 
 test("6. malformed legacy metadata receives render-safe fallbacks", () => {
