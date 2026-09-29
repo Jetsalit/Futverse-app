@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import * as boardModel from "../src/lib/tacticBoardModel";
+import type { EquipmentOrientation } from "../src/lib/tacticBoardModel";
 
 const boardSource = readFileSync(
   new URL("../src/components/TacticBoard.tsx", import.meta.url),
@@ -101,9 +102,16 @@ test("line dragging changes its viewport offset without rewriting drawing points
 
 test("Mini Goal and Hurdle rotate through four persisted orientations", () => {
   const rotateEquipment = requireModelFunction("rotateTacticEquipment");
+  type TestRotatableEquipment = {
+    id: string;
+    type: string;
+    x: number;
+    y: number;
+    orientation?: EquipmentOrientation;
+  };
 
   for (const type of ["mini_goal", "hurdle"]) {
-    let equipment = { id: type, type, x: 10, y: 20 };
+    let equipment: TestRotatableEquipment = { id: type, type, x: 10, y: 20 };
     const orientations = [];
     for (let index = 0; index < 4; index += 1) {
       equipment = rotateEquipment(equipment);
