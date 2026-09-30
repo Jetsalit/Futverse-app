@@ -36,6 +36,13 @@ export interface Drill {
   last_updated_by?: string;
 }
 
+export function resolveDrillEditorCategory(
+  defaultCategory?: string,
+  existingCategory?: string | null,
+): string {
+  return existingCategory ?? defaultCategory ?? "Tactical";
+}
+
 export function normalizeDrillFieldType(value: unknown): DrillFieldType {
   return value === "full" || value === "half" || value === "small"
     ? value

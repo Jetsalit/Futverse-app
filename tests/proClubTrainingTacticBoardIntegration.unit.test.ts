@@ -40,7 +40,10 @@ test("Tactic Board mode escapes the nested Training block into a full-page viewp
     /className="fixed inset-0 z-\[100\] overflow-y-auto bg-slate-100/,
   );
   assert.match(picker, /Back to Weekly Training/);
-  assert.match(picker, /<TacticBoard onBack=\{returnToLibrary\} editingDrill=\{editingDrill\} \/>/);
+  assert.match(
+    picker,
+    /<TacticBoard[\s\S]*onBack=\{returnToLibrary\}[\s\S]*editingDrill=\{editingDrill\}[\s\S]*contextLabel="Weekly Training"[\s\S]*backButtonLabel="Back to Weekly Training"[\s\S]*presentation="pro-club"[\s\S]*\/>/,
+  );
 });
 
 test("Tactic Board pitch markings inherit the selected theme across every field template", () => {

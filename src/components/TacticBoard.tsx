@@ -48,6 +48,7 @@ import {
 } from "../lib/tacticBoardModel";
 import {
   normalizeDrillFieldType,
+  resolveDrillEditorCategory,
   type DrillCanvasData,
   type DrillFieldType,
 } from "../lib/drillDataModel";
@@ -158,9 +159,17 @@ type TacticBoardUndoAction =
 export default function TacticBoard({
   onBack,
   editingDrill,
+  contextLabel,
+  backButtonLabel,
+  defaultCategory,
+  presentation = "default",
 }: {
   onBack: () => void;
   editingDrill?: Drill | null;
+  contextLabel?: string;
+  backButtonLabel?: string;
+  defaultCategory?: string;
+  presentation?: "default" | "pro-club";
 }) {
   const [drillMode, setDrillMode] = useState<"digital" | "upload">("digital");
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
@@ -177,16 +186,16 @@ export default function TacticBoard({
   const [pitchTheme, setPitchTheme] = useState<PitchThemeId>("white");
 
   const { saveDrill, updateDrill } = useDrillDatabase();
-  const [saveForm, setSaveForm] = useState({
+  const [saveForm, setSaveForm] = useState(() => ({
     title: "",
-    category: "Tactical",
+    category: resolveDrillEditorCategory(defaultCategory, editingDrill?.category),
     is_shared: false,
     duration: "60 นาที",
     ageGroup: "รุ่น U12",
     phase: "Preparatory - General",
     trainingMethod: "",
     coachingPoints: "",
-  });
+  }));
 
   // Konva State
   const stageRef = useRef<any>(null);
@@ -212,7 +221,7 @@ export default function TacticBoard({
 
     setSaveForm({
       title: editingDrill.title || "",
-      category: editingDrill.category || "Tactical",
+      category: resolveDrillEditorCategory(defaultCategory, editingDrill.category),
       is_shared: editingDrill.is_shared === true,
       duration: editingDrill.duration || "",
       ageGroup: editingDrill.ageGroup || "",
@@ -599,22 +608,36 @@ export default function TacticBoard({
   };
 
   return (
-    <div className="w-full flex-1 flex flex-col animate-in fade-in duration-300 xl:h-[calc(100vh-100px)]">
+    <div
+      className={[
+        "w-full flex-1 flex flex-col animate-in fade-in duration-300 xl:h-[calc(100vh-100px)]",
+        presentation === "pro-club" ? "pro-club-tactic-board" : "",
+      ].filter(Boolean).join(" ")}
+    >
       <div className="flex items-center gap-4 mb-4 shrink-0">
         <button
           onClick={onBack}
+          aria-label={backButtonLabel || "Back"}
+          title={backButtonLabel}
           className="p-2 rounded-full hover:bg-slate-200 bg-white shadow-sm text-slate-600 transition-colors"
         >
           <ChevronLeft size={20} />
         </button>
         <div>
           <h1 className="text-xl font-bold text-slate-800 tracking-tight">
-            Practice Drill Planner
+            {contextLabel || "Practice Drill Planner"}
           </h1>
           <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
-            Design Tactics & Training Exercises
+            {contextLabel === "GK Training"
+              ? "Create and manage goalkeeper training drills"
+              : "Design Tactics & Training Exercises"}
           </p>
         </div>
+        {backButtonLabel && (
+          <span className="pro-club-muted hidden text-xs font-bold sm:inline">
+            {backButtonLabel}
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-2">
           <button
             onClick={handleSaveAll}
@@ -633,6 +656,7 @@ export default function TacticBoard({
           <div className="flex bg-slate-50 border-b border-slate-200 p-2 gap-2">
             <button
               onClick={() => setDrillMode("digital")}
+              aria-pressed={drillMode === "digital"}
               className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all ${
                 drillMode === "digital"
                   ? "bg-white text-blue-600 shadow-sm border border-slate-200"
@@ -643,6 +667,7 @@ export default function TacticBoard({
             </button>
             <button
               onClick={() => setDrillMode("upload")}
+              aria-pressed={drillMode === "upload"}
               className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all ${
                 drillMode === "upload"
                   ? "bg-white text-blue-600 shadow-sm border border-slate-200"
@@ -667,6 +692,7 @@ export default function TacticBoard({
                         <button
                           key={tool.id}
                           onClick={() => handleMainToolClick(tool.id)}
+                          aria-pressed={isActive}
                           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-all whitespace-nowrap ${
                             isActive
                               ? "bg-blue-600 text-white shadow-sm font-medium"
@@ -727,6 +753,7 @@ export default function TacticBoard({
                               ? "Draw a solid straight line"
                               : tool.label
                           }
+                          aria-pressed={isActive}
                           className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm transition-all whitespace-nowrap ${
                             isActive
                               ? "bg-slate-200 text-slate-800 font-medium"
@@ -879,7 +906,7 @@ export default function TacticBoard({
               {/* Canvas Area Container */}
               <div className="flex-1 relative w-full overflow-auto bg-slate-50 flex p-2 lg:p-6">
                 <div
-                  className={`relative bg-white ring-1 ring-slate-300 shadow-sm overflow-hidden select-none shrink-0 mx-auto ${activeTool !== "pan" ? "touch-none" : ""}`}
+                  className={`pro-club-tactic-board-pitch relative bg-white ring-1 ring-slate-300 shadow-sm overflow-hidden select-none shrink-0 mx-auto ${activeTool !== "pan" ? "touch-none" : ""}`}
                   style={{
                     backgroundColor: pitchColors.background,
                     color: pitchColors.markings,
