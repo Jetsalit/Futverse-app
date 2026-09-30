@@ -10,15 +10,18 @@ import {
   Shield,
   Sparkles,
   Sun,
+  Target,
   Users,
 } from "lucide-react";
 
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
 import { canAccessProClubMatchAnalysis } from "../../../lib/proClubMatchAnalysisAccess";
+import { canOpenProClubGKTraining } from "../../../lib/proClubGKTrainingAccess";
 import { staffRoleLabels } from "../../../lib/proClubOnboarding";
 import ProClubAttendance from "./ProClubAttendance";
 import ProClubFitnessTrainingWorkspace from "./ProClubFitnessTrainingWorkspace";
 import ProClubGameModel from "./ProClubGameModel";
+import ProClubGKTrainingWorkspace from "./ProClubGKTrainingWorkspace";
 import ProClubLibraryLogbook, {
   canOpenProClubLibraryLogbook,
 } from "./ProClubLibraryLogbook";
@@ -44,6 +47,7 @@ export const PRO_CLUB_TEAM_DASHBOARD_TABS = [
   "GAME_MODEL",
   "MATCHES",
   "ANALYSIS",
+  "GK_TRAINING",
 ] as const;
 
 export type ProClubTeamDashboardTab =
@@ -64,6 +68,7 @@ export function resolveProClubActiveTab(
     case "GAME_MODEL":
     case "MATCHES":
     case "ANALYSIS":
+    case "GK_TRAINING":
       return value;
     case "OVERVIEW":
     default:
@@ -102,6 +107,7 @@ const TAB_LABELS: Record<ProClubTeamDashboardTab, string> = {
   GAME_MODEL: "Game Model",
   MATCHES: "Matches",
   ANALYSIS: "Analysis",
+  GK_TRAINING: "GK Training",
 };
 
 export default function ProClubTeamDashboard({
@@ -121,6 +127,7 @@ export default function ProClubTeamDashboard({
   const [attendanceLaunch, setAttendanceLaunch] = useState<AttendanceLaunch | null>(null);
   const staffSubmissionsAvailable = canOpenProClubStaffSubmissions(authority);
   const libraryLogbookAvailable = canOpenProClubLibraryLogbook(authority);
+  const gkTrainingAvailable = canOpenProClubGKTraining(authority);
   const analysisAvailable = canAccessProClubMatchAnalysis(authority);
   const fitnessOrganization = {
     organizationType: "PRO_CLUB" as const,
@@ -157,6 +164,7 @@ export default function ProClubTeamDashboard({
       setActiveTab(
         (restored === "SUBMISSIONS" && !staffSubmissionsAvailable) ||
         (restored === "LIBRARY_LOGBOOK" && !libraryLogbookAvailable) ||
+        (restored === "GK_TRAINING" && !gkTrainingAvailable) ||
         (restored === "ANALYSIS" && !analysisAvailable)
           ? "OVERVIEW"
           : restored,
@@ -169,6 +177,7 @@ export default function ProClubTeamDashboard({
     authority.userId,
     staffSubmissionsAvailable,
     libraryLogbookAvailable,
+    gkTrainingAvailable,
     analysisAvailable,
   ]);
 
@@ -267,6 +276,7 @@ export default function ProClubTeamDashboard({
           {PRO_CLUB_TEAM_DASHBOARD_TABS.filter((tab) => {
             if (tab === "SUBMISSIONS") return staffSubmissionsAvailable;
             if (tab === "LIBRARY_LOGBOOK") return libraryLogbookAvailable;
+            if (tab === "GK_TRAINING") return gkTrainingAvailable;
             if (tab === "ANALYSIS") return analysisAvailable;
             return true;
           }).map((tab) => {
@@ -430,6 +440,15 @@ export default function ProClubTeamDashboard({
                     onOpen={() => selectActiveTab("ANALYSIS")}
                   />
                 )}
+                {gkTrainingAvailable && (
+                  <OverviewCard
+                    icon={<Target size={20} />}
+                    title="GK Training"
+                    description="My GK drills and goalkeeper development"
+                    tone="training"
+                    onOpen={() => selectActiveTab("GK_TRAINING")}
+                  />
+                )}
               </div>
 
               {overviewSupplement && (
@@ -510,6 +529,15 @@ export default function ProClubTeamDashboard({
               <ProClubMatchAnalysisWorkspace
                 authority={authority}
                 onOpenMatches={() => selectActiveTab("MATCHES")}
+              />
+            </div>
+          )}
+          {activeTab === "GK_TRAINING" && gkTrainingAvailable && (
+            <div className="pro-club-module-surface">
+              <ProClubGKTrainingWorkspace
+                authority={authority}
+                onOpenSubmissions={() => selectActiveTab("SUBMISSIONS")}
+                onOpenLibraryLogbook={() => selectActiveTab("LIBRARY_LOGBOOK")}
               />
             </div>
           )}

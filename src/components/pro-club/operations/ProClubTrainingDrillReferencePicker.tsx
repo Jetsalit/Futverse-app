@@ -57,7 +57,13 @@ export default function ProClubTrainingDrillReferencePicker({
               Weekly Training · Tactic Board
             </p>
           </div>
-          <TacticBoard onBack={returnToLibrary} editingDrill={editingDrill} />
+          <TacticBoard
+            onBack={returnToLibrary}
+            editingDrill={editingDrill}
+            contextLabel="Weekly Training"
+            backButtonLabel="Back to Weekly Training"
+            presentation="pro-club"
+          />
         </div>
       </section>
     );

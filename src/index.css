@@ -807,3 +807,172 @@
     -webkit-print-color-adjust: exact;
   }
 }
+
+/* GK Training uses the existing Pro Club tokens and stays inside the theme root. */
+[data-pro-club-theme="light"] .pro-club-gk-training-workspace,
+[data-pro-club-theme="neon"] .pro-club-gk-training-workspace {
+  color: var(--pc-text);
+}
+
+[data-pro-club-theme="light"] .pro-club-gk-drill-card,
+[data-pro-club-theme="neon"] .pro-club-gk-drill-card,
+[data-pro-club-theme="light"] .pro-club-gk-secondary-action,
+[data-pro-club-theme="neon"] .pro-club-gk-secondary-action {
+  border-color: var(--pc-border);
+  background: var(--pc-surface);
+  color: var(--pc-text);
+  box-shadow: var(--pc-glow);
+}
+
+[data-pro-club-theme="light"] .pro-club-gk-search,
+[data-pro-club-theme="neon"] .pro-club-gk-search {
+  border-color: var(--pc-border);
+  background: var(--pc-surface-soft);
+  color: var(--pc-text);
+}
+
+[data-pro-club-theme="light"] .pro-club-gk-search::placeholder,
+[data-pro-club-theme="neon"] .pro-club-gk-search::placeholder {
+  color: var(--pc-muted) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-gk-create-action {
+  background: var(--pc-accent);
+  color: #fff;
+}
+
+[data-pro-club-theme="neon"] .pro-club-gk-create-action {
+  background: var(--pc-accent);
+  color: #020617;
+}
+
+[data-pro-club-theme="light"] .pro-club-gk-open-action {
+  background: color-mix(in srgb, var(--pc-accent) 10%, var(--pc-surface));
+  color: var(--pc-accent);
+}
+
+[data-pro-club-theme="neon"] .pro-club-gk-open-action {
+  background: color-mix(in srgb, var(--pc-accent) 15%, var(--pc-surface));
+  color: var(--pc-accent);
+}
+
+[data-pro-club-theme="light"] .pro-club-gk-training-workspace button:disabled,
+[data-pro-club-theme="neon"] .pro-club-gk-training-workspace button:disabled {
+  color: var(--pc-muted);
+  opacity: 0.7;
+}
+
+/* Only TacticBoard instances marked as Pro Club inherit these surface colors. */
+[data-pro-club-theme="light"] .pro-club-tactic-board,
+[data-pro-club-theme="neon"] .pro-club-tactic-board {
+  color: var(--pc-text);
+}
+
+[data-pro-club-theme="light"] .pro-club-tactic-board [class~="bg-white"]:not(.pro-club-tactic-board-pitch),
+[data-pro-club-theme="neon"] .pro-club-tactic-board [class~="bg-white"]:not(.pro-club-tactic-board-pitch) {
+  background-color: var(--pc-surface) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-tactic-board [class~="bg-slate-50"],
+[data-pro-club-theme="light"] .pro-club-tactic-board [class~="bg-slate-100"],
+[data-pro-club-theme="neon"] .pro-club-tactic-board [class~="bg-slate-50"],
+[data-pro-club-theme="neon"] .pro-club-tactic-board [class~="bg-slate-100"] {
+  background-color: var(--pc-surface-soft) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-tactic-board [class*="border-slate-"],
+[data-pro-club-theme="neon"] .pro-club-tactic-board [class*="border-slate-"] {
+  border-color: var(--pc-border) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-tactic-board [class~="text-slate-900"],
+[data-pro-club-theme="light"] .pro-club-tactic-board [class~="text-slate-800"],
+[data-pro-club-theme="light"] .pro-club-tactic-board [class~="text-slate-700"],
+[data-pro-club-theme="neon"] .pro-club-tactic-board [class~="text-slate-900"],
+[data-pro-club-theme="neon"] .pro-club-tactic-board [class~="text-slate-800"],
+[data-pro-club-theme="neon"] .pro-club-tactic-board [class~="text-slate-700"] {
+  color: var(--pc-text) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-tactic-board [class~="text-slate-600"],
+[data-pro-club-theme="light"] .pro-club-tactic-board [class~="text-slate-500"],
+[data-pro-club-theme="light"] .pro-club-tactic-board [class~="text-slate-400"],
+[data-pro-club-theme="neon"] .pro-club-tactic-board [class~="text-slate-600"],
+[data-pro-club-theme="neon"] .pro-club-tactic-board [class~="text-slate-500"],
+[data-pro-club-theme="neon"] .pro-club-tactic-board [class~="text-slate-400"] {
+  color: var(--pc-muted) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-tactic-board [class~="text-white"],
+[data-pro-club-theme="neon"] .pro-club-tactic-board [class~="text-white"] {
+  color: #fff !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-tactic-board [class~="text-blue-600"],
+[data-pro-club-theme="neon"] .pro-club-tactic-board [class~="text-blue-600"] {
+  color: var(--pc-accent) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-tactic-board [class~="hover:bg-slate-100"]:not([aria-pressed="true"]):hover,
+[data-pro-club-theme="light"] .pro-club-tactic-board [class~="hover:bg-slate-200"]:not([aria-pressed="true"]):hover,
+[data-pro-club-theme="neon"] .pro-club-tactic-board [class~="hover:bg-slate-100"]:not([aria-pressed="true"]):hover,
+[data-pro-club-theme="neon"] .pro-club-tactic-board [class~="hover:bg-slate-200"]:not([aria-pressed="true"]):hover {
+  background-color: color-mix(in srgb, var(--pc-accent) 14%, var(--pc-surface)) !important;
+  color: var(--pc-text) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-tactic-board [aria-pressed="true"],
+[data-pro-club-theme="neon"] .pro-club-tactic-board [aria-pressed="true"] {
+  background-color: var(--pc-accent) !important;
+  border-color: var(--pc-accent) !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-tactic-board [aria-pressed="true"] {
+  color: #fff !important;
+}
+
+[data-pro-club-theme="neon"] .pro-club-tactic-board [aria-pressed="true"] {
+  color: #020617 !important;
+}
+
+[data-pro-club-theme="light"] .pro-club-tactic-board input,
+[data-pro-club-theme="light"] .pro-club-tactic-board select,
+[data-pro-club-theme="light"] .pro-club-tactic-board textarea,
+[data-pro-club-theme="neon"] .pro-club-tactic-board input,
+[data-pro-club-theme="neon"] .pro-club-tactic-board select,
+[data-pro-club-theme="neon"] .pro-club-tactic-board textarea {
+  border-color: var(--pc-border);
+  background-color: var(--pc-surface);
+  color: var(--pc-text);
+}
+
+[data-pro-club-theme="light"] .pro-club-tactic-board input::placeholder,
+[data-pro-club-theme="light"] .pro-club-tactic-board textarea::placeholder,
+[data-pro-club-theme="neon"] .pro-club-tactic-board input::placeholder,
+[data-pro-club-theme="neon"] .pro-club-tactic-board textarea::placeholder {
+  color: var(--pc-muted) !important;
+  opacity: 1;
+}
+
+[data-pro-club-theme="light"] .pro-club-tactic-board input:disabled,
+[data-pro-club-theme="light"] .pro-club-tactic-board select:disabled,
+[data-pro-club-theme="light"] .pro-club-tactic-board textarea:disabled,
+[data-pro-club-theme="light"] .pro-club-tactic-board button:disabled,
+[data-pro-club-theme="neon"] .pro-club-tactic-board input:disabled,
+[data-pro-club-theme="neon"] .pro-club-tactic-board select:disabled,
+[data-pro-club-theme="neon"] .pro-club-tactic-board textarea:disabled,
+[data-pro-club-theme="neon"] .pro-club-tactic-board button:disabled {
+  color: var(--pc-muted);
+  opacity: 0.72;
+}
+
+[data-pro-club-theme="light"] .pro-club-tactic-board button:focus-visible,
+[data-pro-club-theme="neon"] .pro-club-tactic-board button:focus-visible,
+[data-pro-club-theme="light"] .pro-club-tactic-board input:focus-visible,
+[data-pro-club-theme="neon"] .pro-club-tactic-board input:focus-visible,
+[data-pro-club-theme="light"] .pro-club-tactic-board select:focus-visible,
+[data-pro-club-theme="neon"] .pro-club-tactic-board select:focus-visible,
+[data-pro-club-theme="light"] .pro-club-tactic-board textarea:focus-visible,
+[data-pro-club-theme="neon"] .pro-club-tactic-board textarea:focus-visible {
+  outline-color: var(--pc-accent);
+}
