@@ -214,6 +214,20 @@ service cloud.firestore {
         && membership.get('status', '') == 'ACTIVE';
     }
 
+    function academyStaffSpecialtyTargetIsActiveCoachAfterV1(academyId, uid) {
+      let membershipPath =
+        /databases/$(database)/documents/academies/$(academyId)/members/$(uid);
+      let membership = getAfter(membershipPath).data;
+
+      return exactDocumentId(academyId)
+        && exactDocumentId(uid)
+        && existsAfter(membershipPath)
+        && membership.get('userId', '') == uid
+        && membership.get('academyId', '') == academyId
+        && membership.get('role', '') == 'COACH'
+        && membership.get('status', '') == 'ACTIVE';
+    }
+
     function validAcademyFitnessCoachSpecialtyDataV1(uid, data) {
       return exactDocumentId(uid)
         && data.keys().hasAll([
@@ -244,8 +258,21 @@ service cloud.firestore {
     }
 
     function validAcademyFitnessCoachSpecialtyCreateV1(academyId, uid) {
+      return isSuperAdmin()
+        ? validSuperAdminAccessControlAuditBundleAfterV1('ACADEMY', academyId, uid)
+          && validAcademyFitnessCoachSpecialtyCreateBaseV1(academyId, uid)
+        : validAcademyFitnessCoachSpecialtyCreateBaseV1(academyId, uid);
+    }
+
+    function validAcademyFitnessCoachSpecialtyCreateBaseV1(academyId, uid) {
       return academyStaffSpecialtyActorCanManageV1(academyId)
-        && academyStaffSpecialtyTargetIsActiveCoachV1(academyId, uid)
+        && (
+          academyStaffSpecialtyTargetIsActiveCoachV1(academyId, uid)
+          || (
+            isSuperAdmin()
+            && academyStaffSpecialtyTargetIsActiveCoachAfterV1(academyId, uid)
+          )
+        )
         && validAcademyFitnessCoachSpecialtyDataV1(
           uid,
           request.resource.data
@@ -272,6 +299,13 @@ service cloud.firestore {
     }
 
     function validAcademyFitnessCoachSpecialtyUpdateV1(academyId, uid) {
+      return isSuperAdmin()
+        ? validSuperAdminAccessControlAuditBundleAfterV1('ACADEMY', academyId, uid)
+          && validAcademyFitnessCoachSpecialtyUpdateBaseV1(academyId, uid)
+        : validAcademyFitnessCoachSpecialtyUpdateBaseV1(academyId, uid);
+    }
+
+    function validAcademyFitnessCoachSpecialtyUpdateBaseV1(academyId, uid) {
       return academyStaffSpecialtyActorCanManageV1(academyId)
         && validAcademyFitnessCoachSpecialtyDataV1(uid, resource.data)
         && validAcademyFitnessCoachSpecialtyDataV1(
@@ -296,6 +330,10 @@ service cloud.firestore {
         && (
           request.resource.data.status != 'ACTIVE'
           || academyStaffSpecialtyTargetIsActiveCoachV1(academyId, uid)
+          || (
+            isSuperAdmin()
+            && academyStaffSpecialtyTargetIsActiveCoachAfterV1(academyId, uid)
+          )
         );
     }
 
@@ -1134,40 +1172,46 @@ service cloud.firestore {
     match /users/{uid} {
       // Pro Club Membership Discovery V1 — discovery only, never authority.
       match /proClubMemberships/{clubId} {
-        allow get, list: if currentUserIsActive()
-          && request.auth.uid == uid;
+        allow get, list: if isSuperAdmin()
+          || (
+            currentUserIsActive()
+            && request.auth.uid == uid
+          );
 
         // Staff discovery pointers may only be born inside the same
         // canonical approval batch that creates proof/member/staff.
-        allow create: if isSignedIn()
-          && exactDocumentId(uid)
-          && exactDocumentId(clubId)
-          && request.resource.data.keys().hasAll([
-            'schemaVersion',
-            'clubId'
-          ])
-          && request.resource.data.keys().hasOnly([
-            'schemaVersion',
-            'clubId'
-          ])
-          && request.resource.data.get('schemaVersion', 0) == 1
-          && request.resource.data.get('clubId', '') == clubId
-          && freshProClubApprovalProofForUidV1(clubId, uid)
-          && existsAfter(
-            /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)
+        allow create: if (
+            isSignedIn()
+            && exactDocumentId(uid)
+            && exactDocumentId(clubId)
+            && request.resource.data.keys().hasAll([
+              'schemaVersion',
+              'clubId'
+            ])
+            && request.resource.data.keys().hasOnly([
+              'schemaVersion',
+              'clubId'
+            ])
+            && request.resource.data.get('schemaVersion', 0) == 1
+            && request.resource.data.get('clubId', '') == clubId
+            && freshProClubApprovalProofForUidV1(clubId, uid)
+            && existsAfter(
+              /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)
+            )
+            && getAfter(
+              /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)
+            ).data.get('authorizationRole', '') == 'MEMBER'
+            && getAfter(
+              /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)
+            ).data.get('status', '') == 'ACTIVE'
+            && existsAfter(
+              /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)
+            )
+            && getAfter(
+              /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)
+            ).data.get('status', '') == 'ACTIVE'
           )
-          && getAfter(
-            /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)
-          ).data.get('authorizationRole', '') == 'MEMBER'
-          && getAfter(
-            /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)
-          ).data.get('status', '') == 'ACTIVE'
-          && existsAfter(
-            /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)
-          )
-          && getAfter(
-            /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)
-          ).data.get('status', '') == 'ACTIVE';
+          || validSuperAdminProClubDirectPointerCreateV1(clubId, uid);
 
         allow update, delete: if false;
       }
@@ -1245,7 +1289,16 @@ service cloud.firestore {
         allow create: if validMembershipData(academyId, uid)
           && hasNoStoredDocumentId()
           && validMembershipApprovalReference(academyId, uid)
-          && (isSuperAdmin() || hasAcademyRole(academyId, ['ADMIN']))
+          && (
+            request.resource.data.get('source', '') == 'SUPERADMIN_ASSIGNMENT'
+              ? isSuperAdmin()
+                && validSuperAdminAccessControlAuditBundleAfterV1(
+                  'ACADEMY',
+                  academyId,
+                  uid
+                )
+              : (isSuperAdmin() || hasAcademyRole(academyId, ['ADMIN']))
+          )
           && request.resource.data.joinedBy == request.auth.uid
           && request.resource.data.joinedAt == request.time
           && request.resource.data.updatedAt == request.time;
@@ -1261,6 +1314,15 @@ service cloud.firestore {
             || validMembershipApprovalReference(academyId, uid)
           )
           && (isSuperAdmin() || hasAcademyRole(academyId, ['ADMIN']))
+          && (
+            !isSuperAdmin()
+            || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])
+            || validSuperAdminAccessControlAuditBundleAfterV1(
+              'ACADEMY',
+              academyId,
+              uid
+            )
+          )
           && request.resource.data.joinedAt == resource.data.joinedAt
           && request.resource.data.joinedBy == resource.data.joinedBy
           && request.resource.data.updatedAt == request.time;
@@ -2531,6 +2593,449 @@ service cloud.firestore {
 
       return proof.get('staffRole', '') == staffRole;
     }
+
+    // Unified SuperAdmin access audit V1. A mutable per-relationship pointer
+    // binds each canonical relationship change to one immutable audit event.
+    function superAdminAccessControlTargetEligibleV1(uid) {
+      let userPath = /databases/$(database)/documents/users/$(uid);
+      let user = get(userPath).data;
+      return exactDocumentId(uid)
+        && uid != request.auth.uid
+        && exists(userPath)
+        && user.get('status', '') in ['Active', 'ACTIVE']
+        && user.get('role', '') != 'SUPERADMIN'
+        && (!user.keys().hasAny(['uid']) || user.get('uid', '') == uid);
+    }
+
+    function validAcademyAccessMembershipDateV1(value) {
+      return value == null
+        || value is timestamp
+        || (value is string && value.matches('[\\s\\S]*\\S[\\s\\S]*'));
+    }
+
+    function validAcademyAccessMembershipDocumentV1(data, academyId, uid) {
+      return data.keys().hasAll([
+          'userId', 'academyId', 'role', 'status', 'source',
+          'joinedAt', 'joinedBy', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'userId', 'academyId', 'role', 'status', 'source',
+          'approvalClaimId', 'joinedAt', 'joinedBy', 'updatedAt'
+        ])
+        && data.get('userId', '') == uid
+        && data.get('academyId', '') == academyId
+        && data.get('role', '') in ['ADMIN', 'COACH']
+        && data.get('status', '') in ['PENDING', 'ACTIVE', 'SUSPENDED', 'LEFT', 'REVOKED']
+        && data.get('source', '') in [
+          'CLAIM_APPROVAL', 'SUPERADMIN_ASSIGNMENT', 'LEGACY_MIGRATION', 'INVITE'
+        ]
+        && validAcademyAccessMembershipDateV1(data.get('joinedAt', null))
+        && validAcademyAccessMembershipDateV1(data.get('updatedAt', null))
+        && exactDocumentId(data.get('joinedBy', ''))
+        && (
+          (
+            data.get('source', '') == 'CLAIM_APPROVAL'
+            && exactDocumentId(data.get('approvalClaimId', ''))
+          )
+          || (
+            data.get('source', '') != 'CLAIM_APPROVAL'
+            && !data.keys().hasAny(['approvalClaimId'])
+          )
+        );
+    }
+
+    function academyAccessAuditMembershipProjectionMatchesV1(projection, data) {
+      return projection is map
+        && projection.get('role', '') == data.get('role', '')
+        && projection.get('status', '') == data.get('status', '')
+        && projection.get('source', '') == data.get('source', '')
+        && projection.get('joinedBy', '') == data.get('joinedBy', '')
+        && projection.get('approvalClaimId', null) == data.get('approvalClaimId', null)
+        && projection.keys().hasOnly([
+          'role', 'status', 'source', 'joinedBy', 'approvalClaimId'
+        ]);
+    }
+
+    function academyAccessAuditSpecialtyProjectionMatchesV1(projection, data) {
+      return projection is map
+        && projection.get('specialty', '') == data.get('specialty', '')
+        && projection.get('status', '') == data.get('status', '')
+        && projection.keys().hasOnly(['specialty', 'status']);
+    }
+
+    function academyAccessAuditMembershipProvenanceUnchangedV1(previousMembership, newMembership) {
+      return previousMembership.get('joinedAt', null) == newMembership.get('joinedAt', null)
+        && previousMembership.get('joinedBy', '') == newMembership.get('joinedBy', '')
+        && previousMembership.get('source', '') == newMembership.get('source', '')
+        && previousMembership.get('approvalClaimId', null) == newMembership.get('approvalClaimId', null);
+    }
+
+    function validProClubDiscoveryPointerV1(pointer, clubId) {
+      return pointer.keys().hasAll(['schemaVersion', 'clubId'])
+        && pointer.keys().hasOnly(['schemaVersion', 'clubId'])
+        && pointer.get('schemaVersion', 0) == 1
+        && pointer.get('clubId', '') == clubId;
+    }
+
+    function academyDocumentIsActiveForSuperAdminAccessV1(academyId) {
+      let academyPath = /databases/$(database)/documents/academies/$(academyId);
+      return exists(academyPath)
+        && (
+          !get(academyPath).data.keys().hasAny(['status'])
+          || get(academyPath).data.get('status', '') in ['ACTIVE', 'Active']
+        );
+    }
+
+    function superAdminAccessControlProClubAuditStateMatchesV1(audit, clubId, uid) {
+      let memberPath = /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid);
+      let staffPath = /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid);
+      let pointerPath = /databases/$(database)/documents/users/$(uid)/proClubMemberships/$(clubId);
+      let previous = audit.get('previousState', {});
+      let next = audit.get('newState', {});
+      let previousMember = exists(memberPath) ? get(memberPath).data : {};
+      let previousStaff = exists(staffPath) ? get(staffPath).data : {};
+      let previousPointer = exists(pointerPath) ? get(pointerPath).data : {};
+      let newMember = getAfter(memberPath).data;
+      let newStaff = getAfter(staffPath).data;
+      let pointer = getAfter(pointerPath).data;
+
+      return previous.keys().hasAll(['membership', 'staff'])
+        && previous.keys().hasOnly(['membership', 'staff'])
+        && next.keys().hasAll(['membership', 'staff'])
+        && next.keys().hasOnly(['membership', 'staff'])
+        && (
+          exists(memberPath)
+            ? previous.get('membership', {}) == previousMember
+            : previous.get('membership', null) == null
+        )
+        && (
+          exists(staffPath)
+            ? previous.get('staff', {}) == previousStaff
+            : previous.get('staff', null) == null
+        )
+        && (!exists(memberPath) || validProClubMembershipDataV1(previousMember))
+        && (!exists(staffPath) || validProClubStaffDataV1(previousStaff))
+        && (
+          exists(pointerPath)
+            ? (exists(memberPath) || exists(staffPath))
+              && validProClubDiscoveryPointerV1(previousPointer, clubId)
+            : !exists(memberPath) && !exists(staffPath)
+        )
+        && (!exists(memberPath) || (
+          previousMember.get('authorizationRole', '') == 'MEMBER'
+          && previousMember.get('status', '') in ['ACTIVE', 'INACTIVE']
+        ))
+        && (!exists(staffPath) || previousStaff.get('status', '') in ['ACTIVE', 'INACTIVE'])
+        && existsAfter(memberPath)
+        && existsAfter(staffPath)
+        && validProClubMembershipDataV1(newMember)
+        && newMember.get('authorizationRole', '') == 'MEMBER'
+        && newMember.get('status', '') == 'ACTIVE'
+        && validProClubStaffDataV1(newStaff)
+        && newStaff.get('status', '') == 'ACTIVE'
+        && next.get('membership', null) == newMember
+        && next.get('staff', null) == newStaff
+        && existsAfter(pointerPath)
+        && validProClubDiscoveryPointerV1(pointer, clubId)
+        && (
+          (
+            audit.get('actionType', '') == 'ACCESS_ASSIGNED'
+            && !exists(memberPath)
+            && !exists(staffPath)
+            && !exists(pointerPath)
+          )
+          || (
+            audit.get('actionType', '') == 'STAFF_ROLE_ASSIGNED'
+            && previousMember.get('authorizationRole', '') == 'MEMBER'
+            && previousMember.get('status', '') == 'ACTIVE'
+            && !exists(staffPath)
+          )
+          || (
+            audit.get('actionType', '') == 'STAFF_ROLE_CHANGED'
+            && previousMember.get('authorizationRole', '') == 'MEMBER'
+            && previousMember.get('status', '') == 'ACTIVE'
+            && previousStaff.get('status', '') == 'ACTIVE'
+            && previousStaff.get('staffRole', '') != newStaff.get('staffRole', '')
+          )
+          || (
+            audit.get('actionType', '') == 'ACCESS_REACTIVATED'
+            && exists(memberPath)
+            && (
+              previousMember.get('status', '') == 'INACTIVE'
+              || (
+                previousMember.get('status', '') == 'ACTIVE'
+                && exists(staffPath)
+              )
+            )
+            && (!exists(staffPath) || previousStaff.get('status', '') == 'INACTIVE')
+          )
+        );
+    }
+
+    function superAdminAccessControlAcademyAuditStateMatchesV1(audit, academyId, uid) {
+      let membershipPath = /databases/$(database)/documents/academies/$(academyId)/members/$(uid);
+      let specialtyPath = /databases/$(database)/documents/academies/$(academyId)/staffSpecialties/$(uid);
+      let previous = audit.get('previousState', {});
+      let next = audit.get('newState', {});
+      let previousMembership = exists(membershipPath) ? get(membershipPath).data : {};
+      let previousSpecialty = exists(specialtyPath) ? get(specialtyPath).data : {};
+      let newMembership = getAfter(membershipPath).data;
+      let newSpecialty = existsAfter(specialtyPath) ? getAfter(specialtyPath).data : {};
+      let specialtyAction = audit.get('actionType', '') in [
+        'ACADEMY_SPECIALTY_ASSIGNED',
+        'ACADEMY_SPECIALTY_REACTIVATED',
+        'ACADEMY_SPECIALTY_DEACTIVATED'
+      ];
+
+      return previous.keys().hasAll(['membership', 'specialty'])
+        && previous.keys().hasOnly(['membership', 'specialty'])
+        && next.keys().hasAll(['membership', 'specialty'])
+        && next.keys().hasOnly(['membership', 'specialty'])
+        && (
+          !exists(membershipPath)
+            ? previous.get('membership', null) == null
+            : validAcademyAccessMembershipDocumentV1(previousMembership, academyId, uid)
+              && academyAccessAuditMembershipProjectionMatchesV1(previous.get('membership', {}), previousMembership)
+        )
+        && (
+          !exists(specialtyPath)
+            ? previous.get('specialty', null) == null
+            : academyAccessAuditSpecialtyProjectionMatchesV1(previous.get('specialty', {}), previousSpecialty)
+              && (specialtyAction || validAcademyFitnessCoachSpecialtyDataV1(uid, previousSpecialty))
+        )
+        && existsAfter(membershipPath)
+        && (
+          specialtyAction
+            ? newMembership == previousMembership
+              && next.get('membership', {}) == previous.get('membership', {})
+            : academyAccessAuditMembershipProjectionMatchesV1(next.get('membership', {}), newMembership)
+        )
+        && (
+          !existsAfter(specialtyPath)
+            ? next.get('specialty', null) == null
+            : academyAccessAuditSpecialtyProjectionMatchesV1(next.get('specialty', {}), newSpecialty)
+        )
+        && (
+          !existsAfter(specialtyPath)
+          || newSpecialty.get('status', '') != 'ACTIVE'
+          || (
+            newSpecialty.get('specialty', '') == 'FITNESS_COACH'
+            && newMembership.get('role', '') == 'COACH'
+            && newMembership.get('status', '') == 'ACTIVE'
+          )
+        )
+        && (
+          (
+            audit.get('actionType', '') == 'ACADEMY_MEMBERSHIP_ASSIGNED'
+            && !exists(membershipPath)
+            && newMembership.get('status', '') == 'ACTIVE'
+            && newMembership.get('source', '') == 'SUPERADMIN_ASSIGNMENT'
+          )
+          || (
+            audit.get('actionType', '') == 'ACADEMY_ROLE_CHANGED'
+            && exists(membershipPath)
+            && previousMembership.get('status', '') == 'ACTIVE'
+            && newMembership.get('status', '') == 'ACTIVE'
+            && previousMembership.get('role', '') != newMembership.get('role', '')
+            && academyAccessAuditMembershipProvenanceUnchangedV1(previousMembership, newMembership)
+          )
+          || (
+            audit.get('actionType', '') == 'ACCESS_REACTIVATED'
+            && exists(membershipPath)
+            && previousMembership.get('status', '') == 'SUSPENDED'
+            && newMembership.get('status', '') == 'ACTIVE'
+            && previousMembership.get('role', '') == newMembership.get('role', '')
+            && academyAccessAuditMembershipProvenanceUnchangedV1(previousMembership, newMembership)
+          )
+          || (
+            audit.get('actionType', '') == 'ACADEMY_SPECIALTY_ASSIGNED'
+            && exists(membershipPath)
+            && previousMembership.get('role', '') == 'COACH'
+            && previousMembership.get('status', '') == 'ACTIVE'
+            && !exists(specialtyPath)
+            && newSpecialty.get('specialty', '') == 'FITNESS_COACH'
+            && newSpecialty.get('status', '') == 'ACTIVE'
+          )
+          || (
+            audit.get('actionType', '') == 'ACADEMY_SPECIALTY_REACTIVATED'
+            && exists(membershipPath)
+            && previousMembership.get('role', '') == 'COACH'
+            && previousMembership.get('status', '') == 'ACTIVE'
+            && previousSpecialty.get('status', '') == 'INACTIVE'
+            && newSpecialty.get('specialty', '') == 'FITNESS_COACH'
+            && newSpecialty.get('status', '') == 'ACTIVE'
+          )
+          || (
+            audit.get('actionType', '') == 'ACADEMY_SPECIALTY_DEACTIVATED'
+            && exists(membershipPath)
+            && previousMembership.get('role', '') == 'COACH'
+            && previousMembership.get('status', '') == 'ACTIVE'
+            && previousSpecialty.get('specialty', '') == 'FITNESS_COACH'
+            && previousSpecialty.get('status', '') == 'ACTIVE'
+            && newSpecialty.get('specialty', '') == 'FITNESS_COACH'
+            && newSpecialty.get('status', '') == 'INACTIVE'
+          )
+        );
+    }
+
+    function validSuperAdminAccessControlAuditBundleAfterV1(organizationType, organizationId, uid) {
+      let statePath = /databases/$(database)/documents/superAdminAccessControlState/$(organizationType)/organizations/$(organizationId)/targets/$(uid);
+      return existsAfter(statePath)
+        && superAdminAccessControlAuditStateLinkAfterV1(
+          organizationType,
+          organizationId,
+          uid,
+          getAfter(statePath).data
+        );
+    }
+
+    function superAdminAccessControlAuditStateLinkAfterV1(organizationType, organizationId, uid, state) {
+      let actionId = state.get('lastActionId', '');
+      let auditPath = /databases/$(database)/documents/superAdminAccessControlAudits/$(actionId);
+      return state.get('organizationType', '') == organizationType
+        && state.get('organizationId', '') == organizationId
+        && state.get('targetUid', '') == uid
+        && state.get('updatedAt', null) == request.time
+        && existsAfter(auditPath)
+        && superAdminAccessControlAuditDocumentLinkAfterV1(
+          actionId,
+          organizationType,
+          organizationId,
+          uid,
+          getAfter(auditPath).data
+        );
+    }
+
+    function superAdminAccessControlAuditDocumentLinkAfterV1(actionId, organizationType, organizationId, uid, audit) {
+      return audit.get('actionId', '') == actionId
+        && audit.get('createdAt', null) == request.time
+        && audit.get('organizationType', '') == organizationType
+        && audit.get('organizationId', '') == organizationId
+        && audit.get('targetUid', '') == uid;
+    }
+
+    function validSuperAdminAccessControlAuditCreateV1(actionId) {
+      let data = request.resource.data;
+      let organizationType = data.get('organizationType', '');
+      let organizationId = data.get('organizationId', '');
+      let uid = data.get('targetUid', '');
+      return isSuperAdmin()
+        && exactDocumentId(actionId)
+        && data.keys().hasAll([
+          'schemaVersion', 'actionId', 'actionType', 'actorUid', 'targetUid',
+          'organizationType', 'organizationId', 'previousState', 'newState', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'schemaVersion', 'actionId', 'actionType', 'actorUid', 'targetUid',
+          'organizationType', 'organizationId', 'previousState', 'newState', 'createdAt'
+        ])
+        && data.get('schemaVersion', 0) == 1
+        && data.get('actionId', '') == actionId
+        && data.get('actorUid', '') == request.auth.uid
+        && data.get('createdAt', null) == request.time
+        && exactDocumentId(organizationId)
+        && exactDocumentId(uid)
+        && superAdminAccessControlTargetEligibleV1(uid)
+        && (
+          organizationType == 'PRO_CLUB'
+            ? proClubDocumentIsActiveForOnboardingControlV1(organizationId)
+              && superAdminAccessControlProClubAuditStateMatchesV1(data, organizationId, uid)
+            : organizationType == 'ACADEMY'
+              && academyDocumentIsActiveForSuperAdminAccessV1(organizationId)
+              && superAdminAccessControlAcademyAuditStateMatchesV1(data, organizationId, uid)
+        );
+    }
+
+    function validSuperAdminAccessControlStateWriteV1(organizationType, organizationId, uid) {
+      let data = request.resource.data;
+      return isSuperAdmin()
+        && exactDocumentId(organizationId)
+        && exactDocumentId(uid)
+        && data.keys().hasAll([
+          'schemaVersion', 'organizationType', 'organizationId', 'targetUid',
+          'lastActionId', 'updatedAt', 'updatedBy'
+        ])
+        && data.keys().hasOnly([
+          'schemaVersion', 'organizationType', 'organizationId', 'targetUid',
+          'lastActionId', 'updatedAt', 'updatedBy'
+        ])
+        && data.get('schemaVersion', 0) == 1
+        && data.get('organizationType', '') == organizationType
+        && data.get('organizationId', '') == organizationId
+        && data.get('targetUid', '') == uid
+        && exactDocumentId(data.get('lastActionId', ''))
+        && data.get('updatedAt', null) == request.time
+        && data.get('updatedBy', '') == request.auth.uid
+        && validSuperAdminAccessControlAuditBundleAfterV1(organizationType, organizationId, uid);
+    }
+
+    function validSuperAdminProClubDirectMembershipCreateV1(clubId, uid) {
+      return isSuperAdmin()
+        && proClubDocumentIsActiveForOnboardingControlV1(clubId)
+        && superAdminAccessControlTargetEligibleV1(uid)
+        && !exists(/databases/$(database)/documents/proClubs/$(clubId)/members/$(uid))
+        && request.resource.data.keys().hasAll(['authorizationRole', 'status'])
+        && request.resource.data.keys().hasOnly(['authorizationRole', 'status'])
+        && request.resource.data.get('authorizationRole', '') == 'MEMBER'
+        && request.resource.data.get('status', '') == 'ACTIVE'
+        && validSuperAdminAccessControlAuditBundleAfterV1('PRO_CLUB', clubId, uid);
+    }
+
+    function validSuperAdminProClubDirectMembershipUpdateV1(clubId, uid) {
+      return isSuperAdmin()
+        && proClubDocumentIsActiveForOnboardingControlV1(clubId)
+        && superAdminAccessControlTargetEligibleV1(uid)
+        && validProClubMembershipDataV1(resource.data)
+        && resource.data.get('authorizationRole', '') == 'MEMBER'
+        && resource.data.get('status', '') == 'INACTIVE'
+        && request.resource.data.get('authorizationRole', '') == 'MEMBER'
+        && request.resource.data.get('status', '') == 'ACTIVE'
+        && request.resource.data.keys().hasAll(['authorizationRole', 'status'])
+        && request.resource.data.keys().hasOnly(['authorizationRole', 'status'])
+        && validSuperAdminAccessControlAuditBundleAfterV1('PRO_CLUB', clubId, uid);
+    }
+
+    function validSuperAdminProClubDirectStaffCreateV1(clubId, uid) {
+      return isSuperAdmin()
+        && proClubDocumentIsActiveForOnboardingControlV1(clubId)
+        && superAdminAccessControlTargetEligibleV1(uid)
+        && !exists(/databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid))
+        && request.resource.data.keys().hasAll(['staffRole', 'status'])
+        && request.resource.data.keys().hasOnly(['staffRole', 'status'])
+        && validProClubStaffRoleV1(request.resource.data.get('staffRole', ''))
+        && request.resource.data.get('status', '') == 'ACTIVE'
+        && validSuperAdminAccessControlAuditBundleAfterV1('PRO_CLUB', clubId, uid);
+    }
+
+    function validSuperAdminProClubDirectStaffUpdateV1(clubId, uid) {
+      return isSuperAdmin()
+        && proClubDocumentIsActiveForOnboardingControlV1(clubId)
+        && superAdminAccessControlTargetEligibleV1(uid)
+        && validProClubStaffDataV1(resource.data)
+        && validProClubStaffRoleV1(request.resource.data.get('staffRole', ''))
+        && request.resource.data.get('status', '') == 'ACTIVE'
+        && request.resource.data.keys().hasAll(['staffRole', 'status'])
+        && request.resource.data.keys().hasOnly(['staffRole', 'status'])
+        && resource.data.get('status', '') in ['ACTIVE', 'INACTIVE']
+        && (
+          resource.data.get('staffRole', '') != request.resource.data.get('staffRole', '')
+          || resource.data.get('status', '') == 'INACTIVE'
+        )
+        && validSuperAdminAccessControlAuditBundleAfterV1('PRO_CLUB', clubId, uid);
+    }
+
+    function validSuperAdminProClubDirectPointerCreateV1(clubId, uid) {
+      return isSuperAdmin()
+        && proClubDocumentIsActiveForOnboardingControlV1(clubId)
+        && superAdminAccessControlTargetEligibleV1(uid)
+        && !exists(/databases/$(database)/documents/users/$(uid)/proClubMemberships/$(clubId))
+        && request.resource.data.keys().hasAll(['schemaVersion', 'clubId'])
+        && request.resource.data.keys().hasOnly(['schemaVersion', 'clubId'])
+        && request.resource.data.get('schemaVersion', 0) == 1
+        && request.resource.data.get('clubId', '') == clubId
+        && validSuperAdminAccessControlAuditBundleAfterV1('PRO_CLUB', clubId, uid);
+    }
+
     function validProClubInviteConsumptionV1(inviteCode) {
       let data = request.resource.data;
       let clubId = resource.data.get('clubId', '');
@@ -3658,6 +4163,23 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
       allow update, delete: if false;
     }
 
+    match /superAdminAccessControlAudits/{actionId} {
+      allow get, list: if isSuperAdmin();
+      allow create: if validSuperAdminAccessControlAuditCreateV1(actionId);
+      allow update, delete: if false;
+    }
+
+    match /superAdminAccessControlState/{organizationType}/organizations/{organizationId}/targets/{targetUid} {
+      allow get: if isSuperAdmin();
+      allow list: if false;
+      allow create, update: if validSuperAdminAccessControlStateWriteV1(
+        organizationType,
+        organizationId,
+        targetUid
+      );
+      allow delete: if false;
+    }
+
     match /proClubInvites/{inviteCode} {
       allow get: if isSignedIn()
         && (
@@ -3692,6 +4214,10 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
     // Membership/Staff reads are preserved for runtime classification. Client
     // writes are opened only for the reviewed invite/claim approval lifecycle.
     match /proClubs/{clubId} {
+      // Organization discovery is restricted to active platform admins.
+      // Individual root documents remain subject to existing relationship rules.
+      allow list: if isSuperAdmin();
+
       // Pro Club Staff Submissions V1 — shared football staff work-review boundary.
       function proClubStaffSubmissionActiveAuthorV1(clubId) {
         let clubPath =
@@ -5358,19 +5884,23 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
       }
 
       match /members/{uid} {
-        allow get: if isSignedIn()
-          && request.auth.uid == uid;
+        allow get: if (isSignedIn() && request.auth.uid == uid)
+          || isSuperAdmin();
         allow list: if false;
-        allow create: if validProClubMembershipCreateV1(clubId, uid);
-        allow update, delete: if false;
+        allow create: if validProClubMembershipCreateV1(clubId, uid)
+          || validSuperAdminProClubDirectMembershipCreateV1(clubId, uid);
+        allow update: if validSuperAdminProClubDirectMembershipUpdateV1(clubId, uid);
+        allow delete: if false;
       }
 
       match /staff/{uid} {
-        allow get: if isSignedIn()
-          && request.auth.uid == uid;
+        allow get: if (isSignedIn() && request.auth.uid == uid)
+          || isSuperAdmin();
         allow list: if false;
-        allow create: if validProClubStaffCreateV1(clubId, uid);
-        allow update, delete: if false;
+        allow create: if validProClubStaffCreateV1(clubId, uid)
+          || validSuperAdminProClubDirectStaffCreateV1(clubId, uid);
+        allow update: if validSuperAdminProClubDirectStaffUpdateV1(clubId, uid);
+        allow delete: if false;
       }
 
       // Name history is append-only and written only by the trusted Admin SDK
