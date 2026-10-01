@@ -2280,7 +2280,6 @@ service cloud.firestore {
       let staffPath = /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid);
       let pointerPath = /databases/$(database)/documents/users/$(uid)/proClubMemberships/$(clubId);
       let previous = audit.get('previousState', {});
-      let next = audit.get('newState', {});
       let previousMember = exists(memberPath) ? get(memberPath).data : {};
       let previousStaff = exists(staffPath) ? get(staffPath).data : {};
       let previousPointer = exists(pointerPath) ? get(pointerPath).data : {};
@@ -2290,8 +2289,8 @@ service cloud.firestore {
 
       return previous.keys().hasAll(['membership', 'staff'])
         && previous.keys().hasOnly(['membership', 'staff'])
-        && next.keys().hasAll(['membership', 'staff'])
-        && next.keys().hasOnly(['membership', 'staff'])
+        && audit.get('newState', {}).keys().hasAll(['membership', 'staff'])
+        && audit.get('newState', {}).keys().hasOnly(['membership', 'staff'])
         && (
           exists(memberPath)
             ? previous.get('membership', {}) == previousMember
@@ -2322,8 +2321,8 @@ service cloud.firestore {
         && newMember.get('status', '') == 'ACTIVE'
         && validProClubStaffDataV1(newStaff)
         && newStaff.get('status', '') == 'ACTIVE'
-        && next.get('membership', null) == newMember
-        && next.get('staff', null) == newStaff
+        && audit.get('newState', {}).get('membership', null) == newMember
+        && audit.get('newState', {}).get('staff', null) == newStaff
         && existsAfter(pointerPath)
         && validProClubDiscoveryPointerV1(pointer, clubId)
         && (
