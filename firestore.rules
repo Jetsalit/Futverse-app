@@ -58,52 +58,6 @@ service cloud.firestore {
         && !value.matches('.*\\s$');
     }
 
-    function validPlayerIdentityCreateData(playerKey) {
-      let data = request.resource.data;
-      let futId = data.get('futId', '');
-      let registryPath =
-        /databases/$(database)/documents/futIdRegistry/$(futId);
-
-      return isSuperAdmin()
-        && validPlayerIdentityKeyV1(playerKey)
-        && data.keys().hasAll([
-          'schemaVersion',
-          'futId',
-          'source',
-          'createdAt',
-          'createdBy'
-        ])
-        && data.keys().hasOnly([
-          'schemaVersion',
-          'futId',
-          'source',
-          'createdAt',
-          'createdBy'
-        ])
-        && data.schemaVersion == 1
-        && validIssuedFutIdV1(futId)
-        && data.source in [
-          'SUPERADMIN_ISSUANCE',
-          'LEGACY_MIGRATION'
-        ]
-        && data.createdAt is timestamp
-        && data.createdAt == request.time
-        && data.createdBy == request.auth.uid
-
-        // The counterpart must not have existed before this atomic write.
-        && !exists(registryPath)
-
-        // It must exist after the same atomic write.
-        && existsAfter(registryPath)
-
-        // Both sides must describe the same lifelong identity.
-        && getAfter(registryPath).data.get('schemaVersion', 0) == 1
-        && getAfter(registryPath).data.get('futId', '') == futId
-        && getAfter(registryPath).data.get('playerKey', '') == playerKey
-        && getAfter(registryPath).data.get('createdBy', '')
-          == request.auth.uid;
-    }
-
     function validFutIdRegistryCreateData(futId) {
       let data = request.resource.data;
       let playerKey = data.get('playerKey', '');
@@ -399,53 +353,6 @@ service cloud.firestore {
         && exists(playerPath);
     }
 
-    function validAcademyFitnessResultCreateV1(academyId, resultId) {
-      let data = request.resource.data;
-
-      return exactDocumentId(resultId)
-        && tenantFootballCanWrite(academyId)
-        && data.keys().hasAll([
-          'schemaVersion',
-          'playerId',
-          'definitionId',
-          'definitionVersion',
-          'value',
-          'observedOn',
-          'source',
-          'recordedAt',
-          'recordedBy'
-        ])
-        && data.keys().hasOnly([
-          'schemaVersion',
-          'playerId',
-          'definitionId',
-          'definitionVersion',
-          'value',
-          'observedOn',
-          'source',
-          'recordedAt',
-          'recordedBy'
-        ])
-        && data.schemaVersion == 1
-        && academyFitnessResultPlayerExistsV1(
-          academyId,
-          data.playerId
-        )
-        && validAcademyFitnessDefinitionIdV1(data.definitionId)
-        && data.definitionVersion is int
-        && data.definitionVersion > 0
-        && validAcademyFitnessResultValueV1(data.value)
-        && validAcademyFitnessObservedOnV1(data.observedOn)
-        && data.source == 'ACADEMY_BULK_ENTRY'
-        && data.recordedAt is timestamp
-        && data.recordedAt == request.time
-        && exactDocumentId(data.recordedBy)
-        && data.recordedBy == request.auth.uid
-        && academyFitnessResultIdMatchesV1(
-          resultId,
-          data
-        );
-    }
     function tenantMemberCanRead(academyId) {
       return isSuperAdmin() || isActiveAcademyMember(academyId);
     }
@@ -855,66 +762,6 @@ service cloud.firestore {
         );
     }
 
-    function userPointerUpdateMatchesActiveMembership(uid) {
-      let academyId = request.resource.data.get('activeAcademyId', '');
-      let membership = get(
-        /databases/$(database)/documents/academies/$(academyId)/members/$(uid)
-      ).data;
-      let claimId = membership.get('approvalClaimId', '');
-      return academyId != ''
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'activeAcademyId',
-          'academyId',
-          'tenantRole',
-          'role',
-          'status',
-          'updatedAt',
-          'uid',
-          'id'
-        ])
-        && exists(
-          /databases/$(database)/documents/academies/$(academyId)/members/$(uid)
-        )
-        && membership.get('status', '') == 'ACTIVE'
-        && membership.get('userId', '') == uid
-        && membership.get('academyId', '') == academyId
-        && membership.get('role', '') in ['ADMIN', 'COACH']
-        && membership.get('source', '') == 'CLAIM_APPROVAL'
-        && exactDocumentId(claimId)
-        && exists(
-          /databases/$(database)/documents/profile_claims/$(claimId)
-        )
-        && get(
-          /databases/$(database)/documents/profile_claims/$(claimId)
-        ).data.get('status', '') == 'APPROVED'
-        && get(
-          /databases/$(database)/documents/profile_claims/$(claimId)
-        ).data.get('userId', '') == uid
-        && get(
-          /databases/$(database)/documents/profile_claims/$(claimId)
-        ).data.get('approvedAcademyId', '') == academyId
-        && get(
-          /databases/$(database)/documents/profile_claims/$(claimId)
-        ).data.get('approvedRole', '') == membership.get('role', '')
-        && activeInviteMatchesAcademy(
-          get(
-            /databases/$(database)/documents/profile_claims/$(claimId)
-          ).data.get('inviteCode', ''),
-          academyId
-        )
-        && get(
-          /databases/$(database)/documents/profile_claims/$(claimId)
-        ).data.get(
-          'requestedAcademyId',
-          academyId
-        ) == academyId
-        && request.resource.data.get('academyId', '') == academyId
-        && request.resource.data.get('tenantRole', '') == membership.role
-        && request.resource.data.get('role', '') == membership.role
-        && request.resource.data.get('status', '') == 'Active'
-        && request.resource.data.updatedAt == request.time;
-    }
-
     function validMembershipData(academyId, uid) {
       return request.resource.data.keys().hasAll([
           'userId', 'academyId', 'role', 'status', 'source',
@@ -1170,6 +1017,66 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
+      function userPointerUpdateMatchesActiveMembership(uid) {
+        let academyId = request.resource.data.get('activeAcademyId', '');
+        let membership = get(
+          /databases/$(database)/documents/academies/$(academyId)/members/$(uid)
+        ).data;
+        let claimId = membership.get('approvalClaimId', '');
+        return academyId != ''
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'activeAcademyId',
+            'academyId',
+            'tenantRole',
+            'role',
+            'status',
+            'updatedAt',
+            'uid',
+            'id'
+          ])
+          && exists(
+            /databases/$(database)/documents/academies/$(academyId)/members/$(uid)
+          )
+          && membership.get('status', '') == 'ACTIVE'
+          && membership.get('userId', '') == uid
+          && membership.get('academyId', '') == academyId
+          && membership.get('role', '') in ['ADMIN', 'COACH']
+          && membership.get('source', '') == 'CLAIM_APPROVAL'
+          && exactDocumentId(claimId)
+          && exists(
+            /databases/$(database)/documents/profile_claims/$(claimId)
+          )
+          && get(
+            /databases/$(database)/documents/profile_claims/$(claimId)
+          ).data.get('status', '') == 'APPROVED'
+          && get(
+            /databases/$(database)/documents/profile_claims/$(claimId)
+          ).data.get('userId', '') == uid
+          && get(
+            /databases/$(database)/documents/profile_claims/$(claimId)
+          ).data.get('approvedAcademyId', '') == academyId
+          && get(
+            /databases/$(database)/documents/profile_claims/$(claimId)
+          ).data.get('approvedRole', '') == membership.get('role', '')
+          && activeInviteMatchesAcademy(
+            get(
+              /databases/$(database)/documents/profile_claims/$(claimId)
+            ).data.get('inviteCode', ''),
+            academyId
+          )
+          && get(
+            /databases/$(database)/documents/profile_claims/$(claimId)
+          ).data.get(
+            'requestedAcademyId',
+            academyId
+          ) == academyId
+          && request.resource.data.get('academyId', '') == academyId
+          && request.resource.data.get('tenantRole', '') == membership.role
+          && request.resource.data.get('role', '') == membership.role
+          && request.resource.data.get('status', '') == 'Active'
+          && request.resource.data.updatedAt == request.time;
+      }
+
       // Pro Club Membership Discovery V1 — discovery only, never authority.
       match /proClubMemberships/{clubId} {
         allow get, list: if isSuperAdmin()
@@ -1416,6 +1323,54 @@ service cloud.firestore {
 
       // Academy Fitness Results V1 — canonical append-only persistence path.
       match /fitnessResults/{resultId} {
+        function validAcademyFitnessResultCreateV1(academyId, resultId) {
+          let data = request.resource.data;
+
+          return exactDocumentId(resultId)
+            && tenantFootballCanWrite(academyId)
+            && data.keys().hasAll([
+              'schemaVersion',
+              'playerId',
+              'definitionId',
+              'definitionVersion',
+              'value',
+              'observedOn',
+              'source',
+              'recordedAt',
+              'recordedBy'
+            ])
+            && data.keys().hasOnly([
+              'schemaVersion',
+              'playerId',
+              'definitionId',
+              'definitionVersion',
+              'value',
+              'observedOn',
+              'source',
+              'recordedAt',
+              'recordedBy'
+            ])
+            && data.schemaVersion == 1
+            && academyFitnessResultPlayerExistsV1(
+              academyId,
+              data.playerId
+            )
+            && validAcademyFitnessDefinitionIdV1(data.definitionId)
+            && data.definitionVersion is int
+            && data.definitionVersion > 0
+            && validAcademyFitnessResultValueV1(data.value)
+            && validAcademyFitnessObservedOnV1(data.observedOn)
+            && data.source == 'ACADEMY_BULK_ENTRY'
+            && data.recordedAt is timestamp
+            && data.recordedAt == request.time
+            && exactDocumentId(data.recordedBy)
+            && data.recordedBy == request.auth.uid
+            && academyFitnessResultIdMatchesV1(
+              resultId,
+              data
+            );
+        }
+
         allow get, list: if tenantMemberCanRead(academyId);
 
         allow create: if validAcademyFitnessResultCreateV1(
@@ -1541,6 +1496,52 @@ service cloud.firestore {
     // Identity and FUTID registry records are created only as one atomic pair.
     // Neither document may be updated or deleted in V1.
     match /playerIdentities/{playerKey} {
+      function validPlayerIdentityCreateData(playerKey) {
+        let data = request.resource.data;
+        let futId = data.get('futId', '');
+        let registryPath =
+          /databases/$(database)/documents/futIdRegistry/$(futId);
+
+        return isSuperAdmin()
+          && validPlayerIdentityKeyV1(playerKey)
+          && data.keys().hasAll([
+            'schemaVersion',
+            'futId',
+            'source',
+            'createdAt',
+            'createdBy'
+          ])
+          && data.keys().hasOnly([
+            'schemaVersion',
+            'futId',
+            'source',
+            'createdAt',
+            'createdBy'
+          ])
+          && data.schemaVersion == 1
+          && validIssuedFutIdV1(futId)
+          && data.source in [
+            'SUPERADMIN_ISSUANCE',
+            'LEGACY_MIGRATION'
+          ]
+          && data.createdAt is timestamp
+          && data.createdAt == request.time
+          && data.createdBy == request.auth.uid
+
+          // The counterpart must not have existed before this atomic write.
+          && !exists(registryPath)
+
+          // It must exist after the same atomic write.
+          && existsAfter(registryPath)
+
+          // Both sides must describe the same lifelong identity.
+          && getAfter(registryPath).data.get('schemaVersion', 0) == 1
+          && getAfter(registryPath).data.get('futId', '') == futId
+          && getAfter(registryPath).data.get('playerKey', '') == playerKey
+          && getAfter(registryPath).data.get('createdBy', '')
+            == request.auth.uid;
+      }
+
       allow create: if validPlayerIdentityCreateData(playerKey);
       allow read, update, delete: if false;
     }
@@ -1792,102 +1793,6 @@ service cloud.firestore {
         );
     }
 
-    function validProClubOnboardingControlAuditCreateV1(actionId) {
-      let data = request.resource.data;
-      let clubId = data.get('clubId', '');
-      let uid = data.get('targetUid', '');
-      let inviteCode = data.get('inviteCode', '');
-      let claimId = data.get('claimId', null);
-      let staffRole = data.get('staffRole', '');
-      let invitePath =
-        /databases/$(database)/documents/proClubInvites/$(inviteCode);
-      let claimPath =
-        /databases/$(database)/documents/proClubs/$(clubId)/onboardingClaims/$(claimId);
-      let proofPath =
-        /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(uid);
-
-      return isSuperAdmin()
-        && proClubDocumentIsActiveForOnboardingControlV1(clubId)
-        && validProClubStaffRoleV1(staffRole)
-        && data.get('actionId', '') == actionId
-        && (
-          (
-            data.get('actionType', '') == 'INVITE_ISSUED'
-            && actionId == 'INVITE-' + inviteCode
-            && claimId == null
-            && proClubOnboardingControlAuditMatchesV1(
-              data,
-              actionId,
-              clubId,
-              uid,
-              inviteCode,
-              null,
-              staffRole
-            )
-            && existsAfter(invitePath)
-            && getAfter(invitePath).data.get('status', '') == 'ACTIVE'
-            && getAfter(invitePath).data.get('clubId', '') == clubId
-            && getAfter(invitePath).data.get('targetUid', '') == uid
-            && getAfter(invitePath).data.get('staffRole', '') == staffRole
-            && getAfter(invitePath).data.get('createdBy', '') == request.auth.uid
-          )
-          || (
-            data.get('actionType', '') == 'CLAIM_APPROVED'
-            && exactDocumentId(claimId)
-            && actionId == 'APPROVE-' + claimId
-            && proClubOnboardingControlAuditMatchesV1(
-              data,
-              actionId,
-              clubId,
-              uid,
-              inviteCode,
-              claimId,
-              staffRole
-            )
-            && existsAfter(proofPath)
-            && getAfter(proofPath).data.get('status', '') == 'APPROVED'
-            && getAfter(proofPath).data.get('claimId', '') == claimId
-            && getAfter(proofPath).data.get('inviteCode', '') == inviteCode
-            && getAfter(proofPath).data.get('staffRole', '') == staffRole
-            && getAfter(proofPath).data.get('approvedBy', '') == request.auth.uid
-            && getAfter(proofPath).data.get('approvedAt', null) == request.time
-            && validProClubApprovalEvidenceAfterV1(
-              clubId,
-              uid,
-              claimId,
-              inviteCode,
-              staffRole
-            )
-          )
-          || (
-            data.get('actionType', '') == 'CLAIM_REJECTED'
-            && exactDocumentId(claimId)
-            && actionId == 'REJECT-' + claimId
-            && proClubOnboardingControlAuditMatchesV1(
-              data,
-              actionId,
-              clubId,
-              uid,
-              inviteCode,
-              claimId,
-              staffRole
-            )
-            && existsAfter(claimPath)
-            && getAfter(claimPath).data.get('status', '') == 'REJECTED'
-            && getAfter(claimPath).data.get('userId', '') == uid
-            && existsAfter(invitePath)
-            && getAfter(invitePath).data.get('status', '') == 'REVOKED'
-            && !existsAfter(
-              /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)
-            )
-            && !existsAfter(
-              /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)
-            )
-            && !existsAfter(proofPath)
-          )
-        );
-    }
-
     function validProClubInviteCoreV1(data, inviteCode) {
       return data.get('schemaVersion', 0) == 1
         && data.get('inviteCode', '') == inviteCode
@@ -2017,74 +1922,6 @@ service cloud.firestore {
         && exactDocumentId(data.revokedBy);
     }
 
-    function validProClubInviteCreateV1(inviteCode) {
-      let data = request.resource.data;
-      let clubId = data.get('clubId', '');
-      let targetUid = data.get('targetUid', '');
-
-      return isSignedIn()
-        && exactDocumentId(clubId)
-        && exactDocumentId(targetUid)
-        && validProClubInviteCodeV1(inviteCode)
-        && data.get('inviteCode', '') == inviteCode
-        && isProClubOnboardingControlActorV1(clubId)
-        && userExists(targetUid)
-        && (
-          !isSuperAdmin()
-          || (
-            proClubSuperAdminInviteTargetIsEligibleV1(targetUid)
-            && matchingProClubOnboardingControlAuditAfterV1(
-              'INVITE-' + inviteCode,
-              'INVITE_ISSUED',
-              clubId,
-              targetUid,
-              inviteCode,
-              null,
-              data.get('staffRole', '')
-            )
-          )
-        )
-        && data.keys().hasOnly([
-          'schemaVersion',
-          'inviteCode',
-          'clubId',
-          'targetUid',
-          'membershipAuthorizationRole',
-          'staffRole',
-          'createdAt',
-          'createdBy',
-          'expiresAt',
-          'status',
-          'updatedAt',
-          'updatedBy'
-        ])
-        && data.get('schemaVersion', 0) == 1
-        && data.get('membershipAuthorizationRole', '') == 'MEMBER'
-        && validProClubStaffRoleV1(data.get('staffRole', ''))
-        && data.get('status', '') == 'ACTIVE'
-        && data.get('createdAt', null) is timestamp
-        && data.get('createdAt', null) == request.time
-        && data.get('createdBy', '') == request.auth.uid
-        && data.get('updatedAt', null) is timestamp
-        && data.get('updatedAt', null) == request.time
-        && data.get('updatedBy', '') == request.auth.uid
-        && data.get('expiresAt', null) is timestamp
-        && data.get('expiresAt', null) > request.time
-        && data.get('expiresAt', null)
-          <= request.time + duration.value(7, 'd')
-        && !exists(
-          /databases/$(database)/documents/proClubs/$(clubId)/members/$(targetUid)
-        )
-        && !exists(
-          /databases/$(database)/documents/proClubs/$(clubId)/staff/$(targetUid)
-        )
-        && !exists(
-          /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(targetUid)
-        )
-        && !exists(
-          /databases/$(database)/documents/proClubs/$(clubId)/onboardingClaims/$(targetUid + '_PRO_CLUB_' + inviteCode)
-        );
-    }
     function proClubIdentityTextV1(value) {
       return value is string && value.matches('[\\s\\S]*\\S[\\s\\S]*');
     }
@@ -2154,62 +1991,6 @@ service cloud.firestore {
         && proof.get('approvedAt', null) == request.time
         && proof.get('approvedBy', '') == request.auth.uid;
     }
-    function validProClubClaimCreateV1(clubId, claimId) {
-      let data = request.resource.data;
-      let uid = data.get('userId', '');
-      let inviteCode = data.get('inviteCode', '');
-
-      return isSignedIn()
-        && uid == request.auth.uid
-        && userExists(request.auth.uid)
-        && proClubClaimantIdentityMatchesUserV1(data.get('claimantIdentity', null))
-        && exactDocumentId(clubId)
-        && exactDocumentId(uid)
-        && validProClubInviteCodeV1(inviteCode)
-        && claimId == uid + '_PRO_CLUB_' + inviteCode
-        && data.keys().hasOnly([
-          'schemaVersion',
-          'type',
-          'userId',
-          'claimantIdentity',
-          'clubId',
-          'inviteCode',
-          'membershipAuthorizationRole',
-          'staffRole',
-          'status',
-          'createdAt',
-          'updatedAt'
-        ])
-        && data.get('schemaVersion', 0) == 1
-        && data.get('type', '') == 'PRO_CLUB_STAFF_JOIN'
-        && data.get('clubId', '') == clubId
-        && data.get('membershipAuthorizationRole', '') == 'MEMBER'
-        && validProClubStaffRoleV1(data.get('staffRole', ''))
-        && data.get('status', '') == 'PENDING'
-        && data.get('createdAt', null) is timestamp
-        && data.get('createdAt', null) == request.time
-        && data.get('updatedAt', null) is timestamp
-        && data.get('updatedAt', null) == request.time
-        && exists(
-          /databases/$(database)/documents/proClubInvites/$(inviteCode)
-        )
-        && validProClubClaimInviteEvidenceV1(
-          inviteCode,
-          clubId,
-          uid,
-          data.get('staffRole', '')
-        )
-        && !exists(
-          /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)
-        )
-        && !exists(
-          /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)
-        )
-        && !exists(
-          /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(uid)
-        );
-    }
-
     function validProClubClaimInviteEvidenceV1(
       inviteCode,
       clubId,
@@ -2244,56 +2025,6 @@ service cloud.firestore {
         && invite.get('expiresAt', null) is timestamp
         && invite.get('expiresAt', null) > request.time;
     }
-    function validProClubClaimApprovalV1(clubId, claimId) {
-      let data = request.resource.data;
-      let uid = resource.data.get('userId', '');
-      let inviteCode = resource.data.get('inviteCode', '');
-
-      return isSignedIn()
-        && resource.data.get('status', '') == 'PENDING'
-        && data.get('status', '') == 'APPROVED'
-        && exactDocumentId(uid)
-        && validProClubInviteCodeV1(inviteCode)
-        && claimId == uid + '_PRO_CLUB_' + inviteCode
-        && resource.data.get('clubId', '') == clubId
-        && validProClubClaimantIdentityV1(resource.data.get('claimantIdentity', null))
-        && proClubClaimIdentityUnchangedV1()
-        && resource.data.keys().hasOnly([
-          'schemaVersion',
-          'type',
-          'userId',
-          'claimantIdentity',
-          'clubId',
-          'inviteCode',
-          'membershipAuthorizationRole',
-          'staffRole',
-          'status',
-          'createdAt',
-          'updatedAt'
-        ])
-        && resource.data.get('schemaVersion', 0) == 1
-        && resource.data.get('type', '') == 'PRO_CLUB_STAFF_JOIN'
-        && resource.data.get('membershipAuthorizationRole', '') == 'MEMBER'
-        && validProClubStaffRoleV1(resource.data.get('staffRole', ''))
-        && data.diff(resource.data).affectedKeys().hasOnly([
-          'status',
-          'approvedAt',
-          'approvedBy',
-          'updatedAt'
-        ])
-        && data.get('approvedAt', null) == request.time
-        && data.get('approvedBy', '') == request.auth.uid
-        && data.get('updatedAt', null) == request.time
-        && freshProClubApprovalProofForUidV1(clubId, uid)
-        && validProClubClaimApprovalProofAfterV1(
-          clubId,
-          uid,
-          claimId,
-          inviteCode,
-          resource.data.get('staffRole', '')
-        );
-    }
-
     function validProClubClaimApprovalProofAfterV1(
       clubId,
       uid,
@@ -2309,66 +2040,6 @@ service cloud.firestore {
         && proof.get('inviteCode', '') == inviteCode
         && proof.get('staffRole', '') == staffRole;
     }
-    function validProClubClaimRejectionV1(clubId, claimId) {
-      let data = request.resource.data;
-      let uid = resource.data.get('userId', '');
-      let inviteCode = resource.data.get('inviteCode', '');
-
-      return isSignedIn()
-        && validProClubClaimantIdentityV1(resource.data.get('claimantIdentity', null))
-        && proClubClaimIdentityUnchangedV1()
-        && resource.data.keys().hasOnly([
-          'schemaVersion',
-          'type',
-          'userId',
-          'claimantIdentity',
-          'clubId',
-          'inviteCode',
-          'membershipAuthorizationRole',
-          'staffRole',
-          'status',
-          'createdAt',
-          'updatedAt'
-        ])
-        && resource.data.get('schemaVersion', 0) == 1
-        && resource.data.get('type', '') == 'PRO_CLUB_STAFF_JOIN'
-        && resource.data.get('clubId', '') == clubId
-        && exactDocumentId(uid)
-        && validProClubInviteCodeV1(inviteCode)
-        && claimId == uid + '_PRO_CLUB_' + inviteCode
-        && resource.data.get('membershipAuthorizationRole', '') == 'MEMBER'
-        && validProClubStaffRoleV1(resource.data.get('staffRole', ''))
-        && resource.data.get('status', '') == 'PENDING'
-        && data.get('status', '') == 'REJECTED'
-        && data.diff(resource.data).affectedKeys().hasOnly([
-          'status',
-          'rejectedAt',
-          'rejectedBy',
-          'updatedAt'
-        ])
-        && data.get('rejectedAt', null) == request.time
-        && data.get('rejectedBy', '') == request.auth.uid
-        && data.get('updatedAt', null) == request.time
-        && existsAfter(
-          /databases/$(database)/documents/proClubInvites/$(inviteCode)
-        )
-        && validProClubRejectedInviteAfterV1(
-          inviteCode,
-          clubId,
-          uid,
-          resource.data.get('staffRole', '')
-        )
-        && !existsAfter(
-          /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)
-        )
-        && !existsAfter(
-          /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)
-        )
-        && !existsAfter(
-          /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(uid)
-        );
-    }
-
     function validProClubRejectedInviteAfterV1(
       inviteCode,
       clubId,
@@ -2390,88 +2061,6 @@ service cloud.firestore {
         && invite.get('updatedAt', null) == request.time
         && invite.get('updatedBy', '') == request.auth.uid;
     }
-    function validProClubApprovalProofCreateV1(clubId, uid) {
-      let proof = request.resource.data;
-      let inviteCode = proof.get('inviteCode', '');
-      let claimId = proof.get('claimId', '');
-
-      return isSignedIn()
-        && exactDocumentId(clubId)
-        && exactDocumentId(uid)
-        && validProClubInviteCodeV1(inviteCode)
-        && claimId == uid + '_PRO_CLUB_' + inviteCode
-        && isActiveProClubReviewerV1(clubId)
-        && proof.keys().hasOnly([
-          'schemaVersion',
-          'userId',
-          'clubId',
-          'claimId',
-          'inviteCode',
-          'membershipAuthorizationRole',
-          'staffRole',
-          'status',
-          'approvedAt',
-          'approvedBy'
-        ])
-        && proof.get('schemaVersion', 0) == 1
-        && proof.get('userId', '') == uid
-        && proof.get('clubId', '') == clubId
-        && proof.get('membershipAuthorizationRole', '') == 'MEMBER'
-        && validProClubStaffRoleV1(proof.get('staffRole', ''))
-        && proof.get('status', '') == 'APPROVED'
-        && proof.get('approvedAt', null) == request.time
-        && proof.get('approvedBy', '') == request.auth.uid
-        && validProClubApprovalEvidenceAfterV1(
-          clubId,
-          uid,
-          claimId,
-          inviteCode,
-          proof.get('staffRole', '')
-        );
-    }
-
-    function validProClubSuperAdminApprovalProofCreateV1(clubId, uid) {
-      let proof = request.resource.data;
-      let inviteCode = proof.get('inviteCode', '');
-      let claimId = proof.get('claimId', '');
-      let staffRole = proof.get('staffRole', '');
-
-      return isSuperAdmin()
-        && proClubDocumentIsActiveForOnboardingControlV1(clubId)
-        && exactDocumentId(uid)
-        && validProClubInviteCodeV1(inviteCode)
-        && claimId == uid + '_PRO_CLUB_' + inviteCode
-        && proof.keys().hasOnly([
-          'schemaVersion',
-          'userId',
-          'clubId',
-          'claimId',
-          'inviteCode',
-          'membershipAuthorizationRole',
-          'staffRole',
-          'status',
-          'approvedAt',
-          'approvedBy'
-        ])
-        && proof.get('schemaVersion', 0) == 1
-        && proof.get('userId', '') == uid
-        && proof.get('clubId', '') == clubId
-        && proof.get('membershipAuthorizationRole', '') == 'MEMBER'
-        && validProClubStaffRoleV1(staffRole)
-        && proof.get('status', '') == 'APPROVED'
-        && proof.get('approvedAt', null) == request.time
-        && proof.get('approvedBy', '') == request.auth.uid
-        && matchingProClubOnboardingControlAuditAfterV1(
-          'APPROVE-' + claimId,
-          'CLAIM_APPROVED',
-          clubId,
-          uid,
-          inviteCode,
-          claimId,
-          staffRole
-        );
-    }
-
     function validProClubApprovalEvidenceAfterV1(
       clubId,
       uid,
@@ -2914,38 +2503,6 @@ service cloud.firestore {
         && audit.get('targetUid', '') == uid;
     }
 
-    function validSuperAdminAccessControlAuditCreateV1(actionId) {
-      let data = request.resource.data;
-      let organizationType = data.get('organizationType', '');
-      let organizationId = data.get('organizationId', '');
-      let uid = data.get('targetUid', '');
-      return isSuperAdmin()
-        && exactDocumentId(actionId)
-        && data.keys().hasAll([
-          'schemaVersion', 'actionId', 'actionType', 'actorUid', 'targetUid',
-          'organizationType', 'organizationId', 'previousState', 'newState', 'createdAt'
-        ])
-        && data.keys().hasOnly([
-          'schemaVersion', 'actionId', 'actionType', 'actorUid', 'targetUid',
-          'organizationType', 'organizationId', 'previousState', 'newState', 'createdAt'
-        ])
-        && data.get('schemaVersion', 0) == 1
-        && data.get('actionId', '') == actionId
-        && data.get('actorUid', '') == request.auth.uid
-        && data.get('createdAt', null) == request.time
-        && exactDocumentId(organizationId)
-        && exactDocumentId(uid)
-        && superAdminAccessControlTargetEligibleV1(uid)
-        && (
-          organizationType == 'PRO_CLUB'
-            ? proClubDocumentIsActiveForOnboardingControlV1(organizationId)
-              && superAdminAccessControlProClubAuditStateMatchesV1(data, organizationId, uid)
-            : organizationType == 'ACADEMY'
-              && academyDocumentIsActiveForSuperAdminAccessV1(organizationId)
-              && superAdminAccessControlAcademyAuditStateMatchesV1(data, organizationId, uid)
-        );
-    }
-
     function validSuperAdminAccessControlStateWriteV1(organizationType, organizationId, uid) {
       let data = request.resource.data;
       return isSuperAdmin()
@@ -3036,60 +2593,6 @@ service cloud.firestore {
         && validSuperAdminAccessControlAuditBundleAfterV1('PRO_CLUB', clubId, uid);
     }
 
-    function validProClubInviteConsumptionV1(inviteCode) {
-      let data = request.resource.data;
-      let clubId = resource.data.get('clubId', '');
-      let uid = resource.data.get('targetUid', '');
-      let claimId = data.get('claimId', '');
-
-      return isSignedIn()
-        && resource.data.get('status', '') == 'ACTIVE'
-        && data.get('status', '') == 'CONSUMED'
-        && resource.data.get('expiresAt', null) is timestamp
-        && resource.data.get('expiresAt', null) > request.time
-        && exactDocumentId(clubId)
-        && exactDocumentId(uid)
-        && claimId == uid + '_PRO_CLUB_' + inviteCode
-        && resource.data.keys().hasOnly([
-          'schemaVersion',
-          'inviteCode',
-          'clubId',
-          'targetUid',
-          'membershipAuthorizationRole',
-          'staffRole',
-          'createdAt',
-          'createdBy',
-          'expiresAt',
-          'status',
-          'updatedAt',
-          'updatedBy'
-        ])
-        && resource.data.get('schemaVersion', 0) == 1
-        && resource.data.get('inviteCode', '') == inviteCode
-        && resource.data.get('membershipAuthorizationRole', '') == 'MEMBER'
-        && validProClubStaffRoleV1(resource.data.get('staffRole', ''))
-        && data.diff(resource.data).affectedKeys().hasOnly([
-          'status',
-          'consumedAt',
-          'consumedBy',
-          'claimId',
-          'updatedAt',
-          'updatedBy'
-        ])
-        && data.get('consumedAt', null) == request.time
-        && data.get('consumedBy', '') == request.auth.uid
-        && data.get('updatedAt', null) == request.time
-        && data.get('updatedBy', '') == request.auth.uid
-        && freshProClubApprovalProofForUidV1(clubId, uid)
-        && validProClubConsumedInviteProofAfterV1(
-          clubId,
-          uid,
-          claimId,
-          inviteCode,
-          resource.data.get('staffRole', '')
-        );
-    }
-
     function validProClubConsumedInviteProofAfterV1(
       clubId,
       uid,
@@ -3105,68 +2608,6 @@ service cloud.firestore {
         && proof.get('inviteCode', '') == inviteCode
         && proof.get('staffRole', '') == staffRole;
     }
-    function validProClubInviteRevocationV1(inviteCode) {
-      let data = request.resource.data;
-      let clubId = resource.data.get('clubId', '');
-      let uid = resource.data.get('targetUid', '');
-      let claimId = uid + '_PRO_CLUB_' + inviteCode;
-
-      return isSignedIn()
-        && resource.data.keys().hasOnly([
-          'schemaVersion',
-          'inviteCode',
-          'clubId',
-          'targetUid',
-          'membershipAuthorizationRole',
-          'staffRole',
-          'createdAt',
-          'createdBy',
-          'expiresAt',
-          'status',
-          'updatedAt',
-          'updatedBy'
-        ])
-        && resource.data.get('schemaVersion', 0) == 1
-        && resource.data.get('inviteCode', '') == inviteCode
-        && exactDocumentId(clubId)
-        && exactDocumentId(uid)
-        && resource.data.get('membershipAuthorizationRole', '') == 'MEMBER'
-        && validProClubStaffRoleV1(resource.data.get('staffRole', ''))
-        && resource.data.get('status', '') == 'ACTIVE'
-        && data.get('status', '') == 'REVOKED'
-        && data.diff(resource.data).affectedKeys().hasOnly([
-          'status',
-          'revokedAt',
-          'revokedBy',
-          'updatedAt',
-          'updatedBy'
-        ])
-        && data.get('revokedAt', null) == request.time
-        && data.get('revokedBy', '') == request.auth.uid
-        && data.get('updatedAt', null) == request.time
-        && data.get('updatedBy', '') == request.auth.uid
-        && isProClubOnboardingControlActorV1(clubId)
-        && validProClubRevocationClaimStateV1(
-          clubId,
-          uid,
-          claimId,
-          inviteCode,
-          resource.data.get('staffRole', '')
-        )
-        && (
-          !isSuperAdmin()
-          || matchingProClubOnboardingControlAuditAfterV1(
-            'REJECT-' + claimId,
-            'CLAIM_REJECTED',
-            clubId,
-            uid,
-            inviteCode,
-            claimId,
-            resource.data.get('staffRole', '')
-          )
-        );
-    }
-
     function validProClubRevocationClaimStateV1(
       clubId,
       uid,
@@ -3897,37 +3338,6 @@ function proClubWeeklyTrainingValidManifestKeysV2(data) {
     ]);
 }
 
-function proClubWeeklyTrainingValidManifestCreateV2(clubId, planId) {
-  let data = request.resource.data;
-  let projectedPlan = getAfter(proClubWeeklyTrainingProductionPlanPathV2(clubId, planId)).data;
-  return proClubWeeklyTrainingClubIsActiveV2(clubId)
-    && proClubWeeklyTrainingActorIsActiveHeadCoachV2(clubId)
-    && proClubWeeklyTrainingCurrentAuthorityIsValidV1(clubId)
-    && proClubWeeklyTrainingValidManifestKeysV2(data)
-    && data.get('schemaVersion', 0) == 1
-    && data.get('requestId', '') == planId
-    && data.get('planId', '') == planId
-    && data.get('actorUid', '') == request.auth.uid
-    && proClubWeeklyTrainingStrictCalendarDateV1(data.get('weekStartDate', ''))
-    && data.get('sessionCount', 0) is int
-    && data.get('sessionCount', 0) >= 1
-    && data.get('sessionCount', 0) <= 14
-    && data.get('documentCount', 0) is int
-    && data.get('documentCount', 0) >= 4
-    && data.get('documentCount', 0) <= 184
-    && data.get('createdAt', null) == request.time
-    && data.get('createdBy', '') == request.auth.uid
-    && projectedPlan.get('schemaVersion', 0) == 2
-    && projectedPlan.get('status', '') == 'DRAFT'
-    && projectedPlan.get('authorUid', '') == request.auth.uid
-    && projectedPlan.get('weekStartDate', '') == data.get('weekStartDate', '')
-    && projectedPlan.get('sessionCount', 0) == data.get('sessionCount', 0)
-    && projectedPlan.get('createdAt', null) == request.time
-    && projectedPlan.get('updatedAt', null) == request.time
-    && projectedPlan.get('createdBy', '') == request.auth.uid
-    && projectedPlan.get('updatedBy', '') == request.auth.uid;
-}
-
 function proClubWeeklyTrainingProjectedManifestV2(clubId, planId) {
   return getAfter(proClubWeeklyTrainingProductionManifestPathV2(clubId, planId)).data;
 }
@@ -3987,34 +3397,6 @@ function proClubWeeklyTrainingValidSessionKeysV2(data) {
     ]);
 }
 
-function proClubWeeklyTrainingValidSessionCreateV2(clubId, planId, sessionId) {
-  let data = request.resource.data;
-  return proClubWeeklyTrainingBoundToProjectedManifestV2(clubId, planId)
-    && proClubWeeklyTrainingValidSessionKeysV2(data)
-    && data.get('schemaVersion', 0) == 2
-    && data.get('orderIndex', -1) is int
-    && data.get('orderIndex', -1) >= 0
-    && data.get('orderIndex', -1) <= 13
-    && proClubWeeklyTrainingStrictCalendarDateV1(data.get('sessionDate', ''))
-    && data.get('startTime', '') is string
-    && data.get('startTime', '').matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
-    && proClubWeeklyTrainingSessionIdMatchesPayloadV1(sessionId, data)
-    && proClubWeeklyTrainingNormalizedTextV1(data.get('location', ''), 200)
-    && proClubWeeklyTrainingNormalizedTextV1(data.get('objective', ''), 500)
-    && data.get('phaseOfPlay', '') in [
-      'GENERAL', 'IN_POSSESSION', 'OUT_OF_POSSESSION',
-      'TRANSITION_TO_ATTACK', 'TRANSITION_TO_DEFEND', 'SET_PIECES'
-    ]
-    && data.get('plannedLoad', '') in ['LOW', 'MODERATE', 'HIGH']
-    && data.get('durationMinutes', 0) is int
-    && data.get('durationMinutes', 0) >= 15
-    && data.get('durationMinutes', 0) <= 360
-    && data.get('blockCount', 0) is int
-    && data.get('blockCount', 0) >= 1
-    && data.get('blockCount', 0) <= 12
-    && proClubWeeklyTrainingExactFreshAuditV2(data);
-}
-
 function proClubWeeklyTrainingValidBlockKeysV2(data) {
   return data.keys().hasOnly([
       'schemaVersion', 'orderIndex', 'blockType', 'title', 'durationMinutes',
@@ -4062,6 +3444,37 @@ match /proClubs/{clubId}/technicalGovernance/current {
 
 // Pro Club Weekly Training Production Persistence V1 — manifest + schema-v2 creates.
 match /proClubs/{clubId}/weeklyTrainingDraftCreateRequests/{planId} {
+  function proClubWeeklyTrainingValidManifestCreateV2(clubId, planId) {
+    let data = request.resource.data;
+    let projectedPlan = getAfter(proClubWeeklyTrainingProductionPlanPathV2(clubId, planId)).data;
+    return proClubWeeklyTrainingClubIsActiveV2(clubId)
+      && proClubWeeklyTrainingActorIsActiveHeadCoachV2(clubId)
+      && proClubWeeklyTrainingCurrentAuthorityIsValidV1(clubId)
+      && proClubWeeklyTrainingValidManifestKeysV2(data)
+      && data.get('schemaVersion', 0) == 1
+      && data.get('requestId', '') == planId
+      && data.get('planId', '') == planId
+      && data.get('actorUid', '') == request.auth.uid
+      && proClubWeeklyTrainingStrictCalendarDateV1(data.get('weekStartDate', ''))
+      && data.get('sessionCount', 0) is int
+      && data.get('sessionCount', 0) >= 1
+      && data.get('sessionCount', 0) <= 14
+      && data.get('documentCount', 0) is int
+      && data.get('documentCount', 0) >= 4
+      && data.get('documentCount', 0) <= 184
+      && data.get('createdAt', null) == request.time
+      && data.get('createdBy', '') == request.auth.uid
+      && projectedPlan.get('schemaVersion', 0) == 2
+      && projectedPlan.get('status', '') == 'DRAFT'
+      && projectedPlan.get('authorUid', '') == request.auth.uid
+      && projectedPlan.get('weekStartDate', '') == data.get('weekStartDate', '')
+      && projectedPlan.get('sessionCount', 0) == data.get('sessionCount', 0)
+      && projectedPlan.get('createdAt', null) == request.time
+      && projectedPlan.get('updatedAt', null) == request.time
+      && projectedPlan.get('createdBy', '') == request.auth.uid
+      && projectedPlan.get('updatedBy', '') == request.auth.uid;
+  }
+
   allow get: if currentUserIsActive()
     && resource.data.get('actorUid', '') == request.auth.uid;
   allow list, update, delete: if false;
@@ -4086,6 +3499,34 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
   allow delete: if false;
 
   match /sessions/{sessionId} {
+    function proClubWeeklyTrainingValidSessionCreateV2(clubId, planId, sessionId) {
+      let data = request.resource.data;
+      return proClubWeeklyTrainingBoundToProjectedManifestV2(clubId, planId)
+        && proClubWeeklyTrainingValidSessionKeysV2(data)
+        && data.get('schemaVersion', 0) == 2
+        && data.get('orderIndex', -1) is int
+        && data.get('orderIndex', -1) >= 0
+        && data.get('orderIndex', -1) <= 13
+        && proClubWeeklyTrainingStrictCalendarDateV1(data.get('sessionDate', ''))
+        && data.get('startTime', '') is string
+        && data.get('startTime', '').matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+        && proClubWeeklyTrainingSessionIdMatchesPayloadV1(sessionId, data)
+        && proClubWeeklyTrainingNormalizedTextV1(data.get('location', ''), 200)
+        && proClubWeeklyTrainingNormalizedTextV1(data.get('objective', ''), 500)
+        && data.get('phaseOfPlay', '') in [
+          'GENERAL', 'IN_POSSESSION', 'OUT_OF_POSSESSION',
+          'TRANSITION_TO_ATTACK', 'TRANSITION_TO_DEFEND', 'SET_PIECES'
+        ]
+        && data.get('plannedLoad', '') in ['LOW', 'MODERATE', 'HIGH']
+        && data.get('durationMinutes', 0) is int
+        && data.get('durationMinutes', 0) >= 15
+        && data.get('durationMinutes', 0) <= 360
+        && data.get('blockCount', 0) is int
+        && data.get('blockCount', 0) >= 1
+        && data.get('blockCount', 0) <= 12
+        && proClubWeeklyTrainingExactFreshAuditV2(data);
+    }
+
     allow get, list: if currentUserIsActive()
       && proClubWeeklyTrainingActiveMemberV1(clubId, request.auth.uid);
     allow create: if request.resource.data.get('schemaVersion', 0) == 2
@@ -4150,6 +3591,102 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
 }
 
     match /proClubOnboardingControlAudits/{actionId} {
+      function validProClubOnboardingControlAuditCreateV1(actionId) {
+        let data = request.resource.data;
+        let clubId = data.get('clubId', '');
+        let uid = data.get('targetUid', '');
+        let inviteCode = data.get('inviteCode', '');
+        let claimId = data.get('claimId', null);
+        let staffRole = data.get('staffRole', '');
+        let invitePath =
+          /databases/$(database)/documents/proClubInvites/$(inviteCode);
+        let claimPath =
+          /databases/$(database)/documents/proClubs/$(clubId)/onboardingClaims/$(claimId);
+        let proofPath =
+          /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(uid);
+
+        return isSuperAdmin()
+          && proClubDocumentIsActiveForOnboardingControlV1(clubId)
+          && validProClubStaffRoleV1(staffRole)
+          && data.get('actionId', '') == actionId
+          && (
+            (
+              data.get('actionType', '') == 'INVITE_ISSUED'
+              && actionId == 'INVITE-' + inviteCode
+              && claimId == null
+              && proClubOnboardingControlAuditMatchesV1(
+                data,
+                actionId,
+                clubId,
+                uid,
+                inviteCode,
+                null,
+                staffRole
+              )
+              && existsAfter(invitePath)
+              && getAfter(invitePath).data.get('status', '') == 'ACTIVE'
+              && getAfter(invitePath).data.get('clubId', '') == clubId
+              && getAfter(invitePath).data.get('targetUid', '') == uid
+              && getAfter(invitePath).data.get('staffRole', '') == staffRole
+              && getAfter(invitePath).data.get('createdBy', '') == request.auth.uid
+            )
+            || (
+              data.get('actionType', '') == 'CLAIM_APPROVED'
+              && exactDocumentId(claimId)
+              && actionId == 'APPROVE-' + claimId
+              && proClubOnboardingControlAuditMatchesV1(
+                data,
+                actionId,
+                clubId,
+                uid,
+                inviteCode,
+                claimId,
+                staffRole
+              )
+              && existsAfter(proofPath)
+              && getAfter(proofPath).data.get('status', '') == 'APPROVED'
+              && getAfter(proofPath).data.get('claimId', '') == claimId
+              && getAfter(proofPath).data.get('inviteCode', '') == inviteCode
+              && getAfter(proofPath).data.get('staffRole', '') == staffRole
+              && getAfter(proofPath).data.get('approvedBy', '') == request.auth.uid
+              && getAfter(proofPath).data.get('approvedAt', null) == request.time
+              && validProClubApprovalEvidenceAfterV1(
+                clubId,
+                uid,
+                claimId,
+                inviteCode,
+                staffRole
+              )
+            )
+            || (
+              data.get('actionType', '') == 'CLAIM_REJECTED'
+              && exactDocumentId(claimId)
+              && actionId == 'REJECT-' + claimId
+              && proClubOnboardingControlAuditMatchesV1(
+                data,
+                actionId,
+                clubId,
+                uid,
+                inviteCode,
+                claimId,
+                staffRole
+              )
+              && existsAfter(claimPath)
+              && getAfter(claimPath).data.get('status', '') == 'REJECTED'
+              && getAfter(claimPath).data.get('userId', '') == uid
+              && existsAfter(invitePath)
+              && getAfter(invitePath).data.get('status', '') == 'REVOKED'
+              && !existsAfter(
+                /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)
+              )
+              && !existsAfter(
+                /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)
+              )
+              && !existsAfter(proofPath)
+            )
+          );
+      }
+
       allow get, list: if isSuperAdmin();
       // Branch on canonical global role first so an INACTIVE SUPERADMIN fails
       // before the expensive same-commit audit validator is evaluated.
@@ -4164,6 +3701,38 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
     }
 
     match /superAdminAccessControlAudits/{actionId} {
+      function validSuperAdminAccessControlAuditCreateV1(actionId) {
+        let data = request.resource.data;
+        let organizationType = data.get('organizationType', '');
+        let organizationId = data.get('organizationId', '');
+        let uid = data.get('targetUid', '');
+        return isSuperAdmin()
+          && exactDocumentId(actionId)
+          && data.keys().hasAll([
+            'schemaVersion', 'actionId', 'actionType', 'actorUid', 'targetUid',
+            'organizationType', 'organizationId', 'previousState', 'newState', 'createdAt'
+          ])
+          && data.keys().hasOnly([
+            'schemaVersion', 'actionId', 'actionType', 'actorUid', 'targetUid',
+            'organizationType', 'organizationId', 'previousState', 'newState', 'createdAt'
+          ])
+          && data.get('schemaVersion', 0) == 1
+          && data.get('actionId', '') == actionId
+          && data.get('actorUid', '') == request.auth.uid
+          && data.get('createdAt', null) == request.time
+          && exactDocumentId(organizationId)
+          && exactDocumentId(uid)
+          && superAdminAccessControlTargetEligibleV1(uid)
+          && (
+            organizationType == 'PRO_CLUB'
+              ? proClubDocumentIsActiveForOnboardingControlV1(organizationId)
+                && superAdminAccessControlProClubAuditStateMatchesV1(data, organizationId, uid)
+              : organizationType == 'ACADEMY'
+                && academyDocumentIsActiveForSuperAdminAccessV1(organizationId)
+                && superAdminAccessControlAcademyAuditStateMatchesV1(data, organizationId, uid)
+          );
+      }
+
       allow get, list: if isSuperAdmin();
       allow create: if validSuperAdminAccessControlAuditCreateV1(actionId);
       allow update, delete: if false;
@@ -4181,6 +3750,191 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
     }
 
     match /proClubInvites/{inviteCode} {
+      function validProClubInviteCreateV1(inviteCode) {
+        let data = request.resource.data;
+        let clubId = data.get('clubId', '');
+        let targetUid = data.get('targetUid', '');
+
+        return isSignedIn()
+          && exactDocumentId(clubId)
+          && exactDocumentId(targetUid)
+          && validProClubInviteCodeV1(inviteCode)
+          && data.get('inviteCode', '') == inviteCode
+          && isProClubOnboardingControlActorV1(clubId)
+          && userExists(targetUid)
+          && (
+            !isSuperAdmin()
+            || (
+              proClubSuperAdminInviteTargetIsEligibleV1(targetUid)
+              && matchingProClubOnboardingControlAuditAfterV1(
+                'INVITE-' + inviteCode,
+                'INVITE_ISSUED',
+                clubId,
+                targetUid,
+                inviteCode,
+                null,
+                data.get('staffRole', '')
+              )
+            )
+          )
+          && data.keys().hasOnly([
+            'schemaVersion',
+            'inviteCode',
+            'clubId',
+            'targetUid',
+            'membershipAuthorizationRole',
+            'staffRole',
+            'createdAt',
+            'createdBy',
+            'expiresAt',
+            'status',
+            'updatedAt',
+            'updatedBy'
+          ])
+          && data.get('schemaVersion', 0) == 1
+          && data.get('membershipAuthorizationRole', '') == 'MEMBER'
+          && validProClubStaffRoleV1(data.get('staffRole', ''))
+          && data.get('status', '') == 'ACTIVE'
+          && data.get('createdAt', null) is timestamp
+          && data.get('createdAt', null) == request.time
+          && data.get('createdBy', '') == request.auth.uid
+          && data.get('updatedAt', null) is timestamp
+          && data.get('updatedAt', null) == request.time
+          && data.get('updatedBy', '') == request.auth.uid
+          && data.get('expiresAt', null) is timestamp
+          && data.get('expiresAt', null) > request.time
+          && data.get('expiresAt', null)
+            <= request.time + duration.value(7, 'd')
+          && !exists(
+            /databases/$(database)/documents/proClubs/$(clubId)/members/$(targetUid)
+          )
+          && !exists(
+            /databases/$(database)/documents/proClubs/$(clubId)/staff/$(targetUid)
+          )
+          && !exists(
+            /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(targetUid)
+          )
+          && !exists(
+            /databases/$(database)/documents/proClubs/$(clubId)/onboardingClaims/$(targetUid + '_PRO_CLUB_' + inviteCode)
+          );
+      }
+
+      function validProClubInviteConsumptionV1(inviteCode) {
+        let data = request.resource.data;
+        let clubId = resource.data.get('clubId', '');
+        let uid = resource.data.get('targetUid', '');
+        let claimId = data.get('claimId', '');
+
+        return isSignedIn()
+          && resource.data.get('status', '') == 'ACTIVE'
+          && data.get('status', '') == 'CONSUMED'
+          && resource.data.get('expiresAt', null) is timestamp
+          && resource.data.get('expiresAt', null) > request.time
+          && exactDocumentId(clubId)
+          && exactDocumentId(uid)
+          && claimId == uid + '_PRO_CLUB_' + inviteCode
+          && resource.data.keys().hasOnly([
+            'schemaVersion',
+            'inviteCode',
+            'clubId',
+            'targetUid',
+            'membershipAuthorizationRole',
+            'staffRole',
+            'createdAt',
+            'createdBy',
+            'expiresAt',
+            'status',
+            'updatedAt',
+            'updatedBy'
+          ])
+          && resource.data.get('schemaVersion', 0) == 1
+          && resource.data.get('inviteCode', '') == inviteCode
+          && resource.data.get('membershipAuthorizationRole', '') == 'MEMBER'
+          && validProClubStaffRoleV1(resource.data.get('staffRole', ''))
+          && data.diff(resource.data).affectedKeys().hasOnly([
+            'status',
+            'consumedAt',
+            'consumedBy',
+            'claimId',
+            'updatedAt',
+            'updatedBy'
+          ])
+          && data.get('consumedAt', null) == request.time
+          && data.get('consumedBy', '') == request.auth.uid
+          && data.get('updatedAt', null) == request.time
+          && data.get('updatedBy', '') == request.auth.uid
+          && freshProClubApprovalProofForUidV1(clubId, uid)
+          && validProClubConsumedInviteProofAfterV1(
+            clubId,
+            uid,
+            claimId,
+            inviteCode,
+            resource.data.get('staffRole', '')
+          );
+      }
+
+      function validProClubInviteRevocationV1(inviteCode) {
+        let data = request.resource.data;
+        let clubId = resource.data.get('clubId', '');
+        let uid = resource.data.get('targetUid', '');
+        let claimId = uid + '_PRO_CLUB_' + inviteCode;
+
+        return isSignedIn()
+          && resource.data.keys().hasOnly([
+            'schemaVersion',
+            'inviteCode',
+            'clubId',
+            'targetUid',
+            'membershipAuthorizationRole',
+            'staffRole',
+            'createdAt',
+            'createdBy',
+            'expiresAt',
+            'status',
+            'updatedAt',
+            'updatedBy'
+          ])
+          && resource.data.get('schemaVersion', 0) == 1
+          && resource.data.get('inviteCode', '') == inviteCode
+          && exactDocumentId(clubId)
+          && exactDocumentId(uid)
+          && resource.data.get('membershipAuthorizationRole', '') == 'MEMBER'
+          && validProClubStaffRoleV1(resource.data.get('staffRole', ''))
+          && resource.data.get('status', '') == 'ACTIVE'
+          && data.get('status', '') == 'REVOKED'
+          && data.diff(resource.data).affectedKeys().hasOnly([
+            'status',
+            'revokedAt',
+            'revokedBy',
+            'updatedAt',
+            'updatedBy'
+          ])
+          && data.get('revokedAt', null) == request.time
+          && data.get('revokedBy', '') == request.auth.uid
+          && data.get('updatedAt', null) == request.time
+          && data.get('updatedBy', '') == request.auth.uid
+          && isProClubOnboardingControlActorV1(clubId)
+          && validProClubRevocationClaimStateV1(
+            clubId,
+            uid,
+            claimId,
+            inviteCode,
+            resource.data.get('staffRole', '')
+          )
+          && (
+            !isSuperAdmin()
+            || matchingProClubOnboardingControlAuditAfterV1(
+              'REJECT-' + claimId,
+              'CLAIM_REJECTED',
+              clubId,
+              uid,
+              inviteCode,
+              claimId,
+              resource.data.get('staffRole', '')
+            )
+          );
+      }
+
       allow get: if isSignedIn()
         && (
           (
@@ -5911,6 +5665,172 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
       }
 
       match /onboardingClaims/{claimId} {
+        function validProClubClaimCreateV1(clubId, claimId) {
+          let data = request.resource.data;
+          let uid = data.get('userId', '');
+          let inviteCode = data.get('inviteCode', '');
+
+          return isSignedIn()
+            && uid == request.auth.uid
+            && userExists(request.auth.uid)
+            && proClubClaimantIdentityMatchesUserV1(data.get('claimantIdentity', null))
+            && exactDocumentId(clubId)
+            && exactDocumentId(uid)
+            && validProClubInviteCodeV1(inviteCode)
+            && claimId == uid + '_PRO_CLUB_' + inviteCode
+            && data.keys().hasOnly([
+              'schemaVersion',
+              'type',
+              'userId',
+              'claimantIdentity',
+              'clubId',
+              'inviteCode',
+              'membershipAuthorizationRole',
+              'staffRole',
+              'status',
+              'createdAt',
+              'updatedAt'
+            ])
+            && data.get('schemaVersion', 0) == 1
+            && data.get('type', '') == 'PRO_CLUB_STAFF_JOIN'
+            && data.get('clubId', '') == clubId
+            && data.get('membershipAuthorizationRole', '') == 'MEMBER'
+            && validProClubStaffRoleV1(data.get('staffRole', ''))
+            && data.get('status', '') == 'PENDING'
+            && data.get('createdAt', null) is timestamp
+            && data.get('createdAt', null) == request.time
+            && data.get('updatedAt', null) is timestamp
+            && data.get('updatedAt', null) == request.time
+            && exists(
+              /databases/$(database)/documents/proClubInvites/$(inviteCode)
+            )
+            && validProClubClaimInviteEvidenceV1(
+              inviteCode,
+              clubId,
+              uid,
+              data.get('staffRole', '')
+            )
+            && !exists(
+              /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)
+            )
+            && !exists(
+              /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)
+            )
+            && !exists(
+              /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(uid)
+            );
+        }
+
+        function validProClubClaimApprovalV1(clubId, claimId) {
+          let data = request.resource.data;
+          let uid = resource.data.get('userId', '');
+          let inviteCode = resource.data.get('inviteCode', '');
+
+          return isSignedIn()
+            && resource.data.get('status', '') == 'PENDING'
+            && data.get('status', '') == 'APPROVED'
+            && exactDocumentId(uid)
+            && validProClubInviteCodeV1(inviteCode)
+            && claimId == uid + '_PRO_CLUB_' + inviteCode
+            && resource.data.get('clubId', '') == clubId
+            && validProClubClaimantIdentityV1(resource.data.get('claimantIdentity', null))
+            && proClubClaimIdentityUnchangedV1()
+            && resource.data.keys().hasOnly([
+              'schemaVersion',
+              'type',
+              'userId',
+              'claimantIdentity',
+              'clubId',
+              'inviteCode',
+              'membershipAuthorizationRole',
+              'staffRole',
+              'status',
+              'createdAt',
+              'updatedAt'
+            ])
+            && resource.data.get('schemaVersion', 0) == 1
+            && resource.data.get('type', '') == 'PRO_CLUB_STAFF_JOIN'
+            && resource.data.get('membershipAuthorizationRole', '') == 'MEMBER'
+            && validProClubStaffRoleV1(resource.data.get('staffRole', ''))
+            && data.diff(resource.data).affectedKeys().hasOnly([
+              'status',
+              'approvedAt',
+              'approvedBy',
+              'updatedAt'
+            ])
+            && data.get('approvedAt', null) == request.time
+            && data.get('approvedBy', '') == request.auth.uid
+            && data.get('updatedAt', null) == request.time
+            && freshProClubApprovalProofForUidV1(clubId, uid)
+            && validProClubClaimApprovalProofAfterV1(
+              clubId,
+              uid,
+              claimId,
+              inviteCode,
+              resource.data.get('staffRole', '')
+            );
+        }
+
+        function validProClubClaimRejectionV1(clubId, claimId) {
+          let data = request.resource.data;
+          let uid = resource.data.get('userId', '');
+          let inviteCode = resource.data.get('inviteCode', '');
+
+          return isSignedIn()
+            && validProClubClaimantIdentityV1(resource.data.get('claimantIdentity', null))
+            && proClubClaimIdentityUnchangedV1()
+            && resource.data.keys().hasOnly([
+              'schemaVersion',
+              'type',
+              'userId',
+              'claimantIdentity',
+              'clubId',
+              'inviteCode',
+              'membershipAuthorizationRole',
+              'staffRole',
+              'status',
+              'createdAt',
+              'updatedAt'
+            ])
+            && resource.data.get('schemaVersion', 0) == 1
+            && resource.data.get('type', '') == 'PRO_CLUB_STAFF_JOIN'
+            && resource.data.get('clubId', '') == clubId
+            && exactDocumentId(uid)
+            && validProClubInviteCodeV1(inviteCode)
+            && claimId == uid + '_PRO_CLUB_' + inviteCode
+            && resource.data.get('membershipAuthorizationRole', '') == 'MEMBER'
+            && validProClubStaffRoleV1(resource.data.get('staffRole', ''))
+            && resource.data.get('status', '') == 'PENDING'
+            && data.get('status', '') == 'REJECTED'
+            && data.diff(resource.data).affectedKeys().hasOnly([
+              'status',
+              'rejectedAt',
+              'rejectedBy',
+              'updatedAt'
+            ])
+            && data.get('rejectedAt', null) == request.time
+            && data.get('rejectedBy', '') == request.auth.uid
+            && data.get('updatedAt', null) == request.time
+            && existsAfter(
+              /databases/$(database)/documents/proClubInvites/$(inviteCode)
+            )
+            && validProClubRejectedInviteAfterV1(
+              inviteCode,
+              clubId,
+              uid,
+              resource.data.get('staffRole', '')
+            )
+            && !existsAfter(
+              /databases/$(database)/documents/proClubs/$(clubId)/members/$(uid)
+            )
+            && !existsAfter(
+              /databases/$(database)/documents/proClubs/$(clubId)/staff/$(uid)
+            )
+            && !existsAfter(
+              /databases/$(database)/documents/proClubs/$(clubId)/onboardingApprovals/$(uid)
+            );
+        }
+
         allow get: if isSignedIn()
           && (
             resource.data.get('userId', '') == request.auth.uid
@@ -5939,6 +5859,88 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
       }
 
       match /onboardingApprovals/{uid} {
+        function validProClubApprovalProofCreateV1(clubId, uid) {
+          let proof = request.resource.data;
+          let inviteCode = proof.get('inviteCode', '');
+          let claimId = proof.get('claimId', '');
+
+          return isSignedIn()
+            && exactDocumentId(clubId)
+            && exactDocumentId(uid)
+            && validProClubInviteCodeV1(inviteCode)
+            && claimId == uid + '_PRO_CLUB_' + inviteCode
+            && isActiveProClubReviewerV1(clubId)
+            && proof.keys().hasOnly([
+              'schemaVersion',
+              'userId',
+              'clubId',
+              'claimId',
+              'inviteCode',
+              'membershipAuthorizationRole',
+              'staffRole',
+              'status',
+              'approvedAt',
+              'approvedBy'
+            ])
+            && proof.get('schemaVersion', 0) == 1
+            && proof.get('userId', '') == uid
+            && proof.get('clubId', '') == clubId
+            && proof.get('membershipAuthorizationRole', '') == 'MEMBER'
+            && validProClubStaffRoleV1(proof.get('staffRole', ''))
+            && proof.get('status', '') == 'APPROVED'
+            && proof.get('approvedAt', null) == request.time
+            && proof.get('approvedBy', '') == request.auth.uid
+            && validProClubApprovalEvidenceAfterV1(
+              clubId,
+              uid,
+              claimId,
+              inviteCode,
+              proof.get('staffRole', '')
+            );
+        }
+
+        function validProClubSuperAdminApprovalProofCreateV1(clubId, uid) {
+          let proof = request.resource.data;
+          let inviteCode = proof.get('inviteCode', '');
+          let claimId = proof.get('claimId', '');
+          let staffRole = proof.get('staffRole', '');
+
+          return isSuperAdmin()
+            && proClubDocumentIsActiveForOnboardingControlV1(clubId)
+            && exactDocumentId(uid)
+            && validProClubInviteCodeV1(inviteCode)
+            && claimId == uid + '_PRO_CLUB_' + inviteCode
+            && proof.keys().hasOnly([
+              'schemaVersion',
+              'userId',
+              'clubId',
+              'claimId',
+              'inviteCode',
+              'membershipAuthorizationRole',
+              'staffRole',
+              'status',
+              'approvedAt',
+              'approvedBy'
+            ])
+            && proof.get('schemaVersion', 0) == 1
+            && proof.get('userId', '') == uid
+            && proof.get('clubId', '') == clubId
+            && proof.get('membershipAuthorizationRole', '') == 'MEMBER'
+            && validProClubStaffRoleV1(staffRole)
+            && proof.get('status', '') == 'APPROVED'
+            && proof.get('approvedAt', null) == request.time
+            && proof.get('approvedBy', '') == request.auth.uid
+            && matchingProClubOnboardingControlAuditAfterV1(
+              'APPROVE-' + claimId,
+              'CLAIM_APPROVED',
+              clubId,
+              uid,
+              inviteCode,
+              claimId,
+              staffRole
+            );
+        }
+
         allow get: if isSignedIn()
           && (
             request.auth.uid == uid
