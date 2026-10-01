@@ -63,7 +63,9 @@ import {
   updateUserStatusAtomically,
 } from "../lib/firestore/adminUserMutations";
 import { useSuperAdminSupport } from "../contexts/SuperAdminSupportContext";
+import { useSuperAdminNonStaffSupport } from "../contexts/SuperAdminNonStaffSupportContext";
 import { isExactActiveStaffMembership, isExactActiveSuperAdmin } from "../lib/superAdminSupportModel";
+import { resolveAccountByExactEmail } from "../lib/superAdminAccessControl";
 
 import BootstrapLegacyAdmin from "./BootstrapLegacyAdmin";
 import SuperAdminHeader from "./superadmin/SuperAdminHeader";
@@ -107,6 +109,7 @@ import {
 } from "./superadmin/dashboardModel";
 import { downloadSuperAdminDashboardCsv } from "./superadmin/dashboardExport";
 import { deriveSuperAdminReviewQueue } from "./superadmin/reviewQueueModel";
+import SuperAdminManageAccessDrawer from "./superadmin/SuperAdminManageAccessDrawer";
 
 function approvedAtInstantFromCompatibilityValue(
   value: unknown,
@@ -179,6 +182,7 @@ interface AcademyListItem {
   shortName?: string;
   logoUrl?: string | null;
   createdAt?: string;
+  status?: string;
 }
 
 interface StaffMemberItem {
@@ -194,7 +198,9 @@ interface StaffMemberItem {
 
 export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const { hasPermission, currentUser: authUser, actualUser } = useAuth();
-  const { enterAcademyWorkspace, startStaffWorkMode } = useSuperAdminSupport();
+  const { enterAcademyWorkspace, startStaffWorkMode, isSupportActive: staffSupportActive } = useSuperAdminSupport();
+  const nonStaffSupport = useSuperAdminNonStaffSupport();
+  const supportModeActive = staffSupportActive || nonStaffSupport.isActive;
 
   const [activeTab, setActiveTab] = useState<CleanTab>("dashboard");
   const [users, setUsers] = useState<User[]>([]);
@@ -206,6 +212,8 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   const [headerSearchQuery, setHeaderSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("ALL");
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [manageAccessUser, setManageAccessUser] = useState<(User & { id: string }) | null>(null);
+  const [manageAccessError, setManageAccessError] = useState<string | null>(null);
   const [reviewMode, setReviewMode] = useState<UserReviewMode>("READ_ONLY_PROFILE");
   const [approvedRole, setApprovedRole] = useState<ExplicitAccountRoleSelection>("");
   const [staffClaimView, setStaffClaimView] = useState<StaffClaimView | null>(null);
@@ -307,6 +315,8 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     setStaffLoadState("idle");
 
     setSelectedUser(null);
+    setManageAccessUser(null);
+    setManageAccessError(null);
     setStaffClaimView(null);
     setStaffClaimLoadState("idle");
 
@@ -519,6 +529,9 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
             shortName: typeof data.shortName === "string" ? data.shortName : undefined,
             logoUrl: typeof data.logoUrl === "string" ? data.logoUrl : undefined,
             createdAt: typeof data.createdAt === "string" ? data.createdAt : undefined,
+            status: Object.hasOwn(data, "status")
+              ? typeof data.status === "string" ? data.status : "UNKNOWN"
+              : undefined,
           };
         });
         setAcademiesList(academyItems);
@@ -971,6 +984,36 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
     setStaffClaimView(null);
   };
 
+  const openManageAccess = (user: User) => {
+    setManageAccessError(null);
+    if (!relationshipInventoryActorUid || !isExactActiveSuperAdmin(actualUser)) {
+      setManageAccessError("Manage Access requires the actual active SuperAdmin session.");
+      return;
+    }
+    if (supportModeActive) {
+      setManageAccessError("Exit Support or Work As mode before managing organization access.");
+      return;
+    }
+    if (!user.id || !user.email) {
+      setManageAccessError("The selected account is missing its canonical UID or email.");
+      return;
+    }
+    const resolution = resolveAccountByExactEmail(users, user.email);
+    if (resolution.state !== "FOUND" || resolution.user.id !== user.id) {
+      setManageAccessError(
+        resolution.state === "AMBIGUOUS"
+          ? "This exact email matches multiple accounts. Access management is blocked for review."
+          : "The account could not be resolved by exact email. Access management is blocked for review.",
+      );
+      return;
+    }
+    if (resolution.user.role === "SUPERADMIN" || !["ACTIVE", "Active"].includes(String(resolution.user.status))) {
+      setManageAccessError("Only an ACTIVE non-SuperAdmin account can receive organization staff access.");
+      return;
+    }
+    setManageAccessUser(user as User & { id: string });
+  };
+
   const handleApprove = async (user: User) => {
     if (!user.id || !actorUid) {
       setMutationError("Canonical target UID and authenticated SuperAdmin UID are required.");
@@ -1152,6 +1195,8 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
   );
 
   const isLoadingUsers = userLoadState === "loading";
+  const manageAccessActionsAvailable =
+    isExactActiveSuperAdmin(actualUser) && !supportModeActive;
   const selectedApprovalBlockReason = selectedUser
     ? genericApprovalBlockReason(selectedUser.requestedRole)
     : null;
@@ -1525,6 +1570,11 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                 />
               </div>
             </div>
+            {manageAccessError && (
+              <div role="alert" className="border-b border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800">
+                {manageAccessError}
+              </div>
+            )}
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
@@ -1646,6 +1696,22 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
                             title="View Profile"
                           >
                             <Eye size={18} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openManageAccess(user)}
+                            disabled={
+                              isMutating
+                              || !manageAccessActionsAvailable
+                              || !user.id
+                              || !user.email
+                              || user.role === "SUPERADMIN"
+                              || !["ACTIVE", "Active"].includes(String(user.status))
+                            }
+                            className="rounded-lg border border-emerald-200 px-2.5 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
+                            title="Manage organization access; account role stays separate"
+                          >
+                            Manage Access
                           </button>
                         </td>
                       </tr>
@@ -2444,6 +2510,18 @@ export default function SuperadminPortal({ onBack }: { onBack: () => void }) {
             </div>
           </div>
         </div>
+      )}
+      {manageAccessUser && relationshipInventoryActorUid && (
+        <SuperAdminManageAccessDrawer
+          target={manageAccessUser}
+          actorUid={relationshipInventoryActorUid}
+          academies={academiesList}
+          currentAcademyRelationships={relationshipRowsByUserId.get(manageAccessUser.id)?.organizations ?? []}
+          actualSuperAdmin={isExactActiveSuperAdmin(actualUser)}
+          supportModeActive={supportModeActive}
+          onClose={() => setManageAccessUser(null)}
+          onMutationComplete={refreshRelationshipInventoryAfterMutation}
+        />
       )}
     </div>
   );

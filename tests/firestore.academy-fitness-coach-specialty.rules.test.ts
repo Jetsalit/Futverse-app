@@ -16,6 +16,7 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  writeBatch,
   type DocumentData,
   type Firestore,
 } from "firebase/firestore";
@@ -72,6 +73,60 @@ function specialtyData(actorUid: string, status: "ACTIVE" | "INACTIVE" | "LEFT" 
     updatedAt: serverTimestamp(),
     updatedBy: actorUid,
   };
+}
+
+async function superAdminSpecialtyMutation(
+  targetUid: string,
+  nextStatus: "ACTIVE" | "INACTIVE",
+  actionId: string,
+) {
+  const firestore = authedDb("superadmin");
+  const member = await getDoc(doc(firestore, "academies", ACADEMY_A, "members", targetUid));
+  const specialty = await getDoc(doc(firestore, "academies", ACADEMY_A, "staffSpecialties", targetUid));
+  assert.ok(member.exists());
+  const memberData = member.data();
+  const membershipProjection = {
+    role: memberData.role,
+    status: memberData.status,
+    source: memberData.source,
+    joinedBy: memberData.joinedBy,
+  };
+  const previousSpecialty = specialty.exists()
+    ? { specialty: specialty.data().specialty, status: specialty.data().status }
+    : null;
+  const newSpecialty = { specialty: "FITNESS_COACH", status: nextStatus };
+  const actionType = nextStatus === "INACTIVE"
+    ? "ACADEMY_SPECIALTY_DEACTIVATED"
+    : specialty.exists() ? "ACADEMY_SPECIALTY_REACTIVATED" : "ACADEMY_SPECIALTY_ASSIGNED";
+  const batch = writeBatch(firestore);
+  const specialtyRef = doc(firestore, "academies", ACADEMY_A, "staffSpecialties", targetUid);
+  if (specialty.exists()) {
+    batch.update(specialtyRef, { status: nextStatus, updatedAt: serverTimestamp(), updatedBy: "superadmin" });
+  } else {
+    batch.set(specialtyRef, specialtyData("superadmin", nextStatus));
+  }
+  batch.set(doc(firestore, `superAdminAccessControlState/ACADEMY/organizations/${ACADEMY_A}/targets/${targetUid}`), {
+    schemaVersion: 1,
+    organizationType: "ACADEMY",
+    organizationId: ACADEMY_A,
+    targetUid,
+    lastActionId: actionId,
+    updatedAt: serverTimestamp(),
+    updatedBy: "superadmin",
+  });
+  batch.set(doc(firestore, `superAdminAccessControlAudits/${actionId}`), {
+    schemaVersion: 1,
+    actionId,
+    actionType,
+    actorUid: "superadmin",
+    targetUid,
+    organizationType: "ACADEMY",
+    organizationId: ACADEMY_A,
+    previousState: { membership: membershipProjection, specialty: previousSpecialty },
+    newState: { membership: membershipProjection, specialty: newSpecialty },
+    createdAt: serverTimestamp(),
+  });
+  await batch.commit();
 }
 
 function authedDb(uid: string): Firestore {
@@ -318,18 +373,77 @@ test("immutable fields cannot change and delete is forbidden", async () => {
 });
 
 test("SuperAdmin can assign and update exact active Coach specialty", async () => {
-  const ref = doc(
-    authedDb("superadmin"),
-    "academies",
-    ACADEMY_A,
-    "staffSpecialties",
-    COACH_A,
-  );
+  await assertSucceeds(superAdminSpecialtyMutation(COACH_A, "ACTIVE", "superadmin-specialty-create"));
+  await assertSucceeds(superAdminSpecialtyMutation(COACH_A, "INACTIVE", "superadmin-specialty-deactivate"));
+});
 
-  await assertSucceeds(setDoc(ref, specialtyData("superadmin")));
-  await assertSucceeds(updateDoc(ref, {
+test("specialty deactivation cannot bundle an Academy role change under a specialty-only audit", async () => {
+  await seed([
+    [`academies/${ACADEMY_A}/staffSpecialties/${COACH_A}`, specialtyData("superadmin")],
+  ]);
+  const firestore = authedDb("superadmin");
+  const member = await getDoc(doc(firestore, "academies", ACADEMY_A, "members", COACH_A));
+  const specialty = await getDoc(doc(firestore, "academies", ACADEMY_A, "staffSpecialties", COACH_A));
+  assert.ok(member.exists());
+  assert.ok(specialty.exists());
+  const previousMembership = member.data() as {
+    role: string;
+    status: string;
+    source: string;
+    joinedBy: string;
+    [key: string]: unknown;
+  };
+  const previousSpecialty = specialty.data();
+  const nextMembership = { ...previousMembership, role: "ADMIN" };
+  const actionId = "specialty-deactivation-with-role-change";
+  const previousState = {
+    membership: {
+      role: previousMembership.role,
+      status: previousMembership.status,
+      source: previousMembership.source,
+      joinedBy: previousMembership.joinedBy,
+    },
+    specialty: { specialty: previousSpecialty.specialty, status: previousSpecialty.status },
+  };
+  const newState = {
+    membership: {
+      role: nextMembership.role,
+      status: nextMembership.status,
+      source: nextMembership.source,
+      joinedBy: nextMembership.joinedBy,
+    },
+    specialty: { specialty: "FITNESS_COACH", status: "INACTIVE" },
+  };
+  const batch = writeBatch(firestore);
+  batch.update(doc(firestore, "academies", ACADEMY_A, "members", COACH_A), {
+    role: "ADMIN",
+    updatedAt: serverTimestamp(),
+  });
+  batch.update(doc(firestore, "academies", ACADEMY_A, "staffSpecialties", COACH_A), {
     status: "INACTIVE",
     updatedAt: serverTimestamp(),
     updatedBy: "superadmin",
-  }));
+  });
+  batch.set(doc(firestore, `superAdminAccessControlState/ACADEMY/organizations/${ACADEMY_A}/targets/${COACH_A}`), {
+    schemaVersion: 1,
+    organizationType: "ACADEMY",
+    organizationId: ACADEMY_A,
+    targetUid: COACH_A,
+    lastActionId: actionId,
+    updatedAt: serverTimestamp(),
+    updatedBy: "superadmin",
+  });
+  batch.set(doc(firestore, `superAdminAccessControlAudits/${actionId}`), {
+    schemaVersion: 1,
+    actionId,
+    actionType: "ACADEMY_SPECIALTY_DEACTIVATED",
+    actorUid: "superadmin",
+    targetUid: COACH_A,
+    organizationType: "ACADEMY",
+    organizationId: ACADEMY_A,
+    previousState,
+    newState,
+    createdAt: serverTimestamp(),
+  });
+  await assertFails(batch.commit());
 });
