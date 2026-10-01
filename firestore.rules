@@ -2456,8 +2456,6 @@ service cloud.firestore {
           || (
             audit.get('actionType', '') == 'ACADEMY_SPECIALTY_DEACTIVATED'
             && exists(membershipPath)
-            && previousMembership.get('role', '') == 'COACH'
-            && previousMembership.get('status', '') == 'ACTIVE'
             && previousSpecialty.get('specialty', '') == 'FITNESS_COACH'
             && previousSpecialty.get('status', '') == 'ACTIVE'
             && newSpecialty.get('specialty', '') == 'FITNESS_COACH'
@@ -3705,6 +3703,8 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
         let organizationType = data.get('organizationType', '');
         let organizationId = data.get('organizationId', '');
         let uid = data.get('targetUid', '');
+        let targetUserPath = /databases/$(database)/documents/users/$(uid);
+        let targetUser = exists(targetUserPath) ? get(targetUserPath).data : {};
         return isSuperAdmin()
           && exactDocumentId(actionId)
           && data.keys().hasAll([
@@ -3721,7 +3721,16 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
           && data.get('createdAt', null) == request.time
           && exactDocumentId(organizationId)
           && exactDocumentId(uid)
-          && superAdminAccessControlTargetEligibleV1(uid)
+          && uid != request.auth.uid
+          && (
+            (
+              organizationType == 'ACADEMY'
+              && data.get('actionType', '') == 'ACADEMY_SPECIALTY_DEACTIVATED'
+              && targetUser.get('role', '') != 'SUPERADMIN'
+              && (!targetUser.keys().hasAny(['uid']) || targetUser.get('uid', '') == uid)
+            )
+            || superAdminAccessControlTargetEligibleV1(uid)
+          )
           && (
             organizationType == 'PRO_CLUB'
               ? proClubDocumentIsActiveForOnboardingControlV1(organizationId)
