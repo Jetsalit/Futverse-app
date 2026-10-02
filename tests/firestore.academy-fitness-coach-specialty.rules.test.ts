@@ -377,6 +377,59 @@ test("SuperAdmin can assign and update exact active Coach specialty", async () =
   await assertSucceeds(superAdminSpecialtyMutation(COACH_A, "INACTIVE", "superadmin-specialty-deactivate"));
 });
 
+test("SuperAdmin can deactivate an active specialty after the target account becomes inactive", async () => {
+  await seed([
+    [`users/${COACH_A}`, { ...userData(COACH_A, "COACH"), status: "INACTIVE" }],
+    [`academies/${ACADEMY_A}/staffSpecialties/${COACH_A}`, specialtyData("superadmin")],
+  ]);
+
+  await assertSucceeds(
+    superAdminSpecialtyMutation(COACH_A, "INACTIVE", "inactive-user-specialty-deactivate"),
+  );
+});
+
+test("SuperAdmin can deactivate an active specialty for a suspended Coach membership", async () => {
+  await seed([
+    [`academies/${ACADEMY_A}/members/${COACH_A}`, membershipData(COACH_A, ACADEMY_A, "COACH", "SUSPENDED")],
+    [`academies/${ACADEMY_A}/staffSpecialties/${COACH_A}`, specialtyData("superadmin")],
+  ]);
+
+  await assertSucceeds(
+    superAdminSpecialtyMutation(COACH_A, "INACTIVE", "suspended-coach-specialty-deactivate"),
+  );
+});
+
+test("SuperAdmin can deactivate a stale specialty after the target membership role changes", async () => {
+  await seed([
+    [`academies/${ACADEMY_A}/members/${COACH_A}`, membershipData(COACH_A, ACADEMY_A, "ADMIN")],
+    [`academies/${ACADEMY_A}/staffSpecialties/${COACH_A}`, specialtyData("superadmin")],
+  ]);
+
+  await assertSucceeds(
+    superAdminSpecialtyMutation(COACH_A, "INACTIVE", "admin-membership-specialty-deactivate"),
+  );
+});
+
+test("ineligible targets cannot receive an assigned or reactivated specialty", async () => {
+  await seed([
+    [`users/${COACH_A}`, { ...userData(COACH_A, "COACH"), status: "INACTIVE" }],
+  ]);
+
+  await assertFails(
+    superAdminSpecialtyMutation(COACH_A, "ACTIVE", "inactive-user-specialty-assign"),
+  );
+
+  await seed([
+    [`users/${COACH_A}`, userData(COACH_A, "COACH")],
+    [`academies/${ACADEMY_A}/members/${COACH_A}`, membershipData(COACH_A, ACADEMY_A, "COACH", "SUSPENDED")],
+    [`academies/${ACADEMY_A}/staffSpecialties/${COACH_A}`, specialtyData("superadmin", "INACTIVE")],
+  ]);
+
+  await assertFails(
+    superAdminSpecialtyMutation(COACH_A, "ACTIVE", "suspended-coach-specialty-reactivate"),
+  );
+});
+
 test("specialty deactivation cannot bundle an Academy role change under a specialty-only audit", async () => {
   await seed([
     [`academies/${ACADEMY_A}/staffSpecialties/${COACH_A}`, specialtyData("superadmin")],
