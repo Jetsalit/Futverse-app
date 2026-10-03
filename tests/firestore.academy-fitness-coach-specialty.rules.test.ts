@@ -372,40 +372,41 @@ test("immutable fields cannot change and delete is forbidden", async () => {
   await assertFails(deleteDoc(ref));
 });
 
-test("SuperAdmin can assign and update exact active Coach specialty", async () => {
-  await assertSucceeds(superAdminSpecialtyMutation(COACH_A, "ACTIVE", "superadmin-specialty-create"));
-  await assertSucceeds(superAdminSpecialtyMutation(COACH_A, "INACTIVE", "superadmin-specialty-deactivate"));
+test("SuperAdmin client specialty mutations are denied and left for the trusted callable", async () => {
+  await assertFails(superAdminSpecialtyMutation(COACH_A, "ACTIVE", "superadmin-specialty-create"));
+  assert.equal((await getDoc(doc(authedDb("superadmin"), "academies", ACADEMY_A, "staffSpecialties", COACH_A))).exists(), false);
+  await assertFails(superAdminSpecialtyMutation(COACH_A, "INACTIVE", "superadmin-specialty-deactivate"));
 });
 
-test("SuperAdmin can deactivate an active specialty after the target account becomes inactive", async () => {
+test("SuperAdmin client cannot deactivate an active specialty after the target account becomes inactive", async () => {
   await seed([
     [`users/${COACH_A}`, { ...userData(COACH_A, "COACH"), status: "INACTIVE" }],
     [`academies/${ACADEMY_A}/staffSpecialties/${COACH_A}`, specialtyData("superadmin")],
   ]);
 
-  await assertSucceeds(
+  await assertFails(
     superAdminSpecialtyMutation(COACH_A, "INACTIVE", "inactive-user-specialty-deactivate"),
   );
 });
 
-test("SuperAdmin can deactivate an active specialty for a suspended Coach membership", async () => {
+test("SuperAdmin client cannot deactivate an active specialty for a suspended Coach membership", async () => {
   await seed([
     [`academies/${ACADEMY_A}/members/${COACH_A}`, membershipData(COACH_A, ACADEMY_A, "COACH", "SUSPENDED")],
     [`academies/${ACADEMY_A}/staffSpecialties/${COACH_A}`, specialtyData("superadmin")],
   ]);
 
-  await assertSucceeds(
+  await assertFails(
     superAdminSpecialtyMutation(COACH_A, "INACTIVE", "suspended-coach-specialty-deactivate"),
   );
 });
 
-test("SuperAdmin can deactivate a stale specialty after the target membership role changes", async () => {
+test("SuperAdmin client cannot deactivate a stale specialty after the target membership role changes", async () => {
   await seed([
     [`academies/${ACADEMY_A}/members/${COACH_A}`, membershipData(COACH_A, ACADEMY_A, "ADMIN")],
     [`academies/${ACADEMY_A}/staffSpecialties/${COACH_A}`, specialtyData("superadmin")],
   ]);
 
-  await assertSucceeds(
+  await assertFails(
     superAdminSpecialtyMutation(COACH_A, "INACTIVE", "admin-membership-specialty-deactivate"),
   );
 });
