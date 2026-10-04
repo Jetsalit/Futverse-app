@@ -228,6 +228,23 @@ test("offers Academy reactivation for SUSPENDED memberships only", () => {
   }
 });
 
+test("fails closed when reactivating suspended Academy ADMIN with ACTIVE Fitness Coach specialty", () => {
+  const result = resolveAcademyAccessState(
+    academyMembership({ role: "ADMIN", status: "SUSPENDED" }),
+    fitnessSpecialty("ACTIVE"),
+    "ADMIN",
+    false,
+  );
+
+  assert.equal(result.state, "MANUAL_REVIEW");
+  assert.equal(result.actionType, null);
+  assert.equal(result.requiresConfirmation, false);
+  assert.equal(
+    result.reason,
+    "An active Fitness Coach specialty requires an active COACH membership.",
+  );
+});
+
 test("requires suspended Academy access to be reactivated before changing its role", () => {
   const decision = resolveAcademyAccessState(
     academyMembership({ role: "ADMIN", status: "SUSPENDED" }),

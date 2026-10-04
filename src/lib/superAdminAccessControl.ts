@@ -321,6 +321,14 @@ export function resolveAcademyAccessState(
     return academyDecision("MANUAL_REVIEW", null, false, `${membership.status} Academy membership requires manual review.`);
   }
   if (membership.status === "SUSPENDED") {
+    if (specialty?.status === "ACTIVE" && membership.role !== "COACH") {
+      return academyDecision(
+        "MANUAL_REVIEW",
+        null,
+        false,
+        "An active Fitness Coach specialty requires an active COACH membership.",
+      );
+    }
     if (membership.role !== desiredRole) {
       return academyDecision("MANUAL_REVIEW", null, false, "Reactivate the suspended membership before changing its Academy role.");
     }
