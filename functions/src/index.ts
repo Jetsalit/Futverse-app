@@ -32,11 +32,6 @@ import {
   handleProClubRenameHttpRequest,
   type SafeRenameHandlerLogger,
 } from "./proClubRename/httpHandler.ts";
-import { executeManageSuperAdminAccessControlCallable } from "./superAdminAccessControl/callableHandler.ts";
-import {
-  createSuperAdminAccessControlService,
-  type SuperAdminAccessControlService,
-} from "./superAdminAccessControl/service.ts";
 
 const FUTVERSE_PRODUCTION_WEB_APP_ID = "1:504089427500:web:3cc2c8b1283316bdee9b89";
 
@@ -80,16 +75,6 @@ let cachedService: ProClubProvisioningService | null = null;
 let cachedAuditVerificationService: ProClubProvisioningAuditVerificationService | null = null;
 let cachedAppCheckVerifier: ServerAppCheckTokenVerifier | null = null;
 let cachedRenameService: ProClubRenameService | null = null;
-let cachedSuperAdminAccessControlService: SuperAdminAccessControlService | null = null;
-
-function getSuperAdminAccessControlService(): SuperAdminAccessControlService {
-  if (!cachedSuperAdminAccessControlService) {
-    cachedSuperAdminAccessControlService = createSuperAdminAccessControlService({
-      firestore: initializeAdminServices().firestore,
-    });
-  }
-  return cachedSuperAdminAccessControlService;
-}
 
 function getService(): ProClubProvisioningService {
   if (!cachedService) {
@@ -421,26 +406,4 @@ export const editProClubWeeklyTrainingExistingDraftV1 = onCall(
       },
     );
   },
-);
-
-export const manageSuperAdminAccessControlV1 = onCall(
-  {
-    region: "asia-southeast1",
-    enforceAppCheck: true,
-    timeoutSeconds: 30,
-    memory: "256MiB",
-    concurrency: 20,
-    maxInstances: 10,
-  },
-  async (request) => await executeManageSuperAdminAccessControlCallable(
-    {
-      auth: request.auth ? { uid: request.auth.uid } : undefined,
-      app: request.app ? { appId: request.app.appId } : undefined,
-      data: request.data,
-    },
-    {
-      service: getSuperAdminAccessControlService(),
-      allowedAppIds: [FUTVERSE_PRODUCTION_WEB_APP_ID],
-    },
-  ),
 );
