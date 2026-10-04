@@ -6,6 +6,7 @@ import {
   type Transaction,
 } from "firebase-admin/firestore";
 import {
+  canonicalAcademyMembership,
   canonicalStateJson,
   isActiveStatus,
   isCanonicalActiveSuperAdmin,
@@ -362,7 +363,11 @@ async function executeSpecialtyStatus(
     assertActor(actorUid, actor);
     assertOrganization("ACADEMY", academy);
     assertAuditState("ACADEMY", academyId, targetUid, state);
-    if (!membership.exists || !membership.data) fail("FAILED_PRECONDITION", "A canonical Academy Membership is required for Fitness Coach changes.");
+    const canonicalMembership = membership.data ? canonicalAcademyMembership(membership.data) : null;
+    if (!membership.exists || !membership.data || !canonicalMembership ||
+      canonicalMembership.userId !== targetUid || canonicalMembership.academyId !== academyId) {
+      fail("FAILED_PRECONDITION", "A canonical Academy Membership is required for Fitness Coach changes.");
+    }
     if (nextStatus === "ACTIVE") assertTarget(targetUid, actorUid, target);
     if (specialty.exists && (!specialty.data || !isValidAcademySpecialty(specialty.data))) {
       fail("FAILED_PRECONDITION", "The current specialty record is invalid.");

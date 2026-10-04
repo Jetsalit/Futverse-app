@@ -85,6 +85,21 @@ async function expectNoWrites(request: Record<string, unknown>, actorUid = "supe
   assert.equal(auditAfter.size, auditBefore.size);
 }
 
+async function academySpecialtyOperationSnapshot(targetUid: string) {
+  const [membership, specialty, state, audits] = await Promise.all([
+    firestore.doc(`academies/academy/members/${targetUid}`).get(),
+    firestore.doc(`academies/academy/staffSpecialties/${targetUid}`).get(),
+    firestore.doc(`superAdminAccessControlState/ACADEMY/organizations/academy/targets/${targetUid}`).get(),
+    firestore.collection("superAdminAccessControlAudits").get(),
+  ]);
+  return {
+    membership: membership.data() ?? null,
+    specialty: specialty.data() ?? null,
+    state: state.data() ?? null,
+    audits: audits.docs.map((document) => ({ id: document.id, data: document.data() })),
+  };
+}
+
 before(async () => {
   firestore = initializeAdminServices({ projectId: PROJECT_ID, requireEmulator: true }).firestore;
   service = createSuperAdminAccessControlService({ firestore });
@@ -267,6 +282,95 @@ test("SuperAdmin can deactivate a stale Fitness Coach specialty with atomic clea
   assert.equal(audit?.actionType, "ACADEMY_SPECIALTY_DEACTIVATED");
   assert.equal(typeof (audit?.createdAt as { toDate?: unknown })?.toDate, "function");
   assert.equal((await firestore.doc("academies/academy/members/inactive-coach").get()).data()?.status, "SUSPENDED");
+});
+
+test("malformed Academy membership cannot activate a Fitness Coach specialty or write state/audit", async () => {
+  await firestore.doc("academies/academy/members/coach").set({
+    userId: "coach", academyId: "academy", role: "COACH", status: "ACTIVE",
+    joinedAt: new Date(), joinedBy: "superadmin", updatedAt: new Date(),
+  });
+  const before = await academySpecialtyOperationSnapshot("coach");
+
+  await assert.rejects(service.execute(input({
+    operation: "SET_ACADEMY_SPECIALTY_STATUS", organizationId: "academy",
+    targetUid: "coach", nextStatus: "ACTIVE",
+  })), SuperAdminAccessControlError);
+
+  assert.deepEqual(await academySpecialtyOperationSnapshot("coach"), before);
+});
+
+test("extra-field Academy membership cannot deactivate a stale specialty or write state/audit", async () => {
+  await firestore.doc("users/inactive-coach").set({ uid: "inactive-coach", role: "USER", status: "INACTIVE" });
+  await firestore.doc("academies/academy/members/inactive-coach").set({
+    userId: "inactive-coach", academyId: "academy", role: "COACH", status: "SUSPENDED",
+    source: "LEGACY_MIGRATION", joinedAt: new Date(), joinedBy: "superadmin", updatedAt: new Date(),
+    unexpected: true,
+  });
+  await firestore.doc("academies/academy/staffSpecialties/inactive-coach").set({
+    schemaVersion: 1, specialty: "FITNESS_COACH", status: "ACTIVE", createdAt: new Date(),
+    createdBy: "superadmin", updatedAt: new Date(), updatedBy: "superadmin",
+  });
+  const before = await academySpecialtyOperationSnapshot("inactive-coach");
+
+  await assert.rejects(service.execute(input({
+    operation: "SET_ACADEMY_SPECIALTY_STATUS", organizationId: "academy",
+    targetUid: "inactive-coach", nextStatus: "INACTIVE",
+  })), SuperAdminAccessControlError);
+
+  assert.deepEqual(await academySpecialtyOperationSnapshot("inactive-coach"), before);
+});
+
+test("mismatched Academy membership userId or academyId cannot deactivate a specialty", async () => {
+  const cases = [
+    { targetUid: "inactive-coach", userId: "different-user", academyId: "academy" },
+    { targetUid: "second-inactive-coach", userId: "second-inactive-coach", academyId: "other-academy" },
+  ];
+  for (const candidate of cases) {
+    await firestore.doc(`users/${candidate.targetUid}`).set({
+      uid: candidate.targetUid, role: "USER", status: "INACTIVE",
+    });
+    await firestore.doc(`academies/academy/members/${candidate.targetUid}`).set({
+      userId: candidate.userId, academyId: candidate.academyId, role: "COACH", status: "SUSPENDED",
+      source: "LEGACY_MIGRATION", joinedAt: new Date(), joinedBy: "superadmin", updatedAt: new Date(),
+    });
+    await firestore.doc(`academies/academy/staffSpecialties/${candidate.targetUid}`).set({
+      schemaVersion: 1, specialty: "FITNESS_COACH", status: "ACTIVE", createdAt: new Date(),
+      createdBy: "superadmin", updatedAt: new Date(), updatedBy: "superadmin",
+    });
+    const before = await academySpecialtyOperationSnapshot(candidate.targetUid);
+
+    await assert.rejects(service.execute(input({
+      operation: "SET_ACADEMY_SPECIALTY_STATUS", organizationId: "academy",
+      targetUid: candidate.targetUid, nextStatus: "INACTIVE",
+    })), SuperAdminAccessControlError);
+
+    assert.deepEqual(await academySpecialtyOperationSnapshot(candidate.targetUid), before);
+  }
+});
+
+test("suspended ADMIN with active Fitness Coach specialty cannot be reactivated or partially written", async () => {
+  const membership = {
+    userId: "coach", academyId: "academy", role: "ADMIN", status: "SUSPENDED",
+    source: "LEGACY_MIGRATION", joinedAt: new Date(), joinedBy: "superadmin", updatedAt: new Date(),
+  };
+  await firestore.doc("academies/academy/members/coach").set(membership);
+  await firestore.doc("academies/academy/staffSpecialties/coach").set({
+    schemaVersion: 1, specialty: "FITNESS_COACH", status: "ACTIVE", createdAt: new Date(),
+    createdBy: "superadmin", updatedAt: new Date(), updatedBy: "superadmin",
+  });
+  const before = await academySpecialtyOperationSnapshot("coach");
+
+  await assert.rejects(service.execute(input(manageAccess({
+    organizationType: "ACADEMY", organizationId: "academy", desiredStaffRole: undefined,
+    desiredAcademyRole: "ADMIN", desiredFitnessCoach: false,
+    expectedActionType: "ACCESS_REACTIVATED", confirmedActionType: "ACCESS_REACTIVATED",
+    expectedState: {
+      membership: { role: "ADMIN", status: "SUSPENDED", source: "LEGACY_MIGRATION", joinedBy: "superadmin" },
+      specialty: { specialty: "FITNESS_COACH", status: "ACTIVE" },
+    },
+  }))), SuperAdminAccessControlError);
+
+  assert.deepEqual(await academySpecialtyOperationSnapshot("coach"), before);
 });
 
 test("Fitness Coach activation requires an active Coach membership and is idempotent", async () => {

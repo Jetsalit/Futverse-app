@@ -279,7 +279,7 @@ export function resolveProClubAccessState(
 const ACADEMY_MEMBERSHIP_REQUIRED = ["userId", "academyId", "role", "status", "source", "joinedAt", "joinedBy", "updatedAt"] as const;
 const ACADEMY_MEMBERSHIP_ALLOWED = [...ACADEMY_MEMBERSHIP_REQUIRED, "approvalClaimId"] as const;
 
-function canonicalAcademyMembership(value: unknown): Record<string, unknown> | null {
+export function canonicalAcademyMembership(value: unknown): Record<string, unknown> | null {
   const candidate = recordOf(value);
   if (!candidate || !exactRecordKeys(candidate, ACADEMY_MEMBERSHIP_REQUIRED, ACADEMY_MEMBERSHIP_ALLOWED) ||
     !isExactDocumentId(candidate.userId) || !isExactDocumentId(candidate.academyId) ||
@@ -322,6 +322,9 @@ export function resolveAcademyAccessState(
   if (["LEFT", "REVOKED", "PENDING"].includes(String(membership.status))) return decision("MANUAL_REVIEW", null, false, `${membership.status} Academy membership requires manual review.`);
   if (membership.status === "SUSPENDED") {
     if (membership.role !== desiredRole) return decision("MANUAL_REVIEW", null, false, "Reactivate the suspended membership before changing its Academy role.");
+    if (specialtyStatus === "ACTIVE" && membership.role !== "COACH") {
+      return decision("MANUAL_REVIEW", null, false, "An active Fitness Coach specialty requires an active COACH membership.");
+    }
     if (desiredFitnessCoach && specialtyStatus === "LEFT") return decision("MANUAL_REVIEW", null, false, "LEFT Fitness Coach specialties cannot be reactivated.");
     return decision("REACTIVATE", "ACCESS_REACTIVATED", true);
   }
