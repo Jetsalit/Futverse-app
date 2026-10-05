@@ -88,7 +88,7 @@ test("rendered SuperAdmin control selects clubs, keeps invite/reject, and accept
 
   const moduleMocks = [
     t.mock.module("../src/contexts/AuthContext.tsx", {
-      exports: {
+      namedExports: {
         useAuth: () => ({
           actualUser: {
             uid: actorUid,
@@ -100,13 +100,13 @@ test("rendered SuperAdmin control selects clubs, keeps invite/reject, and accept
       },
     }),
     t.mock.module("../src/contexts/SuperAdminSupportContext.tsx", {
-      exports: { useSuperAdminSupport: () => ({ isSupportActive: false }) },
+      namedExports: { useSuperAdminSupport: () => ({ isSupportActive: false }) },
     }),
     t.mock.module("../src/lib/firebase.ts", {
-      exports: { db: { testDb: true } },
+      namedExports: { db: { testDb: true } },
     }),
     t.mock.module("firebase/firestore", {
-      exports: {
+      namedExports: {
         Timestamp,
         collection: (_db: unknown, ...path: string[]) => path,
         getDocsFromServer: async (path: string[]) => {
@@ -121,7 +121,7 @@ test("rendered SuperAdmin control selects clubs, keeps invite/reject, and accept
       },
     }),
     t.mock.module("../src/lib/firestore/proClubSuperAdminOnboardingControlRepository.ts", {
-      exports: { proClubSuperAdminOnboardingControlRepository: repository },
+      namedExports: { proClubSuperAdminOnboardingControlRepository: repository },
     }),
   ];
 
