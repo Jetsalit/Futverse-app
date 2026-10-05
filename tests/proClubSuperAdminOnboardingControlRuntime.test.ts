@@ -6,6 +6,7 @@ import {
   collection,
   doc,
   getDocFromServer,
+  getDocsFromServer,
   getDocs,
   serverTimestamp,
   setDoc,
@@ -13,6 +14,19 @@ import {
   type Firestore,
 } from "firebase/firestore";
 import { createProClubSuperAdminOnboardingControlRepository } from "../src/lib/firestore/proClubSuperAdminOnboardingControlRepository";
+import { resolveProClubOrganizationAuthority } from "../src/lib/firestore/proClubOrganizationAdapter";
+import type { ProClubReadOps } from "../src/lib/firestore/proClubReadAdapter";
+import { loadOwnProClubMembershipDiscoveries } from "../src/lib/firestore/proClubMembershipDiscoveryRepository";
+import { resolveProClubRuntimeAuthority } from "../src/lib/organizationRuntimeProClubAuthorityBridge";
+import {
+  applyOrganizationResolution,
+  beginOrganizationResolution,
+  bindOrganizationRuntimeUid,
+  createOrganizationRuntime,
+  getOrganizationResolutionRequest,
+  isOrganizationRuntimeAuthorized,
+  selectOrganization,
+} from "../src/lib/organizationRuntimeSelection";
 import { proClubClaimId } from "../src/lib/proClubOnboarding";
 
 const PROJECT = "demo-futverse-pro-club-superadmin-runtime-v1";
@@ -25,6 +39,19 @@ let environment: RulesTestEnvironment;
 
 function db(uid: string): Firestore {
   return environment.authenticatedContext(uid).firestore() as unknown as Firestore;
+}
+
+function readOps(uid: string): ProClubReadOps {
+  return {
+    async readDocument(path) {
+      const snapshot = await getDocFromServer(doc(db(uid), path.join("/")));
+      return {
+        id: snapshot.id,
+        exists: snapshot.exists(),
+        data: snapshot.exists() ? snapshot.data() : undefined,
+      };
+    },
+  };
 }
 
 async function seed(entries: Array<[string, DocumentData]>) {
@@ -161,7 +188,16 @@ test("runtime adapter fails closed when presented actor differs from authenticat
   assert.equal(await inviteCount(), 0);
 });
 
-test("runtime adapter approves pending claim atomically as MEMBER plus HEAD_COACH plus audit", async () => {
+test("active SuperAdmin can read the Pro Club selector inventory while ordinary users cannot", async () => {
+  const clubs = await getDocsFromServer(collection(db(SUPERADMIN), "proClubs"));
+  assert.deepEqual(clubs.docs.map((club) => club.id), [CLUB]);
+
+  await assert.rejects(
+    getDocsFromServer(collection(db(USER), "proClubs")),
+  );
+});
+
+test("approved user passes post-login membership discovery and Pro Club entry guards", async () => {
   const repository = createProClubSuperAdminOnboardingControlRepository(db(SUPERADMIN), () => SUPERADMIN);
   const invite = await repository.issueInvitation({
     clubId: CLUB,
@@ -176,10 +212,107 @@ test("runtime adapter approves pending claim atomically as MEMBER plus HEAD_COAC
 
   await repository.reviewClaim(CLUB, claimId, "APPROVED", SUPERADMIN);
 
+  const approvedClaim = await raw(`proClubs/${CLUB}/onboardingClaims/${claimId}`);
+  assert.equal(approvedClaim?.status, "APPROVED");
+  assert.equal(approvedClaim?.userId, TARGET);
+  assert.equal(approvedClaim?.clubId, CLUB);
+  assert.equal(approvedClaim?.approvedBy, SUPERADMIN);
+
+  const approval = await raw(`proClubs/${CLUB}/onboardingApprovals/${TARGET}`);
+  assert.equal(approval?.status, "APPROVED");
+  assert.equal(approval?.userId, TARGET);
+  assert.equal(approval?.clubId, CLUB);
+  assert.equal(approval?.claimId, claimId);
+  assert.equal(approval?.inviteCode, invite.inviteCode);
+  assert.equal(approval?.approvedBy, SUPERADMIN);
+
   assert.equal((await raw(`proClubs/${CLUB}/members/${TARGET}`))?.authorizationRole, "MEMBER");
   assert.equal((await raw(`proClubs/${CLUB}/staff/${TARGET}`))?.staffRole, "HEAD_COACH");
+  assert.deepEqual(await raw(`users/${TARGET}/proClubMemberships/${CLUB}`), {
+    schemaVersion: 1,
+    clubId: CLUB,
+  });
   assert.equal((await raw(`proClubInvites/${invite.inviteCode}`))?.status, "CONSUMED");
-  assert.equal((await raw(`proClubOnboardingControlAudits/APPROVE-${claimId}`))?.actionType, "CLAIM_APPROVED");
+  const audit = await raw(`proClubOnboardingControlAudits/APPROVE-${claimId}`);
+  assert.equal(audit?.actionType, "CLAIM_APPROVED");
+  assert.equal(audit?.actorUid, SUPERADMIN);
+  assert.equal(audit?.targetUid, TARGET);
+  assert.equal(audit?.clubId, CLUB);
+  assert.equal((await raw(`users/${SUPERADMIN}`))?.role, "SUPERADMIN");
+  assert.equal((await raw(`users/${SUPERADMIN}`))?.status, "ACTIVE");
+
+  const discoveries = await loadOwnProClubMembershipDiscoveries(TARGET, {
+    getCurrentUid: () => TARGET,
+    async readOwnMembershipDiscoveries(uid) {
+      assert.equal(uid, TARGET);
+      const pointer = await raw(`users/${uid}/proClubMemberships/${CLUB}`);
+      return pointer === null ? [] : [{ id: CLUB, data: pointer }];
+    },
+  });
+  assert.deepEqual(discoveries, [{ clubId: CLUB }]);
+
+  const entryGeneration = bindOrganizationRuntimeUid(
+    createOrganizationRuntime(),
+    TARGET,
+  );
+  const selected = selectOrganization(entryGeneration, "PRO_CLUB", discoveries[0].clubId);
+  const resolving = beginOrganizationResolution(selected);
+  const request = getOrganizationResolutionRequest(resolving);
+  assert.ok(request, "post-login entry must resolve a trusted selected-club request");
+  const entry = await resolveProClubRuntimeAuthority(request, readOps(TARGET));
+  assert.equal(entry.sourceState, "FOUND");
+  assert.equal(entry.runtimeResult?.status, "AUTHORIZED");
+  assert.equal(entry.authority?.organizationId, CLUB);
+  assert.equal(entry.authority?.userId, TARGET);
+  assert.equal(entry.authority?.hasMembershipAuthority, true);
+  assert.equal(entry.authority?.membershipStatus, "ACTIVE");
+  assert.equal(entry.authority?.staffRole, "HEAD_COACH");
+  assert.ok(entry.runtimeResult);
+  const authorizedRuntime = applyOrganizationResolution(resolving, entry.runtimeResult);
+  assert.equal(isOrganizationRuntimeAuthorized(authorizedRuntime), true);
+  assert.ok(authorizedRuntime.generation > entryGeneration.generation);
+  assert.equal(authorizedRuntime.uid, TARGET);
+  assert.equal(authorizedRuntime.selection?.organizationType, "PRO_CLUB");
+  assert.equal(authorizedRuntime.selection?.organizationId, CLUB);
+
+  const authority = await resolveProClubOrganizationAuthority(CLUB, TARGET, readOps(TARGET));
+  assert.equal(authority.state, "FOUND");
+  if (authority.state === "FOUND") {
+    assert.equal(authority.value.hasMembershipAuthority, true);
+    assert.equal(authority.value.membershipStatus, "ACTIVE");
+    assert.equal(authority.value.staffRole, "HEAD_COACH");
+  }
+});
+
+test("runtime adapter denies ordinary users and active members from approving a pending request", async () => {
+  const repository = createProClubSuperAdminOnboardingControlRepository(db(SUPERADMIN), () => SUPERADMIN);
+  const invite = await repository.issueInvitation({
+    clubId: CLUB,
+    targetUid: TARGET,
+    staffRole: "HEAD_COACH",
+  }, SUPERADMIN);
+  const claimId = await createPendingClaim(invite.inviteCode);
+
+  await seed([
+    [`users/normal-member-runtime`, { uid: "normal-member-runtime", role: "USER", status: "ACTIVE" }],
+    [`proClubs/${CLUB}/members/normal-member-runtime`, { authorizationRole: "MEMBER", status: "ACTIVE" }],
+  ]);
+
+  for (const actorUid of [USER, "normal-member-runtime"]) {
+    const unauthorized = createProClubSuperAdminOnboardingControlRepository(
+      db(actorUid),
+      () => actorUid,
+    );
+    await assert.rejects(
+      unauthorized.reviewClaim(CLUB, claimId, "APPROVED", actorUid),
+    );
+  }
+
+  assert.equal((await raw(`proClubs/${CLUB}/onboardingClaims/${claimId}`))?.status, "PENDING");
+  assert.equal((await raw(`proClubs/${CLUB}/members/${TARGET}`)), null);
+  assert.equal((await raw(`proClubs/${CLUB}/staff/${TARGET}`)), null);
+  assert.equal((await raw(`proClubInvites/${invite.inviteCode}`))?.status, "ACTIVE");
+  assert.equal(await raw(`proClubOnboardingControlAudits/APPROVE-${claimId}`), null);
 });
 
 test("runtime adapter rejects pending claim atomically without membership or staff", async () => {

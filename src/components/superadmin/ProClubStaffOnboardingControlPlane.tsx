@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { collection, getDocsFromServer } from "firebase/firestore";
 import {
   CheckCircle2,
   Clipboard,
@@ -13,6 +14,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useSuperAdminSupport } from "../../contexts/SuperAdminSupportContext";
 import { isExactActiveSuperAdmin } from "../../lib/superAdminSupportModel";
 import { isValidDocumentIdentifier } from "../../lib/proClubModel";
+import { db } from "../../lib/firebase";
 import type { ProClubStaffRole } from "../../types/ProClub";
 import { OnboardingError } from "../../lib/proClubOnboarding";
 import {
@@ -22,6 +24,12 @@ import {
 
 interface ProClubStaffOnboardingControlPlaneProps {
   onClose: () => void;
+}
+
+interface ProClubOption {
+  id: string;
+  name?: string;
+  status?: string;
 }
 
 const STAFF_ROLES: Array<{ value: ProClubStaffRole; label: string }> = [
@@ -66,6 +74,10 @@ function claimantLabel(item: SuperAdminPendingStaffRequest): string {
   return item.claim.userId;
 }
 
+function normalizeClubName(name: unknown, fallback: string): string {
+  return typeof name === "string" && name.trim() ? name : fallback;
+}
+
 export default function ProClubStaffOnboardingControlPlane({
   onClose,
 }: ProClubStaffOnboardingControlPlaneProps) {
@@ -75,6 +87,8 @@ export default function ProClubStaffOnboardingControlPlane({
   const actorAuthorized = isExactActiveSuperAdmin(actualUser) && !isSupportActive;
 
   const [clubId, setClubId] = useState("");
+  const [proClubs, setProClubs] = useState<ProClubOption[]>([]);
+  const [clubInventoryState, setClubInventoryState] = useState<"loading" | "loaded" | "error">("loading");
   const [targetUid, setTargetUid] = useState("");
   const [staffRole, setStaffRole] = useState<ProClubStaffRole>("HEAD_COACH");
   const [inviteCode, setInviteCode] = useState<string | null>(null);
@@ -84,20 +98,62 @@ export default function ProClubStaffOnboardingControlPlane({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  useEffect(() => {
+    let cancelled = false;
+    setProClubs([]);
+    setClubId("");
+    setPending([]);
+    setQueueLoaded(false);
+
+    if (!actorAuthorized || !actorUid) {
+      setClubInventoryState("loaded");
+      return () => { cancelled = true; };
+    }
+
+    setClubInventoryState("loading");
+    getDocsFromServer(collection(db, "proClubs"))
+      .then((snapshot) => {
+        if (cancelled) return;
+        setProClubs(snapshot.docs.map((clubDoc) => {
+          const data = clubDoc.data();
+          return {
+            id: clubDoc.id,
+            name: typeof data.name === "string" ? data.name : undefined,
+            status: typeof data.status === "string" ? data.status : undefined,
+          };
+        }));
+        setClubInventoryState("loaded");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setProClubs([]);
+        setClubInventoryState("error");
+      });
+
+    return () => { cancelled = true; };
+  }, [actorAuthorized, actorUid]);
+
+  const selectedClub = proClubs.find((club) => club.id === clubId);
+  const selectedClubLabel = selectedClub
+    ? normalizeClubName(selectedClub.name, selectedClub.id)
+    : "";
+  const selectedClubActive = selectedClub?.status === "ACTIVE";
   const normalizedClubId = clubId.trim();
   const normalizedTargetUid = targetUid.trim();
 
   const canIssue = useMemo(
     () =>
       actorAuthorized &&
+      selectedClubActive &&
       isValidDocumentIdentifier(normalizedClubId) &&
       isValidDocumentIdentifier(normalizedTargetUid) &&
       busy === null,
-    [actorAuthorized, normalizedClubId, normalizedTargetUid, busy],
+    [actorAuthorized, selectedClubActive, normalizedClubId, normalizedTargetUid, busy],
   );
 
   const canRefresh =
     actorAuthorized &&
+    selectedClubActive &&
     isValidDocumentIdentifier(normalizedClubId) &&
     busy === null;
 
@@ -223,32 +279,44 @@ export default function ProClubStaffOnboardingControlPlane({
             </div>
           </div>
         ) : (
-          <div className="grid flex-1 gap-5 overflow-y-auto p-5 lg:grid-cols-[0.9fr_1.1fr] lg:p-7">
+          <div className="flex flex-1 flex-col overflow-y-auto p-5 lg:p-7">
+            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <label className="block max-w-2xl">
+                <span className="text-xs font-bold text-slate-600">Pro Club</span>
+                <select
+                  value={clubId}
+                  onChange={(event) => {
+                    setClubId(event.target.value);
+                    setPending([]);
+                    setQueueLoaded(false);
+                  }}
+                  disabled={clubInventoryState !== "loaded" || busy !== null}
+                  aria-label="Pro Club"
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 disabled:bg-slate-100"
+                >
+                  <option value="">Select a Pro Club…</option>
+                  {proClubs.map((club) => (
+                    <option key={club.id} value={club.id} disabled={club.status !== "ACTIVE"}>
+                      {normalizeClubName(club.name, club.id)}{club.status !== "ACTIVE" ? ` · ${club.status || "INACTIVE"}` : ""}
+                    </option>
+                  ))}
+                </select>
+                {clubInventoryState === "loading" && <span className="mt-1 block text-xs text-slate-500">Loading Pro Clubs…</span>}
+                {clubInventoryState === "error" && <span className="mt-1 block text-xs text-rose-700">Pro Club inventory unavailable.</span>}
+              </label>
+            </section>
+
+            <div className="mt-5 grid flex-1 gap-5 lg:grid-cols-[0.9fr_1.1fr]">
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">
                 Spark-native UID path
               </div>
               <h2 className="mt-1 text-lg font-black text-slate-900">Invite staff</h2>
               <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                No email directory lookup is performed. Enter the canonical Pro Club ID and exact FutVerse Account Reference / Firebase UID.
+                No email directory lookup is performed. Enter the exact FutVerse Account Reference / Firebase UID for the selected Pro Club.
               </p>
 
               <div className="mt-5 grid gap-4">
-                <label>
-                  <span className="text-xs font-bold text-slate-600">Pro Club ID</span>
-                  <input
-                    value={clubId}
-                    onChange={(event) => {
-                      setClubId(event.target.value);
-                      setPending([]);
-                      setQueueLoaded(false);
-                    }}
-                    placeholder="canonical club document ID"
-                    autoComplete="off"
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-                  />
-                </label>
-
                 <label>
                   <span className="text-xs font-bold text-slate-600">Account Reference / UID</span>
                   <input
@@ -330,7 +398,7 @@ export default function ProClubStaffOnboardingControlPlane({
               <div className="mt-5 space-y-3">
                 {!queueLoaded && busy !== "refresh" && (
                   <div className="rounded-xl border border-dashed border-slate-200 p-5 text-center text-sm text-slate-500">
-                    Enter a Pro Club ID and refresh the queue.
+                    Select a Pro Club and refresh the queue.
                   </div>
                 )}
 
@@ -345,8 +413,15 @@ export default function ProClubStaffOnboardingControlPlane({
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
                         <div className="font-black text-slate-900">{claimantLabel(item)}</div>
+                        {item.claim.claimantIdentity?.email && (
+                          <div className="mt-1 break-all text-xs text-slate-600">Email: {item.claim.claimantIdentity.email}</div>
+                        )}
                         <div className="mt-1 break-all text-xs text-slate-500">UID: {item.claim.userId}</div>
                         <div className="mt-1 text-xs font-bold text-slate-700">Role: {item.claim.staffRole}</div>
+                        <div className="mt-1 text-xs text-slate-600">
+                          Club: {selectedClubLabel}{selectedClub?.name?.trim() ? ` · ${normalizedClubId}` : ""}
+                        </div>
+                        <div className="mt-1 text-xs font-bold text-amber-700">Status: Pending</div>
                         <div className="mt-1 break-all text-[11px] text-slate-400">Claim: {item.claimId}</div>
                         {!item.invite && (
                           <div className="mt-2 text-xs font-bold text-amber-700">Invitation state unavailable — decision will fail closed.</div>
@@ -367,7 +442,7 @@ export default function ProClubStaffOnboardingControlPlane({
                           disabled={busy !== null || !item.invite}
                           className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700 disabled:opacity-50"
                         >
-                          {busy === `APPROVED:${item.claimId}` ? "Approving…" : "Approve"}
+                          {busy === `APPROVED:${item.claimId}` ? "Accepting…" : "Accept"}
                         </button>
                       </div>
                     </div>
@@ -375,6 +450,7 @@ export default function ProClubStaffOnboardingControlPlane({
                 ))}
               </div>
             </section>
+            </div>
           </div>
         )}
 
