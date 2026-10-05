@@ -31,6 +31,23 @@ test("UI uses exact Account Reference path and never enables browser email looku
   assert.doesNotMatch(controlSource, /FUNCTION_BACKED_PRO_CLUB_WEB_AVAILABLE/);
 });
 
+test("UI selects readable Pro Clubs and clears the old queue when the selection changes", () => {
+  assert.match(controlSource, /getDocsFromServer\s*\(\s*collection\(db,\s*["']proClubs["']\)/);
+  assert.match(controlSource, /aria-label=["']Pro Club["']/);
+  assert.doesNotMatch(controlSource, /canonical club document ID/i);
+  assert.doesNotMatch(controlSource, /Enter a Pro Club ID/i);
+  assert.match(controlSource, /onChange=\{\(event\)\s*=>\s*\{\s*setClubId\(event\.target\.value\);\s*setPending\(\[\]\);\s*setQueueLoaded\(false\);/);
+});
+
+test("pending rows show the selected club, optional claimant email, pending status, and Accept", () => {
+  assert.match(controlSource, /item\.claim\.claimantIdentity\?\.email\s*&&\s*\(/);
+  assert.match(controlSource, /Email:\s*\{item\.claim\.claimantIdentity\.email\}/);
+  assert.match(controlSource, /Club:\s*\{selectedClubLabel\}/);
+  assert.match(controlSource, /Status: Pending/);
+  assert.match(controlSource, /:\s*"Accept"/);
+  assert.match(controlSource, /handleDecision\(item,\s*["']APPROVED["']\)/);
+});
+
 test("UI delegates issue approve and reject to audited runtime adapter", () => {
   assert.match(controlSource, /proClubSuperAdminOnboardingControlRepository\.issueInvitation/);
   assert.match(controlSource, /proClubSuperAdminOnboardingControlRepository\.loadPending/);
