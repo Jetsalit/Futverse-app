@@ -80,6 +80,23 @@ function freshDraft(): ProClubWeeklyTrainingFreshDraftInput {
   };
 }
 
+function LinkedDrillSubmissionAction({
+  authority,
+  sourceDrillId,
+}: {
+  authority: ProClubOrganizationAuthority;
+  sourceDrillId: string;
+}) {
+  const { drills } = useDrillDatabase();
+
+  return (
+    <ProClubDrillSubmissionSendButton
+      organizationId={authority.organizationId}
+      sourceDrill={drills.find((drill) => drill.id === sourceDrillId)}
+    />
+  );
+}
+
 export function canUseWeeklyTrainingDraftSave(
   authority: ProClubOrganizationAuthority,
 ): boolean {
@@ -99,7 +116,6 @@ export default function WeeklyTrainingDraftComposer({
   authority: ProClubOrganizationAuthority;
   initialDraft?: ProClubWeeklyTrainingFreshDraftInput;
 }) {
-  const { drills } = useDrillDatabase();
   const [draft, setDraft] = useState<ProClubWeeklyTrainingFreshDraftInput>(
     () => initialDraft ?? freshDraft(),
   );
@@ -344,11 +360,9 @@ export default function WeeklyTrainingDraftComposer({
                       {block.drillReference && (
                         <>
                           <span className="text-xs text-emerald-300">Linked drill: {block.drillReference}</span>
-                          <ProClubDrillSubmissionSendButton
-                            organizationId={authority.organizationId}
-                            sourceDrill={drills.find(
-                              (drill) => drill.id === block.drillReference,
-                            )}
+                          <LinkedDrillSubmissionAction
+                            authority={authority}
+                            sourceDrillId={block.drillReference}
                           />
                         </>
                       )}
