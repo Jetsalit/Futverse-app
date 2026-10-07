@@ -6,6 +6,24 @@ export interface ProClubDrillProvenance {
   organizationId: string;
 }
 
+export function isProClubDrillSubmissionEligible(
+  drill:
+    | {
+        organizationType?: unknown;
+        organizationId?: unknown;
+      }
+    | null
+    | undefined,
+  clubId: string,
+): boolean {
+  return (
+    drill !== null &&
+    drill !== undefined &&
+    drill.organizationType === "PRO_CLUB" &&
+    drill.organizationId === clubId
+  );
+}
+
 export function resolveProClubDrillProvenance(
   authority: ProClubOrganizationAuthority | null | undefined,
 ): ProClubDrillProvenance | null {

@@ -5,6 +5,7 @@ import {
   PRO_CLUB_WEEKLY_TRAINING_FRESH_DRAFT_PRODUCTION_AVAILABLE,
 } from "../../../config/runtimeCapabilities";
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
+import { useDrillDatabase } from "../../../hooks/useDrillDatabase";
 import { formatThaiDateLong, formatThaiTime } from "../../../lib/thaiDateTimePresentation";
 import { FutVerseThaiDateInput, FutVerseThaiTimeInput } from "../../common/FutVerseThaiDateTimeInputs";
 import {
@@ -98,6 +99,7 @@ export default function WeeklyTrainingDraftComposer({
   authority: ProClubOrganizationAuthority;
   initialDraft?: ProClubWeeklyTrainingFreshDraftInput;
 }) {
+  const { drills } = useDrillDatabase();
   const [draft, setDraft] = useState<ProClubWeeklyTrainingFreshDraftInput>(
     () => initialDraft ?? freshDraft(),
   );
@@ -344,7 +346,9 @@ export default function WeeklyTrainingDraftComposer({
                           <span className="text-xs text-emerald-300">Linked drill: {block.drillReference}</span>
                           <ProClubDrillSubmissionSendButton
                             organizationId={authority.organizationId}
-                            sourceDrillId={block.drillReference}
+                            sourceDrill={drills.find(
+                              (drill) => drill.id === block.drillReference,
+                            )}
                           />
                         </>
                       )}

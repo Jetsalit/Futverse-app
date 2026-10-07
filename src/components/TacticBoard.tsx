@@ -43,6 +43,7 @@ import {
   normalizePitchTheme,
   normalizeTeamColors,
   resolveTacticLineStyle,
+  resolvePitchBoundsFromRenderedGeometry,
   rotateTacticEquipment,
   type CurveDirection,
   type EquipmentOrientation,
@@ -207,6 +208,7 @@ export default function TacticBoard({
 
   // Konva State
   const stageRef = useRef<any>(null);
+  const pitchMarkingsRef = useRef<HTMLDivElement>(null);
   const [elements, setElements] = useState<any[]>([]);
   const [lines, setLines] = useState<any[]>([]);
   const undoStackRef = useRef<TacticBoardUndoAction[]>([]);
@@ -578,7 +580,32 @@ export default function TacticBoard({
       finalPreviewImage = stageRef.current
         ? stageRef.current.toDataURL({ pixelRatio: 2 })
         : undefined;
-      finalCanvasData = { elements, lines, fieldType, teamColors, pitchTheme };
+      const stageWidth = stageRef.current?.width() ?? stageSize.width;
+      const stageHeight = stageRef.current?.height() ?? stageSize.height;
+      const pitchBounds = resolvePitchBoundsFromRenderedGeometry(
+        stageWidth,
+        stageHeight,
+        containerRef.current?.getBoundingClientRect(),
+        pitchMarkingsRef.current?.getBoundingClientRect(),
+      );
+      finalCanvasData = {
+        elements,
+        lines,
+        fieldType,
+        teamColors,
+        pitchTheme,
+        ...(typeof stageWidth === "number" &&
+        Number.isFinite(stageWidth) &&
+        stageWidth > 0
+          ? { stageWidth }
+          : {}),
+        ...(typeof stageHeight === "number" &&
+        Number.isFinite(stageHeight) &&
+        stageHeight > 0
+          ? { stageHeight }
+          : {}),
+        ...(pitchBounds ?? {}),
+      };
     } else {
       finalPreviewImage = uploadedImage || undefined;
       finalCanvasData = null;
@@ -934,6 +961,7 @@ export default function TacticBoard({
                   <div
                     className="absolute inset-4 lg:inset-6 ring-[1.5px] ring-current pointer-events-none z-0"
                     style={{ backgroundColor: pitchColors.background }}
+                    ref={pitchMarkingsRef}
                     data-field-type={fieldType}
                     data-goal-side={fieldType === "half" ? HALF_PITCH_GOAL_SIDE : undefined}
                   >

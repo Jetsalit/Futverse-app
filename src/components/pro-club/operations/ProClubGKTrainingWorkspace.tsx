@@ -210,7 +210,7 @@ function ProClubGKTrainingWorkspaceAuthorized({
                   </button>
                   <ProClubDrillSubmissionSendButton
                     organizationId={authority.organizationId}
-                    sourceDrillId={drill.id}
+                    sourceDrill={drill}
                   />
                 </div>
               </article>

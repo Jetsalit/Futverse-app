@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Loader2, Send } from "lucide-react";
 import { createProClubDrillSubmission } from "../../../lib/firestore/proClubDrillSubmissionsRepository";
+import { isProClubDrillSubmissionEligible } from "../../../lib/proClubDrillProvenance";
 
 function createSubmissionId(): string {
   if (
@@ -14,17 +15,26 @@ function createSubmissionId(): string {
 
 export default function ProClubDrillSubmissionSendButton({
   organizationId,
-  sourceDrillId,
+  sourceDrill,
 }: {
   organizationId: string;
-  sourceDrillId: string;
+  sourceDrill:
+    | {
+        id: string;
+        organizationType?: unknown;
+        organizationId?: unknown;
+      }
+    | null
+    | undefined;
 }) {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
+  const eligible = isProClubDrillSubmissionEligible(sourceDrill, organizationId);
+  const eligibilityNoteId = useId();
 
   async function sendSelectedDrill() {
-    if (sending) return;
+    if (sending || !eligible || !sourceDrill) return;
     setSending(true);
     setError("");
     setSent(false);
@@ -33,7 +43,7 @@ export default function ProClubDrillSubmissionSendButton({
       await createProClubDrillSubmission(
         organizationId,
         submissionId,
-        sourceDrillId,
+        sourceDrill.id,
       );
       setSent(true);
     } catch (cause) {
@@ -50,12 +60,21 @@ export default function ProClubDrillSubmissionSendButton({
       <button
         type="button"
         onClick={() => void sendSelectedDrill()}
-        disabled={sending}
-        className="inline-flex items-center gap-2 rounded-xl bg-cyan-600 px-3 py-2 text-sm font-black text-white transition hover:bg-cyan-500 disabled:cursor-wait disabled:opacity-60"
+        disabled={sending || !eligible}
+        aria-describedby={!eligible ? eligibilityNoteId : undefined}
+        className="inline-flex items-center gap-2 rounded-xl bg-cyan-600 px-3 py-2 text-sm font-black text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {sending ? <Loader2 className="animate-spin" size={15} /> : <Send size={15} />}
         {sending ? "Sending…" : "Send Work"}
       </button>
+      {!eligible ? (
+        <span
+          id={eligibilityNoteId}
+          className="text-xs font-semibold text-amber-300"
+        >
+          Only drills created in this Pro Club can be sent.
+        </span>
+      ) : null}
       {sent ? <span role="status" className="text-xs font-bold text-emerald-500">Submitted</span> : null}
       {error ? <span role="alert" className="text-xs font-semibold text-rose-500">{error}</span> : null}
     </span>

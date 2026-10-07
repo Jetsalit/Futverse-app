@@ -230,7 +230,8 @@ test("application theme, pitch theme, and team colors remain separate persisted 
   assert.match(dashboardSource, /PRO_CLUB_THEME_STORAGE_KEY/);
   assert.match(dashboardSource, /localStorage\.setItem\(PRO_CLUB_THEME_STORAGE_KEY/);
   assert.doesNotMatch(tacticBoardSource, /PRO_CLUB_THEME_STORAGE_KEY|futverse:pro-club-theme/);
-  assert.match(tacticBoardSource, /finalCanvasData = \{ elements, lines, fieldType, teamColors, pitchTheme \}/);
+  assert.match(tacticBoardSource, /stageRef\.current\?\.width\(\) \?\? stageSize\.width/);
+  assert.match(tacticBoardSource, /stageRef\.current\?\.height\(\) \?\? stageSize\.height/);
   assert.match(
     readFileSync(new URL("../src/lib/drillDataModel.ts", import.meta.url), "utf8"),
     /pitchTheme\?: PitchThemeId/,

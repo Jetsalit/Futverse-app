@@ -7,6 +7,8 @@ import {
   normalizePitchTheme,
   normalizeTeamColors,
   resolveTacticLineStyle,
+  validatePitchBounds,
+  type PitchBounds,
 } from "../../lib/tacticBoardModel";
 import { normalizeDrillFieldType } from "../../lib/drillDataModel";
 import Konva from "konva";
@@ -27,25 +29,41 @@ function finiteNumber(value: unknown, fallback = 0): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+function legacyPitchBounds(width: number, height: number): PitchBounds {
+  const inset = width > 48 && height > 48 ? 24 : 0;
+  return {
+    pitchX: inset,
+    pitchY: inset,
+    pitchWidth: width - inset * 2,
+    pitchHeight: height - inset * 2,
+  };
+}
+
 function renderPitchMarkings(
   fieldType: "full" | "half" | "small",
   markings: string,
-  width: number,
-  height: number,
+  pitch: PitchBounds,
 ) {
-  const inset = 24;
-  const pitchWidth = width - inset * 2;
-  const pitchHeight = height - inset * 2;
-  const centerX = width / 2;
-  const centerY = height / 2;
+  const pitchLeft = pitch.pitchX;
+  const pitchTop = pitch.pitchY;
+  const pitchWidth = pitch.pitchWidth;
+  const pitchHeight = pitch.pitchHeight;
+  const pitchRight = pitchLeft + pitchWidth;
+  const pitchBottom = pitchTop + pitchHeight;
+  const centerX = pitchLeft + pitchWidth / 2;
+  const centerY = pitchTop + pitchHeight / 2;
   const strokeWidth = 2;
-  const halfPenaltyAreaTop = height - inset - pitchHeight * 0.314;
-  const halfPenaltyMarkY = height - inset - pitchHeight * 0.21;
+  const halfPenaltyAreaTop = pitchBottom - pitchHeight * 0.314;
+  const halfPenaltyMarkY = pitchBottom - pitchHeight * 0.21;
   const halfPenaltyArcRadius = pitchWidth * 0.1345;
-  const halfPenaltyArcInset = Math.sqrt(Math.max(
-    0,
-    halfPenaltyArcRadius ** 2 - (halfPenaltyAreaTop - halfPenaltyMarkY) ** 2,
-  ));
+  const normalizedHalfPenaltyArcOffset =
+    (halfPenaltyAreaTop - halfPenaltyMarkY) / halfPenaltyArcRadius;
+  const halfPenaltyArcInset = Number.isFinite(normalizedHalfPenaltyArcOffset) &&
+    Math.abs(normalizedHalfPenaltyArcOffset) < 1
+    ? halfPenaltyArcRadius * Math.sqrt(1 - normalizedHalfPenaltyArcOffset ** 2)
+    : 0;
+  const cornerRadiusX = pitchWidth * 0.028;
+  const cornerRadiusY = pitchHeight * 0.037;
 
   return (
     <g
@@ -55,47 +73,57 @@ function renderPitchMarkings(
       strokeLinejoin="round"
       data-pitch-markings="true"
     >
-      <rect x={inset} y={inset} width={pitchWidth} height={pitchHeight} />
+      <rect
+        x={pitchLeft}
+        y={pitchTop}
+        width={pitchWidth}
+        height={pitchHeight}
+        data-pitch-boundary="true"
+      />
       {fieldType === "full" ? (
         <>
-          <line x1={centerX} y1={inset} x2={centerX} y2={height - inset} />
+          <line x1={centerX} y1={pitchTop} x2={centerX} y2={pitchBottom} />
           <circle cx={centerX} cy={centerY} r={pitchHeight * 0.135} />
           <circle cx={centerX} cy={centerY} r={3} fill={markings} />
-          {[inset, width - inset - pitchWidth * 0.157].map((x) => (
+          {[pitchLeft, pitchRight - pitchWidth * 0.157].map((x) => (
             <g key={`penalty-${x}`}>
               <rect x={x} y={centerY - pitchHeight * 0.2965} width={pitchWidth * 0.157} height={pitchHeight * 0.593} />
               <rect x={x} y={centerY - pitchHeight * 0.1345} width={pitchWidth * 0.052} height={pitchHeight * 0.269} />
             </g>
           ))}
-          <circle cx={inset + pitchWidth * 0.104} cy={centerY} r={3} fill={markings} />
-          <circle cx={width - inset - pitchWidth * 0.104} cy={centerY} r={3} fill={markings} />
+          <circle cx={pitchLeft + pitchWidth * 0.104} cy={centerY} r={3} fill={markings} />
+          <circle cx={pitchRight - pitchWidth * 0.104} cy={centerY} r={3} fill={markings} />
+          <path
+            d={`M ${pitchLeft + cornerRadiusX} ${pitchTop} A ${cornerRadiusX} ${cornerRadiusY} 0 0 0 ${pitchLeft} ${pitchTop + cornerRadiusY} M ${pitchRight - cornerRadiusX} ${pitchTop} A ${cornerRadiusX} ${cornerRadiusY} 0 0 1 ${pitchRight} ${pitchTop + cornerRadiusY} M ${pitchLeft} ${pitchBottom - cornerRadiusY} A ${cornerRadiusX} ${cornerRadiusY} 0 0 0 ${pitchLeft + cornerRadiusX} ${pitchBottom} M ${pitchRight - cornerRadiusX} ${pitchBottom} A ${cornerRadiusX} ${cornerRadiusY} 0 0 0 ${pitchRight} ${pitchBottom - cornerRadiusY}`}
+            data-pitch-feature="corner-arcs"
+          />
         </>
       ) : fieldType === "half" ? (
         <>
           <line
-            x1={inset}
-            y1={inset}
-            x2={width - inset}
-            y2={inset}
+            x1={pitchLeft}
+            y1={pitchTop}
+            x2={pitchRight}
+            y2={pitchTop}
             data-pitch-feature="center-line"
           />
           <path
-            d={`M ${centerX - pitchWidth * 0.1345} ${inset} A ${pitchWidth * 0.1345} ${pitchWidth * 0.1345} 0 0 0 ${centerX + pitchWidth * 0.1345} ${inset}`}
+            d={`M ${centerX - pitchWidth * 0.1345} ${pitchTop} A ${pitchWidth * 0.1345} ${pitchWidth * 0.1345} 0 0 0 ${centerX + pitchWidth * 0.1345} ${pitchTop}`}
             data-pitch-feature="center-circle"
           />
           <circle
             cx={centerX}
-            cy={inset}
+            cy={pitchTop}
             r={3}
             fill={markings}
             data-pitch-feature="center-mark"
           />
           <path
-            d={`M ${centerX - pitchWidth * 0.2965} ${height - inset} v -${pitchHeight * 0.314} h ${pitchWidth * 0.593} v ${pitchHeight * 0.314}`}
+            d={`M ${centerX - pitchWidth * 0.2965} ${pitchBottom} v -${pitchHeight * 0.314} h ${pitchWidth * 0.593} v ${pitchHeight * 0.314}`}
             data-pitch-feature="penalty-area"
           />
           <path
-            d={`M ${centerX - pitchWidth * 0.1345} ${height - inset} v -${pitchHeight * 0.105} h ${pitchWidth * 0.269} v ${pitchHeight * 0.105}`}
+            d={`M ${centerX - pitchWidth * 0.1345} ${pitchBottom} v -${pitchHeight * 0.105} h ${pitchWidth * 0.269} v ${pitchHeight * 0.105}`}
             data-pitch-feature="goal-area"
           />
           <circle
@@ -110,7 +138,7 @@ function renderPitchMarkings(
             data-pitch-feature="penalty-arc"
           />
           <path
-            d={`M ${inset} ${height - inset - 16} A 16 16 0 0 1 ${inset + 16} ${height - inset} M ${width - inset - 16} ${height - inset} A 16 16 0 0 1 ${width - inset} ${height - inset - 16}`}
+            d={`M ${pitchLeft} ${pitchBottom - cornerRadiusY} A ${cornerRadiusX} ${cornerRadiusY} 0 0 1 ${pitchLeft + cornerRadiusX} ${pitchBottom} M ${pitchRight - cornerRadiusX} ${pitchBottom} A ${cornerRadiusX} ${cornerRadiusY} 0 0 1 ${pitchRight} ${pitchBottom - cornerRadiusY}`}
             data-pitch-feature="corner-arcs"
           />
         </>
@@ -282,8 +310,22 @@ export default function ReadOnlyTacticBoardCanvas({
   const pitchTheme = normalizePitchTheme(canvasData.pitchTheme);
   const teamColors = normalizeTeamColors(canvasData.teamColors);
   const pitchColors = PITCH_THEME_PRESETS[pitchTheme];
-  const width = 800;
-  const height = fieldType === "half" ? 615 : 520;
+  const storedWidth = finiteNumber(canvasData.stageWidth, Number.NaN);
+  const storedHeight = finiteNumber(canvasData.stageHeight, Number.NaN);
+  const hasStoredStageDimensions =
+    Number.isFinite(storedWidth) &&
+    storedWidth > 0 &&
+    Number.isFinite(storedHeight) &&
+    storedHeight > 0;
+  const width = hasStoredStageDimensions ? storedWidth : 800;
+  const height = hasStoredStageDimensions
+    ? storedHeight
+    : fieldType === "half"
+      ? 615
+      : 520;
+  const pitchBounds =
+    validatePitchBounds(storedWidth, storedHeight, canvasData) ??
+    legacyPitchBounds(width, height);
   const elements = Array.isArray(canvasData.elements) ? canvasData.elements : [];
   const lines = Array.isArray(canvasData.lines) ? canvasData.lines : [];
 
@@ -291,7 +333,7 @@ export default function ReadOnlyTacticBoardCanvas({
     <svg
       className="block h-auto w-full rounded-lg border border-slate-300 shadow-sm"
       viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="none"
+      preserveAspectRatio="xMidYMid meet"
       role="img"
       aria-label="Submitted tactic board"
       data-field-type={fieldType}
@@ -301,7 +343,7 @@ export default function ReadOnlyTacticBoardCanvas({
     >
       <title>Submitted tactic board</title>
       <rect x={0} y={0} width={width} height={height} fill={pitchColors.background} />
-      {renderPitchMarkings(fieldType, pitchColors.markings, width, height)}
+      {renderPitchMarkings(fieldType, pitchColors.markings, pitchBounds)}
       <g data-board-lines="true">{lines.map(renderLine)}</g>
       <g data-board-elements="true">{elements.map((element, index) => renderElement(element, index, teamColors))}</g>
     </svg>

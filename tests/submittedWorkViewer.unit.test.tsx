@@ -49,6 +49,25 @@ const boardCanvas = {
   ],
 } as const;
 
+function pitchBoundsForInset(inset: number) {
+  return {
+    pitchX: inset,
+    pitchY: inset,
+    pitchWidth: 600 - inset * 2,
+    pitchHeight: 462 - inset * 2,
+  };
+}
+
+function pitchBoundary(html: string): string {
+  const boundary = html.match(/<rect\b[^>]*data-pitch-boundary="true"[^>]*>/)?.[0];
+  assert.ok(boundary, "Expected rendered pitch boundary.");
+  return boundary;
+}
+
+function numericAttribute(tag: string, name: string): number {
+  return Number(attribute(tag, name));
+}
+
 async function renderLines(lines: readonly unknown[], fieldType = "half") {
   return renderSnapshot({
     details: { title: "Keeper transition", category: "Goalkeeping" },
@@ -178,6 +197,391 @@ test("rendersSubmittedBoardElementsAndLinesReadOnly", async () => {
   assert.match(html, /data-line-points="70,80 190,210"/);
   assert.match(html, /stroke="#fa00aa"/);
   assert.match(html, /stroke-dasharray="10 8"/);
+});
+
+test("readOnlyViewerUsesPersistedStageDimensions", async () => {
+  const html = await renderSnapshot({
+    details: { title: "Responsive half pitch", category: "Goalkeeping" },
+    visualType: "TACTIC_BOARD",
+    canvasData: {
+      ...boardCanvas,
+      stageWidth: 600,
+      stageHeight: 462,
+      elements: [],
+      lines: [],
+    },
+  });
+  const svg = html.match(/<svg\b[^>]*>/)?.[0] ?? "";
+
+  assert.equal(attribute(svg, "viewBox"), "0 0 600 462");
+  assert.equal(attribute(svg, "preserveAspectRatio"), "xMidYMid meet");
+  assert.match(html, /<rect x="24" y="24" width="552" height="414" data-pitch-boundary="true"(?:\/>|><\/rect>)/);
+});
+
+test("viewerUsesFractionalConvertedPitchBounds", async () => {
+  const pitchY = 16 * (462 / (600 / 1.3));
+  const pitchHeight = 462 - pitchY * 2;
+  const html = await renderSnapshot({
+    details: { title: "Mobile half pitch", category: "Goalkeeping" },
+    visualType: "TACTIC_BOARD",
+    canvasData: {
+      ...boardCanvas,
+      stageWidth: 600,
+      stageHeight: 462,
+      pitchX: 16,
+      pitchY,
+      pitchWidth: 568,
+      pitchHeight,
+      elements: [],
+      lines: [],
+    },
+  });
+  const svg = html.match(/<svg\b[^>]*>/)?.[0] ?? "";
+  const boundary = pitchBoundary(html);
+
+  assert.equal(attribute(svg, "viewBox"), "0 0 600 462");
+  assert.equal(numericAttribute(boundary, "x"), 16);
+  assert.equal(numericAttribute(boundary, "y"), pitchY);
+  assert.equal(numericAttribute(boundary, "width"), 568);
+  assert.equal(numericAttribute(boundary, "height"), pitchHeight);
+});
+
+test("viewerUsesPersisted24pxPitchBounds", async () => {
+  const html = await renderSnapshot({
+    details: { title: "Desktop half pitch", category: "Goalkeeping" },
+    visualType: "TACTIC_BOARD",
+    canvasData: {
+      ...boardCanvas,
+      stageWidth: 600,
+      stageHeight: 462,
+      ...pitchBoundsForInset(24),
+      elements: [],
+      lines: [],
+    },
+  });
+  const svg = html.match(/<svg\b[^>]*>/)?.[0] ?? "";
+  const boundary = pitchBoundary(html);
+
+  assert.equal(attribute(svg, "viewBox"), "0 0 600 462");
+  assert.deepEqual(
+    ["x", "y", "width", "height"].map((name) => numericAttribute(boundary, name)),
+    [24, 24, 552, 414],
+  );
+});
+
+test("viewerSupportsZeroPitchBounds", async () => {
+  const html = await renderSnapshot({
+    details: { title: "Zero inset pitch", category: "Goalkeeping" },
+    visualType: "TACTIC_BOARD",
+    canvasData: {
+      ...boardCanvas,
+      stageWidth: 600,
+      stageHeight: 462,
+      pitchX: 0,
+      pitchY: 0,
+      pitchWidth: 600,
+      pitchHeight: 462,
+      elements: [],
+      lines: [],
+    },
+  });
+
+  const boundary = pitchBoundary(html);
+  assert.deepEqual(
+    ["x", "y", "width", "height"].map((name) => numericAttribute(boundary, name)),
+    [0, 0, 600, 462],
+  );
+});
+
+test("viewerPreservesFractionalPitchBounds", async () => {
+  const html = await renderSnapshot({
+    details: { title: "Fractional inset pitch", category: "Goalkeeping" },
+    visualType: "TACTIC_BOARD",
+    canvasData: {
+      ...boardCanvas,
+      stageWidth: 600,
+      stageHeight: 462,
+      pitchX: 16.25,
+      pitchY: 16.5,
+      pitchWidth: 567.5,
+      pitchHeight: 429.25,
+      elements: [],
+      lines: [],
+    },
+  });
+
+  const boundary = pitchBoundary(html);
+  assert.deepEqual(
+    ["x", "y", "width", "height"].map((name) => numericAttribute(boundary, name)),
+    [16.25, 16.5, 567.5, 429.25],
+  );
+});
+
+test("invalidOversizedPitchBoundsFallBackSafely", async () => {
+  const html = await renderSnapshot({
+    details: { title: "Oversized pitch geometry", category: "Goalkeeping" },
+    visualType: "TACTIC_BOARD",
+    canvasData: {
+      ...boardCanvas,
+      stageWidth: 600,
+      stageHeight: 462,
+      pitchX: 300,
+      pitchY: 300,
+      pitchWidth: 300,
+      pitchHeight: 200,
+      elements: [],
+      lines: [],
+    },
+  });
+  const boundary = pitchBoundary(html);
+
+  assert.deepEqual(
+    ["x", "y", "width", "height"].map((name) => numericAttribute(boundary, name)),
+    [24, 24, 552, 414],
+  );
+});
+
+test("negativePitchDimensionsNeverRender", async () => {
+  const html = await renderSnapshot({
+    details: { title: "Negative pitch geometry", category: "Goalkeeping" },
+    visualType: "TACTIC_BOARD",
+    canvasData: {
+      ...boardCanvas,
+      stageWidth: 600,
+      stageHeight: 462,
+      pitchX: 300,
+      pitchY: 300,
+      pitchWidth: -1,
+      pitchHeight: -138,
+      elements: [],
+      lines: [],
+    },
+  });
+  const boundary = pitchBoundary(html);
+
+  assert.ok(numericAttribute(boundary, "width") > 0);
+  assert.ok(numericAttribute(boundary, "height") > 0);
+  assert.doesNotMatch(html, /<rect\b[^>]*\b(?:width|height)="-/);
+});
+
+test("finiteExtremePitchGeometryDoesNotOverflowMarkings", async () => {
+  const html = await renderSnapshot({
+    details: { title: "Large finite pitch", category: "Goalkeeping" },
+    visualType: "TACTIC_BOARD",
+    canvasData: {
+      ...boardCanvas,
+      stageWidth: 1e308,
+      stageHeight: 1e308,
+      pitchX: 0,
+      pitchY: 0,
+      pitchWidth: 1e308,
+      pitchHeight: 1e308,
+      elements: [],
+      lines: [],
+    },
+  });
+  const penaltyArc = html.match(/<path\b[^>]*data-pitch-feature="penalty-arc"[^>]*>/)?.[0] ?? "";
+
+  assert.notEqual(penaltyArc, "");
+  assert.doesNotMatch(attribute(penaltyArc, "d"), /NaN|Infinity/);
+});
+
+test("pitchBoundsCannotExtendBeyondStage", async () => {
+  const html = await renderSnapshot({
+    details: { title: "Out-of-stage pitch geometry", category: "Goalkeeping" },
+    visualType: "TACTIC_BOARD",
+    canvasData: {
+      ...boardCanvas,
+      stageWidth: 600,
+      stageHeight: 462,
+      pitchX: 500,
+      pitchY: 24,
+      pitchWidth: 101,
+      pitchHeight: 414,
+      elements: [],
+      lines: [],
+    },
+  });
+  const boundary = pitchBoundary(html);
+
+  assert.deepEqual(
+    ["x", "y", "width", "height"].map((name) => numericAttribute(boundary, name)),
+    [24, 24, 552, 414],
+  );
+});
+
+test("elementsRemainInOriginalStageCoordinates", async () => {
+  const renderElementAtBounds = (pitchBounds: ReturnType<typeof pitchBoundsForInset>) =>
+    renderSnapshot({
+      details: { title: "Inset does not move players", category: "Goalkeeping" },
+      visualType: "TACTIC_BOARD",
+      canvasData: {
+        ...boardCanvas,
+        stageWidth: 600,
+        stageHeight: 462,
+        ...pitchBounds,
+        elements: [{ id: "player-fixed", type: "red", x: 550, y: 400 }],
+        lines: [],
+      },
+    });
+  const mobileHtml = await renderElementAtBounds(pitchBoundsForInset(16));
+  const desktopHtml = await renderElementAtBounds(pitchBoundsForInset(24));
+  const mobilePlayer = mobileHtml.match(/<circle\b[^>]*data-element-id="player-fixed"[^>]*>/)?.[0] ?? "";
+  const desktopPlayer = desktopHtml.match(/<circle\b[^>]*data-element-id="player-fixed"[^>]*>/)?.[0] ?? "";
+
+  assert.equal(attribute(mobilePlayer, "cx"), "550");
+  assert.equal(attribute(mobilePlayer, "cy"), "400");
+  assert.equal(attribute(desktopPlayer, "cx"), "550");
+  assert.equal(attribute(desktopPlayer, "cy"), "400");
+});
+
+test("linesRemainInOriginalStageCoordinates", async () => {
+  const sourcePoints = "70,80 550,400";
+  const renderLineAtBounds = (pitchBounds: ReturnType<typeof pitchBoundsForInset>) =>
+    renderSnapshot({
+      details: { title: "Inset does not move lines", category: "Goalkeeping" },
+      visualType: "TACTIC_BOARD",
+      canvasData: {
+        ...boardCanvas,
+        stageWidth: 600,
+        stageHeight: 462,
+        ...pitchBounds,
+        elements: [],
+        lines: [{
+          id: "line-fixed",
+          points: [70, 80, 550, 400],
+          color: "#123456",
+          geometry: "straight",
+          arrowhead: "none",
+        }],
+      },
+    });
+  const mobileLine = lineMarkup(await renderLineAtBounds(pitchBoundsForInset(16)), "line-fixed");
+  const desktopLine = lineMarkup(await renderLineAtBounds(pitchBoundsForInset(24)), "line-fixed");
+  const mobilePath = mobileLine.match(/<path\b[^>]*>/)?.[0] ?? "";
+  const desktopPath = desktopLine.match(/<path\b[^>]*>/)?.[0] ?? "";
+
+  assert.equal(attribute(mobilePath, "data-line-points"), sourcePoints);
+  assert.equal(attribute(desktopPath, "data-line-points"), sourcePoints);
+});
+
+test("authorViewerGeometryParity", async () => {
+  for (const inset of [16, 24]) {
+    const html = await renderSnapshot({
+      details: { title: "Author/viewer parity", category: "Goalkeeping" },
+      visualType: "TACTIC_BOARD",
+      canvasData: {
+        ...boardCanvas,
+        stageWidth: 600,
+        stageHeight: 462,
+        ...pitchBoundsForInset(inset),
+        elements: [{ id: "parity-player", type: "red", x: 550, y: 400 }],
+        lines: [{
+          id: "parity-line",
+          points: [70, 80, 550, 400],
+          color: "#123456",
+          geometry: "straight",
+          arrowhead: "none",
+        }],
+      },
+    });
+    const svg = html.match(/<svg\b[^>]*>/)?.[0] ?? "";
+    const boundary = pitchBoundary(html);
+    const player = html.match(/<circle\b[^>]*data-element-id="parity-player"[^>]*>/)?.[0] ?? "";
+    const line = lineMarkup(html, "parity-line");
+    const linePath = line.match(/<path\b[^>]*>/)?.[0] ?? "";
+
+    assert.equal(attribute(svg, "viewBox"), "0 0 600 462");
+    assert.deepEqual(
+      ["x", "y", "width", "height"].map((name) => numericAttribute(boundary, name)),
+      inset === 16 ? [16, 16, 568, 430] : [24, 24, 552, 414],
+    );
+    assert.equal(attribute(player, "cx"), "550");
+    assert.equal(attribute(player, "cy"), "400");
+    assert.equal(attribute(linePath, "data-line-points"), "70,80 550,400");
+  }
+});
+
+test("halfPitch600WideDoesNotRenderInside800CoordinateSpace", async () => {
+  const html = await renderSnapshot({
+    details: { title: "Wide half pitch", category: "Goalkeeping" },
+    visualType: "TACTIC_BOARD",
+    canvasData: {
+      ...boardCanvas,
+      stageWidth: 600,
+      stageHeight: 462,
+      elements: [{ id: "near-right-edge", type: "red", x: 550, y: 231 }],
+      lines: [],
+    },
+  });
+  const svg = html.match(/<svg\b[^>]*>/)?.[0] ?? "";
+
+  assert.equal(attribute(svg, "viewBox"), "0 0 600 462");
+  assert.match(html, /data-element-id="near-right-edge"[^>]*cx="550"/);
+});
+
+test("fullPitchNarrowResponsiveBoardPreservesCoordinates", async () => {
+  const html = await renderSnapshot({
+    details: { title: "Responsive full pitch", category: "Goalkeeping" },
+    visualType: "TACTIC_BOARD",
+    canvasData: {
+      ...boardCanvas,
+      fieldType: "full",
+      stageWidth: 640,
+      stageHeight: 416,
+      elements: [],
+      lines: [{
+        id: "responsive-pass",
+        points: [64, 208, 576, 208],
+        color: "#123456",
+        geometry: "straight",
+        arrowhead: "none",
+      }],
+    },
+  });
+  const svg = html.match(/<svg\b[^>]*>/)?.[0] ?? "";
+  const line = lineMarkup(html, "responsive-pass");
+
+  assert.equal(attribute(svg, "viewBox"), "0 0 640 416");
+  assert.equal(attribute(svg, "preserveAspectRatio"), "xMidYMid meet");
+  assert.equal(attribute(line.match(/<path\b[^>]*>/)?.[0] ?? "", "data-line-points"), "64,208 576,208");
+});
+
+test("legacyCanvasWithoutPitchBoundsStillRenders", async () => {
+  const html = await renderSnapshot({
+    details: { title: "Legacy board", category: "Goalkeeping" },
+    visualType: "TACTIC_BOARD",
+    canvasData: boardCanvas,
+  });
+  const svg = html.match(/<svg\b[^>]*>/)?.[0] ?? "";
+
+  assert.equal(attribute(svg, "viewBox"), "0 0 800 615");
+  assert.equal(attribute(svg, "preserveAspectRatio"), "xMidYMid meet");
+  assert.match(html, /<rect x="24" y="24" width="752" height="567" data-pitch-boundary="true"(?:\/>|><\/rect>)/);
+  assert.match(html, /aria-label="Submitted tactic board"/);
+});
+
+test("malformedStageDimensionsFallBackToLegacyCoordinateSpace", async () => {
+  for (const dimensions of [
+    { stageWidth: 0, stageHeight: 462 },
+    { stageWidth: -1, stageHeight: 462 },
+    { stageWidth: Number.NaN, stageHeight: 462 },
+    { stageWidth: Number.POSITIVE_INFINITY, stageHeight: 462 },
+    { stageWidth: 600, stageHeight: 0 },
+    { stageWidth: 600, stageHeight: -1 },
+    { stageWidth: 600, stageHeight: Number.NaN },
+    { stageWidth: 600, stageHeight: Number.POSITIVE_INFINITY },
+    { stageWidth: 600 },
+  ]) {
+    const html = await renderSnapshot({
+      details: { title: "Malformed dimensions", category: "Goalkeeping" },
+      visualType: "TACTIC_BOARD",
+      canvasData: { ...boardCanvas, ...dimensions },
+    });
+    const svg = html.match(/<svg\b[^>]*>/)?.[0] ?? "";
+    assert.equal(attribute(svg, "viewBox"), "0 0 800 615");
+    assert.match(html, /aria-label="Submitted tactic board"/);
+  }
 });
 
 test("halfPitchViewerMatchesEditorGoalDirection", async () => {

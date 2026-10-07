@@ -56,6 +56,44 @@ test("buildsBoardSnapshotPreservingRawCanvasMap", () => {
   assert.deepEqual(snapshot.canvasData, canvasData);
 });
 
+test("snapshotPreservesStageDimensionsExactly", () => {
+  const canvasData = {
+    elements: [{ id: "edge-player", type: "red", x: 550, y: 231 }],
+    lines: [{ id: "pass", points: [64, 208, 576, 208] }],
+    fieldType: "full",
+    stageWidth: 640,
+    stageHeight: 416,
+  };
+  const snapshot = buildSnapshot({
+    title: "Responsive board",
+    category: "Goalkeeping",
+    canvas_data: canvasData,
+  });
+
+  assert.deepEqual(snapshot.canvasData, canvasData);
+});
+
+test("snapshotPreservesExactPitchBounds", () => {
+  const canvasData = {
+    elements: [{ id: "edge-player", type: "red", x: 550, y: 400 }],
+    lines: [{ id: "pass", points: [64, 208, 576, 208] }],
+    fieldType: "half",
+    stageWidth: 600,
+    stageHeight: 462,
+    pitchX: 16,
+    pitchY: 16.016,
+    pitchWidth: 568,
+    pitchHeight: 429.968,
+  };
+  const snapshot = buildSnapshot({
+    title: "Measured inset board",
+    category: "Goalkeeping",
+    canvas_data: canvasData,
+  });
+
+  assert.deepEqual(snapshot.canvasData, canvasData);
+});
+
 test("buildsBothSnapshotWithoutDroppingEitherVisual", () => {
   const canvasData = { elements: [{ id: "player-2" }], lines: [], fieldType: "small" };
   const previewImage = "data:image/jpeg;base64,paired-source-image";

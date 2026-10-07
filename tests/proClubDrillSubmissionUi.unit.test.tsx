@@ -21,7 +21,11 @@ function authority(staffRole: "GK_COACH" | "HEAD_COACH"): ProClubOrganizationAut
   };
 }
 
-function drill(id: string, createdBy: string) {
+function drill(
+  id: string,
+  createdBy: string,
+  provenance: Record<string, unknown> = {},
+) {
   return {
     id,
     title: `Submitted ${id}`,
@@ -29,6 +33,7 @@ function drill(id: string, createdBy: string) {
     created_by: createdBy,
     organizationType: "PRO_CLUB" as const,
     organizationId: "club-a",
+    ...provenance,
     is_shared: false,
     canvas_data: {
       fieldType: "half",
@@ -36,6 +41,18 @@ function drill(id: string, createdBy: string) {
       lines: [],
     },
   };
+}
+
+function sendWorkButtonForDrill(container: HTMLElement, drillId: string) {
+  const card = [...container.querySelectorAll("article")].find((candidate) =>
+    candidate.textContent?.includes(`Submitted ${drillId}`),
+  );
+  assert.ok(card, `Missing drill card: ${drillId}`);
+  const button = [...card.querySelectorAll("button")].find((candidate) =>
+    candidate.textContent?.includes("Send Work"),
+  );
+  assert.ok(button, `Missing Send Work button for: ${drillId}`);
+  return { card, button };
 }
 
 function submission(
@@ -306,6 +323,56 @@ test("Pro Club drill submission UI retains the selected drill and review control
       );
       await runtime.click("Send Work");
       assert.equal(created.at(-1)?.sourceDrillId, "drill-head-exact");
+    });
+
+    await t.test("gkWorkspaceUsesSubmissionEligibility", async () => {
+      myDrills = [
+        drill("gk-eligible", "gk-1"),
+        drill("gk-legacy", "gk-1", { organizationType: undefined, organizationId: undefined }),
+        drill("gk-other-club", "gk-1", { organizationId: "club-b" }),
+        drill("gk-academy", "gk-1", { organizationType: "ACADEMY" }),
+        drill("gk-missing-type", "gk-1", { organizationType: undefined }),
+        drill("gk-missing-id", "gk-1", { organizationId: undefined }),
+      ];
+      await runtime.render(<GKWorkspace authority={authority("GK_COACH")} />);
+
+      assert.equal(sendWorkButtonForDrill(runtime.container, "gk-eligible").button.disabled, false);
+      for (const id of ["gk-legacy", "gk-other-club", "gk-academy", "gk-missing-type", "gk-missing-id"]) {
+        assert.equal(sendWorkButtonForDrill(runtime.container, id).button.disabled, true, id);
+      }
+    });
+
+    await t.test("headCoachPickerUsesSubmissionEligibility", async () => {
+      myDrills = [
+        drill("head-eligible", "head-1"),
+        drill("head-legacy", "head-1", { organizationType: undefined, organizationId: undefined }),
+        drill("head-other-club", "head-1", { organizationId: "club-b" }),
+      ];
+      await runtime.render(
+        <DrillPicker authority={authority("HEAD_COACH")} onClose={() => {}} onSelectDrill={() => {}} />,
+      );
+
+      assert.equal(sendWorkButtonForDrill(runtime.container, "head-eligible").button.disabled, false);
+      assert.equal(sendWorkButtonForDrill(runtime.container, "head-legacy").button.disabled, true);
+      assert.equal(sendWorkButtonForDrill(runtime.container, "head-other-club").button.disabled, true);
+    });
+
+    await t.test("ineligibleButtonIsDisabledWithExplanation", async () => {
+      myDrills = [drill("gk-legacy-only", "gk-1", { organizationType: undefined, organizationId: undefined })];
+      await runtime.render(<GKWorkspace authority={authority("GK_COACH")} />);
+
+      const { card, button } = sendWorkButtonForDrill(runtime.container, "gk-legacy-only");
+      assert.equal(button.disabled, true);
+      assert.match(card.textContent ?? "", /Only drills created in this Pro Club can be sent\./);
+      const describedBy = button.getAttribute("aria-describedby");
+      assert.ok(describedBy);
+      assert.equal(
+        runtime.container.querySelector(`#${describedBy}`)?.textContent,
+        "Only drills created in this Pro Club can be sent.",
+      );
+      const previousCount = created.length;
+      await runtime.click("Send Work");
+      assert.equal(created.length, previousCount);
     });
 
     await t.test("showsEffectiveSubmittedStatusWithoutReviewDoc", async () => {

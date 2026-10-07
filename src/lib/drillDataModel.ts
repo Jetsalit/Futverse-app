@@ -2,6 +2,7 @@ import {
   DEFAULT_TEAM_COLORS,
   normalizePitchTheme,
   normalizeTeamColors,
+  validatePitchBounds,
   type PitchThemeId,
   type TeamColors,
 } from "./tacticBoardModel";
@@ -14,6 +15,12 @@ export interface DrillCanvasData {
   fieldType: DrillFieldType;
   teamColors?: TeamColors;
   pitchTheme?: PitchThemeId;
+  stageWidth?: number;
+  stageHeight?: number;
+  pitchX?: number;
+  pitchY?: number;
+  pitchWidth?: number;
+  pitchHeight?: number;
 }
 
 export interface Drill {
@@ -59,6 +66,9 @@ export function normalizeDrillCanvasData(
   }
 
   const raw = value as Record<string, unknown>;
+  const stageWidth = normalizeStageDimension(raw.stageWidth);
+  const stageHeight = normalizeStageDimension(raw.stageHeight);
+  const pitchBounds = validatePitchBounds(stageWidth, stageHeight, raw);
 
   return {
     elements: Array.isArray(raw.elements) ? raw.elements : [],
@@ -66,7 +76,16 @@ export function normalizeDrillCanvasData(
     fieldType: normalizeDrillFieldType(raw.fieldType),
     teamColors: normalizeTeamColors(raw.teamColors ?? DEFAULT_TEAM_COLORS),
     pitchTheme: normalizePitchTheme(raw.pitchTheme),
+    ...(stageWidth !== undefined ? { stageWidth } : {}),
+    ...(stageHeight !== undefined ? { stageHeight } : {}),
+    ...(pitchBounds ?? {}),
   };
+}
+
+function normalizeStageDimension(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : undefined;
 }
 
 export function normalizeDrillRecord(

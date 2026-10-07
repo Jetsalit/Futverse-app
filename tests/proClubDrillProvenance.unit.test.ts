@@ -9,6 +9,7 @@ const provenanceModule = await import("../src/lib/proClubDrillProvenance").catch
 ) as
   | {
       resolveProClubDrillProvenance?: (authority: unknown) => unknown;
+      isProClubDrillSubmissionEligible?: (drill: unknown, clubId: string) => boolean;
     }
   | undefined;
 
@@ -19,6 +20,15 @@ function resolveProvenance(authority: unknown): unknown {
     "the current-authority provenance resolver must exist",
   );
   return provenanceModule.resolveProClubDrillProvenance!(authority);
+}
+
+function isEligibleForSubmission(drill: unknown, clubId = "club-lampang"): boolean {
+  assert.equal(
+    typeof provenanceModule?.isProClubDrillSubmissionEligible,
+    "function",
+    "the Pro Club source eligibility helper must exist",
+  );
+  return provenanceModule.isProClubDrillSubmissionEligible!(drill, clubId);
 }
 
 function authority(overrides: Record<string, unknown> = {}) {
@@ -64,6 +74,44 @@ test("rejectsInactiveWrongTenantAndOtherStaffRoles", () => {
   ]) {
     assert.equal(resolveProvenance(invalid), null);
   }
+});
+
+test("currentClubProvenancedDrillCanSend", () => {
+  assert.equal(
+    isEligibleForSubmission({
+      organizationType: "PRO_CLUB",
+      organizationId: "club-lampang",
+    }),
+    true,
+  );
+});
+
+test("legacyDrillCannotSend", () => {
+  assert.equal(isEligibleForSubmission({}), false);
+});
+
+test("differentProClubDrillCannotSend", () => {
+  assert.equal(
+    isEligibleForSubmission({
+      organizationType: "PRO_CLUB",
+      organizationId: "club-other",
+    }),
+    false,
+  );
+});
+
+test("missingOrganizationTypeCannotSend", () => {
+  assert.equal(
+    isEligibleForSubmission({ organizationId: "club-lampang" }),
+    false,
+  );
+});
+
+test("missingOrganizationIdCannotSend", () => {
+  assert.equal(
+    isEligibleForSubmission({ organizationType: "PRO_CLUB" }),
+    false,
+  );
 });
 
 test("preservesProvenanceOnEdit", () => {

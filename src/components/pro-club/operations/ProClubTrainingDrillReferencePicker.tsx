@@ -150,7 +150,7 @@ export default function ProClubTrainingDrillReferencePicker({
                 </button>
                 <ProClubDrillSubmissionSendButton
                   organizationId={authority.organizationId}
-                  sourceDrillId={drill.id}
+                  sourceDrill={drill}
                 />
                 <button
                   type="button"
