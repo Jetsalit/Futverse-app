@@ -69,6 +69,119 @@ export function normalizePitchTheme(value: unknown): PitchThemeId {
     : "white";
 }
 
+export interface TacticBoardRenderBounds {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+export interface PitchBounds {
+  pitchX: number;
+  pitchY: number;
+  pitchWidth: number;
+  pitchHeight: number;
+}
+
+const PITCH_BOUNDS_EPSILON = 1e-6;
+
+export function validatePitchBounds(
+  stageWidth: unknown,
+  stageHeight: unknown,
+  value: unknown,
+): PitchBounds | undefined {
+  if (
+    typeof stageWidth !== "number" ||
+    !Number.isFinite(stageWidth) ||
+    stageWidth <= 0 ||
+    typeof stageHeight !== "number" ||
+    !Number.isFinite(stageHeight) ||
+    stageHeight <= 0 ||
+    value === null ||
+    typeof value !== "object" ||
+    Array.isArray(value)
+  ) {
+    return undefined;
+  }
+
+  const raw = value as Record<string, unknown>;
+  const { pitchX, pitchY, pitchWidth, pitchHeight } = raw;
+  if (
+    typeof pitchX !== "number" ||
+    !Number.isFinite(pitchX) ||
+    pitchX < 0 ||
+    pitchX >= stageWidth ||
+    typeof pitchY !== "number" ||
+    !Number.isFinite(pitchY) ||
+    pitchY < 0 ||
+    pitchY >= stageHeight ||
+    typeof pitchWidth !== "number" ||
+    !Number.isFinite(pitchWidth) ||
+    pitchWidth <= PITCH_BOUNDS_EPSILON ||
+    typeof pitchHeight !== "number" ||
+    !Number.isFinite(pitchHeight) ||
+    pitchHeight <= PITCH_BOUNDS_EPSILON ||
+    pitchX + pitchWidth > stageWidth + PITCH_BOUNDS_EPSILON ||
+    pitchY + pitchHeight > stageHeight + PITCH_BOUNDS_EPSILON
+  ) {
+    return undefined;
+  }
+
+  return { pitchX, pitchY, pitchWidth, pitchHeight };
+}
+
+export function resolvePitchBoundsFromRenderedGeometry(
+  stageWidth: number,
+  stageHeight: number,
+  containerBounds: TacticBoardRenderBounds | null | undefined,
+  pitchMarkingsBounds: TacticBoardRenderBounds | null | undefined,
+): PitchBounds | undefined {
+  if (
+    !containerBounds ||
+    !pitchMarkingsBounds ||
+    !Number.isFinite(stageWidth) ||
+    !Number.isFinite(stageHeight) ||
+    stageWidth <= 0 ||
+    stageHeight <= 0 ||
+    !Number.isFinite(containerBounds.left) ||
+    !Number.isFinite(containerBounds.top) ||
+    !Number.isFinite(containerBounds.width) ||
+    !Number.isFinite(containerBounds.height) ||
+    containerBounds.width <= 0 ||
+    containerBounds.height <= 0 ||
+    !Number.isFinite(pitchMarkingsBounds.left) ||
+    !Number.isFinite(pitchMarkingsBounds.top) ||
+    !Number.isFinite(pitchMarkingsBounds.width) ||
+    !Number.isFinite(pitchMarkingsBounds.height) ||
+    pitchMarkingsBounds.width <= 0 ||
+    pitchMarkingsBounds.height <= 0
+  ) {
+    return undefined;
+  }
+
+  const scaleX = stageWidth / containerBounds.width;
+  const scaleY = stageHeight / containerBounds.height;
+  const leftCss = pitchMarkingsBounds.left - containerBounds.left;
+  const topCss = pitchMarkingsBounds.top - containerBounds.top;
+  const rightCss =
+    containerBounds.left + containerBounds.width -
+    pitchMarkingsBounds.left - pitchMarkingsBounds.width;
+  const bottomCss =
+    containerBounds.top + containerBounds.height -
+    pitchMarkingsBounds.top - pitchMarkingsBounds.height;
+  const pitchX = leftCss * scaleX;
+  const pitchY = topCss * scaleY;
+  const pitchRight = rightCss * scaleX;
+  const pitchBottom = bottomCss * scaleY;
+
+  return validatePitchBounds(stageWidth, stageHeight, {
+    pitchX,
+    pitchY,
+    pitchWidth: stageWidth - pitchX - pitchRight,
+    pitchHeight: stageHeight - pitchY - pitchBottom,
+  });
+}
+
 export function getContrastColor(color: string): "#0f172a" | "#f8fafc" {
   const match = /^#([\da-f]{6})$/i.exec(color);
   if (!match) return "#0f172a";
@@ -89,6 +202,8 @@ export type TacticLineGeometry =
 export type TacticLineStroke = "solid" | "dashed";
 export type TacticArrowhead = "none" | "end";
 export type CurveDirection = "left" | "right";
+
+export const HALF_PITCH_GOAL_SIDE = "bottom" as const;
 
 export interface TacticLineStyle {
   geometry: TacticLineGeometry;

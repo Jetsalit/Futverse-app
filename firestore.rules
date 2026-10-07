@@ -1565,6 +1565,26 @@ service cloud.firestore {
       allow read, update, delete: if false;
     }
     match /drills/{drillId} {
+      function proClubDrillAuthorCanCreateV1(data) {
+        let clubId = data.get('organizationId', '');
+        let clubPath = /databases/$(database)/documents/proClubs/$(clubId);
+        let membershipPath = /databases/$(database)/documents/proClubs/$(clubId)/members/$(request.auth.uid);
+        let staffPath = /databases/$(database)/documents/proClubs/$(clubId)/staff/$(request.auth.uid);
+        return isSignedIn() && currentUserIsActive()
+          && data.get('organizationType', '') == 'PRO_CLUB'
+          && exactDocumentId(clubId) && data.get('created_by', '') == request.auth.uid
+          && exists(clubPath) && get(clubPath).data.get('status', '') == 'ACTIVE'
+          && exists(membershipPath) && get(membershipPath).data.get('status', '') == 'ACTIVE'
+          && exists(staffPath) && get(staffPath).data.get('status', '') == 'ACTIVE'
+          && get(staffPath).data.get('staffRole', '') in ['HEAD_COACH', 'GK_COACH'];
+      }
+      function proClubDrillProvenanceUnchangedV1(previous, next) {
+        return previous.get('organizationType', '') == 'PRO_CLUB'
+          ? next.get('organizationType', '') == 'PRO_CLUB'
+            && next.get('organizationId', null) == previous.get('organizationId', null)
+            && next.get('created_by', '') == previous.get('created_by', '')
+          : next.get('organizationType', '') != 'PRO_CLUB';
+      }
       allow read: if isSignedIn();
 
       allow create: if isSignedIn()
@@ -1579,12 +1599,17 @@ service cloud.firestore {
               /databases/$(database)/documents/users/$(request.resource.data.get('created_by', ''))
             ).data.get('status', '') in ['Active', 'ACTIVE']
           )
+        )
+        && (
+          request.resource.data.get('organizationType', '') != 'PRO_CLUB'
+          || proClubDrillAuthorCanCreateV1(request.resource.data)
         );
 
       allow update: if isSignedIn()
         && hasNoStoredDocumentId()
         && request.resource.data.get('created_by', '') ==
            resource.data.get('created_by', '')
+        && proClubDrillProvenanceUnchangedV1(resource.data, request.resource.data)
         && (
           resource.data.get('created_by', '') == request.auth.uid
           || isSuperAdmin()
@@ -5430,8 +5455,157 @@ match /proClubs/{clubId}/weeklyTrainingPlans/{planId} {
         allow update, delete: if false;
       }
 
-      // Pro Club Staff Submissions V1 — no delete; technical approval remains
-      // bound to technicalGovernance/current rather than OWNER/ADMIN membership.
+      function proClubDrillActorActiveV1(clubId) {
+        return isSignedIn() && exactDocumentId(clubId) && currentUserIsActive()
+          && get(/databases/$(database)/documents/proClubs/$(clubId)).data.get('status', '') == 'ACTIVE'
+          && get(/databases/$(database)/documents/proClubs/$(clubId)/members/$(request.auth.uid)).data.get('status', '') == 'ACTIVE'
+          && get(/databases/$(database)/documents/proClubs/$(clubId)/staff/$(request.auth.uid)).data.get('status', '') == 'ACTIVE';
+      }
+      function drillAuthorV1(clubId) {
+        return proClubDrillActorActiveV1(clubId)
+          && get(/databases/$(database)/documents/proClubs/$(clubId)/staff/$(request.auth.uid)).data.get('staffRole', '') in ['HEAD_COACH', 'GK_COACH'];
+      }
+      function technicalAuthorityV1(clubId) {
+        let staff = get(/databases/$(database)/documents/proClubs/$(clubId)/staff/$(request.auth.uid)).data;
+        let authority = get(/databases/$(database)/documents/proClubs/$(clubId)/technicalGovernance/current).data;
+        return proClubDrillActorActiveV1(clubId)
+          && authority.get('schemaVersion', 0) == 1 && authority.get('status', '') == 'ACTIVE'
+          && authority.get('authorityUid', '') == request.auth.uid
+          && authority.get('authorityRole', '') in ['TECHNICAL_DIRECTOR', 'HEAD_COACH']
+          && staff.get('staffRole', '') == authority.get('authorityRole', '');
+      }
+      function technicalRoleV1(clubId) {
+        return get(/databases/$(database)/documents/proClubs/$(clubId)/technicalGovernance/current).data.get('authorityRole', '');
+      }
+      match /drillSubmissions/{submissionId} {
+        function submissionKeysValidV1(data) {
+          return data.keys().hasAll(['schemaVersion', 'organizationType', 'organizationId', 'sourceDrillId', 'sourceCreatorUid', 'sourceCreatorRoleAtSubmission', 'submittedBy', 'submittedAt', 'snapshot'])
+            && data.keys().size() == 9;
+        }
+        function submissionDetailMatchesSourceV1(details, source, field) {
+          return source.keys().hasAny([field]) == details.keys().hasAny([field])
+            && (!source.keys().hasAny([field])
+              || source.get(field, null) is string && details.get(field, null) == source.get(field, null));
+        }
+        function submissionDetailsMatchSourceV1(details, source) {
+          return submissionDetailMatchesSourceV1(details, source, 'title')
+            && submissionDetailMatchesSourceV1(details, source, 'category')
+            && submissionDetailMatchesSourceV1(details, source, 'duration')
+            && submissionDetailMatchesSourceV1(details, source, 'ageGroup')
+            && submissionDetailMatchesSourceV1(details, source, 'phase')
+            && submissionDetailMatchesSourceV1(details, source, 'trainingMethod')
+            && submissionDetailMatchesSourceV1(details, source, 'coachingPoints')
+            && submissionDetailMatchesSourceV1(details, source, 'description')
+            && submissionDetailMatchesSourceV1(details, source, 'date');
+        }
+        function submissionVisualMatchesSourceV1(snapshot, source) {
+          let sourceCanvas = source.get('canvas_data', null);
+          let sourceImage = source.get('previewImage', null);
+          let hasCanvas = sourceCanvas is map;
+          let hasImage = sourceImage is string && sourceImage.size() > 0;
+          let snapshotHasCanvas = snapshot.keys().hasAny(['canvasData']);
+          let snapshotHasImage = snapshot.keys().hasAny(['previewImage']);
+          return (sourceCanvas == null || hasCanvas) && (sourceImage == null || sourceImage is string)
+            && snapshotHasCanvas == hasCanvas && snapshotHasImage == hasImage
+            && (!hasCanvas || snapshot.get('canvasData', null) == sourceCanvas)
+            && (!hasImage || snapshot.get('previewImage', null) == sourceImage)
+            && (hasCanvas || hasImage)
+            && snapshot.get('visualType', '') == (hasCanvas && hasImage ? 'BOTH' : hasCanvas ? 'TACTIC_BOARD' : 'UPLOADED_IMAGE');
+        }
+        function submissionSnapshotMatchesSourceV1(snapshot, source) {
+          let details = snapshot.get('details', null);
+          return snapshot is map && snapshot.keys().hasAll(['details', 'visualType'])
+            && snapshot.keys().hasOnly(['details', 'visualType', 'canvasData', 'previewImage'])
+            && details is map && details.keys().hasAll(['title', 'category'])
+            && details.keys().hasOnly(['title', 'category', 'duration', 'ageGroup', 'phase', 'trainingMethod', 'coachingPoints', 'description', 'date'])
+            && details.get('title', '') is string && details.get('category', '') is string
+            && submissionDetailsMatchSourceV1(details, source)
+            && submissionVisualMatchesSourceV1(snapshot, source);
+        }
+        function submissionCreateValidV1(data) {
+          let sourceId = data.get('sourceDrillId', '');
+          let sourcePath = /databases/$(database)/documents/drills/$(sourceId);
+          let source = get(sourcePath).data;
+          let snapshot = data.get('snapshot', null);
+          return drillAuthorV1(clubId) && exactDocumentId(submissionId)
+            && submissionKeysValidV1(data)
+            && data.get('schemaVersion', 0) == 1 && data.get('organizationType', '') == 'PRO_CLUB'
+            && data.get('organizationId', '') == clubId && exactDocumentId(sourceId)
+            && data.get('sourceCreatorUid', '') == request.auth.uid
+            && data.get('submittedBy', '') == request.auth.uid
+            && data.get('sourceCreatorRoleAtSubmission', '')
+              == get(/databases/$(database)/documents/proClubs/$(clubId)/staff/$(request.auth.uid)).data.get('staffRole', '')
+            && data.get('submittedAt', null) == request.time && exists(sourcePath)
+            && source.get('created_by', '') == request.auth.uid
+            && source.get('organizationType', '') == 'PRO_CLUB'
+            && source.get('organizationId', '') == clubId
+            && submissionSnapshotMatchesSourceV1(snapshot, source);
+        }
+        function submissionCanReadV1(data) {
+          return drillAuthorV1(clubId) && data.get('submittedBy', '') == request.auth.uid
+            || technicalAuthorityV1(clubId);
+        }
+        allow get: if exactDocumentId(submissionId) && submissionCanReadV1(resource.data);
+        allow list: if submissionCanReadV1(resource.data);
+        allow create: if exactDocumentId(submissionId) && submissionCreateValidV1(request.resource.data);
+        allow update, delete: if false;
+      }
+      match /drillSubmissionReviews/{submissionId} {
+        function reviewKeysValidV1(data) {
+          return data.keys().hasAll(['schemaVersion', 'submissionId', 'status', 'reviewerUid', 'reviewerRole', 'reviewNote', 'reviewStartedAt', 'reviewStartedBy', 'revisionRequestedAt', 'revisionRequestedBy', 'approvedAt', 'approvedBy', 'updatedAt', 'updatedBy'])
+            && data.keys().size() == 14;
+        }
+        function reviewCanDecideV1(previous) {
+          let submissionPath = /databases/$(database)/documents/proClubs/$(clubId)/drillSubmissions/$(submissionId);
+          return technicalAuthorityV1(clubId)
+            && previous.get('schemaVersion', 0) == 1 && previous.get('submissionId', '') == submissionId
+            && previous.get('reviewerUid', '') == request.auth.uid
+            && previous.get('reviewerRole', '') == technicalRoleV1(clubId)
+            && exists(submissionPath) && get(submissionPath).data.get('submittedBy', '') != request.auth.uid;
+        }
+        function reviewCreateValidV1(data) {
+          let submissionPath = /databases/$(database)/documents/proClubs/$(clubId)/drillSubmissions/$(submissionId);
+          return technicalAuthorityV1(clubId) && reviewKeysValidV1(data)
+            && exactDocumentId(submissionId) && data.get('schemaVersion', 0) == 1
+            && data.get('submissionId', '') == submissionId && data.get('status', '') == 'IN_REVIEW'
+            && data.get('reviewerUid', '') == request.auth.uid
+            && data.get('reviewerRole', '') == technicalRoleV1(clubId)
+            && data.get('reviewNote', null) == null && data.get('reviewStartedAt', null) == request.time
+            && data.get('reviewStartedBy', '') == request.auth.uid
+            && data.get('revisionRequestedAt', null) == null && data.get('revisionRequestedBy', null) == null
+            && data.get('approvedAt', null) == null && data.get('approvedBy', null) == null
+            && data.get('updatedAt', null) == request.time && data.get('updatedBy', '') == request.auth.uid
+            && exists(submissionPath) && get(submissionPath).data.get('submittedBy', '') != request.auth.uid;
+        }
+        function reviewUpdateValidV1(data, previous) {
+          let status = data.get('status', '');
+          return reviewCanDecideV1(previous) && reviewKeysValidV1(data)
+            && previous.get('status', '') == 'IN_REVIEW'
+            && data.get('reviewNote', null) is string && data.get('reviewNote', '').size() > 0
+            && data.get('reviewNote', '').size() <= 2000
+            && data.get('reviewNote', '').trim() == data.get('reviewNote', '')
+            && data.get('updatedAt', null) == request.time && data.get('updatedBy', '') == request.auth.uid
+            && (status == 'NEEDS_REVISION'
+              && data.diff(previous).affectedKeys().hasOnly(['status', 'reviewNote', 'revisionRequestedAt', 'revisionRequestedBy', 'updatedAt', 'updatedBy'])
+              && data.get('revisionRequestedAt', null) == request.time
+              && data.get('revisionRequestedBy', '') == request.auth.uid
+              || status == 'APPROVED'
+              && data.diff(previous).affectedKeys().hasOnly(['status', 'reviewNote', 'approvedAt', 'approvedBy', 'updatedAt', 'updatedBy'])
+              && data.get('approvedAt', null) == request.time
+              && data.get('approvedBy', '') == request.auth.uid);
+        }
+        function reviewCanReadV1() {
+          return technicalAuthorityV1(clubId)
+            || drillAuthorV1(clubId)
+              && get(/databases/$(database)/documents/proClubs/$(clubId)/drillSubmissions/$(submissionId)).data.get('submittedBy', '') == request.auth.uid;
+        }
+        allow get: if exactDocumentId(submissionId) && reviewCanReadV1();
+        allow list: if false;
+        allow create: if reviewCreateValidV1(request.resource.data);
+        allow update: if exactDocumentId(submissionId)
+          && reviewUpdateValidV1(request.resource.data, resource.data);
+        allow delete: if false;
+      }
       match /staffSubmissions/{submissionId} {
         function proClubStaffSubmissionActiveAuthorV1(clubId) {
           let clubPath =

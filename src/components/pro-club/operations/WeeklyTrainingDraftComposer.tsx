@@ -5,6 +5,7 @@ import {
   PRO_CLUB_WEEKLY_TRAINING_FRESH_DRAFT_PRODUCTION_AVAILABLE,
 } from "../../../config/runtimeCapabilities";
 import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
+import { useDrillDatabase } from "../../../hooks/useDrillDatabase";
 import { formatThaiDateLong, formatThaiTime } from "../../../lib/thaiDateTimePresentation";
 import { FutVerseThaiDateInput, FutVerseThaiTimeInput } from "../../common/FutVerseThaiDateTimeInputs";
 import {
@@ -26,6 +27,7 @@ import {
   proClubTrainingUtf8ByteLength,
 } from "../../../lib/proClubWeeklyTrainingStorageBounds";
 import ProClubTrainingDrillReferencePicker from "./ProClubTrainingDrillReferencePicker";
+import ProClubDrillSubmissionSendButton from "./ProClubDrillSubmissionSendButton";
 import {
   MAX_WEEKLY_TRAINING_BLOCKS_PER_SESSION,
   MAX_WEEKLY_TRAINING_SESSIONS,
@@ -76,6 +78,23 @@ function freshDraft(): ProClubWeeklyTrainingFreshDraftInput {
     mainObjective: "",
     sessions: [createEmptyTrainingSession()],
   };
+}
+
+function LinkedDrillSubmissionAction({
+  authority,
+  sourceDrillId,
+}: {
+  authority: ProClubOrganizationAuthority;
+  sourceDrillId: string;
+}) {
+  const { drills } = useDrillDatabase();
+
+  return (
+    <ProClubDrillSubmissionSendButton
+      organizationId={authority.organizationId}
+      sourceDrill={drills.find((drill) => drill.id === sourceDrillId)}
+    />
+  );
 }
 
 export function canUseWeeklyTrainingDraftSave(
@@ -339,12 +358,19 @@ export default function WeeklyTrainingDraftComposer({
                         Design in Tactic Board
                       </button>
                       {block.drillReference && (
-                        <span className="text-xs text-emerald-300">Linked drill: {block.drillReference}</span>
+                        <>
+                          <span className="text-xs text-emerald-300">Linked drill: {block.drillReference}</span>
+                          <LinkedDrillSubmissionAction
+                            authority={authority}
+                            sourceDrillId={block.drillReference}
+                          />
+                        </>
                       )}
                     </div>
                     {drillPickerTarget?.sessionIndex === sessionIndex && drillPickerTarget.blockIndex === blockIndex && (
                       <div className="lg:col-span-3">
                         <ProClubTrainingDrillReferencePicker
+                          authority={authority}
                           onClose={() => setDrillPickerTarget(null)}
                           onSelectDrill={(drill) => {
                             const currentSession = draft.sessions[sessionIndex];

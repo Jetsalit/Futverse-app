@@ -1,12 +1,16 @@
 import { useMemo, useState } from "react";
-import { ArrowLeft, Edit2, Plus, RefreshCw, Search, X } from "lucide-react";
+import { ArrowLeft, Plus, RefreshCw, Search, X } from "lucide-react";
+import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClubOrganizationAdapter";
 import TacticBoard from "../../TacticBoard";
 import { useDrillDatabase, type Drill } from "../../../hooks/useDrillDatabase";
+import ProClubDrillSubmissionSendButton from "./ProClubDrillSubmissionSendButton";
 
 export default function ProClubTrainingDrillReferencePicker({
+  authority,
   onClose,
   onSelectDrill,
 }: {
+  authority: ProClubOrganizationAuthority;
   onClose: () => void;
   onSelectDrill: (drill: Drill) => void;
 }) {
@@ -62,6 +66,7 @@ export default function ProClubTrainingDrillReferencePicker({
             editingDrill={editingDrill}
             contextLabel="Weekly Training"
             backButtonLabel="Back to Weekly Training"
+            proClubAuthoringAuthority={authority}
             presentation="pro-club"
           />
         </div>
@@ -134,22 +139,27 @@ export default function ProClubTrainingDrillReferencePicker({
                   <p className="mt-1 text-xs font-bold uppercase tracking-[0.1em] text-cyan-300">{drill.category}</p>
                   <p className="mt-2 break-all text-[11px] text-slate-500">Drill ID: {drill.id}</p>
                 </div>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => openEdit(drill)}
-                  className="shrink-0 rounded-lg border border-slate-700 p-2 text-slate-400 hover:text-white"
-                  aria-label={`Edit ${drill.title} in Tactic Board`}
+                  className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-bold text-slate-200 hover:bg-slate-800"
                 >
-                  <Edit2 size={15} />
+                  Open Drill
+                </button>
+                <ProClubDrillSubmissionSendButton
+                  organizationId={authority.organizationId}
+                  sourceDrill={drill}
+                />
+                <button
+                  type="button"
+                  onClick={() => onSelectDrill(drill)}
+                  className="rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-3 py-2 text-sm font-black text-cyan-100 hover:bg-cyan-400/20"
+                >
+                  Use this drill in block
                 </button>
               </div>
-              <button
-                type="button"
-                onClick={() => onSelectDrill(drill)}
-                className="mt-4 w-full rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-3 py-2 text-sm font-black text-cyan-100 hover:bg-cyan-400/20"
-              >
-                Use this drill in block
-              </button>
             </article>
           ))}
         </div>
