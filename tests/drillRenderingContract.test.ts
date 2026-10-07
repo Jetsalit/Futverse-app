@@ -12,6 +12,15 @@ const detailSource = readFileSync(
   "utf8",
 );
 
+const tacticBoardSource = readFileSync(
+  new URL("../src/components/TacticBoard.tsx", import.meta.url),
+  "utf8",
+);
+const tacticBoardModelSource = readFileSync(
+  new URL("../src/lib/tacticBoardModel.ts", import.meta.url),
+  "utf8",
+);
+
 test("1. DrillLibrary guards nullable canvas before reading fieldType", () => {
   assert.match(
     librarySource,
@@ -58,4 +67,10 @@ test("4. DrillDetailModal renders half pitch only for explicit half fieldType", 
 test("5. uploaded preview rendering remains available independently", () => {
   assert.match(librarySource, /\{drill\.previewImage\s*\?/);
   assert.match(detailSource, /\{drill\.previewImage\s*\?/);
+});
+
+test("6. editor and read-only renderer share the supported half-pitch goal direction", () => {
+  assert.match(tacticBoardModelSource, /HALF_PITCH_GOAL_SIDE\s*=\s*"bottom"/);
+  assert.match(tacticBoardSource, /data-goal-side=\{fieldType\s*===\s*"half"\s*\?\s*HALF_PITCH_GOAL_SIDE/);
+  assert.match(tacticBoardSource, /Half Field Markings \(Goal at bottom\)/);
 });

@@ -40,6 +40,17 @@ test("7. updateDrill keeps ownership and assisted audit fields immutable from ca
   assert.match(source, /delete\s+safeUpdates\.entry_mode/s);
 });
 
+test("Pro Club provenance cannot be changed through updateDrill", () => {
+  assert.match(source, /organizationType/);
+  assert.match(source, /organizationId/);
+  assert.match(source, /Pro Club drill provenance is immutable/);
+});
+
+test("Pro Club provenance is not saved under an assisted presented owner", () => {
+  assert.match(source, /newDrill\.organizationType\s*===\s*['\"]PRO_CLUB['\"]/s);
+  assert.match(source, /ownerUid\s*!==\s*authenticatedUid/s);
+});
+
 test("8. deleteDrill is constrained to presented owner scope", () => {
   assert.match(source, /Cannot delete drill outside the presented owner scope/s);
 });

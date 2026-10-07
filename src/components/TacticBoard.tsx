@@ -30,8 +30,11 @@ import {
 } from "react-konva";
 import useImage from "use-image";
 import { useDrillDatabase, type Drill } from "../hooks/useDrillDatabase";
+import type { ProClubOrganizationAuthority } from "../lib/firestore/proClubOrganizationAdapter";
+import { resolveProClubDrillProvenance } from "../lib/proClubDrillProvenance";
 import {
   DEFAULT_TEAM_COLORS,
+  HALF_PITCH_GOAL_SIDE,
   PITCH_THEME_PRESETS,
   getContrastColor,
   makeCurvePoints,
@@ -162,6 +165,7 @@ export default function TacticBoard({
   contextLabel,
   backButtonLabel,
   defaultCategory,
+  proClubAuthoringAuthority,
   presentation = "default",
 }: {
   onBack: () => void;
@@ -169,6 +173,7 @@ export default function TacticBoard({
   contextLabel?: string;
   backButtonLabel?: string;
   defaultCategory?: string;
+  proClubAuthoringAuthority?: ProClubOrganizationAuthority;
   presentation?: "default" | "pro-club";
 }) {
   const [drillMode, setDrillMode] = useState<"digital" | "upload">("digital");
@@ -186,6 +191,9 @@ export default function TacticBoard({
   const [pitchTheme, setPitchTheme] = useState<PitchThemeId>("white");
 
   const { saveDrill, updateDrill } = useDrillDatabase();
+  const proClubDrillProvenance = resolveProClubDrillProvenance(
+    proClubAuthoringAuthority,
+  );
   const [saveForm, setSaveForm] = useState(() => ({
     title: "",
     category: resolveDrillEditorCategory(defaultCategory, editingDrill?.category),
@@ -595,6 +603,7 @@ export default function TacticBoard({
       ? await updateDrill(editingDrill.id, drillPayload)
       : await saveDrill({
           ...drillPayload,
+          ...(proClubDrillProvenance ?? {}),
           date: new Date().toLocaleDateString("th-TH", {
             year: "numeric",
             month: "long",
@@ -925,6 +934,8 @@ export default function TacticBoard({
                   <div
                     className="absolute inset-4 lg:inset-6 ring-[1.5px] ring-current pointer-events-none z-0"
                     style={{ backgroundColor: pitchColors.background }}
+                    data-field-type={fieldType}
+                    data-goal-side={fieldType === "half" ? HALF_PITCH_GOAL_SIDE : undefined}
                   >
                     {fieldType === "full" ? (
                       <>

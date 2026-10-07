@@ -5,6 +5,7 @@ import type { ProClubOrganizationAuthority } from "../../../lib/firestore/proClu
 import { canOpenProClubGKTraining } from "../../../lib/proClubGKTrainingAccess";
 import { useDrillDatabase, type Drill } from "../../../hooks/useDrillDatabase";
 import TacticBoard from "../../TacticBoard";
+import ProClubDrillSubmissionSendButton from "./ProClubDrillSubmissionSendButton";
 
 export default function ProClubGKTrainingWorkspace({
   authority,
@@ -19,6 +20,7 @@ export default function ProClubGKTrainingWorkspace({
 
   return (
     <ProClubGKTrainingWorkspaceAuthorized
+      authority={authority}
       onOpenSubmissions={onOpenSubmissions}
       onOpenLibraryLogbook={onOpenLibraryLogbook}
     />
@@ -26,9 +28,11 @@ export default function ProClubGKTrainingWorkspace({
 }
 
 function ProClubGKTrainingWorkspaceAuthorized({
+  authority,
   onOpenSubmissions,
   onOpenLibraryLogbook,
 }: {
+  authority: ProClubOrganizationAuthority;
   onOpenSubmissions?: () => void;
   onOpenLibraryLogbook?: () => void;
 }) {
@@ -70,6 +74,7 @@ function ProClubGKTrainingWorkspaceAuthorized({
         contextLabel="GK Training"
         backButtonLabel="Back to GK Training"
         defaultCategory="GK Training"
+        proClubAuthoringAuthority={authority}
         presentation="pro-club"
       />
     );
@@ -195,13 +200,19 @@ function ProClubGKTrainingWorkspaceAuthorized({
                     <Edit2 size={15} />
                   </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => openDrill(drill)}
-                  className="pro-club-gk-open-action mt-4 w-full rounded-xl px-3 py-2.5 text-sm font-black transition"
-                >
-                  Open saved drill
-                </button>
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openDrill(drill)}
+                    className="pro-club-gk-open-action rounded-xl px-3 py-2.5 text-sm font-black transition"
+                  >
+                    Open saved drill
+                  </button>
+                  <ProClubDrillSubmissionSendButton
+                    organizationId={authority.organizationId}
+                    sourceDrillId={drill.id}
+                  />
+                </div>
               </article>
             ))}
           </div>

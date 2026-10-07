@@ -126,3 +126,26 @@ test("7. normalization does not rewrite the source object", () => {
 
   assert.equal(JSON.stringify(raw), before);
 });
+
+test("10. Pro Club provenance survives drill reads while legacy drills stay unprovenanced", () => {
+  const proClub = normalizeDrillRecord("club-drill", {
+    title: "Club Drill",
+    category: "GK Training",
+    created_by: "coach-1",
+    organizationType: "PRO_CLUB",
+    organizationId: "club-lampang",
+    is_shared: false,
+  });
+  const legacy = normalizeDrillRecord("legacy-drill", {
+    title: "Legacy Drill",
+    category: "GK Training",
+    created_by: "coach-1",
+    is_shared: false,
+  });
+
+  assert.equal(proClub.organizationType, "PRO_CLUB");
+  assert.equal(proClub.organizationId, "club-lampang");
+  assert.equal(legacy.title, "Legacy Drill");
+  assert.equal(legacy.organizationType, undefined);
+  assert.equal(legacy.organizationId, undefined);
+});

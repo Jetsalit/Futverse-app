@@ -48,6 +48,10 @@ const trainingPickerSource = readFileSync(
   new URL("../src/components/pro-club/operations/ProClubTrainingDrillReferencePicker.tsx", import.meta.url),
   "utf8",
 );
+const weeklyTrainingComposerSource = readFileSync(
+  new URL("../src/components/pro-club/operations/WeeklyTrainingDraftComposer.tsx", import.meta.url),
+  "utf8",
+);
 const appSource = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
 const cssSource = readFileSync(new URL("../src/index.css", import.meta.url), "utf8");
 
@@ -117,6 +121,7 @@ test("GK Training workspace lists owned drills and reuses the shared board and d
   assert.match(gkWorkspaceSource, /<TacticBoard/);
   assert.match(gkWorkspaceSource, /defaultCategory="GK Training"/);
   assert.match(gkWorkspaceSource, /presentation="pro-club"/);
+  assert.match(gkWorkspaceSource, /proClubAuthoringAuthority=\{authority\}/);
   assert.match(gkWorkspaceSource, /My GK Drills/);
   assert.match(gkWorkspaceSource, /Create GK Drill/);
   assert.match(gkWorkspaceSource, /Open saved drill/);
@@ -214,6 +219,11 @@ test("GK workspace and shared board follow Light and Neon tokens only inside Pro
   );
   assert.doesNotMatch(appSource, /<TacticBoard[\s\S]{0,120}presentation="pro-club"/);
   assert.match(trainingPickerSource, /presentation="pro-club"/);
+  assert.match(trainingPickerSource, /proClubAuthoringAuthority=\{authority\}/);
+  assert.match(
+    weeklyTrainingComposerSource,
+    /<ProClubTrainingDrillReferencePicker\s+authority=\{authority\}/,
+  );
 });
 
 test("application theme, pitch theme, and team colors remain separate persisted values", () => {

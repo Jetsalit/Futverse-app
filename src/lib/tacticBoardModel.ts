@@ -90,6 +90,8 @@ export type TacticLineStroke = "solid" | "dashed";
 export type TacticArrowhead = "none" | "end";
 export type CurveDirection = "left" | "right";
 
+export const HALF_PITCH_GOAL_SIDE = "bottom" as const;
+
 export interface TacticLineStyle {
   geometry: TacticLineGeometry;
   stroke: TacticLineStroke;

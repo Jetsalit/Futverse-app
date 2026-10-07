@@ -6,6 +6,7 @@ import { withoutCanonicalDocumentId } from '../lib/firestore/canonicalDocument';
 import { resolveAssistedRecordIdentity } from '../lib/assistedRecordIdentity';
 import { normalizeDrillRecord } from '../lib/drillDataModel';
 import type { Drill } from '../lib/drillDataModel';
+import { isValidDocumentIdentifier } from '../lib/proClubModel';
 
 export type { Drill } from '../lib/drillDataModel';
 
@@ -33,6 +34,26 @@ export function useDrillDatabase() {
   ): Promise<boolean> => {
     if (!authenticatedUid || !ownerUid) {
       console.error('Cannot save drill without authenticated actor and owner UID');
+      return false;
+    }
+
+    const hasProClubProvenance =
+      Object.prototype.hasOwnProperty.call(newDrill, 'organizationType') ||
+      Object.prototype.hasOwnProperty.call(newDrill, 'organizationId');
+    if (
+      hasProClubProvenance &&
+      (newDrill.organizationType !== 'PRO_CLUB' ||
+        !isValidDocumentIdentifier(newDrill.organizationId))
+    ) {
+      console.error('Cannot save invalid Pro Club drill provenance.');
+      return false;
+    }
+    if (
+      hasProClubProvenance &&
+      newDrill.organizationType === 'PRO_CLUB' &&
+      ownerUid !== authenticatedUid
+    ) {
+      console.error('Cannot save Pro Club drill provenance under an assisted presented owner.');
       return false;
     }
 
@@ -76,9 +97,18 @@ export function useDrillDatabase() {
         console.error('Drill ownership is immutable on client update.');
         return false;
       }
+      if (
+        Object.prototype.hasOwnProperty.call(updates, 'organizationType') ||
+        Object.prototype.hasOwnProperty.call(updates, 'organizationId')
+      ) {
+        console.error('Pro Club drill provenance is immutable on client update.');
+        return false;
+      }
 
       const safeUpdates = withoutCanonicalDocumentId(updates) as Partial<Drill>;
       delete safeUpdates.created_by;
+      delete safeUpdates.organizationType;
+      delete safeUpdates.organizationId;
       delete safeUpdates.recorded_by;
       delete safeUpdates.entry_mode;
       delete safeUpdates.last_updated_by;

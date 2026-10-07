@@ -26,6 +26,7 @@ import {
   proClubTrainingUtf8ByteLength,
 } from "../../../lib/proClubWeeklyTrainingStorageBounds";
 import ProClubTrainingDrillReferencePicker from "./ProClubTrainingDrillReferencePicker";
+import ProClubDrillSubmissionSendButton from "./ProClubDrillSubmissionSendButton";
 import {
   MAX_WEEKLY_TRAINING_BLOCKS_PER_SESSION,
   MAX_WEEKLY_TRAINING_SESSIONS,
@@ -339,12 +340,19 @@ export default function WeeklyTrainingDraftComposer({
                         Design in Tactic Board
                       </button>
                       {block.drillReference && (
-                        <span className="text-xs text-emerald-300">Linked drill: {block.drillReference}</span>
+                        <>
+                          <span className="text-xs text-emerald-300">Linked drill: {block.drillReference}</span>
+                          <ProClubDrillSubmissionSendButton
+                            organizationId={authority.organizationId}
+                            sourceDrillId={block.drillReference}
+                          />
+                        </>
                       )}
                     </div>
                     {drillPickerTarget?.sessionIndex === sessionIndex && drillPickerTarget.blockIndex === blockIndex && (
                       <div className="lg:col-span-3">
                         <ProClubTrainingDrillReferencePicker
+                          authority={authority}
                           onClose={() => setDrillPickerTarget(null)}
                           onSelectDrill={(drill) => {
                             const currentSession = draft.sessions[sessionIndex];

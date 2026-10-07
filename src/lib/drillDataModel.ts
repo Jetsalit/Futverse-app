@@ -22,6 +22,8 @@ export interface Drill {
   category: string;
   canvas_data: DrillCanvasData | null;
   created_by: string;
+  organizationType?: "PRO_CLUB";
+  organizationId?: string;
   is_shared: boolean;
   duration?: string;
   description?: string;
