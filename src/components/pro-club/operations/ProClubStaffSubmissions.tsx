@@ -45,6 +45,15 @@ import {
 
 type Mode = "AUTHOR" | "REVIEWER";
 type ReviewerFilter = "ALL" | "PENDING" | "REVISION" | "APPROVED";
+type SubmissionLoadError = { readonly kind: "permission" | "load"; readonly message: string };
+
+function isPermissionFailure(reason: unknown): boolean {
+  if (typeof reason !== "object" || reason === null) return false;
+  const code = "code" in reason ? reason.code : undefined;
+  const message = reason instanceof Error ? reason.message : "";
+  return (typeof code === "string" && /permission-denied/i.test(code)) ||
+    /permission denied|permission-denied|technical governance authority|technical authority|membership authority/i.test(message);
+}
 
 const STATUS_LABELS: Record<ProClubStaffSubmissionRecord["status"], string> = {
   DRAFT: "Draft",
@@ -229,6 +238,7 @@ export default function ProClubStaffSubmissions({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [drillBusyId, setDrillBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState<SubmissionLoadError | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
   const [form, setForm] = useState<ProClubStaffSubmissionContentInput | null>(
@@ -243,11 +253,13 @@ export default function ProClubStaffSubmissions({
       setRecords([]);
       setDrillRecords([]);
       setLoading(false);
+      setLoadError(null);
       return;
     }
 
     setLoading(true);
     setError("");
+    setLoadError(null);
     const canReadOwnDrillSubmissions =
       authority.staffRole === "HEAD_COACH" || authority.staffRole === "GK_COACH";
     const staffRecordsPromise =
@@ -278,23 +290,22 @@ export default function ProClubStaffSubmissions({
       }
       setDrillRecords(sortDrillByStatus([...drillRecordsById.values()]));
 
-      if (
-        mode === "REVIEWER" &&
-        (staffResult.status === "rejected" || reviewerDrillResult.status === "rejected")
-      ) {
-        setError("Review inbox ใช้งานได้เฉพาะ Technical Authority ปัจจุบันของทีม");
-      } else if (ownDrillResult.status === "rejected") {
-        setError(
-          ownDrillResult.reason instanceof Error
-            ? ownDrillResult.reason.message
-            : "ไม่สามารถโหลดประวัติงานที่ส่งได้",
+      const failedResults = [staffResult, ownDrillResult, reviewerDrillResult]
+        .filter((result) => result.status === "rejected");
+      if (failedResults.length > 0) {
+        const permissionFailure = failedResults.some((result) =>
+          result.status === "rejected" && isPermissionFailure(result.reason),
         );
-      } else if (staffResult.status === "rejected") {
-        setError(
-          staffResult.reason instanceof Error
-            ? staffResult.reason.message
-            : "ไม่สามารถโหลดงานที่ส่งได้",
-        );
+        setLoadError({
+          kind: permissionFailure ? "permission" : "load",
+          message: permissionFailure
+            ? mode === "REVIEWER"
+              ? "Current same-club Technical Governance permission is required to load the reviewer inbox."
+              : "Active same-club author permission is required to load your submissions."
+            : mode === "REVIEWER"
+              ? "Unable to load all submissions. Refresh to try again."
+              : "Unable to load your submissions. Refresh to try again.",
+        });
       }
     } finally {
       setLoading(false);
@@ -716,6 +727,17 @@ export default function ProClubStaffSubmissions({
         </div>
       )}
 
+      {loadError ? (
+        <div
+          role="alert"
+          className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+        >
+          <p className="font-black">
+            {loadError.kind === "permission" ? "Permission required" : "Could not load submissions"}
+          </p>
+          <p className="mt-1">{loadError.message}</p>
+        </div>
+      ) : null}
       {error && (
         <p
           role="alert"
@@ -751,9 +773,9 @@ export default function ProClubStaffSubmissions({
           }
         >
           <Loader2 className="animate-spin" size={18} />
-          กำลังโหลด Staff Submissions…
+          กำลังโหลดรายการส่ง…
         </div>
-      ) : displayRecords.length === 0 && displayDrillRecords.length === 0 ? (
+      ) : displayRecords.length === 0 && displayDrillRecords.length === 0 && !loadError ? (
         <div
           className={
             mode === "REVIEWER"
@@ -768,7 +790,7 @@ export default function ProClubStaffSubmissions({
               : "ยังไม่มีงานที่ส่งเข้ามา"}
           </p>
         </div>
-      ) : (
+      ) : displayRecords.length === 0 && displayDrillRecords.length === 0 ? null : (
         <div className="grid gap-4">
           {displayDrillRecords.map((record) => (
             <ProClubDrillSubmissionReviewCard

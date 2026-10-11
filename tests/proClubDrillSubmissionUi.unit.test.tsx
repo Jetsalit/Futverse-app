@@ -225,6 +225,13 @@ test("Pro Club drill submission UI retains the selected drill and review control
   const created: Array<{ clubId: string; submissionId: string; sourceDrillId: string }> = [];
   const staffDecisions: Array<{ action: "APPROVED" | "NEEDS_REVISION"; submissionId: string; note: string }> = [];
   const drillDecisions: Array<{ action: "APPROVED" | "NEEDS_REVISION"; submissionId: string; note: string }> = [];
+  let persistDrillDecisions = false;
+  const persistDrillDecision = (submissionId: string, status: "APPROVED" | "NEEDS_REVISION", note: string) => {
+    if (!persistDrillDecisions) return;
+    drillInbox = drillInbox.map((record) => record.id === submissionId && record.review
+      ? { ...record, effectiveStatus: status, review: { ...record.review, status, reviewNote: note } }
+      : record);
+  };
   const mockModule = (specifier: string, exports: Record<string, unknown>) =>
     t.mock.module(
       specifier,
@@ -256,9 +263,11 @@ test("Pro Club drill submission UI retains the selected drill and review control
     beginProClubDrillSubmissionReview: async () => undefined,
     requestProClubDrillSubmissionRevision: async (_clubId: string, submissionId: string, note: string) => {
       drillDecisions.push({ action: "NEEDS_REVISION", submissionId, note });
+      persistDrillDecision(submissionId, "NEEDS_REVISION", note);
     },
     approveProClubDrillSubmission: async (_clubId: string, submissionId: string, note: string) => {
       drillDecisions.push({ action: "APPROVED", submissionId, note });
+      persistDrillDecision(submissionId, "APPROVED", note);
     },
   });
   mockModule("../src/lib/firestore/proClubStaffSubmissionsRepository.ts", {
@@ -389,6 +398,68 @@ test("Pro Club drill submission UI retains the selected drill and review control
       assert.doesNotMatch(buttonText, /Approve|Request changes/);
     });
 
+    await t.test("reviewInboxShowsAvailableSnapshotThumbnails", async () => {
+      reviewerInboxDenied = false;
+      drillInbox = [submission("drill-thumbnails", "SUBMITTED")];
+      staffInbox = [];
+      await runtime.render(<StaffSubmissions authority={authority("HEAD_COACH")} />);
+      const card = runtime.container.querySelector('[data-submission-id="drill-thumbnails"]');
+      assert.ok(card);
+      assert.equal(
+        card.querySelector<HTMLImageElement>('img[alt="Submitted drill image thumbnail"]')?.getAttribute("src"),
+        "data:image/png;base64,SUBMITTED_IMAGE",
+      );
+      assert.ok(card.querySelector('[aria-label="Submitted tactic board"]'));
+      assert.equal(card.querySelector('[data-testid="submitted-work-viewer"]'), null);
+    });
+
+    await t.test("reviewControlsBelongOnlyToTheAssignedReviewer", async () => {
+      reviewerInboxDenied = false;
+      drillInbox = [submission("drill-assigned-to-td", "IN_REVIEW", "gk-1", "td-1")];
+      staffInbox = [];
+      await runtime.render(<StaffSubmissions authority={authority("HEAD_COACH")} />);
+      const card = runtime.container.querySelector('[data-submission-id="drill-assigned-to-td"]');
+      assert.ok(card);
+      await runtime.click("Open submitted drill");
+      assert.match(card.textContent ?? "", /another authorized reviewer/i);
+      assert.doesNotMatch(
+        [...card.querySelectorAll("button")].map((button) => button.textContent ?? "").join(" "),
+        /Approve|Request changes/,
+      );
+    });
+
+    await t.test("permissionFailuresAreNotPresentedAsAnEmptyInbox", async () => {
+      reviewerInboxDenied = true;
+      drillInbox = [];
+      staffInbox = [];
+      await runtime.render(<StaffSubmissions authority={authority("HEAD_COACH")} />);
+      assert.match(runtime.text(), /Permission required/);
+      assert.doesNotMatch(runtime.text(), /ยังไม่มีงานที่ส่งเข้ามา/);
+      reviewerInboxDenied = false;
+    });
+    await t.test("successfulEmptyInboxIsDistinctFromPermissionFailure", async () => {
+      reviewerInboxDenied = false;
+      drillInbox = [];
+      staffInbox = [];
+      await runtime.render(<StaffSubmissions authority={authority("HEAD_COACH")} />);
+      assert.match(runtime.text(), /ยังไม่มีงานที่ส่งเข้ามา/);
+      assert.equal(runtime.container.querySelector('[role="alert"]'), null);
+    });
+
+    await t.test("selfReviewRemainsUnavailableForAnInReviewSubmission", async () => {
+      reviewerInboxDenied = false;
+      drillInbox = [submission("head-self-review", "IN_REVIEW", "head-1", "head-1")];
+      staffInbox = [];
+      await runtime.render(<StaffSubmissions authority={authority("HEAD_COACH")} />);
+      const card = runtime.container.querySelector('[data-submission-id="head-self-review"]');
+      assert.ok(card);
+      await runtime.click("Open submitted drill");
+      assert.doesNotMatch(
+        [...card.querySelectorAll("button")].map((button) => button.textContent ?? "").join(" "),
+        /Approve|Request changes/,
+      );
+      assert.equal(card.querySelector("textarea"), null);
+    });
     await t.test("headCoachAuthorSeesOwnSubmissionWhenTechnicalDirectorIsAuthority", async () => {
       reviewerInboxDenied = true; // Technical Governance is held by TD B, not this Head Coach author.
       drillInbox = [submission("head-own-submission", "SUBMITTED", "head-1")];
@@ -463,6 +534,29 @@ test("Pro Club drill submission UI retains the selected drill and review control
       });
     });
 
+    for (const [decision, status, note] of [
+      ["Approve", "APPROVED", "Approved after refresh."],
+      ["Request changes", "NEEDS_REVISION", "Add the recovery cue before resubmitting."],
+    ] as const) {
+      await t.test(`senderSeesPersisted${status}FeedbackAfterRefresh`, async () => {
+        persistDrillDecisions = true;
+        reviewerInboxDenied = false;
+        drillInbox = [submission(`sender-feedback-${status}`, "IN_REVIEW")];
+        staffInbox = [];
+        await runtime.render(<StaffSubmissions authority={authority("HEAD_COACH")} />);
+        await runtime.click("Open submitted drill");
+        await runtime.setTextarea(`drill-review-note-sender-feedback-${status}`, note);
+        await runtime.click(decision);
+
+        await runtime.render(<StaffSubmissions authority={authority("GK_COACH")} />);
+        const card = runtime.container.querySelector(`[data-submission-id="sender-feedback-${status}"]`);
+        assert.ok(card);
+        assert.equal(card.getAttribute("data-submission-status"), status);
+        assert.match(card.textContent ?? "", new RegExp(status === "APPROVED" ? "Approved" : "Changes Requested"));
+        assert.ok((card.textContent ?? "").includes(note));
+        persistDrillDecisions = false;
+      });
+    }
     await t.test("showsAllPresentDrillDetails", async () => {
       drillInbox = [submission("drill-details", "IN_REVIEW")];
       staffInbox = [];
