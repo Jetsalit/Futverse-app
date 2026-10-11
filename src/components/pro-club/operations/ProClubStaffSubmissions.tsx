@@ -300,7 +300,7 @@ export default function ProClubStaffSubmissions({
           kind: permissionFailure ? "permission" : "load",
           message: permissionFailure
             ? mode === "REVIEWER"
-              ? "Current same-club Technical Governance permission is required to load the reviewer inbox."
+              ? "Review inbox ใช้งานได้เฉพาะ Technical Authority ปัจจุบันของทีม"
               : "Active same-club author permission is required to load your submissions."
             : mode === "REVIEWER"
               ? "Unable to load all submissions. Refresh to try again."
