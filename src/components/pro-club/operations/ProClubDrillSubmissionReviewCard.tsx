@@ -2,6 +2,7 @@ import { useState } from "react";
 import { CheckCircle2, RotateCcw } from "lucide-react";
 import type { ProClubDrillSubmissionInboxRecord } from "../../../lib/firestore/proClubDrillSubmissionsRepository";
 import SubmittedWorkViewer from "../../common/SubmittedWorkViewer";
+import ReadOnlyTacticBoardCanvas from "../../common/ReadOnlyTacticBoardCanvas";
 
 export type ProClubDrillSubmissionReviewDecision = "NEEDS_REVISION" | "APPROVED";
 
@@ -42,6 +43,9 @@ export default function ProClubDrillSubmissionReviewCard({
   const [reviewNote, setReviewNote] = useState("");
   const mayReview = mode === "REVIEWER" && record.submittedBy !== currentUid;
   const inReview = record.effectiveStatus === "IN_REVIEW";
+  const mayBeginReview = mayReview && record.effectiveStatus === "SUBMITTED";
+  const mayCompleteReview = mayReview && inReview && record.review?.reviewerUid === currentUid;
+  const assignedToAnotherReviewer = mayReview && inReview && record.review?.reviewerUid !== currentUid;
   const note = reviewNote.trim();
 
   return (
@@ -70,6 +74,38 @@ export default function ProClubDrillSubmissionReviewCard({
         </span>
       </header>
 
+      <p className="mt-2 text-xs font-semibold text-[color:var(--pc-muted)]">
+        Immutable Drill Submission · {record.snapshot.visualType.split("_").join(" ")}
+      </p>
+      <div
+        className="mt-3 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2"
+        aria-label="Submitted drill preview"
+        data-testid="drill-submission-thumbnail"
+      >
+        {record.snapshot.previewImage !== undefined ? (
+          <figure className="m-0 min-w-0 overflow-hidden rounded-xl border border-[color:var(--pc-border)] bg-[var(--pc-surface-soft)]">
+            <img
+              src={record.snapshot.previewImage}
+              alt="Submitted drill image thumbnail"
+              className="block max-h-40 min-h-24 w-full object-contain"
+            />
+            <figcaption className="border-t border-[color:var(--pc-border)] px-3 py-2 text-xs font-semibold text-[color:var(--pc-muted)]">
+              Submitted image
+            </figcaption>
+          </figure>
+        ) : null}
+        {record.snapshot.canvasData !== undefined ? (
+          <figure className="m-0 min-w-0 overflow-hidden rounded-xl border border-[color:var(--pc-border)] bg-[var(--pc-surface-soft)] p-2">
+            <div className="mx-auto w-full max-w-[320px]">
+              <ReadOnlyTacticBoardCanvas canvasData={record.snapshot.canvasData} />
+            </div>
+            <figcaption className="px-1 pt-2 text-xs font-semibold text-[color:var(--pc-muted)]">
+              Submitted tactic board
+            </figcaption>
+          </figure>
+        ) : null}
+      </div>
+
       <div className="mt-4 flex flex-wrap gap-2">
         <button
           type="button"
@@ -79,7 +115,7 @@ export default function ProClubDrillSubmissionReviewCard({
         >
           {viewerOpen ? "Close submitted drill" : "Open submitted drill"}
         </button>
-        {mayReview && record.effectiveStatus === "SUBMITTED" && viewerOpen ? (
+        {mayBeginReview && viewerOpen ? (
           <button
             type="button"
             onClick={() => onBeginReview?.(record)}
@@ -104,7 +140,13 @@ export default function ProClubDrillSubmissionReviewCard({
         </div>
       ) : null}
 
-      {mayReview && inReview && viewerOpen ? (
+      {assignedToAnotherReviewer && viewerOpen ? (
+        <p className="mt-4 rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-3 text-sm text-[color:var(--pc-muted)]">
+          This review is assigned to another authorized reviewer.
+        </p>
+      ) : null}
+
+      {mayCompleteReview && viewerOpen ? (
         <div className="mt-4 space-y-3 rounded-xl border border-[color:var(--pc-border)] bg-[var(--pc-surface-soft)] p-4">
           <label
             htmlFor={`drill-review-note-${record.id}`}
