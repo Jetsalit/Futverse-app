@@ -27,6 +27,15 @@ import {
   updateProClubStaffSubmissionDraftContent,
 } from "../../../lib/firestore/proClubStaffSubmissionsRepository";
 import {
+  approveProClubDrillSubmission,
+  beginProClubDrillSubmissionReview,
+  listMyProClubDrillSubmissions,
+  listProClubDrillSubmissionsForReview,
+  requestProClubDrillSubmissionRevision,
+  type ProClubDrillSubmissionInboxRecord,
+} from "../../../lib/firestore/proClubDrillSubmissionsRepository";
+import ProClubDrillSubmissionReviewCard from "./ProClubDrillSubmissionReviewCard";
+import {
   canAuthorProClubStaffSubmission,
   expectedProClubStaffSubmissionWorkType,
   type ProClubStaffSubmissionContentInput,
@@ -180,6 +189,28 @@ function sortByStatus(records: readonly ProClubStaffSubmissionRecord[]) {
   );
 }
 
+function sortDrillByStatus(records: readonly ProClubDrillSubmissionInboxRecord[]) {
+  const weight: Record<ProClubDrillSubmissionInboxRecord["effectiveStatus"], number> = {
+    SUBMITTED: 0,
+    IN_REVIEW: 1,
+    NEEDS_REVISION: 2,
+    APPROVED: 3,
+  };
+  return [...records].sort(
+    (a, b) => weight[a.effectiveStatus] - weight[b.effectiveStatus],
+  );
+}
+
+function matchesReviewerFilter(
+  status: ProClubDrillSubmissionInboxRecord["effectiveStatus"],
+  filter: ReviewerFilter,
+): boolean {
+  return filter === "ALL" ||
+    (filter === "PENDING" && (status === "SUBMITTED" || status === "IN_REVIEW")) ||
+    (filter === "REVISION" && status === "NEEDS_REVISION") ||
+    (filter === "APPROVED" && status === "APPROVED");
+}
+
 export default function ProClubStaffSubmissions({
   authority,
   onOpenTraining,
@@ -193,8 +224,10 @@ export default function ProClubStaffSubmissions({
   );
 
   const [records, setRecords] = useState<ProClubStaffSubmissionRecord[]>([]);
+  const [drillRecords, setDrillRecords] = useState<ProClubDrillSubmissionInboxRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [drillBusyId, setDrillBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
@@ -208,33 +241,65 @@ export default function ProClubStaffSubmissions({
   const load = useCallback(async () => {
     if (!mode) {
       setRecords([]);
+      setDrillRecords([]);
       setLoading(false);
       return;
     }
 
     setLoading(true);
     setError("");
+    const canReadOwnDrillSubmissions =
+      authority.staffRole === "HEAD_COACH" || authority.staffRole === "GK_COACH";
+    const staffRecordsPromise =
+      mode === "AUTHOR"
+        ? listMyProClubStaffSubmissions(authority.organizationId)
+        : listProClubStaffSubmissionsForReview(authority.organizationId);
+    const ownDrillRecordsPromise = canReadOwnDrillSubmissions
+      ? listMyProClubDrillSubmissions(authority.organizationId)
+      : Promise.resolve([] as ProClubDrillSubmissionInboxRecord[]);
+    const reviewerDrillRecordsPromise = mode === "REVIEWER"
+      ? listProClubDrillSubmissionsForReview(authority.organizationId)
+      : Promise.resolve([] as ProClubDrillSubmissionInboxRecord[]);
+
     try {
-      const next =
-        mode === "AUTHOR"
-          ? await listMyProClubStaffSubmissions(authority.organizationId)
-          : await listProClubStaffSubmissionsForReview(
-              authority.organizationId,
-            );
-      setRecords(sortByStatus(next));
-    } catch (cause) {
-      setRecords([]);
-      setError(
-        mode === "REVIEWER"
-          ? "Review inbox ใช้งานได้เฉพาะ Technical Authority ปัจจุบันของทีม"
-          : cause instanceof Error
-            ? cause.message
+      const [staffResult, ownDrillResult, reviewerDrillResult] = await Promise.allSettled([
+        staffRecordsPromise,
+        ownDrillRecordsPromise,
+        reviewerDrillRecordsPromise,
+      ]);
+      setRecords(sortByStatus(staffResult.status === "fulfilled" ? staffResult.value : []));
+
+      const drillRecordsById = new Map<string, ProClubDrillSubmissionInboxRecord>();
+      if (ownDrillResult.status === "fulfilled") {
+        ownDrillResult.value.forEach((record) => drillRecordsById.set(record.id, record));
+      }
+      if (reviewerDrillResult.status === "fulfilled") {
+        reviewerDrillResult.value.forEach((record) => drillRecordsById.set(record.id, record));
+      }
+      setDrillRecords(sortDrillByStatus([...drillRecordsById.values()]));
+
+      if (
+        mode === "REVIEWER" &&
+        (staffResult.status === "rejected" || reviewerDrillResult.status === "rejected")
+      ) {
+        setError("Review inbox ใช้งานได้เฉพาะ Technical Authority ปัจจุบันของทีม");
+      } else if (ownDrillResult.status === "rejected") {
+        setError(
+          ownDrillResult.reason instanceof Error
+            ? ownDrillResult.reason.message
+            : "ไม่สามารถโหลดประวัติงานที่ส่งได้",
+        );
+      } else if (staffResult.status === "rejected") {
+        setError(
+          staffResult.reason instanceof Error
+            ? staffResult.reason.message
             : "ไม่สามารถโหลดงานที่ส่งได้",
-      );
+        );
+      }
     } finally {
       setLoading(false);
     }
-  }, [authority.organizationId, mode]);
+  }, [authority.organizationId, authority.staffRole, mode]);
 
   useEffect(() => {
     void load();
@@ -253,7 +318,7 @@ export default function ProClubStaffSubmissions({
       return { total: 0, pending: 0, revision: 0, approved: 0 };
     }
 
-    return visibleRecords.reduce(
+    const stats = visibleRecords.reduce(
       (stats, record) => {
         stats.total += 1;
         if (record.status === "SUBMITTED" || record.status === "IN_REVIEW") {
@@ -267,7 +332,16 @@ export default function ProClubStaffSubmissions({
       },
       { total: 0, pending: 0, revision: 0, approved: 0 },
     );
-  }, [mode, visibleRecords]);
+    for (const record of drillRecords) {
+      stats.total += 1;
+      if (record.effectiveStatus === "SUBMITTED" || record.effectiveStatus === "IN_REVIEW") {
+        stats.pending += 1;
+      }
+      if (record.effectiveStatus === "NEEDS_REVISION") stats.revision += 1;
+      if (record.effectiveStatus === "APPROVED") stats.approved += 1;
+    }
+    return stats;
+  }, [drillRecords, mode, visibleRecords]);
 
   const displayRecords = useMemo(() => {
     if (mode !== "REVIEWER") return visibleRecords;
@@ -296,6 +370,21 @@ export default function ProClubStaffSubmissions({
         .some((value) => String(value).toLocaleLowerCase().includes(query));
     });
   }, [mode, reviewerFilter, reviewerQuery, visibleRecords]);
+
+  const displayDrillRecords = useMemo(() => {
+    if (mode !== "REVIEWER") return drillRecords;
+    const query = reviewerQuery.trim().toLocaleLowerCase();
+    return drillRecords.filter((record) => {
+      if (!matchesReviewerFilter(record.effectiveStatus, reviewerFilter)) return false;
+      if (!query) return true;
+      return [
+        record.snapshot.details.title,
+        record.submittedBy,
+        record.sourceCreatorRoleAtSubmission,
+        record.sourceDrillId,
+      ].some((value) => value.toLocaleLowerCase().includes(query));
+    });
+  }, [drillRecords, mode, reviewerFilter, reviewerQuery]);
 
   if (!mode || !canOpenProClubStaffSubmissions(authority)) {
     return (
@@ -432,6 +521,43 @@ export default function ProClubStaffSubmissions({
     }
   }
 
+  async function beginDrillReview(record: ProClubDrillSubmissionInboxRecord) {
+    setDrillBusyId(record.id);
+    setError("");
+    try {
+      await beginProClubDrillSubmissionReview(
+        authority.organizationId,
+        record.id,
+      );
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to begin drill review.");
+    } finally {
+      setDrillBusyId(null);
+    }
+  }
+
+  async function finishDrillReview(
+    record: ProClubDrillSubmissionInboxRecord,
+    decision: "NEEDS_REVISION" | "APPROVED",
+    note: string,
+  ) {
+    setDrillBusyId(record.id);
+    setError("");
+    try {
+      if (decision === "APPROVED") {
+        await approveProClubDrillSubmission(authority.organizationId, record.id, note);
+      } else {
+        await requestProClubDrillSubmissionRevision(authority.organizationId, record.id, note);
+      }
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to save the drill review.");
+    } finally {
+      setDrillBusyId(null);
+    }
+  }
+
   function edit(record: ProClubStaffSubmissionRecord) {
     setEditingId(record.submissionId);
     setForm(inputFromRecord(record));
@@ -501,7 +627,7 @@ export default function ProClubStaffSubmissions({
             <ReviewerSummaryCard
               label="งานทั้งหมด"
               value={reviewerStats.total}
-              hint="งานจาก Staff ในทีม"
+              hint="งานจาก Staff และ Drill ในทีม"
               icon={<ClipboardList size={18} />}
               tone="slate"
               filter="ALL"
@@ -627,7 +753,7 @@ export default function ProClubStaffSubmissions({
           <Loader2 className="animate-spin" size={18} />
           กำลังโหลด Staff Submissions…
         </div>
-      ) : displayRecords.length === 0 ? (
+      ) : displayRecords.length === 0 && displayDrillRecords.length === 0 ? (
         <div
           className={
             mode === "REVIEWER"
@@ -644,6 +770,17 @@ export default function ProClubStaffSubmissions({
         </div>
       ) : (
         <div className="grid gap-4">
+          {displayDrillRecords.map((record) => (
+            <ProClubDrillSubmissionReviewCard
+              key={`drill:${record.id}`}
+              record={record}
+              mode={mode}
+              currentUid={authority.userId}
+              busy={drillBusyId === record.id}
+              onBeginReview={beginDrillReview}
+              onDecision={finishDrillReview}
+            />
+          ))}
           {displayRecords.map((record) => {
             const editing = editingId === record.submissionId;
             const busy = busyId === record.submissionId;
@@ -692,6 +829,11 @@ export default function ProClubStaffSubmissions({
                     <p className={mode === "REVIEWER" ? "mt-2 whitespace-pre-wrap text-sm leading-6 text-[color:var(--pc-muted)]" : "mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600"}>
                       {record.summary}
                     </p>
+                    {mode === "REVIEWER" && (
+                      <p className="mt-3 rounded-lg border border-[color:var(--pc-border)] bg-[var(--pc-surface-soft)] px-3 py-2 text-xs text-[color:var(--pc-muted)]">
+                        Submitted work preview unavailable for this legacy submission.
+                      </p>
+                    )}
                   </div>
                 </div>
 

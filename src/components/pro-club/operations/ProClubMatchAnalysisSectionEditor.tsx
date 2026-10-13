@@ -1,20 +1,22 @@
-import type { Dispatch, SetStateAction } from "react";
+import { useRef, useState, type Dispatch, type PointerEvent as ReactPointerEvent, type SetStateAction } from "react";
 import {
   PRO_CLUB_ANALYSIS_ATTACKING_PATTERNS,
+  PRO_CLUB_ANALYSIS_FIXED_FORMATIONS,
+  PRO_CLUB_ANALYSIS_FIXED_SLOTS,
   PRO_CLUB_ANALYSIS_SECTIONS,
+  createProClubAnalysisFormationSlots,
+  getProClubAnalysisPointerCoordinates,
+  moveProClubAnalysisCustomFormationSlot,
+  type ProClubAnalysisFixedFormation,
   type ProClubAnalysisKeyMan,
   type ProClubAnalysisSectionId,
   type ProClubAnalysisTopic,
   type ProClubAnalysisTopicValue,
   type ProClubMatchAnalysis,
 } from "../../../lib/proClubMatchAnalysis";
-import {
-  PRO_CLUB_STARTING_XI_FIXED_FORMATIONS,
-  createProClubCustomFormationSlotsFromFixed,
-  type ProClubCustomFormationSlot,
-  type ProClubStartingXIFixedFormation,
-} from "../../../lib/proClubStartingXI11v11";
+import type { ProClubCustomFormationSlot } from "../../../lib/proClubStartingXI11v11";
 import { PLAYER_POSITION_CODES, type PlayerPositionCode } from "../../../lib/playerPositionSelection";
+import { getProClubAnalysisRatingClass } from "./proClubTheme";
 
 const TEXT_LIMIT = 2000;
 
@@ -48,7 +50,7 @@ function Field({
         disabled={disabled}
         onChange={(event) => onChange(event.currentTarget.value)}
         rows={3}
-        className="mt-1 w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-900 disabled:bg-slate-100"
+        className="pro-club-analysis-input mt-1 w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-900 disabled:bg-slate-100"
       />
     </label>
   );
@@ -88,6 +90,16 @@ export default function ProClubMatchAnalysisSectionEditor({
   topics: readonly ProClubAnalysisTopic[];
   onOpponentNameChange: (name: string) => void;
 }) {
+  const [selectedSlotIndex, setSelectedSlotIndex] = useState(0);
+  const [expandedNotesSlotIndex, setExpandedNotesSlotIndex] = useState<number | null>(null);
+  const pitchRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ slotIndex: number; pointerId: number } | null>(null);
+  const initialLineup = analysis.sections.FORMATION_LINEUP;
+  const customResetSeedRef = useRef<readonly ProClubCustomFormationSlot[] | null>(
+    initialLineup.formation === "CUSTOM" && initialLineup.customFormationSlots
+      ? initialLineup.customFormationSlots.map((slot) => ({ ...slot }))
+      : null,
+  );
   const title = PRO_CLUB_ANALYSIS_SECTIONS.find((section) => section.id === sectionId)!.label;
 
   if (sectionId === "FORMATION_LINEUP") {
@@ -97,12 +109,11 @@ export default function ProClubMatchAnalysisSectionEditor({
     function changeFormation(value: string) {
       if (value === "CUSTOM") {
         const base: readonly ProClubCustomFormationSlot[] =
-          lineup.formation === "CUSTOM" && lineup.customFormationSlots
-            ? lineup.customFormationSlots
-            : createProClubCustomFormationSlotsFromFixed(
-                lineup.formation === "CUSTOM" ? "4-3-3" : lineup.formation,
-              );
+          lineup.formation === "CUSTOM"
+            ? lineup.customFormationSlots ?? createProClubAnalysisFormationSlots("4-3-3")
+            : createProClubAnalysisFormationSlots(lineup.formation);
         const custom = base.map((slot) => ({ ...slot }));
+        customResetSeedRef.current = custom.map((slot) => ({ ...slot }));
         const slots = rebuildLineupSlots(custom, lineup.slots);
         updateAnalysis(setAnalysis, (current) => ({
           ...current,
@@ -113,10 +124,10 @@ export default function ProClubMatchAnalysisSectionEditor({
         }));
         return;
       }
-      if (!PRO_CLUB_STARTING_XI_FIXED_FORMATIONS.includes(value as ProClubStartingXIFixedFormation)) return;
-      const formation = value as ProClubStartingXIFixedFormation;
+      if (!(PRO_CLUB_ANALYSIS_FIXED_FORMATIONS as readonly string[]).includes(value)) return;
+      const formation = value as ProClubAnalysisFixedFormation;
       const slots = rebuildLineupSlots(
-        createProClubCustomFormationSlotsFromFixed(formation),
+        createProClubAnalysisFormationSlots(formation),
         lineup.slots,
       );
       updateAnalysis(setAnalysis, (current) => ({
@@ -126,6 +137,36 @@ export default function ProClubMatchAnalysisSectionEditor({
           FORMATION_LINEUP: { ...current.sections.FORMATION_LINEUP, formation, customFormationSlots: null, slots },
         },
       }));
+    }
+
+    function resetFormation() {
+      const currentLineup = analysis.sections.FORMATION_LINEUP;
+      const seed = currentLineup.formation === "CUSTOM"
+        ? customResetSeedRef.current ?? currentLineup.customFormationSlots
+        : PRO_CLUB_ANALYSIS_FIXED_SLOTS[currentLineup.formation];
+      if (!seed) return;
+      updateAnalysis(setAnalysis, (current) => {
+        const currentFormation = current.sections.FORMATION_LINEUP;
+        const slots = currentFormation.slots.map((slot, index) => ({
+          ...slot,
+          x: seed[index]?.x ?? slot.x,
+          y: seed[index]?.y ?? slot.y,
+        }));
+        const customFormationSlots = currentFormation.formation === "CUSTOM"
+          ? (currentFormation.customFormationSlots ?? []).map((slot, index) => ({
+              ...slot,
+              x: seed[index]?.x ?? slot.x,
+              y: seed[index]?.y ?? slot.y,
+            }))
+          : null;
+        return {
+          ...current,
+          sections: {
+            ...current.sections,
+            FORMATION_LINEUP: { ...currentFormation, slots, customFormationSlots },
+          },
+        };
+      });
     }
 
     function patchSlot(
@@ -159,86 +200,209 @@ export default function ProClubMatchAnalysisSectionEditor({
       });
     }
 
+    function handleMarkerPointerDown(
+      slotIndex: number,
+      event: ReactPointerEvent<HTMLButtonElement>,
+    ) {
+      setSelectedSlotIndex(slotIndex);
+      if (!isCustom || disabled) return;
+      event.preventDefault();
+      dragRef.current = { slotIndex, pointerId: event.pointerId };
+      if (typeof event.currentTarget.setPointerCapture === "function") {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
+    }
+
+    function handleMarkerPointerMove(
+      slotIndex: number,
+      event: ReactPointerEvent<HTMLButtonElement>,
+    ) {
+      const activeDrag = dragRef.current;
+      if (!isCustom || disabled || !pitchRef.current ||
+        activeDrag?.slotIndex !== slotIndex || activeDrag.pointerId !== event.pointerId) return;
+      event.preventDefault();
+      const coordinates = getProClubAnalysisPointerCoordinates(
+        pitchRef.current.getBoundingClientRect(),
+        event.clientX,
+        event.clientY,
+      );
+      const customSlots = analysis.sections.FORMATION_LINEUP.customFormationSlots ?? [];
+      const moved = moveProClubAnalysisCustomFormationSlot(
+        customSlots,
+        slotIndex,
+        coordinates.x,
+        coordinates.y,
+      )[slotIndex];
+      if (moved) patchSlot(slotIndex, { x: moved.x, y: moved.y });
+    }
+
+    function finishMarkerDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+      if (dragRef.current?.pointerId !== event.pointerId) return;
+      dragRef.current = null;
+      if (typeof event.currentTarget.releasePointerCapture === "function") {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+    }
+
     return (
-      <section aria-labelledby="analysis-section-editor-title" className="space-y-5">
+      <section aria-labelledby="analysis-section-editor-title" className="space-y-4">
         <SectionHeading title={title} hint="Map the opponent's shape and first XI." />
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block text-sm font-bold text-slate-700">
-            Opponent
-            <input
-              aria-label="Opponent name"
-              value={analysis.opponentSnapshot.name}
-              maxLength={120}
-              disabled={disabled}
-              onChange={(event) => onOpponentNameChange(event.currentTarget.value)}
-              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-normal text-slate-900 disabled:bg-slate-100"
-            />
-          </label>
-          <label className="block text-sm font-bold text-slate-700">
-            Opponent formation
-            <select
-              aria-label="Opponent formation"
-              value={lineup.formation}
-              disabled={disabled}
-              onChange={(event) => changeFormation(event.currentTarget.value)}
-              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 disabled:bg-slate-100"
-            >
-              {PRO_CLUB_STARTING_XI_FIXED_FORMATIONS.map((formation) => <option key={formation} value={formation}>{formation}</option>)}
-              <option value="CUSTOM">Custom</option>
-            </select>
-          </label>
-        </div>
+        <label className="block max-w-sm text-sm font-bold text-slate-700">
+          Opponent
+          <input
+            aria-label="Opponent name"
+            value={analysis.opponentSnapshot.name}
+            maxLength={120}
+            disabled={disabled}
+            onChange={(event) => onOpponentNameChange(event.currentTarget.value)}
+            className="pro-club-analysis-input mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-normal text-slate-900 disabled:bg-slate-100"
+          />
+        </label>
 
-        <div className="relative mx-auto aspect-[4/3] w-full max-w-xl overflow-hidden rounded-2xl border-2 border-emerald-900 bg-emerald-700">
-          <div className="absolute inset-3 rounded-xl border border-white/55" />
-          <div className="absolute left-1/2 top-1/2 h-px w-[calc(100%-24px)] -translate-x-1/2 bg-white/50" />
-          <div className="absolute left-1/2 top-1/2 h-20 w-20 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/50" />
-          {lineup.slots.map((slot) => (
-            <div key={slot.slotIndex} className="absolute z-10 flex max-w-[24%] -translate-x-1/2 -translate-y-1/2 flex-col items-center" style={{ left: slot.x + "%", top: slot.y + "%" }}>
-              <span className="flex h-7 min-w-7 items-center justify-center rounded-full border-2 border-white bg-slate-900 px-1 text-[10px] font-black text-white">
-                {slot.jerseyNumber ?? slot.position}
-              </span>
-              <span className="max-w-full truncate rounded bg-slate-950/80 px-1 text-[9px] font-bold text-white">{slot.playerName || slot.label}</span>
+        <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+          <section className="pro-club-analysis-card min-w-0 rounded-2xl border border-slate-200 p-3 shadow-sm sm:p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="font-black text-slate-900">Formation · {lineup.formation}</h3>
+                {isCustom && <p className="text-xs text-slate-500">Drag markers to adjust player positions.</p>}
+              </div>
+              <div className="flex items-center gap-2">
+                <select
+                  aria-label="Opponent formation"
+                  value={lineup.formation}
+                  disabled={disabled}
+                  onChange={(event) => changeFormation(event.currentTarget.value)}
+                  className="pro-club-analysis-input rounded-lg border border-slate-300 px-2 py-2 text-sm text-slate-900 disabled:bg-slate-100"
+                >
+                  {PRO_CLUB_ANALYSIS_FIXED_FORMATIONS.map((formation) => <option key={formation} value={formation}>{formation}</option>)}
+                  <option value="CUSTOM">Custom</option>
+                </select>
+                <button type="button" disabled={disabled} onClick={resetFormation} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 disabled:opacity-50">
+                  Reset formation
+                </button>
+              </div>
             </div>
-          ))}
-        </div>
 
-        <div className="grid gap-3 lg:grid-cols-2">
-          {lineup.slots.map((slot) => (
-            <article key={slot.slotIndex} className="grid gap-2 rounded-xl border border-slate-200 p-3 sm:grid-cols-[80px_minmax(0,1fr)_100px]">
-              <p className="self-center text-sm font-black text-slate-800">{slot.label}</p>
-              <label className="text-xs font-bold text-slate-600">
-                Player name
-                <input aria-label={"Player name slot " + (slot.slotIndex + 1)} value={slot.playerName} maxLength={100} disabled={disabled} onChange={(event) => patchSlot(slot.slotIndex, { playerName: event.currentTarget.value })} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm font-normal text-slate-900 disabled:bg-slate-100" />
-              </label>
-              <label className="text-xs font-bold text-slate-600">
-                Shirt number
-                <input aria-label={"Shirt number slot " + (slot.slotIndex + 1)} type="number" min="0" max="99" value={slot.jerseyNumber ?? ""} disabled={disabled} onChange={(event) => patchSlot(slot.slotIndex, { jerseyNumber: event.currentTarget.value === "" ? null : Number(event.currentTarget.value) })} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm font-normal text-slate-900 disabled:bg-slate-100" />
-              </label>
-              {isCustom && (
-                <>
-                  <label className="text-xs font-bold text-slate-600">
-                    Position
-                    <select aria-label={"Position slot " + (slot.slotIndex + 1)} value={slot.position} disabled={disabled} onChange={(event) => patchSlot(slot.slotIndex, { position: event.currentTarget.value as PlayerPositionCode, label: event.currentTarget.value })} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm text-slate-900 disabled:bg-slate-100">
+            <div
+              ref={pitchRef}
+              aria-label="Opponent formation pitch"
+              className="pro-club-analysis-pitch relative mx-auto aspect-[4/3] w-full overflow-hidden rounded-2xl border-2 border-emerald-900 bg-emerald-700"
+            >
+              <div className="absolute inset-3 rounded-xl border border-white/55" />
+              <div className="absolute left-1/2 top-1/2 h-px w-[calc(100%-24px)] -translate-x-1/2 bg-white/50" />
+              <div className="absolute left-1/2 top-1/2 h-20 w-20 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/50" />
+              {lineup.slots.map((slot) => (
+                <button
+                  key={slot.slotIndex}
+                  type="button"
+                  aria-label={`Select lineup slot ${slot.slotIndex + 1} ${slot.position}`}
+                  aria-pressed={selectedSlotIndex === slot.slotIndex}
+                  aria-grabbed={isCustom && selectedSlotIndex === slot.slotIndex && dragRef.current?.slotIndex === slot.slotIndex}
+                  data-lineup-marker={slot.slotIndex}
+                  data-custom-draggable={isCustom && !disabled ? "true" : "false"}
+                  data-selected={selectedSlotIndex === slot.slotIndex}
+                  onClick={() => setSelectedSlotIndex(slot.slotIndex)}
+                  onPointerDown={(event) => handleMarkerPointerDown(slot.slotIndex, event)}
+                  onPointerMove={(event) => handleMarkerPointerMove(slot.slotIndex, event)}
+                  onPointerUp={finishMarkerDrag}
+                  onPointerCancel={finishMarkerDrag}
+                  className={`pro-club-analysis-marker absolute z-10 flex max-w-[28%] -translate-x-1/2 -translate-y-1/2 flex-col items-center rounded-lg px-1 py-0.5 ${isCustom && !disabled ? "touch-none cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
+                  style={{ left: slot.x + "%", top: slot.y + "%" }}
+                >
+                  <span className="pro-club-analysis-marker-badge rounded-full border border-white/80 px-2 py-1 text-[10px] font-black">
+                    {slot.jerseyNumber === null ? slot.position : `#${slot.jerseyNumber} · ${slot.position}`}
+                  </span>
+                  {slot.playerName && <span className="pro-club-analysis-marker-name max-w-full truncate rounded px-1 text-[9px] font-bold">{slot.playerName}</span>}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="pro-club-analysis-card min-w-0 rounded-2xl border border-slate-200 p-3 shadow-sm sm:p-4">
+            <h3 className="mb-3 text-lg font-black text-slate-900">Opponent Lineup (11)</h3>
+            <div className="space-y-1.5 lg:max-h-[min(70vh,44rem)] lg:overflow-y-auto lg:pr-1">
+              {lineup.slots.map((slot) => (
+                <article
+                  key={slot.slotIndex}
+                  role="group"
+                  aria-label={`Lineup slot ${slot.slotIndex + 1}`}
+                  data-lineup-row={slot.slotIndex}
+                  data-selected={selectedSlotIndex === slot.slotIndex}
+                  onClick={() => setSelectedSlotIndex(slot.slotIndex)}
+                  className="pro-club-analysis-lineup-row grid min-w-0 grid-cols-[1.65rem_3.5rem_minmax(0,1fr)_3.4rem_2rem] items-center gap-1.5 rounded-xl border border-slate-200 p-1.5"
+                >
+                  <span className="text-center text-xs font-black text-slate-500">{slot.slotIndex + 1}</span>
+                  {isCustom ? (
+                    <select
+                      aria-label={`Position slot ${slot.slotIndex + 1}`}
+                      value={slot.position}
+                      disabled={disabled}
+                      onFocus={() => setSelectedSlotIndex(slot.slotIndex)}
+                      onChange={(event) => {
+                        const selectedPosition = event.currentTarget.value as PlayerPositionCode;
+                        patchSlot(slot.slotIndex, { position: selectedPosition, label: selectedPosition });
+                      }}
+                      className="pro-club-analysis-input min-w-0 w-full rounded-lg border border-slate-300 px-1 py-2 text-[10px] font-bold text-slate-900 disabled:bg-slate-100"
+                    >
                       {PLAYER_POSITION_CODES.map((position) => <option key={position} value={position}>{position}</option>)}
                     </select>
-                  </label>
-                  <label className="text-xs font-bold text-slate-600">
-                    Horizontal position
-                    <input aria-label={"Horizontal position slot " + (slot.slotIndex + 1)} type="number" min="6" max="94" value={slot.x} disabled={disabled} onChange={(event) => patchSlot(slot.slotIndex, { x: Number(event.currentTarget.value) })} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm text-slate-900 disabled:bg-slate-100" />
-                  </label>
-                  <label className="text-xs font-bold text-slate-600">
-                    Vertical position
-                    <input aria-label={"Vertical position slot " + (slot.slotIndex + 1)} type="number" min="6" max="94" value={slot.y} disabled={disabled} onChange={(event) => patchSlot(slot.slotIndex, { y: Number(event.currentTarget.value) })} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm text-slate-900 disabled:bg-slate-100" />
-                  </label>
-                </>
-              )}
-              <label className="text-xs font-bold text-slate-600 sm:col-span-2">
-                Lineup notes
-                <input aria-label={"Lineup notes slot " + (slot.slotIndex + 1)} value={slot.notes} maxLength={400} disabled={disabled} onChange={(event) => patchSlot(slot.slotIndex, { notes: event.currentTarget.value })} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm font-normal text-slate-900 disabled:bg-slate-100" />
-              </label>
-            </article>
-          ))}
+                  ) : (
+                    <span className="text-center text-xs font-black text-slate-700">{slot.position}</span>
+                  )}
+                  <input
+                    aria-label={"Player name slot " + (slot.slotIndex + 1)}
+                    placeholder="Player name"
+                    value={slot.playerName}
+                    maxLength={100}
+                    disabled={disabled}
+                    onFocus={() => setSelectedSlotIndex(slot.slotIndex)}
+                    onChange={(event) => patchSlot(slot.slotIndex, { playerName: event.currentTarget.value })}
+                    className="pro-club-analysis-input min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-xs font-normal text-slate-900 disabled:bg-slate-100"
+                  />
+                  <input
+                    aria-label={"Shirt number slot " + (slot.slotIndex + 1)}
+                    type="number"
+                    min="0"
+                    max="99"
+                    placeholder="#"
+                    value={slot.jerseyNumber ?? ""}
+                    disabled={disabled}
+                    onFocus={() => setSelectedSlotIndex(slot.slotIndex)}
+                    onChange={(event) => patchSlot(slot.slotIndex, { jerseyNumber: event.currentTarget.value === "" ? null : Number(event.currentTarget.value) })}
+                    className="pro-club-analysis-input min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-center text-xs font-normal text-slate-900 disabled:bg-slate-100"
+                  />
+                  <button
+                    type="button"
+                    aria-label={`Toggle lineup notes slot ${slot.slotIndex + 1}`}
+                    aria-expanded={expandedNotesSlotIndex === slot.slotIndex}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setSelectedSlotIndex(slot.slotIndex);
+                      setExpandedNotesSlotIndex((current) => current === slot.slotIndex ? null : slot.slotIndex);
+                    }}
+                    className="rounded-lg border border-slate-300 px-2 py-2 text-sm font-black text-slate-700"
+                  >
+                    {expandedNotesSlotIndex === slot.slotIndex ? "⌃" : "⌄"}
+                  </button>
+                  {expandedNotesSlotIndex === slot.slotIndex && (
+                    <label className="col-span-5 block text-xs font-bold text-slate-600">
+                      Lineup notes
+                      <textarea
+                        aria-label={"Lineup notes slot " + (slot.slotIndex + 1)}
+                        value={slot.notes}
+                        maxLength={400}
+                        rows={2}
+                        disabled={disabled}
+                        onFocus={() => setSelectedSlotIndex(slot.slotIndex)}
+                        onChange={(event) => patchSlot(slot.slotIndex, { notes: event.currentTarget.value })}
+                        className="pro-club-analysis-input mt-1 w-full resize-y rounded-lg border border-slate-300 px-2 py-2 text-xs font-normal text-slate-900 disabled:bg-slate-100"
+                      />
+                    </label>
+                  )}
+                </article>
+              ))}
+            </div>
+          </section>
         </div>
 
         <Field
@@ -358,7 +522,10 @@ export default function ProClubMatchAnalysisSectionEditor({
               ["Danger level", "dangerLevel"], ["Pace", "pace"], ["Aerial threat", "aerialThreat"],
               ["1v1 threat", "oneVsOne"], ["Work rate", "workRate"],
             ] as const).map(([label, key]) => (
-              <label key={key} className="text-sm font-bold text-slate-700">{label}: {player[key] ?? "—"}<input aria-label={label + " " + player.id} type="range" min="1" max="5" step="1" value={player[key] ?? 3} disabled={disabled} onChange={(event) => patchPlayer(player.id, { [key]: Number(event.currentTarget.value) as 1 | 2 | 3 | 4 | 5 })} className="mt-2 block w-full accent-cyan-700 disabled:opacity-50" /></label>
+              <label key={key} className="text-sm font-bold text-slate-700">
+                <span className="inline-flex items-center gap-2">{label}<span data-rating={player[key] ?? "neutral"} className={`${getProClubAnalysisRatingClass(player[key])} px-2 py-0.5`}>{player[key] ?? "—"}</span></span>
+                <input aria-label={label + " " + player.id} data-rating={player[key] ?? "neutral"} type="range" min="1" max="5" step="1" value={player[key] ?? 3} disabled={disabled} onChange={(event) => patchPlayer(player.id, { [key]: Number(event.currentTarget.value) as 1 | 2 | 3 | 4 | 5 })} className={`mt-2 block w-full accent-cyan-700 disabled:opacity-50 ${getProClubAnalysisRatingClass(player[key])}`} />
+              </label>
             ))}
             <Field label={"Strengths " + player.id} value={player.strengths} disabled={disabled} onChange={(strengths) => patchPlayer(player.id, { strengths })} />
             <Field label={"Weaknesses " + player.id} value={player.weaknesses} disabled={disabled} onChange={(weaknesses) => patchPlayer(player.id, { weaknesses })} />
@@ -490,8 +657,10 @@ function TopicInput({
       )}
       {topic.inputType === "RATING" && (
         <label className="block text-sm font-bold text-slate-700">
-          {value ?? "Not rated"} / 5
-          <input aria-label={label} type="range" min="1" max="5" step="1" value={typeof value === "number" ? value : 3} disabled={disabled} onChange={(event) => onChange(Number(event.currentTarget.value))} className="mt-2 block w-full accent-cyan-700 disabled:opacity-50" />
+          <span className="inline-flex items-center gap-2">
+            <span data-rating={typeof value === "number" ? value : "neutral"} className={`${getProClubAnalysisRatingClass(typeof value === "number" ? value : null)} px-2 py-0.5`}>{value ?? "Not rated"} / 5</span>
+          </span>
+          <input aria-label={label} data-rating={typeof value === "number" ? value : "neutral"} type="range" min="1" max="5" step="1" value={typeof value === "number" ? value : 3} disabled={disabled} onChange={(event) => onChange(Number(event.currentTarget.value))} className={`mt-2 block w-full accent-cyan-700 disabled:opacity-50 ${getProClubAnalysisRatingClass(typeof value === "number" ? value : null)}`} />
         </label>
       )}
       {topic.inputType === "SINGLE_CHOICE" && (

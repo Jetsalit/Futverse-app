@@ -5,7 +5,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import ProClubTeamDashboard from "../src/components/pro-club/operations/ProClubTeamDashboard";
 import {
+  PRO_CLUB_ANALYSIS_RATING_CLASSES,
   PRO_CLUB_THEME_STORAGE_KEY,
+  getProClubAnalysisRatingClass,
   resolveProClubTheme,
 } from "../src/components/pro-club/operations/proClubTheme";
 import type { ProClubOrganizationAuthority } from "../src/lib/firestore/proClubOrganizationAdapter";
@@ -38,6 +40,18 @@ test("theme contract defaults to Light and accepts only the two approved values"
   assert.equal(resolveProClubTheme("light"), "light");
   assert.equal(resolveProClubTheme("NEON"), "neon");
   assert.equal(resolveProClubTheme("neon"), "neon");
+});
+
+test("Analysis ratings share five distinct semantic classes and a neutral null class", () => {
+  const classes = [1, 2, 3, 4, 5].map((value) => getProClubAnalysisRatingClass(value));
+  assert.equal(new Set(classes).size, 5);
+  assert.equal(getProClubAnalysisRatingClass(null), getProClubAnalysisRatingClass(undefined));
+  assert.equal(getProClubAnalysisRatingClass(0), PRO_CLUB_ANALYSIS_RATING_CLASSES.neutral);
+  assert.match(classes[0]!, /rating--1/);
+  assert.match(classes[1]!, /rating--2/);
+  assert.match(classes[2]!, /rating--3/);
+  assert.match(classes[3]!, /rating--4/);
+  assert.match(classes[4]!, /rating--5/);
 });
 
 test("first render is Light and exposes Light and Neon controls in the top bar", () => {
@@ -89,6 +103,33 @@ test("theme CSS defines scoped Light and Professional Neon tokens", () => {
   assert.match(css, /--pc-accent:/);
   assert.match(css, /--pc-glow:/);
   assert.match(css, /\.pro-club-themed-surface/);
+  assert.match(css, /\.pro-club-analysis-workspace/);
+  assert.ok(css.includes('.pro-club-analysis-workspace [class~="bg-white"]'));
+  assert.match(css, /\.pro-club-analysis-workspace input/);
+  assert.match(css, /\.pro-club-analysis-workspace textarea::placeholder/);
+  assert.match(css, /\.pro-club-analysis-workspace input:disabled/);
+  assert.match(css, /\.pro-club-analysis-workspace select:focus/);
+  assert.match(css, /\.pro-club-analysis-workspace \[class~="text-slate-900"\][\s\S]*var\(--pc-text/);
+  assert.match(css, /\.pro-club-analysis-tab/);
+  assert.match(css, /\[data-pro-club-theme="light"\] \.pro-club-analysis-workspace \.pro-club-analysis-marker-badge\s*\{[^}]*background-color:\s*#020617;[^}]*color:\s*#fff;/);
+  assert.match(css, /\[data-pro-club-theme="light"\] \.pro-club-analysis-workspace \.pro-club-analysis-marker-name\s*\{[^}]*background-color:\s*rgba\(2,\s*6,\s*23,\s*0\.82\);[^}]*color:\s*#fff;/);
+  assert.match(css, /\[data-pro-club-theme="neon"\] \.pro-club-analysis-workspace \.pro-club-analysis-marker-badge\s*\{[^}]*background-color:\s*#020617;[^}]*color:\s*#f8fafc;/);
+  assert.match(css, /\[data-pro-club-theme="neon"\] \.pro-club-analysis-workspace \.pro-club-analysis-marker-name\s*\{[^}]*background-color:\s*rgba\(2,\s*6,\s*23,\s*0\.82\);[^}]*color:\s*#f8fafc;/);
+  assert.match(css, /\.pro-club-analysis-marker\[data-selected="true"\]\s*\{[^}]*box-shadow:[^}]*rgba\(34, 211, 238/);
+  assert.doesNotMatch(css, /^\[data-pro-club-theme="light"\]\s+\.pro-club-analysis-workspace\s+\.text-white\s*\{/m);
+  assert.match(css, /\.pro-club-analysis-rating--1/);
+  assert.match(css, /\.pro-club-analysis-rating--2/);
+  assert.match(css, /\.pro-club-analysis-rating--3/);
+  assert.match(css, /\.pro-club-analysis-rating--4/);
+  assert.match(css, /\.pro-club-analysis-rating--5/);
+  assert.match(css, /\[data-pro-club-theme="neon"\] \.pro-club-analysis-rating--5/);
+  for (const ratingColor of [
+    ".pro-club-analysis-rating--1 { --pc-analysis-rating-accent: #be123c; }",
+    ".pro-club-analysis-rating--2 { --pc-analysis-rating-accent: #c2410c; }",
+    ".pro-club-analysis-rating--3 { --pc-analysis-rating-accent: #a16207; }",
+    ".pro-club-analysis-rating--4 { --pc-analysis-rating-accent: #0369a1; }",
+    ".pro-club-analysis-rating--5 { --pc-analysis-rating-accent: #047857; }",
+  ]) assert.ok(css.includes(ratingColor), ratingColor);
 });
 
 test("theme contrast contract keeps Light readable and Neon secondary text legible", () => {

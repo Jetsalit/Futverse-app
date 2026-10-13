@@ -186,7 +186,7 @@ test("Pro Club Staff Management Model V1 - Role Model & Contract Extension", asy
 
     // Match the proClubs block first to avoid academy members block
     const proClubBlockMatch = rulesContent.match(
-      /match\s+\/proClubs\/\{clubId\}\s*\{([\s\S]*?)(?:match\s+\/proPlayers|\Z)/,
+      /match\s+\/proClubs\/\{clubId\}\s*\{([\s\S]*?)(?:match\s+\/proPlayers|$)/,
     );
     assert.ok(proClubBlockMatch, "match /proClubs/{clubId} block not found");
     const proClubRules = proClubBlockMatch[1];

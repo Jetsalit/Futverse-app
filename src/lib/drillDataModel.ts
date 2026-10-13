@@ -1,9 +1,26 @@
+import {
+  DEFAULT_TEAM_COLORS,
+  normalizePitchTheme,
+  normalizeTeamColors,
+  validatePitchBounds,
+  type PitchThemeId,
+  type TeamColors,
+} from "./tacticBoardModel";
+
 export type DrillFieldType = "full" | "half" | "small";
 
 export interface DrillCanvasData {
   elements: unknown[];
   lines: unknown[];
   fieldType: DrillFieldType;
+  teamColors?: TeamColors;
+  pitchTheme?: PitchThemeId;
+  stageWidth?: number;
+  stageHeight?: number;
+  pitchX?: number;
+  pitchY?: number;
+  pitchWidth?: number;
+  pitchHeight?: number;
 }
 
 export interface Drill {
@@ -12,6 +29,8 @@ export interface Drill {
   category: string;
   canvas_data: DrillCanvasData | null;
   created_by: string;
+  organizationType?: "PRO_CLUB";
+  organizationId?: string;
   is_shared: boolean;
   duration?: string;
   description?: string;
@@ -24,6 +43,13 @@ export interface Drill {
   recorded_by?: string;
   entry_mode?: "SELF" | "ASSISTED";
   last_updated_by?: string;
+}
+
+export function resolveDrillEditorCategory(
+  defaultCategory?: string,
+  existingCategory?: string | null,
+): string {
+  return existingCategory ?? defaultCategory ?? "Tactical";
 }
 
 export function normalizeDrillFieldType(value: unknown): DrillFieldType {
@@ -40,12 +66,26 @@ export function normalizeDrillCanvasData(
   }
 
   const raw = value as Record<string, unknown>;
+  const stageWidth = normalizeStageDimension(raw.stageWidth);
+  const stageHeight = normalizeStageDimension(raw.stageHeight);
+  const pitchBounds = validatePitchBounds(stageWidth, stageHeight, raw);
 
   return {
     elements: Array.isArray(raw.elements) ? raw.elements : [],
     lines: Array.isArray(raw.lines) ? raw.lines : [],
     fieldType: normalizeDrillFieldType(raw.fieldType),
+    teamColors: normalizeTeamColors(raw.teamColors ?? DEFAULT_TEAM_COLORS),
+    pitchTheme: normalizePitchTheme(raw.pitchTheme),
+    ...(stageWidth !== undefined ? { stageWidth } : {}),
+    ...(stageHeight !== undefined ? { stageHeight } : {}),
+    ...(pitchBounds ?? {}),
   };
+}
+
+function normalizeStageDimension(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : undefined;
 }
 
 export function normalizeDrillRecord(

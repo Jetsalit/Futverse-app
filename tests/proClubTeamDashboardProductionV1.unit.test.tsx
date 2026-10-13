@@ -48,6 +48,7 @@ test("freezes the minimal production team navigation", () => {
     "GAME_MODEL",
     "MATCHES",
     "ANALYSIS",
+    "GK_TRAINING",
   ]);
 });
 
@@ -65,6 +66,7 @@ test("active tab refresh persistence accepts only live production tabs", () => {
   assert.equal(resolveProClubActiveTab("GAME_MODEL"), "GAME_MODEL");
   assert.equal(resolveProClubActiveTab("MATCHES"), "MATCHES");
   assert.equal(resolveProClubActiveTab("ANALYSIS"), "ANALYSIS");
+  assert.equal(resolveProClubActiveTab("GK_TRAINING"), "GK_TRAINING");
   assert.equal(resolveProClubActiveTab("UNKNOWN"), "OVERVIEW");
   assert.equal(resolveProClubActiveTab(null), "OVERVIEW");
 });
