@@ -139,7 +139,7 @@ test("renders Academy-compatible drill thumbnails from existing authorized drill
   assert.match(source, /entry\.source === "DRILL"/);
   assert.match(source, /visibleDrillsById\.get\(entry\.referenceId\)/);
   assert.match(source, /drill\?\.previewImage/);
-  assert.match(source, /ReadOnlyTacticBoardCanvas canvasData=\{drill\.canvas_data\}/);
+  assert.match(source, /ReadOnlyTacticBoardCanvas canvasData=\{\{ \.\.\.drill\.canvas_data \}\}/);
   assert.match(source, /No drill preview/);
   assert.doesNotMatch(source, /listProClubDrillSubmissionsForReview/);
 });
