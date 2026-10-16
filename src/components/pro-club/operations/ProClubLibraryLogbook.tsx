@@ -17,6 +17,8 @@ import {
   listProClubStaffSubmissionsForReview,
 } from "../../../lib/firestore/proClubStaffSubmissionsRepository";
 import { useDrillDatabase } from "../../../hooks/useDrillDatabase";
+import ReadOnlyTacticBoardCanvas from "../../common/ReadOnlyTacticBoardCanvas";
+import type { Drill } from "../../../lib/drillDataModel";
 import {
   PRO_CLUB_LIBRARY_LOGBOOK_ROLE_LABELS,
   PRO_CLUB_LIBRARY_LOGBOOK_ROLES,
@@ -44,6 +46,32 @@ const TECHNICAL_DIRECTOR_DEVELOPMENT_LENSES = [
   "Player Development",
   "Pathway",
 ] as const;
+
+function ProClubDrillThumbnail({ drill }: { drill: Drill | undefined }) {
+  return (
+    <div
+      data-testid="pro-club-logbook-drill-thumbnail"
+      className="mb-4 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl border border-[color:var(--pc-border)] bg-white"
+    >
+      {drill?.previewImage ? (
+        <img
+          src={drill.previewImage}
+          alt={`Preview of ${drill.title}`}
+          className="block h-full w-full object-contain"
+        />
+      ) : drill?.canvas_data ? (
+        <div className="w-full p-2">
+          <ReadOnlyTacticBoardCanvas canvasData={{ ...drill.canvas_data }} />
+        </div>
+      ) : (
+        <div role="img" aria-label="Drill preview unavailable" className="flex flex-col items-center gap-2 text-slate-400">
+          <Library size={32} />
+          <span className="text-xs font-medium">No drill preview</span>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function canOpenProClubLibraryLogbook(
   authority: ProClubOrganizationAuthority,
@@ -117,6 +145,12 @@ export default function ProClubLibraryLogbook({
     );
     return [...byId.values()];
   }, [myDrills, sharedDrills]);
+
+  // Present only the drill records already available to this authorized view.
+  const visibleDrillsById = useMemo(
+    () => new Map(visibleDrills.map((drill) => [drill.id, drill] as const)),
+    [visibleDrills],
+  );
 
   const entries = useMemo(
     () =>
@@ -339,6 +373,9 @@ export default function ProClubLibraryLogbook({
               data-entry-source={entry.source}
               className="rounded-2xl border border-[color:var(--pc-border)] bg-[var(--pc-surface)] p-4 shadow-[var(--pc-glow)]"
             >
+              {entry.source === "DRILL" && (
+                <ProClubDrillThumbnail drill={visibleDrillsById.get(entry.referenceId)} />
+              )}
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-400">
