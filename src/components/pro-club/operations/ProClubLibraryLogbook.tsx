@@ -61,7 +61,7 @@ function ProClubDrillThumbnail({ drill }: { drill: Drill | undefined }) {
         />
       ) : drill?.canvas_data ? (
         <div className="w-full p-2">
-          <ReadOnlyTacticBoardCanvas canvasData={drill.canvas_data} />
+          <ReadOnlyTacticBoardCanvas canvasData={{ ...drill.canvas_data }} />
         </div>
       ) : (
         <div role="img" aria-label="Drill preview unavailable" className="flex flex-col items-center gap-2 text-slate-400">
