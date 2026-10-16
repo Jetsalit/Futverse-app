@@ -133,3 +133,13 @@ test("dashboard wires Library & Logbook through the production shell only", () =
   assert.match(dashboard, /<ProClubLibraryLogbook/);
   assert.match(dashboard, /canOpenProClubLibraryLogbook/);
 });
+
+test("renders Academy-compatible drill thumbnails from existing authorized drill records", () => {
+  assert.match(source, /data-testid="pro-club-logbook-drill-thumbnail"/);
+  assert.match(source, /entry\.source === "DRILL"/);
+  assert.match(source, /visibleDrillsById\.get\(entry\.referenceId\)/);
+  assert.match(source, /drill\?\.previewImage/);
+  assert.match(source, /ReadOnlyTacticBoardCanvas canvasData=\{drill\.canvas_data\}/);
+  assert.match(source, /No drill preview/);
+  assert.doesNotMatch(source, /listProClubDrillSubmissionsForReview/);
+});
